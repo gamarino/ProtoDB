@@ -127,8 +127,10 @@ State on disk (per node)
   entries (D54, D55). It is ``fsync``-ed before the reply it justifies **in every durability mode** (D46
   amendment, Task 8.3e, defect D-SAFE-2): a promise before the grant, an acceptance before the acknowledgement,
   the rejoined marker before the node votes. A logged *committed* entry is knowledge, not a promise: it is
-  written without its own sync and becomes durable with the next synced entry (ruling R67); nothing in the
-  safety argument reads it.
+  written without its own sync and becomes durable with the next synced entry (ruling R67), so a power loss can
+  drop it. When a log is attached, the highest committed entry is adopted as committed knowledge *and* as the
+  accepted root (``_attach_locked``), so it feeds grants and V2'. That is safe because a committed root is
+  majority-accepted; and no decision depends on the entry being there (D46 amendment Task 8.3e).
 * **The local tier** (``TieredStorage``, D46): own segments (the local WAL), copies of other nodes' records at
   their original offsets, ``segments.log`` and ``ranges.log``. These data files are written without a sync on
   the commit path and rebuilt from the kind-5 entries on open (*redo*); a checkpoint syncs them before any
@@ -331,9 +333,12 @@ choice of base decides what the history keeps**. The rule (``_lease_base`` in ``
 1. **A certain lease or permit**, or a permit issued on a proposal (D55): the base is ``lease.root`` as given.
 2. **An uncertain one**: the holder runs a **recovery round** (``recover_root``): ``query`` with ballot 0 to the
    other voters, ending once a majority of witnesses (this node included when it is one) has answered (D46;
-   ``1b3a188``, Task 8.3n fix round 3, which replaced a wait for every voter that cost ``request_timeout``
-   whenever one voter was down). Committed roots in the answers are learnt as committed knowledge; the highest
-   accepted root is the result.
+   ``1b3a188``, Task 8.3n fix round 3). Before that commit the round waited for every voter, but went on with a
+   majority after ``request_timeout`` when an answer was late, so it could already end at a majority. Committed
+   roots in the answers are learnt as committed knowledge; the highest accepted root is the result. The round
+   also clears the suspicion this node held *when the round was sent*, and only that one: a term whose outcome
+   became unknown while the round ran may have replicated a root after some answers were given (re-review 5,
+   C1).
 3. **The phase-1 floor (R127, ``276a256``).** The base is the higher, in root order, of ``lease.root`` and the
    recovery result. The recovery query promises nothing, so its answers say nothing about roots accepted after
    they were given; the phase-1 value was reported by granters that had already promised the term
@@ -343,8 +348,14 @@ choice of base decides what the history keeps**. The rule (``_lease_base`` in ``
    persisted root, with the term floor raised by ``REFOUND_TERM_STEP = 2**44``, so roots a lost node accepted
    after the persisted one (labelled far below) are superseded instead of resurrecting when it returns (D46,
    fix round 2).
-5. **Superseded**: if this node knows a committed root labelled above the lease's term (or, under a
-   permission, a later root of the same term), the lease is stale; the holder acquires again.
+5. **Stale base.** The base is stale when this node knows a committed root labelled above the term (or
+   labelled exactly the term: for a plain lease always, under a permission when it orders above the permit's
+   base), when the base itself is labelled above the term (or exactly the term, for a plain lease), or when a
+   refound raised the term floor (steps 4 and 6). Every commit, the attach confirmation included, runs under a
+   permission (``_commit_under_lease``), so in practice: the round sends nothing, its commits are put back at the
+   head of the node's queue for its next permission (``_requeue``; they get no error), and the permission ends
+   ``unknown``, so the owner abandons the term (O6) and the next owner's phase 1 starts above it. The single
+   exception is a permit issued on a proposal (D55, H2), whose superseded base ends ``none``.
 6. **Hard guard (D46 fix rounds 3 and 4).** The base never orders below the committed root this node knows.
    If it would, acceptor logs were lost beyond the failure model; when the known committed root is the
    persisted one (or older) the cluster refounds from the persisted root, otherwise the commit raises
@@ -357,18 +368,39 @@ choice of base decides what the history keeps**. The rule (``_lease_base`` in ``
    ``ProtoConflictError``: nothing was replicated, the commits retry) and the permission ends ``unknown``, so
    the owner abandons the term (O6) instead of issuing the same base again (O5). A floor root accepted only by
    members now down would otherwise stall every round of the term while a majority is alive (re-review 3, I1).
-   Safety: abandoning is always conservative. Progress: if the base was acknowledged, a majority accepted it
-   and, by the copies rule, a live member holds its records; if it was not, the next phase 1 runs on the live
-   members, each promises a ballot above its term, so it can never be chosen afterwards.
+   Safety: abandoning is always conservative (P5). Progress, with a majority alive and at most ``f`` members
+   down:
+
+   * If the base R was acknowledged, a majority of voters accepted it, and by the copies rule ``f + 1`` members
+     hold its records durably; one of them is live, so ``commit_records`` finds them unless its answers are late
+     (a liveness matter).
+   * If R was not acknowledged, abandoning does not drop it by itself. The next phase 1 runs on the live voters;
+     each promises a ballot above R's term, so R can never be chosen *in its own term*. Its floor is the highest
+     root those live voters accepted, and it may report R again. A live voter accepted R in one of two ways:
+     with R's records in its own synced entry (it holds them), or with the root alone, which a voter accepts only
+     once the replication names ``f + 1`` durable copies (D54), at least one of them on a live member. Either way
+     a floor that reports R again can re-commit it with its records, and the next term makes progress.
+   * The stall arose from the remaining case: a root accepted only by its committer (whose acceptance carries the
+     single copy on its own disk) and by members now down. No live voter reports it, so the next floor does not
+     return it. One abandoned term is therefore enough.
 
 **Why the floor is sufficient (R127, D46 amendment Task 8.3n).** Let a root C be chosen (accepted by a majority
 ``Q_c``) in a term ``T_c`` below the lease's term ``T``, and let ``Q_g`` be the granting majority. They share a
 voter ``m``. ``m`` promised ``T`` before it replied to the grant, and refuses every root below its promise, so it
 accepted C before it replied; its reported root orders at or above C, because an accepted root only moves up
 (and a voter that lost its disk regains a root at or above it through its rejoin ballot before it votes again,
-R78a). So ``lease.root`` orders at or above C. By induction over terms and by the chain rule within a term, every
-root at or above C extends C. A recovery result above the floor is a root some voter accepted, so it extends C
-too. No step uses time.
+R78a). So ``lease.root`` orders at or above C. Every root at or above C extends C, by induction over terms
+(every earlier first root obeyed this rule) and, within a term, by **two** premises:
+
+* V2', checked at each acceptor: an acceptor's roots of one term form a chain;
+* S2 (R79): the owner issues each base once, so all roots of one term that reach acceptance lie on *one* chain
+  across acceptors. V2' alone does not give this. If an owner issued one base twice, an uncommitted sibling of a
+  committed root could reach acceptance with a higher epoch, order above C and not extend it (see "What S4 rests on" in
+  `The owner's rules, O1 to O8`_).
+
+A recovery result above the floor is a root some voter accepted, so, under the same two premises, it extends C
+too. No step uses time; the S2 premise is the accepted boundary of R79, pinned by a strict expected-failure
+test.
 
 Failover
 ~~~~~~~~
@@ -415,7 +447,9 @@ The commit path
    is serving (not abandoned, not ended, lease valid), the R80 drain allows it, at least a quarter of its belief
    is left (otherwise it renews first), the pipeline holds at most ``DEPTH`` entries, and the newest entry, if
    any, has proposed and has not been issued on. ``permit(term, rid, seq, inc, root, certain, valid, after)``
-   *(m3)* carries the newest root the owner knows committed, and ``valid``, the owner's remaining lease.
+   *(m3)* carries the owner's base and ``valid``, the owner's remaining lease. The base is the newest root the owner
+   knows committed (``certain``), except for the first permits of an uncertain lease, which carry its phase-1
+   value uncertain (the holder then recovers, step 5), and pipelined permits, which carry a proposal.
 4. **Holding (D45, protocol 9).** The holder measures ``valid`` from the moment it *sent* its request, so a
    permission never outlives the owner's lease on the holder's clock. A permit issued to another incarnation is
    dropped unanswered; a duplicate ``(term, seq)`` is ignored; a permit nobody waits for is handed back at once
@@ -543,19 +577,28 @@ gate would cost a refused root or an honest unknown, never a fork (D55, "a gate 
 Outcomes: none, committed, unknown
 ----------------------------------
 
-Every permission ends with one of three outcomes, and each commit of its round gets a matching result:
+Every permission ends with one of three outcomes, which its ``done`` reports to the owner. The result each
+commit of the round gets is a separate matter: two cases end the permission ``unknown`` although nothing was sent,
+because the owner must not issue the same base again.
 
 ``committed``
    A majority of voters acknowledged the round's last root within the permission. The commits return normally.
 ``none``
-   Nothing a voter may accept left the node and no own acceptance was logged (H7): a conflict, the reserve, a
-   closed gate, a stale base. The commits get ``ProtoConflictError``, which ``Database.run`` retries.
+   Nothing a voter may accept left the node and no own acceptance was logged (H7), and the base may be issued
+   again: every commit conflicted, the reserve refused the send, the gate closed, or a proposal base was
+   superseded (H2). The commits get ``ProtoConflictError``, which ``Database.run`` retries. Under rule O5 a
+   ``none`` lets the owner reuse its committed base.
 ``unknown``
-   Something acceptable left, and the majority was not observed in time, or a failure followed the send. The
-   commits get ``ProtoOutcomeUnknownError`` (D44 amendment R35), which is never retried automatically: the root
-   may or may not take effect. Also reported as ``unknown``: a majority observed only after the permission had
-   ended (D46 fix round 5, item 3). ``_BaseUnreachable`` ends the permission ``unknown`` too, but its commits get
-   a retryable conflict, since nothing was sent (R133).
+   * Something acceptable left, and the majority was not observed in time, or a failure followed the send. The
+     commits get ``ProtoOutcomeUnknownError`` (D44 amendment R35), which is never retried automatically: the root
+     may or may not take effect. A majority observed only after the permission had ended is reported the same
+     way (D46 fix round 5, item 3).
+   * A stale base (`Choosing the base of a term's first root`_, step 5): nothing was sent, and the commits are
+     put back in the node's queue for its next permission, with no error.
+   * An unreachable base (step 8, R133): nothing was sent, and the commits get a retryable
+     ``ProtoConflictError``.
+
+   In every case the owner abandons the term (O6).
 
 .. figure:: coordinator-protocol/state-permission.svg
    :alt: State diagram of a write permission at its holder and the outcome it yields.
@@ -614,6 +657,18 @@ during it (D50). Since R82 the grace is an efficiency property: a restarted node
 at most the running holder's work, because its replications are refused once a majority promised the newer term
 (D46 amendment Task 8.3f-B). ``attach`` still refuses a shorter grace on a non-empty log.
 
+**The confirmation commit after every attach (D46).** A node that attaches a space knows only what its log
+recorded; a commit made while it was down, or whose ``done`` it missed, may be known committed only by others,
+and its own logged committed entry may have been lost in a power loss (it is not synced on its own, R67). So
+after every ``attach`` the coordinator reports ``needs_confirmation``, and the space's first snapshot first runs
+an empty commit under a permission (``_confirm_build`` through ``_commit_under_lease``): its base comes out of the
+owner's phase 1 (or a recovery with the phase-1 floor) and is committed if needed, so this node then knows a
+committed root at or above every acknowledged commit. Only then does the snapshot read. Reads therefore never go
+backwards across a restart. The attempt is made once per attach: a timeout, a conflict or an unknown outcome is
+logged and tolerated, and the read then starts from the newest committed root the node knows, an older but
+committed state, never a wrong one. When the node knows no committed root at all, ``current_root`` also runs a
+recovery round, and reads the persisted root if that fails.
+
 **A node that lost its disk: the rejoin ballot (R78a).** An empty acceptor log cannot tell a member that joins a
 cluster's first start late from a wiped one, and a wiped node may have acknowledged a root just before the loss,
 under a lease whose holder may still count that acknowledgement. The first fix waited ``restart_grace`` on the
@@ -627,16 +682,28 @@ a ballot (``9ef6307``):
    A rejoin of an empty acceptor log.
 
 1. Without the rejoined marker the node grants nothing, acknowledges nothing, and answers ``state=empty``.
-2. A plain round (ballot 0) learns the highest term anyone reports *(m1 to m4)*. ``"new"`` (a first start)
-   applies only when every other voter answered, none accepted a root and none reports any term (R51).
-3. Otherwise the node picks ``ballot = ballot_after(highest term reported, rank)`` and asks again *(m5, m6)*. A
+   Every count below is over the **voters**: ``V`` is the number of voters, a majority is ``floor(V/2) + 1`` of
+   them, and learners answer ``state=learner`` and never count (D54). A learner needs no rejoin at all.
+2. A plain round (ballot 0) to the other voters learns the highest term anyone reports *(m1 to m4)*. Three
+   decisions are possible (``_rejoin_decision``):
+
+   * ``"new"``, a cluster's first start: every other voter answered, none has accepted a root, and none reports
+     any term (R51). The node completes at once, without a ballot.
+   * ``"rootless"``: every other voter answered and none has accepted a root, but some term was seen (a lease
+     granted before the first commit). It goes through the ballot round below, like ``"witnesses"``.
+   * ``"witnesses"``: at least ``min(V - 1, V - majority + 1)`` witnesses answered (``_rejoin_answers``).
+3. The node picks ``ballot = ballot_after(floor, rank)``, where ``floor`` is the highest of every promise and
+   label the answers reported, its own highest term seen and its term hint, and asks again *(m5, m6)*. A
    witness raises its promise to the ballot in memory (an active lower grant ends there, so the current owner's
    term is over), reads its accepted root under the acceptor-log lock, makes the promise durable, and only then
    answers, echoing the ballot *(m7, m8)*. Missing answers are asked again, up to ``GATHER_ATTEMPTS`` rounds.
-4. Only answers that echo the ballot count, and ``N - majority + 1`` of them are needed. They intersect every
-   majority M that acknowledged a root R: M has at least ``majority - 1`` members besides this node, and
-   ``(majority - 1) + (N - majority + 1) = N > N - 1``. That witness either accepted R before its promise (and
-   reports R or above) or never accepts R (R's label is below the ballot). No timer appears.
+4. Only answers that echo the ballot count, and ``V - majority + 1`` of them are needed. They intersect every
+   majority M of voters that acknowledged a root R: M has at least ``majority - 1`` voters besides this node, and
+   ``(majority - 1) + (V - majority + 1) = V > V - 1``, the number of other voters. That witness either accepted
+   R before its promise (and reports R or above) or never accepts R afterwards, because R's label is below the
+   ballot. Why it is below: R's term was granted by a majority of voters before the wipe, the witnesses of the
+   plain round intersect that majority by the same count, and a granter reports the term it promised; the ballot
+   is above every reported term. No timer appears.
 5. The node fetches every record of the highest accepted root, commit by commit back to the persisted root, or
    confirms the object store holds them (R50) *(m9, m10)*: a root travels with its records. Records it cannot
    obtain leave it rejoining, with the reason in ``stats()["rejoin_blocked"]``.
@@ -660,13 +727,19 @@ This is the protocol's most instructive mistake, kept here as a worked counterex
 how it was found and why it had survived (:doc:`design-guide/unknown-outcomes`, "The mistake: a recovery round
 that ended too early").
 
-**The change.** Task 8.3n fix round 3 (``1b3a188``) made the recovery round end as soon as a majority of
-witnesses had answered, instead of waiting for every voter. Its justification was the classic argument: every
-committed root was accepted by a majority, which intersects the answering majority. The base of an uncertain
-lease was taken from the recovery result alone.
+**The change, and the older hole.** Task 8.3n fix round 3 (``1b3a188``) made the recovery round end as soon as a
+majority of witnesses had answered, instead of waiting for every voter. Its justification was the classic
+argument: every committed root was accepted by a majority, which intersects the answering majority. The base of
+an uncertain lease was taken from the recovery result alone. **The hole predates that commit.** The earlier round
+also went on with a majority once ``request_timeout`` had passed with an answer missing, and under P5 an answer
+may always be late, so the same schedule was possible before; ``1b3a188`` made it the normal path and wrote the
+false argument down as its justification (re-review 2 of 8.3n, C1).
 
 **The counterexample** (five voters a to e; ballots ``4096 = 1 x 4096 + 0``, ``4100 = 1 x 4096 + 4``,
-``8192 = 2 x 4096 + 0``; one slow timer and one delayed message, both inside the failure model):
+``8192 = 2 x 4096 + 0``). It needs three faults, all inside the failure model: e's timer runs slow; e's
+``replicate`` to c is delayed; and a's lease requests to c and e are lost, or delayed until after step 5. The
+last one matters: had a's request reached c first, c would have granted ``T`` (e's grant having expired on c's
+clock), promised 8192, and then refused R' by the ballot rule, and the schedule would fail.
 
 .. figure:: coordinator-protocol/seq-c1.svg
    :alt: Sequence diagram of the counterexample in which a recovery round ended at a majority loses an
@@ -676,8 +749,8 @@ lease was taken from the recovery result alone.
 
 1. e owns ``T' = 4100``, granted by b and c; its timer stands still.
 2. e's ``replicate(R')`` reaches b; its copy for c is held back.
-3. Real time passes b's and c's promises to e. a owns ``T = 8192``, granted by b and d; phase 1 reports R', so
-   ``lease.root = R'``, and the lease is uncertain.
+3. Real time passes b's and c's promises to e. a asks for ``T = 8192``; its requests to c and e are lost. b and
+   d grant, so a owns ``T``; phase 1 reports R', so ``lease.root = R'``, and the lease is uncertain.
 4. a's recovery round is answered by c and d: with a, a majority. It ends at once and returns an older root, r1.
 5. The delayed copy reaches c. c has promised nothing to ``T`` (a recovery query promises nothing), so it
    accepts R'. e counts b, c and itself, 3 of 5, while its own timer says its lease is valid: **R' is
@@ -686,7 +759,9 @@ lease was taken from the recovery result alone.
    alone. **R' is not in the history.**
 
 **Why the argument failed.** A majority answer is evidence about the past only if it was a promise about the
-future. Intersection proves that a member of the answering majority accepted every root chosen *before it
+future. The lesson is not "ending at a majority is wrong": a round that waits for every voter but gives up waiting
+after a timeout has the same hole, because an answer may always be late. It is that a ballot-0 answer is no evidence, at any count, about what its sender
+accepts afterwards. Intersection proves that a member of the answering majority accepted every root chosen *before it
 answered*; a ballot-0 answer says nothing about what it accepts after. The only sentence that excused it, "the
 recovery round is sent under the lease, i.e. after every earlier lease ended", is a statement about clocks, and
 under P5 it carries nothing.
@@ -714,9 +789,11 @@ cluster offers two ways to start one (R106 addendum).
 
    A local snapshot read against a linearizable read.
 
-**The local snapshot read.** ``new_transaction()`` takes the newest root this node knows committed: no message,
-no wait. That root is learnt from ``done`` and ``release`` messages, from permits and from this node's own
-commits (D50). A commit another member acknowledged a moment ago may not have reached this node yet, so the read
+**The local snapshot read.** ``new_transaction()`` takes the newest root this node knows committed. In steady
+state this sends no message and does not wait. Two exceptions: the first snapshot after an ``attach`` waits for
+the confirmation commit (`Crash and rejoin`_), and a node that knows no committed root runs a recovery round
+first. The committed root is learnt from ``done`` and ``release`` messages, permits, grant replies, recovery and
+rejoin answers, and this node's own commits (D46, D50). A commit another member acknowledged a moment ago may not have reached this node yet, so the read
 can miss it. ``sync()`` does not change that: it is a durability barrier (every commit *this node knows* is
 persisted), not a visibility barrier (D46 amendment, Task 8.3n; R113).
 
@@ -742,7 +819,8 @@ Datomic Pro's peer API offers the same two kinds of read. Its documentation (con
   all transactions that were complete at the time sync was called." It "Communicates with the transactor."
   With a ``t``: it "returns a future that will acquire a database value with basisT >= t" and "Does not
   communicate with the transactor." (`datomic.api <https://docs.datomic.com/clojure/>`__; the Java
-  ``Connection.sync()`` page says the same: `Connection <https://docs.datomic.com/javadoc/datomic/Connection.html>`__)
+  ``Connection.sync()`` page states the same guarantee: `Connection
+  <https://docs.datomic.com/javadoc/datomic/Connection.html>`__)
 * Guidance: "db is the preferred way to get a database value, as it does not need to wait nor block. Only use
   sync when coordination is required, and prefer the two-argument version when you have a basis t."
   (`datomic.api <https://docs.datomic.com/clojure/>`__)
@@ -778,8 +856,12 @@ The correspondence:
      - Roots and records pushed with the commit (``done``, ``warm`` to non-replicas, R89); a missing record is
        fetched on demand.
 
-**The difference in grain.** Datomic pushes *datoms* into a peer's memory index, which is merged with the
-storage index at query time; indexing the novelty is deferred work. ProtoDB propagates *roots and records*: each
+**The difference in grain.** Datomic pushes *datoms* into a peer's memory index. Its index page describes the
+model as one that "Merges index trees with an in-memory representation of recent changes so that peers see
+up-to-date indexes" (`Indexes <https://docs.datomic.com/indexes/index-model.html>`__), and its capacity page
+says that "Datomic must perform background indexing jobs to copy recent changes from memory into the persistent
+index" (`Capacity Planning <https://docs.datomic.com/operation/capacity.html>`__). Reading these together as "indexing the novelty is deferred
+work" is our summary, not Datomic's wording. ProtoDB propagates *roots and records*: each
 commit's records are the new nodes of the persistent trees, and **the root is already the index**. A member that
 learns a committed root can read through it at once, with no merge and no index debt; the price was paid by the
 committer, which built the path copies under its permission. Which trade-off suits a workload is not measured
@@ -808,7 +890,9 @@ always one of the conservative failures named at the top of this page.
      - The holder's belief is ``lease_duration - drift_margin``: a third of the promise (R78b).
    * - Renewal (``_own_loop_body``)
      - at half the belief left
-     - When the owner renews while it has demand. Failure: the term ends, permissions in flight end unknown.
+     - When the owner renews while it has demand. A failed renewal does not end the term: the owner retries, and
+       the term ends when its lease expires; if a permission is then outstanding, the owner abandons the term
+       (O6). Holders may still commit within their own validity.
    * - Permit floor (``_dispatch``)
      - a quarter of the belief left
      - No permission is issued with less left; the owner renews first (D50).

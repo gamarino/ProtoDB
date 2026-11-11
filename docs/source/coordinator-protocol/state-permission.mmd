@@ -2,7 +2,8 @@
 stateDiagram-v2
     [*] --> Held: permit arrives (this incarnation, first copy)
     Held --> Building: base chosen (certain, proposal, or recovery with the phase-1 floor)
-    Building --> NothingSent: conflict, send_reserve, gate closed, stale base
+    Building --> NothingSent: all conflicted, send_reserve, gate closed, superseded proposal base
+    Building --> StaleBase: stale base, not a proposal (step 5)
     Building --> BaseUnreachable: no reachable base records (R133)
     Building --> Gated: proposal base, gate closed, store data stage (V1)
     Gated --> NothingSent: gate closes
@@ -12,5 +13,6 @@ stateDiagram-v2
     Sent --> Unknown: majority not observed in time, or a failure after the send
     NothingSent --> [*]: done none, commits get ProtoConflictError (retried)
     BaseUnreachable --> [*]: done unknown (O6), ProtoConflictError
+    StaleBase --> [*]: done unknown (O6), commits re-queued, no error
     Committed --> [*]: done committed (O3)
     Unknown --> [*]: done unknown (O6), ProtoOutcomeUnknownError

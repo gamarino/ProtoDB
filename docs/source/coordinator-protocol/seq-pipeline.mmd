@@ -18,7 +18,7 @@ sequenceDiagram
         B->>V: replicate(root k) ... majority acknowledges root k
         B->>O: done(T, k, committed, root k) (broadcast, also to C)
         Note over C: gate opens (H5): root k known committed AND accepted here
-        Note over C: own acceptance of root k+1 alone, send_reserve check (R121)
+        Note over C: send_reserve check (R121), then own acceptance of root k+1 alone
         C->>V: replicate(T, root k+1 alone, pred = root k, copies)
     else gate open at send
         C->>V: replicate(T, root k+1, records) as in a serial round

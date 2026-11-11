@@ -9,7 +9,7 @@ sequenceDiagram
     W->>Y: query(ballot 0)
     X-->>W: answer(accepted, committed, promised, state=ok)
     Y-->>W: answer(...)
-    Note over W: N - majority + 1 witnesses answered (or a first start: "new")<br/>ballot = ballot_after(highest term reported, rank W)
+    Note over W: V - majority + 1 voter witnesses answered (V = voters, learners never count)<br/>or a first start ("new"), or "rootless"<br/>ballot = ballot_after(highest term reported or known here, rank W)
     W->>X: query(ballot)
     W->>Y: query(ballot)
     Note over X: promise(ballot) in memory, read accepted root under the acceptor-log lock (R55),<br/>fsync the promise, THEN answer (R78a)<br/>an active lower grant ends here: the current owner's term is over

@@ -13,6 +13,9 @@ sequenceDiagram
     Note over B,D: real time passes the promises b and c made to e
     A->>B: request(T)
     A->>D: request(T)
+    A--xC: request(T) lost or delayed past step 13
+    A--xE: request(T) lost or delayed
+    Note over C: had it arrived, c would promise T<br/>and refuse R' (ballot rule)
     B-->>A: grant(accepted R')
     D-->>A: grant(accepted r1)
     Note over A: phase 1: lease.root = R', lease not certain
@@ -20,7 +23,7 @@ sequenceDiagram
     A->>D: query(ballot 0)
     C-->>A: answer(r1)
     D-->>A: answer(r1)
-    Note over A: majority of witnesses (a, c, d): round ends, result r1 (1b3a188)
+    Note over A: majority of witnesses (a, c, d): round ends, result r1<br/>(the normal path since 1b3a188, possible before it)
     E-)C: the delayed replicate(T', R') arrives
     Note over C: c promised nothing to T, accepts R'
     C-->>E: ack

@@ -5,6 +5,7 @@ sequenceDiagram
     participant B as Node B (new owner)
     participant C as Voter C
     participant D as Voter D
+    Note over A,D: voters B, C, D (majority 2), A is a learner (it may own a term, D54)
     Note over A: crashes, or is partitioned, or its timer stops
     Note over B: permit_req to A unanswered for one lease duration:<br/>forget the owner hint, try to own (D50)
     B->>C: request(T2 = ballot_after(T1, rank B))

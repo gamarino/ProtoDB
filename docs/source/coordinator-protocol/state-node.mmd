@@ -9,6 +9,11 @@ stateDiagram-v2
     Witness --> TierFailed: acceptor-log or record write failed (R57)
     TierFailed --> NoStorage: detach, then reopen on a healthy disk
     Witness --> Fenced: unexpected exception in a lane thread
+    NoStorage --> Fenced: unexpected exception
+    Rejoining --> Fenced: unexpected exception
+    Rejoining --> TierFailed: a rejoin write failed (R57)
+    NoStorage --> Learner: attach, not in the voter set (logs the marker at once)
+    Learner --> NoStorage: detach
     Fenced --> [*]: stop
     Witness --> [*]: stop
     note right of NoStorage
@@ -18,6 +23,10 @@ stateDiagram-v2
     note right of Rejoining
         refuses (rejoining), answers state=empty,
         counted only at a first start (R51)
+    end note
+    note right of Learner
+        answers state=learner, never counted,
+        needs no rejoin (D54)
     end note
     note right of Witness
         grants (not during startup_grace, a liveness rule),
