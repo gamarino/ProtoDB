@@ -621,3 +621,34 @@ def test_vector_contract_rejects_broken_variants(cls):
             except AssertionError:
                 caught += 1
     assert caught, f"the vector contract did not catch {cls.__name__}"
+
+
+def test_closing_a_space_releases_its_derived_vector_structures():
+    """The process-wide cache of flat snapshots and IVF lists (D39) holds the stored elements of
+    the versions it built them from; closing the space drops those entries, so nothing of a closed
+    space stays reachable through process-global state (full-suite 3e07e0b, item 1)."""
+    import gc
+    import weakref
+
+    from proto_db.indexing.vector_backends import DERIVED
+    rng = random.Random(5)
+    space = ObjectSpace(MemoryStorage())
+    db = space.new_database("vecs")
+    with db.new_transaction() as tr:
+        coll = tr.new_list().add_index(VectorIndex("by_vec", "vec", 4, metric="l2")) \
+            .add_index(VectorIndex("by_ivf", "vec", 4, metric="cosine", backend="ivf_flat", nlist=4, nprobe=4))
+        for i in range(30):
+            coll = coll.append_last(tr.new_object(i=i, vec=random_vector(rng, 4)))
+        tr.set_root_object("docs", coll)
+    with db.new_transaction() as tr:
+        coll = tr.get_root_object("docs")
+        q = coll.get_at(3).vec
+        assert [e.i for e in plan_query(coll, near(q, k=1, metric="l2")).execute()] == [3]
+        assert len(list(from_collection(coll).where(F.vec.near(list(q), k=2, metric="cosine")))) == 2
+        element = weakref.ref(coll.get_at(3))
+        tr.abort()
+    del coll, tr
+    space.close()
+    gc.collect()
+    assert element() is None, "an element of a closed space is still reachable"
+    assert not any(owner is space.storage for owner in DERIVED.owners())
