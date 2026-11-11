@@ -101,11 +101,14 @@ whose ``pred`` carries an older label (the check ``first_of_term`` in ``proto_db
 such a root is accepted under the ballot rule alone. Whether its *base* is at least the value Paxos phase 1
 reported is a property of the holder's choice of base (``_lease_base``), not something the message lets the
 voter see. That holder-side rule *is* load-bearing for safety, and it is the one finding C1 found broken: in the
-schedule of :doc:`unknown-outcomes`, the last step is a first root of a newer term, built on a base below the
+schedule of :doc:`unknown-outcomes`, the last step was a first root of a newer term, built on a base below the
 phase-1 value and accepted through this very exemption. (See the :doc:`glossary` for the terms.)
 
-.. TODO(C1-fix): once the R127 fix is merged, state that the holder floors the first base of a term at the
-   phase-1 value, name the commit and the regression test, and restate "load-bearing" accordingly.
+Since ``276a256`` (merged in ``359f128``) the holder floors the first base of a term at the phase-1 value
+(``_lease_base``, ``_phase_1_floor``), so that rule is enforced by the code, not by the message. The
+regression tests are in ``tests/unit/test_cluster_recovery_base.py`` and the plant ``c1_no_floor`` fails them;
+``db1a4c8`` (merged in ``f6112d8``) adds the abandonment of a term whose base records are unreachable
+(plant ``unreachable_base_none``). The protocol is in :doc:`/coordinator-protocol`.
 
 Its cost, stated honestly
 -------------------------
@@ -161,10 +164,8 @@ At month end the three ERP servers no longer wait for each other's syncs in sing
 while the previous one makes its round durable, and the cluster completes about a third more commits per second
 on the benchmark that stands for the rush. Nothing about an acknowledgement changed. A sales person whose
 commit is acknowledged has it on a majority of the voters, and within a term a voter accepted it only on top of
-a root it held itself. That it then stays in the history is the design's goal, and the guarantee depends on
-how the next term chooses its base: finding C1 (:doc:`unknown-outcomes`) showed that the code at this commit
-can break it in one schedule, and the fix is in progress. A sales person whose commit could not be sequenced
+a root it held itself. That it then stays in the history depends on
+how the next term chooses its base: finding C1 (:doc:`unknown-outcomes`) showed that the code could break it in
+one schedule, and ``276a256`` (merged in ``359f128``) fixed it by flooring the base at the phase-1 value. A sales person whose commit could not be sequenced
 gets either a retryable conflict, when nothing acceptable had left the server, or an honest "unknown", which
 the next chapter explains.
-
-.. TODO(C1-fix): when the fix is merged, say that an acknowledged commit stays in the history, with the commit.
