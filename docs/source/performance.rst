@@ -63,7 +63,10 @@ rqlite                         v10.6.6, official linux-amd64 release binary (run
 
 Every heavy run ran alone, under ``systemd-run --user --scope -p MemoryMax=12G
 -p MemorySwapMax=0``, after a check that no other benchmark, test or ``rqlited`` process was
-running; the check is stored in every results file (``check``). Swap stayed at 0 MB.
+running; the check is stored in every results file (``check``). It is made before and after a
+run, not during it, and the processes it lists as strays in some files are the harness's own
+driver shells (the controller's, and the queued driver of the bisect reruns), not benchmarks.
+Swap stayed at 0 MB.
 
 Results files
 ~~~~~~~~~~~~~
@@ -105,7 +108,7 @@ Against the full suite of ``4aab0f2`` (two single-session suite runs, not interl
 SQLite, Python and rqlite figures of the two runs are level, which rules out a slower machine):
 
 - **The suite figures of ProtoDB's commit paths fell to 0.41-0.85x**, most with the GIL off:
-  single-process commits (``concurrent_commits`` 0.41-0.79x, ``commit_durability`` ``none``
+  single-process commits (``concurrent_commits`` 0.41-0.88x, ``commit_durability`` ``none``
   0.65x with the GIL on), cluster commits (``cluster_tcp`` 0.61-0.76x, ``rqlite_reference``'s
   ProtoDB side 0.61-0.73x), ``cold_open`` 0.42-0.80x and ``bulk_insert`` 0.78-0.81x. The 3-peer
   session headline went from 285.8 commits/s (``8b439cd``) to 202.5.
@@ -120,7 +123,7 @@ SQLite, Python and rqlite figures of the two runs are level, which rules out a s
   ``1845993`` (8.3m)    0.92 / 0.95                      --
   ``550dde5`` (8.3m     1.06 / 0.85                      0.86 / 0.97
   fix rounds)
-  ``5120cff`` (8.3n     0.96 / 0.88                      0.81 / 0.92
+  ``5120cff`` (8.3n     0.95 / 0.88                      0.81 / 0.92
   cluster fixes, D57)
   ``57fd351``           1.03 / 0.84                      0.78 / 0.92
   ====================  ===============================  ===============================
@@ -128,7 +131,7 @@ SQLite, Python and rqlite figures of the two runs are level, which rules out a s
 - **Single-process commits: no regression is shown alone.** The two rounds disagree by up to 20
   points for the same commit (``4aab0f2`` itself gives 701 and 822 conflicting commits/s at 1
   thread), so a loss of up to about 15 % cannot be excluded, but nothing like the suite's
-  0.41-0.79x. Alone, ``57fd351`` gives 857 / 782 conflicting commits/s at 1 thread, against 548 in
+  0.41-0.88x. Alone, ``57fd351`` gives 857 / 782 conflicting commits/s at 1 thread, against 548 in
   its own suite run [S0]: **in the suite, these workloads run after others that leave the process
   slower, and that effect is larger at** ``57fd351`` **than it was at** ``4aab0f2``. Its cause was
   not measured; it is the same open question as ``parallel_scan`` (`Parallel work`_). Read the
@@ -553,7 +556,7 @@ offset         ProtoDB pager    ProtoDB islice    SQLite OFFSET      SQLite keys
 0              224 us (228)     166 us            36 us (42)         38 us (50)          --
 10,000         222 us (215)     14.4 ms           365 us (347)       41 us (48)          61 ms (64)
 100,000        226 us (218)     14.6 s            3.0 ms (4.1)       38 us (62)          597 ms (728)
-900,000        251 us (249)     --                42.1 ms (45.3)     42 us (50)          --
+900,000        251 us (248)     --                42.1 ms (45.3)     42 us (50)          --
 =============  ===============  ================  =================  ==================  ===================
 
 The GIL-on rerun alone [RR] is not faster than the GIL-on suite run it replaces (overlapped by
@@ -593,7 +596,10 @@ filter on an unindexed field, ordered, N = 10^5      15.4 s (17.6)    16.2 s (18
 
 **Where SQLite is the better choice:** a first, ad-hoc query is 7x faster in SQLite at 10^5 rows
 and 380x faster on the unindexed ordered filter, and a cache miss on the range query costs
-ProtoDB 1.7-1.8x an uncached run. ProtoDB is the better choice when the same query repeats on a
+ProtoDB 1.7-1.8x an uncached run. SQLite's own figure at 10^5 differs by 54 % between the two
+GIL modes (11.8 and 18.2 ms, both reruns), far outside the 15 % that this page treats as noise;
+the cause was not investigated, so read it as an unexplained spread, not as an effect of the
+GIL. ProtoDB is the better choice when the same query repeats on a
 root that changes less often than it is read: about 4 ms against SQLite's 12-120 ms.
 
 History and "as of"
@@ -653,7 +659,7 @@ depth    versions    warm (us/query)  uncached         decodes     index entries
 The current query decodes the same 35.78 atoms at every depth and its latency does not move
 (warm: 0 decodes); the index holds 1,000 entries at every depth. What grows with history is the
 database (about 0.5 KB per version, apparent size) and the time to write it (0.5 s for depth 1,
-632 s for depth 1,000, with ``durability="none"``: one commit replaces all 1,000 orders). This
+632 s for depth 1,000, one build per depth, a single run, with ``durability="none"``: one commit replaces all 1,000 orders). This
 holds for this pattern, where history leaves the current collection; a design that keeps every
 version in the queried collection (or in its index) would make the query pay for history, and
 was not measured.
@@ -757,6 +763,17 @@ instance decodes every node it visits.
 object, and 8.7x smaller on disk as allocated (13.6x in apparent size). A data set that is
 loaded in bulk and rarely changed belongs in SQLite.
 
+*Why.* A ProtoDB object is a persistent immutable atom: each one is encoded on its own and
+appended to a segment, and placing it in the persistent trees that index it copies the path from
+the new node to the root, because nothing is modified in place (D8, structural sharing; see
+:doc:`concepts`). The 157 against 18 allocated bytes per object and the 423 against
+31 apparent bytes are that cost on disk: SQLite writes rows into B-tree pages that it updates in
+place, packed in a page, with no per-object identity or encoding. The build is also committed
+once per site with ``durability="fsync"`` (D6, D19), which syncs segment data, the directory and
+the root file; SQLite syncs its WAL. Neither the encoding nor the path copying is a defect: they
+are the price of immutable versions that readers share without locks, which this workload
+does not use while loading.
+
 Single-process commits
 ----------------------
 
@@ -787,6 +804,16 @@ GIL-off ones at 1 thread (see `Changes since the previous measurement`_).
 without indexes and 632 us with two, SQLite 2.8 and 4.7 us [S0]. Each index adds about 170-210 us
 to a ProtoDB update at 10^4 rows (52 / 261 / 453 / 622 us with 0 / 1 / 2 / 3 indexes).
 
+*Why.* A commit is a new immutable root, so even one key written copies a path of tree nodes,
+serialises the new nodes as atoms and then publishes the root atomically (D19): in ``fsync``
+mode that is a sync of segment data, of the directory, of a temporary root file and of the
+directory again, where SQLite in WAL syncs one log. The gap shrinks as the durability falls
+(3.9x at ``fsync``, 63x at ``flush``, where SQLite does almost no sync work and ProtoDB still
+syncs its root file and directory) because the fixed cost of a SQLite commit is then a page
+append. Every index is one more tree to path-copy, which is why each adds the 170-210 us above;
+SQLite updates the index pages in place. The ProtoDB design buys snapshots and conflict
+detection by comparing roots (D9), which SQLite's single writer does not need.
+
 Parallel work
 -------------
 
@@ -801,6 +828,15 @@ runs was not measured. The cause is not known. The inference of the previous mea
 free-threaded collector's passes grow with a large live heap) is not confirmed: Task 8.3m saw
 the scan scale after the preceding workloads at reduced sizes. Read the in-suite figure as a suite artefact until it is explained, not as the
 scaling of ``ParallelPool``.
+
+*Where SQLite is the better choice, and why.* Parallel work is where ProtoDB's model pays, and
+the only loss is the one measured: reads scale because they walk immutable nodes that no writer
+changes (4.15x and 4.62x above), but with the GIL on nothing scales (0.9-1.2x) and the in-suite
+``parallel_scan`` figure is unexplained. The cost of the model is paid elsewhere: every write
+copies a path instead of updating a page in place, which is why the commit rates of `Single-process
+commits`_ are lower than SQLite's even though the readers scale. Parallel writers do not scale
+either: they all publish one root, so conflicting commits retry (5.95 attempts per commit at 16
+threads) and the rate stays near 500 commits/s.
 
 ``concurrent_reads``, GIL off [S0]: ``get_at`` 141k -> 587k ops/s at 16 threads (4.15x),
 EqualityIndex queries 3,289 -> 15,190 (4.62x), a Python ``dict`` 1.15M -> 3.57M (3.10x). With
@@ -838,6 +874,14 @@ Operations
   descheduled past the commit path's timing margin; the outcome is a conservative failure, not
   a lost commit. These are the only two failed runs of this measurement; both workloads passed
   when rerun alone, and a single rerun cannot say how often the failure occurs.
+
+- **Where SQLite is the better choice, and why.** Opening and recovery: a ProtoDB space decodes
+  every node it visits on demand, so the cold walk costs 168 us per record against 0.69 us warm,
+  where SQLite reads a page that holds many rows with one read (the same decoding cost as in
+  `Bulk load and scale`_). Running a cluster: a commit across peers waits for acknowledgements
+  from other members before it returns (D46), and that coordination is work a single-file SQLite
+  database never does; it is the price of a commit that survives the loss of a node, which a
+  single SQLite file does not offer (see the rqlite comparison for the server alternative).
 
 - **Server against embedded peer.** rqlite is a server: any client that speaks HTTP reaches it,
   and its nodes can run on machines the application does not. A ProtoDB peer is a library inside
