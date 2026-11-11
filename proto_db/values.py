@@ -473,6 +473,8 @@ def canonical_for(value, holder: str):
     try:
         return canonical(value)
     except ProtoValidationError as e:
+        if type(e) is not ProtoValidationError:
+            raise
         raise ProtoValidationError(f"{holder}: {e}") from e
 
 

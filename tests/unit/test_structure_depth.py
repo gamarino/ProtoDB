@@ -319,3 +319,17 @@ def test_an_older_msgpack_is_refused_with_a_clear_error():
     for old in ((1, 1, 2), (1, 0, 8), (0, 6, 2)):
         with pytest.raises(ProtoNotSupportedError, match=r"msgpack 1\.2\.0 or later.*MAX_VALUE_DEPTH"):
             values.check_msgpack(old)
+
+
+def test_canonical_for_keeps_validation_error_subclasses(monkeypatch):
+    """A subclass of ProtoValidationError (e.g. ProtoReferenceError) passes through ``canonical_for``
+    with its class intact, as it does through DBObject and ``encode_state``."""
+    from proto_db import values
+    from proto_db.errors import ProtoReferenceError
+
+    def raise_reference(value):
+        raise ProtoReferenceError("dangling")
+
+    monkeypatch.setattr(values, "canonical", raise_reference)
+    with pytest.raises(ProtoReferenceError):
+        values.canonical_for(1, "Root 'r'")
