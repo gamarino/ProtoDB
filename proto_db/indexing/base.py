@@ -13,7 +13,7 @@ from ..core.atom import RESERVED_NAMES, Atom, PersistenceContext
 from ..errors import ProtoCorruptionError, ProtoNotSupportedError, ProtoUserError, ProtoValidationError
 from ..query.plans import Estimate, QueryPlan
 from ..query.terms import EQ, IS_NONE, NOT_NONE, Term, is_orderable
-from ..values import MISSING, is_atom, order_key
+from ..values import MISSING, check_text, is_atom, order_key
 from .keyspec import KeySpec
 
 __all__ = ["Index", "element_identity"]
@@ -141,6 +141,7 @@ class Index(Atom, metaclass=ABCMeta):
         """Create the definition part of an index; subclasses add their (empty) content."""
         if not isinstance(name, str) or not name:
             raise ProtoValidationError(f"An index needs a non-empty str name, not {name!r}")
+        check_text(name)
         if not isinstance(key_spec, KeySpec):
             raise ProtoValidationError(f"key_spec must be a KeySpec, not {type(key_spec).__name__}")
         super().__init__(context=context)

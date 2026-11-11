@@ -184,7 +184,7 @@ class MutableObject:
         """Create a handle on the cell ``name`` (a non-empty ``str``); does not create the cell."""
         if not isinstance(name, str) or not name:
             raise ProtoValidationError(f"A mutable name must be a non-empty str, not {name!r}")
-        object.__setattr__(self, "_name", str(name))
+        object.__setattr__(self, "_name", check_text(str(name)))
 
     @property
     def name(self) -> str:

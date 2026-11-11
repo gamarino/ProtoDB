@@ -258,8 +258,23 @@ def _walk_mro(cls: type, name: str) -> bool:
     return any(name in klass.__dict__ for klass in cls.__mro__)
 
 
-#: Atom class -> {name the class read does not find: whether its MRO defines it anyway} (R137a).
+#: Atom class -> the names its MRO defines that a read on the class does not find (R137a).
 _unreadable_names: dict = {}
+
+
+def _unreadable(cls: type) -> frozenset:
+    """The names some class of ``cls``'s MRO has in its ``__dict__`` that ``hasattr(cls, name)``
+    answers False for: a descriptor raising ``AttributeError`` when read on the class (or shadowed
+    by a metaclass attribute that raises).  Computed once per class; bounded by the class."""
+    names = set()
+    for klass in cls.__mro__:
+        for name in klass.__dict__:
+            try:
+                if not hasattr(cls, name):
+                    names.add(name)
+            except Exception:       # noqa: BLE001 - found by the walk at query time
+                pass
+    return frozenset(names)
 
 
 def class_defines(cls: type, name: str) -> bool:
@@ -271,21 +286,26 @@ def class_defines(cls: type, name: str) -> bool:
     loaded atom (R137a).  A name ``hasattr`` finds on the class is walked each time (a metaclass
     attribute is found too, so the walk decides); every class attribute, however added, is found.
     A name it does not find is defined only by a descriptor that raises ``AttributeError`` when
-    read on the class: that answer is walked once per class and name and kept, so it assumes no
-    such descriptor is added to or removed from a class after the class is in use.  The cache
-    keeps its classes alive, as the atom type registry already does for every Atom class."""
+    read on the class: those names are listed once per class (:func:`_unreadable`), so the cache
+    is bounded by the classes, never by the names asked about (schemaless records bring any field
+    names; review of R128, I2).  The list assumes no such descriptor is added to or removed from a
+    class after the class is in use.  The cache keeps its classes alive, as the atom type registry
+    already does for every Atom class.
+
+    Note: ``hasattr`` runs class-level code the ``__dict__`` walk never ran -- a descriptor's
+    ``__get__(None, cls)`` or a metaclass ``__getattr__`` -- on every save and load of a field of
+    that name, and listing a class runs it once for every name its MRO defines.  Harmless for
+    ordinary classes; a descriptor with side effects or a high cost on class access pays it there
+    (review of R128, m5)."""
     try:
         if hasattr(cls, name):
             return _walk_mro(cls, name)
     except Exception:
         return _walk_mro(cls, name)     # a descriptor raising another error is still in the MRO
-    known = _unreadable_names.get(cls)
-    if known is None:
-        known = _unreadable_names.setdefault(cls, {})
-    answer = known.get(name)
-    if answer is None:
-        answer = known[name] = _walk_mro(cls, name)
-    return answer
+    unreadable = _unreadable_names.get(cls)
+    if unreadable is None:
+        unreadable = _unreadable_names.setdefault(cls, _unreadable(cls))
+    return name in unreadable
 
 
 def type_name_of(tag) -> str:
@@ -944,7 +964,7 @@ class Atom:
             return ptr
         depth = getattr(_nesting, "depth", 0)
         if depth < 0:
-            raise _SaveFirst(self)          # under _save_iteratively: it saves this atom first
+            return _defer(self)             # under _save_iteratively: it saves this atom first
         if depth >= SAVE_NESTING:
             return _save_iteratively(self)
         _nesting.depth = depth + 1
@@ -977,6 +997,8 @@ class Atom:
                     f"Attribute {name!r} of {cls.__type_name__} shadows a class attribute and "
                     f"could not be loaded back lazily")
         encoded = codec.encode_state(state, context.save)
+        if getattr(_nesting, "deferred", None):
+            return None                     # children to save first (_save_iteratively)
         with _lock_for(self):
             ptr = self.atom_pointer
             if ptr is not None:
@@ -1054,46 +1076,59 @@ SAVE_NESTING = 48
 _nesting = threading.local()
 
 
-class _SaveFirst(BaseException):
-    """Raised by the save of an unsaved child under :func:`_save_iteratively`: save ``atom``
-    first.  A ``BaseException``, so that no context's ``except Exception`` takes it for an error
-    of the save; it never leaves :func:`_save_iteratively`."""
+#: What :func:`_defer` answers for a child deferred by :func:`_save_iteratively`: the encoding it
+#: goes into is discarded, so this pointer is never written.
+_DEFERRED = AtomPointer(uuid.UUID(int=0), 0)
 
-    def __init__(self, atom: "Atom"):
-        super().__init__()
-        self.atom = atom
+
+def _defer(atom: "Atom") -> AtomPointer:
+    """The save of an unsaved child under :func:`_save_iteratively`: remember it (once) for the
+    driver to save first and answer a placeholder, so the parent's encoding goes on and meets
+    every other unsaved child in the same pass."""
+    deferred = _nesting.deferred
+    if id(atom) not in _nesting.deferred_ids:
+        _nesting.deferred_ids.add(id(atom))
+        deferred.append(atom)
+    return _DEFERRED
 
 
 def _save_iteratively(root: "Atom") -> AtomPointer:
     """Save ``root`` and every unsaved atom it reaches, children first, without recursion.
 
-    Each atom on the stack is encoded (:meth:`Atom._save_own`); the first unsaved child its
-    encoding meets raises :class:`_SaveFirst` out of the child's :meth:`Atom._save` -- after the
-    context's ``save`` adopted and checked it, exactly as a nested save would -- and is pushed.
-    Nothing is published by an interrupted encoding, so the parent is encoded again once the
-    child is saved.  Cost: an atom with unsaved children is encoded more than once, only past
-    :data:`SAVE_NESTING`.  An atom met again while it is on the stack is a cycle of unsaved
-    atoms (possible only with mutable atoms): ``ProtoValidationError``."""
+    The atom on top of an explicit stack is encoded (:meth:`Atom._save_own`).  Each unsaved child
+    the encoding meets goes through the context's ``save`` -- adopted and checked exactly as a
+    nested save would -- and its :meth:`Atom._save` only records it (:func:`_defer`), so one pass
+    finds every unsaved child.  If there were any, nothing is published: the children are pushed
+    in reverse encounter order (so they are saved in the order, and with the subtrees, the
+    recursive save gives them; one already saved through an earlier sibling is skipped), and the
+    atom is encoded again once they are saved.  Each atom is thus encoded at most twice: linear
+    work at any width and depth (review of R128, I1).  A deferred child that is an atom already
+    being saved below it on the stack is a cycle of unsaved atoms (possible only with mutable
+    atoms): ``ProtoValidationError``."""
     outer = getattr(_nesting, "depth", 0)
     stack = [root]
-    on_stack = {id(root)}
+    expanded: set = set()           # atoms whose children are being saved (the path to the top)
     _nesting.depth = -1
     try:
         while stack:
             top = stack[-1]
             if top.atom_pointer is None:
+                deferred: list = []
+                _nesting.deferred, _nesting.deferred_ids = deferred, set()
                 try:
                     top._save_own()
-                except _SaveFirst as first:
-                    child = first.atom
-                    if id(child) in on_stack:
-                        raise ProtoValidationError(
-                            f"Cannot save {child!r}: it refers back to itself through atoms that are not "
-                            f"saved yet (a cycle of unsaved atoms)") from None
-                    stack.append(child)
-                    on_stack.add(id(child))
+                finally:
+                    _nesting.deferred = _nesting.deferred_ids = None
+                if deferred:
+                    expanded.add(id(top))
+                    for child in deferred:
+                        if id(child) in expanded:
+                            raise ProtoValidationError(
+                                f"Cannot save {child!r}: it refers back to itself through atoms that are "
+                                f"not saved yet (a cycle of unsaved atoms)")
+                    stack.extend(reversed(deferred))
                     continue
-            on_stack.discard(id(stack.pop()))
+            expanded.discard(id(stack.pop()))
     finally:
         _nesting.depth = outer
     return root.atom_pointer

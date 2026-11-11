@@ -100,3 +100,86 @@ def test_a_cycle_of_unsaved_atoms_is_refused():
         with pytest.raises(ProtoValidationError, match="cycle"):
             tr.commit()
     space.close()
+
+
+# -- review of R128: I1 (linear past SAVE_NESTING), m1 (one error, any depth) ---------------------
+
+def _pushed(storage_cls):
+    """A storage that records the type tag and plain scalar fields of every pushed record, in order."""
+    class Recording(storage_cls):
+        def __init__(self, *a, **k):
+            super().__init__(*a, **k)
+            self.pushed = []
+
+        def push_atom(self, payload):
+            state = payload["s"]
+            self.pushed.append((payload["t"], tuple(sorted((k, v) for k, v in state.items()
+                                                           if isinstance(v, (int, str)) and not isinstance(v, bool)))))
+            return super().push_atom(payload)
+    return Recording()
+
+
+def _fanned(width, depth):
+    """A record ``depth`` versions above one holding ``width`` fresh records (some shared)."""
+    shared = DBObject(k=-1)
+    kids = tuple(DBObject(k=j, also=shared if j % 7 == 0 else None) for j in range(width))
+    obj = DBObject(v=-1, kids=kids, previous=None)
+    for i in range(depth):
+        obj = obj.with_(v=i, previous=obj, kids=None)
+    return obj
+
+
+def test_a_wide_record_past_the_nesting_limit_is_encoded_in_linear_work(monkeypatch):
+    # Each value encoded counts once (encode_value recurses through the module global): an encoding
+    # restarted after each of the k children (the first iterative save) costs about k**2 / 2.
+    from proto_db.core import codec
+    values = [0]
+    real = codec.encode_value
+
+    def counting(value, save_child):
+        values[0] += 1
+        return real(value, save_child)
+    monkeypatch.setattr(codec, "encode_value", counting)
+    width, depth = 4000, 60
+    space = ObjectSpace(MemoryStorage())
+    with space.new_database("d").new_transaction() as tr:
+        tr.set_root_object("e", _fanned(width, depth))
+        before = values[0]
+        tr.commit()
+    assert values[0] - before <= 20 * (width + depth)      # quadratic: about 8,000,000
+    space.close()
+
+
+@pytest.mark.parametrize("nesting", [0, 1, 48])
+def test_the_iterative_save_writes_what_the_recursive_save_writes(monkeypatch, nesting):
+    from proto_db.core import atom as atom_module
+
+    def records(limit):
+        monkeypatch.setattr(atom_module, "SAVE_NESTING", limit)
+        storage = _pushed(MemoryStorage)
+        space = ObjectSpace(storage)
+        with space.new_database("d").new_transaction() as tr:
+            tr.set_root_object("e", _fanned(30, 70))
+        space.close()
+        return storage.pushed
+    recursive = records(10**9)
+    assert records(nesting) == recursive
+
+
+class _NoTypeName(Atom):
+    pass
+
+
+@pytest.mark.parametrize("depth", [5, 60])
+def test_an_error_deep_in_a_chain_is_reported_once_whatever_the_depth(depth):
+    obj = DBObject(bad=_NoTypeName())
+    for i in range(depth):
+        obj = obj.with_(v=i, previous=obj, bad=None)
+    space = ObjectSpace(MemoryStorage())
+    with space.new_database("d").new_transaction() as tr:
+        tr.set_root_object("e", obj)
+        with pytest.raises(ProtoValidationError) as info:
+            tr.commit()
+    space.close()
+    message = str(info.value)
+    assert message.startswith("Cannot save an instance of") and "Attribute" not in message

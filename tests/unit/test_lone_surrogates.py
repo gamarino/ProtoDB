@@ -18,7 +18,9 @@ from proto_db.core.dbobject import DBObject
 from proto_db.errors import ProtoValidationError
 from proto_db.storage.memory import MemoryStorage
 from proto_db.transactions import ObjectSpace
-from proto_db.values import canonical
+from proto_db.indexing import EqualityIndex
+from proto_db.indexing.keyspec import KeySpec
+from proto_db.values import MutableObject, canonical
 
 LONE = "ab\ud800cd"
 PAIR_AS_TWO = "\ud83d" + "\ude00"     # two surrogate code points, not the emoji U+1F600
@@ -112,3 +114,23 @@ def test_the_codec_refuses_naming_the_field_for_a_state_that_skipped_validation(
         with pytest.raises(ProtoValidationError, match="'body'.*surrogate"):
             tr.commit()
     space.close()
+
+
+# -- review of R128: I3 (mutable handles), m2 (index definitions) ------------------------------
+
+def test_a_mutable_handle_name_is_checked():
+    with pytest.raises(ProtoValidationError, match="surrogate"):
+        MutableObject(LONE)
+    forged = object.__new__(MutableObject)          # a handle that skipped its constructor
+    object.__setattr__(forged, "_name", LONE)
+    with pytest.raises(ProtoValidationError, match="'cell'.*surrogate"):
+        codec.encode_state({"cell": forged}, lambda atom: None)
+
+
+def test_index_definitions_are_checked_when_built():
+    with pytest.raises(ProtoValidationError, match="surrogate"):
+        EqualityIndex(LONE, KeySpec.element())
+    with pytest.raises(ProtoValidationError, match="surrogate"):
+        KeySpec.path("a." + LONE)
+    with pytest.raises(ProtoValidationError, match="surrogate"):
+        KeySpec.extractor("x" + LONE)

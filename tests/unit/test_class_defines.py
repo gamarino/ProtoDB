@@ -85,7 +85,7 @@ def test_an_attribute_added_after_a_first_query_counts():
     assert not class_defines(Late, "added_later")
 
 
-def test_a_name_absent_from_the_class_does_not_walk_the_mro_twice(monkeypatch):
+def test_a_name_absent_from_the_class_never_walks_the_mro(monkeypatch):
     # The 0eed600 cost: every field of every saved or loaded atom walked the whole MRO.
     class Fresh(DBObject):
         __type_name__ = "tests.class_defines.Fresh"
@@ -95,7 +95,7 @@ def test_a_name_absent_from_the_class_does_not_walk_the_mro_twice(monkeypatch):
     for _ in range(5):
         assert not class_defines(Fresh, "field_a")
         assert class_defines(Fresh, "with_")
-    assert walks.count("field_a") == 1
+    assert walks.count("field_a") == 0
 
 
 def test_records_of_a_class_round_trip_with_the_cache():
@@ -103,3 +103,17 @@ def test_records_of_a_class_round_trip_with_the_cache():
     assert obj.value == 3 and obj.other == "x"
     with pytest.raises(ProtoValidationError, match="inherited"):
         _Child(inherited=2)
+
+
+def test_the_cache_stays_bounded_by_the_class_whatever_names_are_asked():
+    # Review of R128, I2: schemaless records bring any field names; the cache holds only what the
+    # class defines, never the names asked about.
+    class Open(DBObject):
+        __type_name__ = "tests.class_defines.Open"
+        hidden = _RaisesAttributeError()
+    for i in range(100_000):
+        assert not class_defines(Open, f"field_{i}")
+    assert class_defines(Open, "hidden")
+    cached = atom_module._unreadable_names[Open]
+    assert len(cached) <= sum(len(k.__dict__) for k in Open.__mro__)
+    assert "field_7" not in cached and "hidden" in cached
