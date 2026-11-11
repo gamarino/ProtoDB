@@ -262,16 +262,25 @@ def _walk_mro(cls: type, name: str) -> bool:
 _unreadable_names: dict = {}
 
 
+#: Names :func:`_unreadable` never reads on a class: on a class without its own annotations,
+#: Python 3.14 answers a read of them by storing ``__annotations_cache__`` and
+#: ``__annotate_func__`` in that class's dict, a hidden write into application classes at their first
+#: save or load (re-review of R128, N2).  Both are underscore names, never a persisted field.
+_NOT_LISTED = frozenset({"__annotations__", "__annotate__"})
+
+
 def _unreadable(cls: type) -> frozenset:
     """The names some class of ``cls``'s MRO has in its ``__dict__`` that a read on the class does
     not return: a descriptor raising when read on the class (or shadowed by a metaclass attribute
     that raises).  Computed once per class; bounded by the class."""
     names = set()
     for klass in cls.__mro__:
-        # A copy (atomic): a class read adds to class dicts, here or in another thread (Python
-        # 3.14 caches ``__annotations__`` in the class read when it is first read), and a live
-        # iteration would raise "dictionary changed size during iteration".
+        # A copy (atomic): another thread may write into a class dict meanwhile (application code,
+        # or another thread's first class read of annotations), and a live iteration would raise
+        # "dictionary changed size during iteration".
         for name in klass.__dict__.copy():
+            if name in _NOT_LISTED:
+                continue
             try:
                 readable = hasattr(cls, name)
             except Exception:       # noqa: BLE001 - another error: defined, and not readable either

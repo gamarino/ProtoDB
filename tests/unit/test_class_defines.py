@@ -119,27 +119,51 @@ def test_the_cache_stays_bounded_by_the_class_whatever_names_are_asked():
     assert "field_7" not in cached and "hidden" in cached
 
 
-def test_listing_a_class_survives_class_dicts_changing_meanwhile():
-    # Full suite after the review fixes: reading __annotations__ on a class makes Python 3.14 cache
-    # it in that class's dict; threads listing classes at once (a peer's first commits) raised
-    # "dictionary changed size during iteration".  Every thread lists fresh classes at once.
+def test_listing_a_class_survives_its_dict_changing_meanwhile():
+    # Review of R128 (9cadc3a, re-review N1): a class dict may change while threads list the class
+    # for the first time -- another thread's first class read (Python 3.14 caches annotations in
+    # class dicts) or application code setting a class attribute.  A listing that iterated the live
+    # dict raised "dictionary changed size during iteration".  A plain record class with a large
+    # dict, eight threads released together, and a thread writing into the dict meanwhile.
     import threading
-    for round_ in range(20):
-        classes = [type(f"Fresh{round_}_{i}", (DBObject,), {"__type_name__": f"tests.class_defines.F{round_}.C{i}",
-                                                              "__annotations__": {"x": int}})
-                   for i in range(4)]
+    for round_ in range(30):
+        atom_module._unreadable_names.clear()
+        namespace = {f"m{j}": j for j in range(2000)}
+        cls = type(f"Wide{round_}", (DBObject,), dict(namespace, __type_name__=f"tests.class_defines.Wide{round_}"))
+        barrier = threading.Barrier(9)
         errors = []
+        stop = threading.Event()
 
         def ask():
+            barrier.wait()
             try:
-                for cls in classes:
-                    class_defines(cls, "field")
-                    class_defines(cls, "__annotations__")
+                class_defines(cls, "field")
             except Exception as e:         # reported below
                 errors.append(e)
+
+        def write():
+            barrier.wait()
+            n = 0
+            while not stop.is_set():
+                setattr(cls, f"_scratch{n % 64}", n)
+                delattr(cls, f"_scratch{n % 64}")
+                n += 1
         threads = [threading.Thread(target=ask) for _ in range(8)]
-        for t in threads:
+        writer = threading.Thread(target=write)
+        for t in threads + [writer]:
             t.start()
         for t in threads:
             t.join()
-        assert errors == []
+        stop.set()
+        writer.join()
+        assert errors == [], errors[:1]
+
+
+def test_the_first_listing_of_a_class_writes_nothing_into_its_dicts():
+    # Re-review N2: a class read of __annotations__ (or __annotate__) on a class without its own
+    # annotations makes Python 3.14 store __annotations_cache__ and __annotate_func__ in its dict, a
+    # hidden write into application classes at their first save or load.  The listing skips them.
+    cls = type("Plain", (DBObject,), {"__type_name__": "tests.class_defines.Plain", "m": 1})
+    before = {k: set(k.__dict__) for k in cls.__mro__}
+    assert not class_defines(cls, "field")
+    assert {k: set(k.__dict__) for k in cls.__mro__} == before
