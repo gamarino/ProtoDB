@@ -32,6 +32,11 @@ with a decoded-atom cache that fits the working set and with one 20 % smaller, a
 signal; it prints one JSON line (`python -X gil=0 -m benchmarks.residency_probe WORKDIR`, from the
 root of the tree to measure). Its log is `results/2026-11-06-8.3m-residency-probe.log`.
 
+The periodic cluster stress task (ruling R125) runs cluster tests beside CPU-bound busy processes
+and asserts safety only: `python -m benchmarks.cluster_stress --hogs 12 --runs 3 --json OUT`, from
+a clean export. Unknown outcomes and timeouts are counted, not failed; a safety message or an
+unclassified failure fails the task and is classified by hand.
+
 Measurements that are reported are taken from a clean export of a commit, never from a working
 tree (Task 9c):
 
