@@ -263,17 +263,21 @@ _unreadable_names: dict = {}
 
 
 def _unreadable(cls: type) -> frozenset:
-    """The names some class of ``cls``'s MRO has in its ``__dict__`` that ``hasattr(cls, name)``
-    answers False for: a descriptor raising ``AttributeError`` when read on the class (or shadowed
-    by a metaclass attribute that raises).  Computed once per class; bounded by the class."""
+    """The names some class of ``cls``'s MRO has in its ``__dict__`` that a read on the class does
+    not return: a descriptor raising when read on the class (or shadowed by a metaclass attribute
+    that raises).  Computed once per class; bounded by the class."""
     names = set()
     for klass in cls.__mro__:
-        for name in klass.__dict__:
+        # A copy (atomic): a class read adds to class dicts, here or in another thread (Python
+        # 3.14 caches ``__annotations__`` in the class read when it is first read), and a live
+        # iteration would raise "dictionary changed size during iteration".
+        for name in klass.__dict__.copy():
             try:
-                if not hasattr(cls, name):
-                    names.add(name)
-            except Exception:       # noqa: BLE001 - found by the walk at query time
-                pass
+                readable = hasattr(cls, name)
+            except Exception:       # noqa: BLE001 - another error: defined, and not readable either
+                readable = False
+            if not readable:
+                names.add(name)
     return frozenset(names)
 
 

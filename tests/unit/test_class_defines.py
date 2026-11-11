@@ -117,3 +117,29 @@ def test_the_cache_stays_bounded_by_the_class_whatever_names_are_asked():
     cached = atom_module._unreadable_names[Open]
     assert len(cached) <= sum(len(k.__dict__) for k in Open.__mro__)
     assert "field_7" not in cached and "hidden" in cached
+
+
+def test_listing_a_class_survives_class_dicts_changing_meanwhile():
+    # Full suite after the review fixes: reading __annotations__ on a class makes Python 3.14 cache
+    # it in that class's dict; threads listing classes at once (a peer's first commits) raised
+    # "dictionary changed size during iteration".  Every thread lists fresh classes at once.
+    import threading
+    for round_ in range(20):
+        classes = [type(f"Fresh{round_}_{i}", (DBObject,), {"__type_name__": f"tests.class_defines.F{round_}.C{i}",
+                                                              "__annotations__": {"x": int}})
+                   for i in range(4)]
+        errors = []
+
+        def ask():
+            try:
+                for cls in classes:
+                    class_defines(cls, "field")
+                    class_defines(cls, "__annotations__")
+            except Exception as e:         # reported below
+                errors.append(e)
+        threads = [threading.Thread(target=ask) for _ in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        assert errors == []
