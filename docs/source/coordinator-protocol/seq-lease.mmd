@@ -1,0 +1,28 @@
+%% Lease acquisition (phase 1) and renewal. Render: see coordinator-protocol.rst, "Diagrams".
+sequenceDiagram
+    autonumber
+    participant T as Client thread (node A)
+    participant A as Node A (requester, becomes owner)
+    participant B as Voter B
+    participant C as Voter C
+    T->>A: permit(): no owner known, so try to own (D50)
+    Note over A: local lock, fairness turn (D45, D46 Task 8.3e)<br/>term = ballot_after(highest term known, rank) (D46 fix round 2)
+    Note over A: own vote by the grant rules, under the acceptor-log lock (R55)
+    A->>B: request(term, rid, inc, vs)
+    A->>C: request(term, rid, inc, vs)
+    Note over A: own promise fsynced after the send, else own vote withdrawn (D46 amendment 1)
+    Note over B: acceptor lane (R81): refusal? rank check? grant rules (D45)<br/>promise fsynced BEFORE the grant leaves (D46 amendment 1, Task 8.3e)
+    B-->>A: grant(term, accepted root, committed root, certain)
+    C-->>A: reject(stale_term / busy / term_taken / starting)
+    Note over A: majority of voters granted before sent_at + D - m (D45, R78b)<br/>lease.root = highest reported root = the phase-1 value (D46)<br/>certain only if every granter knows a root and none is suspect
+    A->>A: start the ownership thread (term owner, D50)
+    loop while there is demand, when belief/2 is left (D50, R78b)
+        A->>B: renew(term, rid, inc)
+        Note over B: extends only its active grant of the same holder, incarnation and term<br/>no acceptor-log write (D50)
+        B-->>A: grant
+        Note over A: belief = renew sent_at + D - m
+    end
+    Note over A: no demand for lease_duration/4, or abandoned, or expired (D50)
+    A->>B: release(term, inc, accepted, committed, certain, held=True, next, more)
+    A->>C: release(...)
+    Note over C: grant freed, term closed (D45)<br/>committed root learnt (D46)<br/>certain=False: term suspect (D46)

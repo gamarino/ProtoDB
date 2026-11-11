@@ -1,0 +1,16 @@
+%% A write permission at its holder, and the commit outcome it yields (D50, D55, H1-H7).
+stateDiagram-v2
+    [*] --> Held: permit arrives (this incarnation, first copy)
+    Held --> Building: base chosen (certain, proposal, or recovery with the phase-1 floor)
+    Building --> NothingSent: conflict, send_reserve, gate closed, stale base
+    Building --> BaseUnreachable: no reachable base records (R133)
+    Building --> Gated: proposal base, gate closed, store data stage (V1)
+    Gated --> NothingSent: gate closes
+    Gated --> Sent: gate opens (H5)
+    Building --> Sent: replicate left (sent_acceptable, H7)
+    Sent --> Committed: majority observed within validity
+    Sent --> Unknown: majority not observed in time, or a failure after the send
+    NothingSent --> [*]: done none, commits get ProtoConflictError (retried)
+    BaseUnreachable --> [*]: done unknown (O6), ProtoConflictError
+    Committed --> [*]: done committed (O3)
+    Unknown --> [*]: done unknown (O6), ProtoOutcomeUnknownError

@@ -1,0 +1,25 @@
+%% An unknown outcome and its resolution.
+sequenceDiagram
+    autonumber
+    participant T as Client thread
+    participant H as Holder H
+    participant O as Owner of term T
+    participant V as Voters
+    participant N as Next owner
+    H->>V: replicate(T, root R) (something acceptable left, H7)
+    V--xH: acknowledgements lost, late, or refused
+    Note over H: permission validity ends without an observed majority (D46)<br/>(an owner that gets no done within valid + request_timeout acts as for unknown)
+    H-->>T: ProtoOutcomeUnknownError (never retried by Database.run, D44 R35)
+    H->>O: done(T, seq, inc, unknown)
+    Note over O: rule O6: abandon the term, suspect T,<br/>refuse queued requests (abandoned), release with certain=False (D50)
+    O->>V: release(T, certain=False)
+    Note over V: suspect T: later grant replies are uncertain (D46)
+    N->>V: request(T' > T)
+    Note over V: promise T': no root of T accepted from now on (ballot rule)
+    V-->>N: grant(accepted roots, certain=False)
+    alt R reached a majority (it took effect)
+        Note over N: the phase-1 value is R or above it (R127): R stays in the history
+    else R was accepted by a minority, or by nobody
+        Note over N: the base may or may not include R (R123):<br/>adopted when a granter reports it, dropped forever otherwise
+    end
+    Note over T: the application resolves by reading: an acknowledged id is present,<br/>an unknown one is present everywhere or absent everywhere (R86)

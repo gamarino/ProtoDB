@@ -1,0 +1,26 @@
+%% Failover and recovery: the owner dies, a new owner runs phase 1, recovery is floored at the phase-1 root.
+sequenceDiagram
+    autonumber
+    participant A as Old owner A (term T1)
+    participant B as Node B (new owner)
+    participant C as Voter C
+    participant D as Voter D
+    Note over A: crashes, or is partitioned, or its timer stops
+    Note over B: permit_req to A unanswered for one lease duration:<br/>forget the owner hint, try to own (D50)
+    B->>C: request(T2 = ballot_after(T1, rank B))
+    B->>D: request(T2)
+    Note over D: grant only once A's grant expired here<br/>(busy until then, D45)<br/>promise T2 fsynced, then grant (D46)
+    Note over C: from now on refuses every root labelled below T2 (ballot rule, D46)
+    C-->>B: grant(accepted root, certain=False: A's grant ended by expiry)
+    D-->>B: grant(accepted root, certain=False)
+    Note over B: lease.root = highest reported root (phase-1 value), lease uncertain
+    B->>C: query(ballot 0)
+    B->>D: query(ballot 0)
+    C-->>B: answer(accepted, committed, state=ok)
+    Note over B: recover_root ends at a majority of witnesses (1b3a188, D46)
+    Note over B: base = max(lease.root, recovery result) in root order (R127, 276a256)
+    alt base not known committed
+        B->>C: replicate(an unchanged root on top of the base, with the base's records) (D46, R50)
+        Note over B: base records on no reachable member and not in the store:<br/>_BaseUnreachable, permission ends unknown, owner abandons (O6, R133, db1a4c8)
+    end
+    Note over B: builds and commits as in the commit path

@@ -1,0 +1,17 @@
+%% A term at its owner (_Ownership, _own_loop).
+stateDiagram-v2
+    [*] --> Requested: request(ballot) to the voters
+    Requested --> Lost: no majority, or a reported label at or above the term
+    Lost --> [*]: cancel release(held=False), back off
+    Requested --> Serving: majority granted before sent_at + D - m
+    Serving --> Serving: renew at belief/2 with demand (D50), permits by O1-O3, O5, O7
+    Serving --> Abandoned: O4 or O6 (unknown, foreign done, late done, base unreachable)
+    Serving --> Expired: lease ended (renewal failed)
+    Serving --> Idle: empty pipeline and queue, no demand for lease_duration/4 (O8)
+    Serving --> Draining: owner_idle_release passed (R80, off by default)
+    Draining --> Idle: outstanding permissions done
+    Expired --> Abandoned: a permission still outstanding (I3)
+    Abandoned --> Released: release(certain=False), queue refused "abandoned"
+    Expired --> Released: release
+    Idle --> Released: release(certain = not suspect)
+    Released --> [*]

@@ -1,0 +1,25 @@
+%% Local snapshot read against a linearizable read (R106 addendum).
+sequenceDiagram
+    autonumber
+    participant T as Client thread (node B)
+    participant B as Node B
+    participant O as Owner of the term
+    participant V as Voters
+    rect rgba(127,127,127,0.12)
+    Note over T,V: local snapshot read (no message)
+    T->>B: new_transaction()
+    B-->>T: snapshot of the newest committed root B knows (D46)
+    Note over B: committed root learnt from done, release,<br/>own commits and permits (D50)<br/>may miss a commit acknowledged elsewhere<br/>a moment ago (R113)
+    end
+    rect rgba(127,127,127,0.12)
+    Note over T,V: linearizable read: a barrier commit, then a snapshot (D46 amendment, Task 8.3n)
+    T->>B: db.run(write one root, e.g. _read_barrier)
+    B->>O: permit_req
+    O-->>B: permit(base: newest root the owner knows committed, or a proposal)
+    Note over B: base at or above every acknowledged commit (S4, R127)
+    B->>V: replicate(barrier root on that base)
+    V-->>B: majority acknowledges
+    B-->>T: run() returns normally (unknown outcome or timeout raise: no barrier)
+    T->>B: new_transaction()
+    B-->>T: snapshot at or above the barrier root
+    end

@@ -1,0 +1,22 @@
+%% Rejoin of a node that lost its disk: a ballot, not a wait (R78a).
+sequenceDiagram
+    autonumber
+    participant W as Node W (empty acceptor log)
+    participant X as Witness X
+    participant Y as Witness Y
+    Note over W: no rejoined marker: grants nothing, acknowledges nothing,<br/>answers state=empty (D46 fix round 3)
+    W->>X: query(ballot 0)
+    W->>Y: query(ballot 0)
+    X-->>W: answer(accepted, committed, promised, state=ok)
+    Y-->>W: answer(...)
+    Note over W: N - majority + 1 witnesses answered (or a first start: "new")<br/>ballot = ballot_after(highest term reported, rank W)
+    W->>X: query(ballot)
+    W->>Y: query(ballot)
+    Note over X: promise(ballot) in memory, read accepted root under the acceptor-log lock (R55),<br/>fsync the promise, THEN answer (R78a)<br/>an active lower grant ends here: the current owner's term is over
+    X-->>W: answer(..., ballot echoed)
+    Y-->>W: answer(..., ballot echoed)
+    Note over W: count only answers that echo the ballot (GATHER_ATTEMPTS asks)
+    W->>X: fetch records of the highest accepted root (R50)
+    X-->>W: fetched(records)
+    Note over W: log promise, accepted root, rejoined marker, in that order<br/>replicate only at terms at or above the ballot (D50 amendment)
+    Note over W: a witness again: grants and acknowledges

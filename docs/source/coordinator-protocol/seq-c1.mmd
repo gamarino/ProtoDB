@@ -1,0 +1,32 @@
+%% The 8.3n round 3 counterexample (finding C1): a recovery round ended at a majority loses an acknowledged commit.
+sequenceDiagram
+    autonumber
+    participant E as e (owner of T' = 4100)
+    participant B as b
+    participant C as c
+    participant D as d
+    participant A as a (owner of T = 8192)
+    Note over E: granted T' by b and c, its timer stands still (rate fault or suspend)
+    E->>B: replicate(T', R')
+    Note over B: accepts R'
+    E-)C: replicate(T', R') held back by the network
+    Note over B,D: real time passes the promises b and c made to e
+    A->>B: request(T)
+    A->>D: request(T)
+    B-->>A: grant(accepted R')
+    D-->>A: grant(accepted r1)
+    Note over A: phase 1: lease.root = R', lease not certain
+    A->>C: query(ballot 0): promises nothing
+    A->>D: query(ballot 0)
+    C-->>A: answer(r1)
+    D-->>A: answer(r1)
+    Note over A: majority of witnesses (a, c, d): round ends, result r1 (1b3a188)
+    E-)C: the delayed replicate(T', R') arrives
+    Note over C: c promised nothing to T, accepts R'
+    C-->>E: ack
+    Note over E: b, c, e acknowledged, its own timer says the lease is valid:<br/>R' ACKNOWLEDGED
+    Note over A: BEFORE the fix: base = r1, the phase-1 value ignored
+    A->>C: replicate(T, root on r1)
+    A->>D: replicate(T, root on r1)
+    Note over D: first root of a newer term:<br/>accepted over R' by the ballot rule alone<br/>R' is lost from the history
+    Note over A: AFTER the fix (R127, 276a256): base = max(R', r1) = R', so R' is kept
