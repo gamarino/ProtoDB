@@ -18,7 +18,9 @@ against the model.  ``--profile`` writes a cProfile listing (by total time) of o
 ``--patch class_defines_fast`` (an experiment, not a product change) replaces
 ``proto_db.core.atom.class_defines`` with ``hasattr(cls, name) and <the MRO walk>`` before the
 run: the same answer (a name that some class of the MRO defines is always found by ``hasattr``
-on the class), with the walk only for names the class has at all.
+on the class), with the walk only for names the class has at all.  ``--patch
+pointer_hash_cached`` (also an experiment) makes ``AtomPointer.__hash__`` compute the frozen
+dataclass's field hash once per pointer and keep it.  Patches combine with commas.
 """
 import argparse
 import json
@@ -43,7 +45,20 @@ def main() -> None:
     ap.add_argument("--profile")
     ap.add_argument("--patch", default="")
     args = ap.parse_args()
-    if args.patch == "class_defines_fast":
+    patches = set(args.patch.split(",")) - {""}
+    if "pointer_hash_cached" in patches:
+        from proto_db.core.atom import AtomPointer
+        field_hash = AtomPointer.__hash__
+
+        def cached_hash(self):
+            d = self.__dict__
+            h = d.get("_hash")
+            if h is None:
+                h = field_hash(self)
+                object.__setattr__(self, "_hash", h)
+            return h
+        AtomPointer.__hash__ = cached_hash
+    if "class_defines_fast" in patches:
         from proto_db.core import atom as atom_module
         from proto_db.core import dbobject as dbobject_module
 
