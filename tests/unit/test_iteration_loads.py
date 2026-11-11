@@ -69,3 +69,36 @@ def test_a_small_cache_loads_each_node_once_per_walk(directory, walk):
     small_total, small = _pass_loads(directory, 8, walk)
     assert small_total == total
     assert small == cold
+
+
+def test_the_weighted_seek_loads_each_node_once(directory, tmp_path):
+    # Review of R128, m4: key_iter_from_weight walks CountedKeyNode trees (the key-group indexes'
+    # groups), where the seek counts a node's own positions without loading its far child.
+    import shutil
+    path = str(tmp_path / "indexed")
+    shutil.copytree(directory, path)
+    from proto_db.indexing import EqualityIndex
+    from proto_db.indexing.keyspec import KeySpec
+    space = ObjectSpace(FileStorage(path))
+    with space.open_database("d").new_transaction() as tr:
+        tr.set_root_object("items", tr.get_root_object("items").add_index(EqualityIndex("by_i", KeySpec.path("i"))))
+    space.close()
+
+    def loads(entries):
+        space = ObjectSpace(FileStorage(path), atom_cache_entries=entries)
+        try:
+            db = space.open_database("d")
+            before = space.atom_cache_stats()["loads"]
+            tr = db.new_transaction()
+            groups = tr.get_root_object("items").get_index("by_i").groups
+            total = 0
+            for _, (members, _), _ in avl.key_iter_from_weight(groups, 11):
+                for _, (record, _) in avl.key_iter(members):
+                    total += _consume(record)
+            tr.abort()
+            return total, space.atom_cache_stats()["loads"] - before
+        finally:
+            space.close()
+    total, cold = loads(100_000)
+    small_total, small = loads(8)
+    assert small_total == total and small == cold

@@ -27,8 +27,10 @@ Backends (stateless strategy objects; all state lives in the immutable index):
   forces the pure-Python path.
 * ``ivf_flat`` -- persisted ``centroids`` (in the index atom) and inverted
   lists (the index store is keyed by ``(list number, member key)``).  Training
-  (deterministic k-means: the same vectors and ``seed`` give the same centroids, whatever the
-  members' oids or insertion order) happens in ``build`` and when the store
+  (deterministic k-means: training depends on the training vectors and ``seed`` only, never on
+  the members' oids; a bulk ``build`` trains on all its vectors, so the same vectors give the same
+  centroids in any order, while an index grown by inserts trains on the members present when a
+  threshold is reached, which depends on the insertion order) happens in ``build`` and when the store
   grows: an untrained index (fewer than ``nlist`` vectors) keeps everything in
   list -1, scanned exhaustively; the index retrains itself when it first holds
   ``nlist`` vectors and whenever it reaches ``retrain_growth`` times the size it
@@ -648,6 +650,8 @@ class IvfFlatBackend(_Backend):
         # The training order is the vectors' own (R128): members arrive in member-key order,
         # which for atoms follows their oids (fresh on every run), so sampling from it made the
         # centroids, and the recall at nprobe < nlist, differ between runs on the same data.
+        # Which vectors are trained on is the caller's: all of them for a bulk build, the members
+        # present at a retrain threshold for an index grown by inserts.
         data = sorted(vectors, key=_training_order)
         if index.metric == "cosine":
             data = [_normalized(v) for v in data]

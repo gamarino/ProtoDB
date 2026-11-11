@@ -87,8 +87,9 @@ The design is `docs/superpowers/specs/2026-11-01-protodb-v2-design.md`; every de
   and a key-ordered Dictionary also loses other keys. `collection.validate()` now detects it
   (`ProtoMisfiledError`, a `ProtoCorruptionError`) and `tx.set_root_object(name, collection.rebuilt())`
   repairs it (entries refiled, indexes rebuilt; one key with two different values is refused, never dropped).
-- IVF-Flat training no longer depends on the members' oids or insertion order (R128, 012db7f): the same
-  vectors and `seed` give the same centroids and the same answers. An `ivf_flat` index built before 012db7f
+- IVF-Flat training no longer depends on the members' oids (R128, 012db7f): a bulk build of the same vectors
+  with the same `seed` gives the same centroids and the same answers, in any order (an index grown by inserts
+  still trains on the members present at each retrain threshold, which depends on the insertion order). An `ivf_flat` index built before 012db7f
   keeps its persisted centroids until it retrains; at its next retrain (or rebuild) it gets different
   centroids than that same data gave before, and stable ones from then on. No format change.
 
