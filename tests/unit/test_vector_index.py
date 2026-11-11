@@ -259,6 +259,26 @@ def test_ivf_flat_partial_probe_has_good_recall_and_widens_for_k():
     assert len(list(ivf.plan(near(random_vector(rng, 16), k=1500)).execute())) == 1500
 
 
+@pytest.mark.parametrize("metric", ["l2", "cosine"])
+def test_ivf_flat_training_depends_on_the_data_and_seed_only(metric):
+    # R128: the same vectors and seed give the same centroids and the same answers, whatever the
+    # elements' oids (fresh on every run) and insertion order; another seed may train elsewhere.
+    def build(order_seed, seed=0):
+        elements = records(random.Random(11), 600, 8)
+        random.Random(order_seed).shuffle(elements)
+        return VectorIndex("v", "vec", 8, metric=metric, backend="ivf_flat", nlist=12, nprobe=2,
+                           seed=seed).build(elements)
+    first = build(1)
+    rng = random.Random(3)
+    queries = [random_vector(rng, 8) for _ in range(20)]
+    answers = [sorted(e.i for e in first.plan(near(q, k=10)).execute()) for q in queries]
+    for order_seed in (1, 2, 3):
+        again = build(order_seed)
+        assert again.centroids == first.centroids
+        assert [sorted(e.i for e in again.plan(near(q, k=10)).execute()) for q in queries] == answers
+    assert build(1, seed=7).centroids != first.centroids
+
+
 def test_ivf_flat_round_trip_through_file_storage_keeps_centroids(tmp_path):
     rng = random.Random(9)
     elements = records(rng, 120, 5)
