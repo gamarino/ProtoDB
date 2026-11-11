@@ -40,8 +40,8 @@ records and collections. Anything else is refused when you build the record, not
 .. code-block:: text
    :caption: Output
 
-   refused: Unsupported value type: function
-   refused: Unsupported value type: set
+   refused: Field 'callback' of proto_db.core.dbobject.DBObject: Unsupported value type: function
+   refused: Field 'tags' of proto_db.core.dbobject.DBObject: Unsupported value type: set
    A-1 ['gift', 'express']
    a stored list is frozen: ProtoValidationError
 

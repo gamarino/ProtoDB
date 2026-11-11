@@ -87,6 +87,10 @@ The design is `docs/superpowers/specs/2026-11-01-protodb-v2-design.md`; every de
   and a key-ordered Dictionary also loses other keys. `collection.validate()` now detects it
   (`ProtoMisfiledError`, a `ProtoCorruptionError`) and `tx.set_root_object(name, collection.rebuilt())`
   repairs it (entries refiled, indexes rebuilt; one key with two different values is refused, never dropped).
+- IVF-Flat training no longer depends on the members' oids or insertion order (R128, 012db7f): the same
+  vectors and `seed` give the same centroids and the same answers. An `ivf_flat` index built before 012db7f
+  keeps its persisted centroids until it retrains; at its next retrain (or rebuild) it gets different
+  centroids than that same data gave before, and stable ones from then on. No format change.
 
 ### Deprecated
 - The 0.1 exception names `ProtoBaseException`, `ProtoValidationException`, `ProtoUserException`,
@@ -100,6 +104,10 @@ The design is `docs/superpowers/specs/2026-11-01-protodb-v2-design.md`; every de
   (D47, D48; dropped tests: `docs/legacy/dropped-tests.md`). UDP voting is gone from the cloud storages (D5).
 
 ### Fixed
+- Saving a chain of unsaved versions built in one transaction (the `previous` pattern) no longer raises
+  `RecursionError` past about 150 links; 10,000 versions save in one commit, and the verifier describes them
+  (R128).
+
 Defects of the 0.1 code base found by the 2026-11-01 review, none of which survives the rebuild: integer
 values merged as `+1` and special cases for keys named `counter` and `k`; commits that were not durable;
 indexes lost on the first write; queries that silently returned empty or partial results; about 280 broad
@@ -114,8 +122,6 @@ indexes lost on the first write; queries that silently returned empty or partial
   transactions, is not guaranteed (open defect D-LIVE-2).
 - A read-only linearizable read (`read_barrier`) is proposed in the D46 amendment but not implemented; the
   barrier commit is the supported path.
-- Defect: saving a chain of more than about 150 unsaved versions built in one transaction (the `previous`
-  pattern) raises `RecursionError`, because a save recurses once per link. Reported for a product fix.
 
 ## Before 2.0
 
