@@ -1,8 +1,8 @@
 # Exercise: the lost acknowledged commit
 
 A planted-bug exercise on the ProtoDB cluster coordinator. The bug is real: an adversarial review found it in
-this code (finding C1 of the second re-review of Task 8.3n), and it was fixed. The exercise puts it back in a scratch copy of the repository, gives you a test that fails, and asks you to find out why and
-to fix it.
+this code (finding C1 of the second re-review of Task 8.3n), and it was fixed. The exercise puts it back in a scratch copy of the repository, gives you a test that
+fails, and asks you to find out why and to fix it.
 
 Expected effort: two to four hours for a student who has seen Paxos or Raft. Solving it does not require reading
 the whole coordinator (about 4,300 lines); it requires one function and one argument.
@@ -27,7 +27,8 @@ answer, and do not read the git history of the repository's cluster code. A few 
 the copy may still hint at it; work from the code and the failing test.
 
 The test needs Python 3.11 or later and the test dependencies of the repository (`pytest`, `pytest-timeout`).
-It runs in under a second.
+On the planted copy it runs in under a second. A fix that is safe but stalls the recovery round takes
+about 5 seconds, because the test waits a bounded time for replication to finish.
 
 ## The setting
 
