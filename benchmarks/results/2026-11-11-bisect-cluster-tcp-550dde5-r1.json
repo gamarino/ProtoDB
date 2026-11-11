@@ -1,0 +1,901 @@
+{
+ "schema": 1,
+ "mode": "full",
+ "environment": {
+  "timestamp": "2026-11-11T03:39:12+00:00",
+  "cpu_model": "AMD Ryzen 5 5500U with Radeon Graphics",
+  "cpu_count": 12,
+  "cpu_affinity": 12,
+  "cpu_frequency": {
+   "governor": "powersave",
+   "driver": "amd-pstate-epp",
+   "energy_performance_preference": "balance_power",
+   "boost": "1"
+  },
+  "platform": "Linux-7.0.0-43-generic-x86_64-desconocido-with-glibc2.43",
+  "python": "3.14.6",
+  "python_implementation": "CPython",
+  "free_threaded_build": true,
+  "gil_enabled": false,
+  "xoptions": {
+   "gil": "0"
+  },
+  "proto_db": "2.0.0.dev0",
+  "git": {
+   "commit": "550dde5",
+   "commit_full": "550dde572ec18c85ce958e163d71dd41d43660a4",
+   "dirty": false,
+   "clean": true,
+   "source": "git archive export",
+   "changed": [],
+   "missing": [],
+   "added": []
+  },
+  "sqlite": "3.53.1",
+  "numpy": "2.5.4",
+  "hnswlib": "0.8.0",
+  "workdir": "/home/gamarino/Documentos/proyectos/scratch-8.3n/9c/run-bisect",
+  "workdir_fs": "zfs",
+  "rqlite": null
+ },
+ "check": {
+  "stray_processes": [],
+  "checked_at": "2026-11-11T00:39:12-0300",
+  "workdir_free_bytes": 1073065361408
+ },
+ "options": {
+  "threads": [
+   1,
+   2,
+   4,
+   8,
+   16
+  ],
+  "repeat": 5,
+  "warmup": 1,
+  "params": {}
+ },
+ "total_s": 108.3502867979987,
+ "results": {
+  "cluster_tcp": {
+   "status": "ok",
+   "work": {
+    "peers": [
+     1,
+     2,
+     3,
+     4,
+     8
+    ],
+    "threads_per_peer": 4,
+    "seconds": 3.0,
+    "durability": "fsync (local tier) for the peer sweep",
+    "durability_sweep": {
+     "peers": 3,
+     "modes": [
+      "flush",
+      "none"
+     ]
+    },
+    "commit": "blind add of one id"
+   },
+   "checksum": {
+    "1 peer(s)": true,
+    "2 peer(s)": true,
+    "3 peer(s)": true,
+    "4 peer(s)": true,
+    "8 peer(s)": true,
+    "3 peer(s), durability=flush": true,
+    "3 peer(s), durability=none": true,
+    "3 peer(s), payload 100 B": true,
+    "3 peer(s), payload 10240 B": true,
+    "3 peer(s), payload 102400 B": true
+   },
+   "expected": {
+    "1 peer(s)": true,
+    "2 peer(s)": true,
+    "3 peer(s)": true,
+    "4 peer(s)": true,
+    "8 peer(s)": true,
+    "3 peer(s), durability=flush": true,
+    "3 peer(s), durability=none": true,
+    "3 peer(s), payload 100 B": true,
+    "3 peer(s), payload 10240 B": true,
+    "3 peer(s), payload 102400 B": true
+   },
+   "checks": [
+    {
+     "name": "1 peer(s): persisted state holds exactly the acknowledged ids",
+     "ok": true,
+     "detail": ""
+    },
+    {
+     "name": "2 peer(s): persisted state holds exactly the acknowledged ids",
+     "ok": true,
+     "detail": ""
+    },
+    {
+     "name": "3 peer(s): persisted state holds exactly the acknowledged ids",
+     "ok": true,
+     "detail": ""
+    },
+    {
+     "name": "4 peer(s): persisted state holds exactly the acknowledged ids",
+     "ok": true,
+     "detail": ""
+    },
+    {
+     "name": "8 peer(s): persisted state holds exactly the acknowledged ids",
+     "ok": true,
+     "detail": ""
+    },
+    {
+     "name": "3 peer(s), durability=flush: persisted state holds exactly the acknowledged ids",
+     "ok": true,
+     "detail": ""
+    },
+    {
+     "name": "3 peer(s), durability=none: persisted state holds exactly the acknowledged ids",
+     "ok": true,
+     "detail": ""
+    },
+    {
+     "name": "3 peer(s), payload 100 B: persisted state holds exactly the acknowledged ids and values",
+     "ok": true,
+     "detail": ""
+    },
+    {
+     "name": "3 peer(s), payload 10240 B: persisted state holds exactly the acknowledged ids and values",
+     "ok": true,
+     "detail": ""
+    },
+    {
+     "name": "3 peer(s), payload 102400 B: persisted state holds exactly the acknowledged ids and values",
+     "ok": true,
+     "detail": ""
+    }
+   ],
+   "timings": {
+    "commits/s, 1 TCP peer(s) x 4 threads": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      307.8319060079072,
+      165.9255405802464,
+      228.55868107268628
+     ],
+     "n": 3,
+     "median": 228.55868107268628,
+     "p95": null,
+     "min": 165.9255405802464,
+     "max": 307.8319060079072,
+     "mean": 234.10537588694663,
+     "tail_label": "min",
+     "tail": 165.9255405802464
+    },
+    "commits/s, 2 TCP peer(s) x 4 threads": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      343.0674442763507,
+      350.2313218464699,
+      355.1434616314108
+     ],
+     "n": 3,
+     "median": 350.2313218464699,
+     "p95": null,
+     "min": 343.0674442763507,
+     "max": 355.1434616314108,
+     "mean": 349.48074258474384,
+     "tail_label": "min",
+     "tail": 343.0674442763507
+    },
+    "commits/s, 3 TCP peer(s) x 4 threads": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      351.250536598382,
+      359.80901250601585,
+      353.0532404157292
+     ],
+     "n": 3,
+     "median": 353.0532404157292,
+     "p95": null,
+     "min": 351.250536598382,
+     "max": 359.80901250601585,
+     "mean": 354.7042631733757,
+     "tail_label": "min",
+     "tail": 351.250536598382
+    },
+    "commits/s, 4 TCP peer(s) x 4 threads": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      334.27740570001265,
+      334.0457616504227,
+      275.13378306546
+     ],
+     "n": 3,
+     "median": 334.0457616504227,
+     "p95": null,
+     "min": 275.13378306546,
+     "max": 334.27740570001265,
+     "mean": 314.4856501386318,
+     "tail_label": "min",
+     "tail": 275.13378306546
+    },
+    "commits/s, 8 TCP peer(s) x 4 threads": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      257.1712386770619,
+      243.86813170927354,
+      244.2649529194565
+     ],
+     "n": 3,
+     "median": 244.2649529194565,
+     "p95": null,
+     "min": 243.86813170927354,
+     "max": 257.1712386770619,
+     "mean": 248.434774435264,
+     "tail_label": "min",
+     "tail": 243.86813170927354
+    },
+    "commits/s, 3 TCP peer(s) x 4 threads, durability=flush": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      320.0343312810801,
+      327.2155507459992,
+      312.3807410948706
+     ],
+     "n": 3,
+     "median": 320.0343312810801,
+     "p95": null,
+     "min": 312.3807410948706,
+     "max": 327.2155507459992,
+     "mean": 319.8768743739833,
+     "tail_label": "min",
+     "tail": 312.3807410948706
+    },
+    "commits/s, 3 TCP peer(s) x 4 threads, durability=none": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      296.8788734541704,
+      324.2371943949386,
+      319.5028069296607
+     ],
+     "n": 3,
+     "median": 319.5028069296607,
+     "p95": null,
+     "min": 296.8788734541704,
+     "max": 324.2371943949386,
+     "mean": 313.5396249262566,
+     "tail_label": "min",
+     "tail": 296.8788734541704
+    },
+    "commits/s, 3 peer(s), payload 100 B": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      233.4476099593368,
+      234.26450363163502,
+      235.72679278858382
+     ],
+     "n": 3,
+     "median": 234.26450363163502,
+     "p95": null,
+     "min": 233.4476099593368,
+     "max": 235.72679278858382,
+     "mean": 234.4796354598519,
+     "tail_label": "min",
+     "tail": 233.4476099593368
+    },
+    "commits/s, 3 peer(s), payload 10240 B": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      226.7438649775755,
+      226.7347487422263,
+      226.75162145284517
+     ],
+     "n": 3,
+     "median": 226.7438649775755,
+     "p95": null,
+     "min": 226.7347487422263,
+     "max": 226.75162145284517,
+     "mean": 226.74341172421566,
+     "tail_label": "min",
+     "tail": 226.7347487422263
+    },
+    "commits/s, 3 peer(s), payload 102400 B": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      196.3633907165465,
+      186.24753099231486,
+      194.92475715757362
+     ],
+     "n": 3,
+     "median": 194.92475715757362,
+     "p95": null,
+     "min": 186.24753099231486,
+     "max": 196.3633907165465,
+     "mean": 192.51189295547832,
+     "tail_label": "min",
+     "tail": 186.24753099231486
+    }
+   },
+   "metrics": {
+    "1 peer(s): commit latency ms (all peers)": {
+     "p50": 12.75,
+     "p95": 46.22
+    },
+    "1 peer(s): commit latency ms per peer": [
+     {
+      "p50": 12.75,
+      "p95": 46.22
+     }
+    ],
+    "1 peer(s): lease acquisitions tried per commit": 0.0,
+    "1 peer(s): critical section ms per commit": {
+     "validation": 0.031,
+     "replay": 0.147,
+     "path_copy": 1.384,
+     "replication": 5.501
+    },
+    "1 peer(s): commits per peer, each run": [
+     [
+      929
+     ],
+     [
+      505
+     ],
+     [
+      690
+     ]
+    ],
+    "1 peer(s): syncs per commit by role (median run)": {
+     "committer": 0.53,
+     "persister": 0.41
+    },
+    "1 peer(s): syncs per commit, total (median run)": 0.94,
+    "1 peer(s): syncs after the window until persisted (median run)": {
+     "committer": 0,
+     "persister": 1
+    },
+    "1 peer(s): syncs per commit by call site (median run)": {
+     "committer: fsync cluster.rootlog._write:565 <- cluster.rootlog.append_records:484 (entry transactions.run)": 0.5,
+     "persister: fsync storage.file.fsync:158 <- storage.file._write_out:406 (entry cluster.persister._run)": 0.11,
+     "persister: fsync storage.file.fsync_dir:174 <- storage.file._write_out:409 (entry cluster.persister._run)": 0.06,
+     "persister: fsync storage.file.fsync_dir:174 <- storage.file.sync:474 (entry cluster.persister._run)": 0.05,
+     "persister: fsync storage.tiered._checkpoint_data:1390 <- storage.tiered.checkpoint:1364 (entry cluster.persister._run)": 0.05,
+     "persister: fsync storage.logfile.prepare_replacement:330 <- cluster.rootlog._compact:606 (entry cluster.persister._run)": 0.05,
+     "persister: fsync storage.logfile.fsync_dir:255 <- cluster.rootlog._compact:610 (entry cluster.persister._run)": 0.05,
+     "committer: fsync storage.tiered._sync_manifest:1295 <- storage.tiered.accept_replication:1337 (entry transactions.run)": 0.03,
+     "persister: fsync storage.tiered.flush:1046 <- storage.tiered.ship:1895 (entry cluster.persister._run)": 0.03,
+     "persister: fsync storage.tiered._sync_manifest:1295 <- storage.tiered._checkpoint_data:1391 (entry cluster.persister._run)": 0.0
+    },
+    "2 peer(s): commit latency ms (all peers)": {
+     "p50": 20.03,
+     "p95": 39.59
+    },
+    "2 peer(s): commit latency ms per peer": [
+     {
+      "p50": 20.0,
+      "p95": 39.49
+     },
+     {
+      "p50": 20.05,
+      "p95": 41.4
+     }
+    ],
+    "2 peer(s): lease acquisitions tried per commit": 0.01,
+    "2 peer(s): critical section ms per commit": {
+     "validation": 0.199,
+     "replay": 0.545,
+     "path_copy": 1.379,
+     "replication": 8.964
+    },
+    "2 peer(s): commits per peer, each run": [
+     [
+      505,
+      533
+     ],
+     [
+      544,
+      514
+     ],
+     [
+      550,
+      523
+     ]
+    ],
+    "2 peer(s): syncs per commit by role (median run)": {
+     "committer": 0.35,
+     "follower": 0.31,
+     "persister": 0.42
+    },
+    "2 peer(s): syncs per commit, total (median run)": 1.07,
+    "2 peer(s): syncs after the window until persisted (median run)": {
+     "follower": 1,
+     "committer": 0,
+     "persister": 5
+    },
+    "2 peer(s): syncs per commit by call site (median run)": {
+     "committer: fsync cluster.rootlog._write:565 <- cluster.rootlog.append_records:484 (entry transactions.run)": 0.31,
+     "follower: fsync cluster.rootlog._write:565 <- cluster.rootlog.append_records:484 (entry cluster.coordinator._work)": 0.31,
+     "persister: fsync storage.file.fsync:158 <- storage.file._write_out:406 (entry cluster.persister._run)": 0.11,
+     "persister: fsync storage.tiered._checkpoint_data:1385 <- storage.tiered.checkpoint:1364 (entry cluster.persister._run)": 0.09,
+     "persister: fsync storage.file.fsync_dir:174 <- storage.file._write_out:409 (entry cluster.persister._run)": 0.07,
+     "persister: fsync storage.tiered.flush:1046 <- storage.tiered.ship:1895 (entry cluster.persister._run)": 0.04,
+     "committer: fsync storage.tiered._sync_manifest:1295 <- storage.tiered.accept_replication:1337 (entry transactions.run)": 0.03,
+     "persister: fsync storage.file.fsync_dir:174 <- storage.file.sync:474 (entry cluster.persister._run)": 0.02,
+     "persister: fsync storage.tiered._checkpoint_data:1390 <- storage.tiered.checkpoint:1364 (entry cluster.persister._run)": 0.02,
+     "persister: fsync storage.logfile.prepare_replacement:330 <- cluster.rootlog._compact:606 (entry cluster.persister._run)": 0.02,
+     "persister: fsync storage.logfile.fsync_dir:255 <- cluster.rootlog._compact:610 (entry cluster.persister._run)": 0.02,
+     "persister: fsync storage.tiered._fsync_dir:1778 <- storage.tiered._checkpoint_data:1393 (entry cluster.persister._run)": 0.02,
+     "persister: fsync storage.tiered._sync_manifest:1295 <- storage.tiered._checkpoint_data:1391 (entry cluster.persister._run)": 0.0
+    },
+    "3 peer(s): commit latency ms (all peers)": {
+     "p50": 31.88,
+     "p95": 50.75
+    },
+    "3 peer(s): commit latency ms per peer": [
+     {
+      "p50": 32.53,
+      "p95": 49.02
+     },
+     {
+      "p50": 31.75,
+      "p95": 53.84
+     },
+     {
+      "p50": 31.7,
+      "p95": 50.75
+     }
+    ],
+    "3 peer(s): lease acquisitions tried per commit": 0.01,
+    "3 peer(s): critical section ms per commit": {
+     "validation": 0.237,
+     "replay": 0.642,
+     "path_copy": 1.272,
+     "replication": 9.209
+    },
+    "3 peer(s): commits per peer, each run": [
+     [
+      356,
+      356,
+      356
+     ],
+     [
+      364,
+      364,
+      364
+     ],
+     [
+      360,
+      360,
+      360
+     ]
+    ],
+    "3 peer(s): syncs per commit by role (median run)": {
+     "committer": 0.4,
+     "follower": 0.58,
+     "persister": 0.49
+    },
+    "3 peer(s): syncs per commit, total (median run)": 1.47,
+    "3 peer(s): syncs after the window until persisted (median run)": {
+     "follower": 2,
+     "committer": 0,
+     "persister": 7
+    },
+    "3 peer(s): syncs per commit by call site (median run)": {
+     "follower: fsync cluster.rootlog._write:565 <- cluster.rootlog.append_records:484 (entry cluster.coordinator._work)": 0.58,
+     "committer: fsync cluster.rootlog._write:565 <- cluster.rootlog.append_records:484 (entry transactions.run)": 0.33,
+     "persister: fsync storage.file.fsync:158 <- storage.file._write_out:406 (entry cluster.persister._run)": 0.15,
+     "persister: fsync storage.tiered._checkpoint_data:1385 <- storage.tiered.checkpoint:1364 (entry cluster.persister._run)": 0.11,
+     "persister: fsync storage.file.fsync_dir:174 <- storage.file._write_out:409 (entry cluster.persister._run)": 0.1,
+     "committer: fsync storage.tiered._sync_manifest:1295 <- storage.tiered.accept_replication:1337 (entry transactions.run)": 0.07,
+     "persister: fsync storage.tiered.flush:1046 <- storage.tiered.ship:1895 (entry cluster.persister._run)": 0.03,
+     "persister: fsync storage.file.fsync_dir:174 <- storage.file.sync:474 (entry cluster.persister._run)": 0.02,
+     "persister: fsync storage.tiered._checkpoint_data:1390 <- storage.tiered.checkpoint:1364 (entry cluster.persister._run)": 0.02,
+     "persister: fsync storage.tiered._fsync_dir:1778 <- storage.tiered._checkpoint_data:1393 (entry cluster.persister._run)": 0.02,
+     "persister: fsync storage.logfile.prepare_replacement:330 <- cluster.rootlog._compact:606 (entry cluster.persister._run)": 0.02,
+     "persister: fsync storage.logfile.fsync_dir:255 <- cluster.rootlog._compact:610 (entry cluster.persister._run)": 0.02,
+     "persister: fsync storage.tiered._sync_manifest:1295 <- storage.tiered._checkpoint_data:1391 (entry cluster.persister._run)": 0.0
+    },
+    "4 peer(s): commit latency ms (all peers)": {
+     "p50": 44.06,
+     "p95": 76.84
+    },
+    "4 peer(s): commit latency ms per peer": [
+     {
+      "p50": 44.6,
+      "p95": 81.86
+     },
+     {
+      "p50": 43.78,
+      "p95": 78.29
+     },
+     {
+      "p50": 43.78,
+      "p95": 70.54
+     },
+     {
+      "p50": 44.72,
+      "p95": 77.01
+     }
+    ],
+    "4 peer(s): lease acquisitions tried per commit": 0.02,
+    "4 peer(s): critical section ms per commit": {
+     "validation": 0.129,
+     "replay": 0.822,
+     "path_copy": 1.388,
+     "replication": 11.362
+    },
+    "4 peer(s): commits per peer, each run": [
+     [
+      256,
+      256,
+      252,
+      256
+     ],
+     [
+      256,
+      256,
+      252,
+      252
+     ],
+     [
+      212,
+      208,
+      212,
+      208
+     ]
+    ],
+    "4 peer(s): syncs per commit by role (median run)": {
+     "committer": 0.38,
+     "follower": 0.56,
+     "persister": 0.71
+    },
+    "4 peer(s): syncs per commit, total (median run)": 1.64,
+    "4 peer(s): syncs after the window until persisted (median run)": {
+     "follower": 3,
+     "committer": 0,
+     "persister": 5
+    },
+    "4 peer(s): syncs per commit by call site (median run)": {
+     "follower: fsync cluster.rootlog._write:565 <- cluster.rootlog.append_records:484 (entry cluster.coordinator._work)": 0.56,
+     "committer: fsync cluster.rootlog._write:565 <- cluster.rootlog.append_records:484 (entry transactions.run)": 0.3,
+     "persister: fsync storage.file.fsync:158 <- storage.file._write_out:406 (entry cluster.persister._run)": 0.2,
+     "persister: fsync storage.tiered._checkpoint_data:1385 <- storage.tiered.checkpoint:1364 (entry cluster.persister._run)": 0.15,
+     "persister: fsync storage.file.fsync_dir:174 <- storage.file._write_out:409 (entry cluster.persister._run)": 0.13,
+     "committer: fsync storage.tiered._sync_manifest:1295 <- storage.tiered.accept_replication:1337 (entry transactions.run)": 0.08,
+     "persister: fsync storage.tiered.flush:1046 <- storage.tiered.ship:1895 (entry cluster.persister._run)": 0.04,
+     "persister: fsync storage.file.fsync_dir:174 <- storage.file.sync:474 (entry cluster.persister._run)": 0.03,
+     "persister: fsync storage.tiered._checkpoint_data:1390 <- storage.tiered.checkpoint:1364 (entry cluster.persister._run)": 0.03,
+     "persister: fsync storage.logfile.prepare_replacement:330 <- cluster.rootlog._compact:606 (entry cluster.persister._run)": 0.03,
+     "persister: fsync storage.logfile.fsync_dir:255 <- cluster.rootlog._compact:610 (entry cluster.persister._run)": 0.03,
+     "persister: fsync storage.tiered._fsync_dir:1778 <- storage.tiered._checkpoint_data:1393 (entry cluster.persister._run)": 0.03,
+     "persister: fsync storage.tiered._sync_manifest:1295 <- storage.tiered._checkpoint_data:1391 (entry cluster.persister._run)": 0.01
+    },
+    "8 peer(s): commit latency ms (all peers)": {
+     "p50": 111.45,
+     "p95": 248.52
+    },
+    "8 peer(s): commit latency ms per peer": [
+     {
+      "p50": 116.18,
+      "p95": 251.25
+     },
+     {
+      "p50": 109.7,
+      "p95": 240.86
+     },
+     {
+      "p50": 109.74,
+      "p95": 215.22
+     },
+     {
+      "p50": 112.02,
+      "p95": 249.39
+     },
+     {
+      "p50": 111.72,
+      "p95": 259.18
+     },
+     {
+      "p50": 111.22,
+      "p95": 241.95
+     },
+     {
+      "p50": 111.72,
+      "p95": 225.66
+     },
+     {
+      "p50": 113.41,
+      "p95": 248.93
+     }
+    ],
+    "8 peer(s): lease acquisitions tried per commit": 0.09,
+    "8 peer(s): critical section ms per commit": {
+     "validation": 0.224,
+     "replay": 1.13,
+     "path_copy": 1.819,
+     "replication": 12.107
+    },
+    "8 peer(s): commits per peer, each run": [
+     [
+      104,
+      100,
+      100,
+      100,
+      100,
+      104,
+      104,
+      100
+     ],
+     [
+      100,
+      96,
+      96,
+      96,
+      96,
+      99,
+      96,
+      96
+     ],
+     [
+      100,
+      97,
+      96,
+      100,
+      96,
+      96,
+      96,
+      96
+     ]
+    ],
+    "8 peer(s): syncs per commit by role (median run)": {
+     "committer": 0.45,
+     "follower": 0.62,
+     "persister": 1.02
+    },
+    "8 peer(s): syncs per commit, total (median run)": 2.09,
+    "8 peer(s): syncs after the window until persisted (median run)": {
+     "persister": 53,
+     "committer": 0,
+     "follower": 8
+    },
+    "8 peer(s): syncs per commit by call site (median run)": {
+     "follower: fsync cluster.rootlog._write:565 <- cluster.rootlog.append_records:484 (entry cluster.coordinator._work)": 0.62,
+     "persister: fsync storage.file.fsync:158 <- storage.file._write_out:406 (entry cluster.persister._run)": 0.35,
+     "committer: fsync cluster.rootlog._write:565 <- cluster.rootlog.append_records:484 (entry transactions.run)": 0.26,
+     "persister: fsync storage.file.fsync_dir:174 <- storage.file._write_out:409 (entry cluster.persister._run)": 0.25,
+     "persister: fsync storage.tiered._checkpoint_data:1385 <- storage.tiered.checkpoint:1364 (entry cluster.persister._run)": 0.23,
+     "committer: fsync storage.tiered._sync_manifest:1295 <- storage.tiered.accept_replication:1337 (entry transactions.run)": 0.2,
+     "persister: fsync storage.tiered.flush:1046 <- storage.tiered.ship:1895 (entry cluster.persister._run)": 0.05,
+     "persister: fsync storage.file.fsync_dir:174 <- storage.file.sync:474 (entry cluster.persister._run)": 0.03,
+     "persister: fsync storage.tiered._checkpoint_data:1390 <- storage.tiered.checkpoint:1364 (entry cluster.persister._run)": 0.03,
+     "persister: fsync storage.logfile.prepare_replacement:330 <- cluster.rootlog._compact:606 (entry cluster.persister._run)": 0.03,
+     "persister: fsync storage.logfile.fsync_dir:255 <- cluster.rootlog._compact:610 (entry cluster.persister._run)": 0.03,
+     "persister: fsync storage.tiered._fsync_dir:1778 <- storage.tiered._checkpoint_data:1393 (entry cluster.persister._run)": 0.03,
+     "persister: fsync storage.tiered._sync_manifest:1295 <- storage.tiered._checkpoint_data:1391 (entry cluster.persister._run)": 0.0
+    },
+    "3 peer(s), durability=flush: commit latency ms (all peers)": {
+     "p50": 35.11,
+     "p95": 54.86
+    },
+    "3 peer(s), durability=flush: commit latency ms per peer": [
+     {
+      "p50": 35.09,
+      "p95": 59.1
+     },
+     {
+      "p50": 35.36,
+      "p95": 53.41
+     },
+     {
+      "p50": 34.97,
+      "p95": 54.41
+     }
+    ],
+    "3 peer(s), durability=flush: lease acquisitions tried per commit": 0.02,
+    "3 peer(s), durability=flush: critical section ms per commit": {
+     "validation": 0.244,
+     "replay": 0.748,
+     "path_copy": 1.508,
+     "replication": 10.909
+    },
+    "3 peer(s), durability=flush: commits per peer, each run": [
+     [
+      324,
+      324,
+      324
+     ],
+     [
+      332,
+      332,
+      332
+     ],
+     [
+      322,
+      319,
+      320
+     ]
+    ],
+    "3 peer(s), durability=flush: syncs per commit by role (median run)": {
+     "committer": 0.4,
+     "follower": 0.47,
+     "persister": 0.3
+    },
+    "3 peer(s), durability=flush: syncs per commit, total (median run)": 1.16,
+    "3 peer(s), durability=flush: syncs after the window until persisted (median run)": {
+     "follower": 1,
+     "committer": 0,
+     "persister": 3
+    },
+    "3 peer(s), durability=flush: syncs per commit by call site (median run)": {
+     "follower: fsync cluster.rootlog._write:565 <- cluster.rootlog.append_records:484 (entry cluster.coordinator._work)": 0.47,
+     "committer: fsync cluster.rootlog._write:565 <- cluster.rootlog.append_records:484 (entry transactions.run)": 0.31,
+     "persister: fsync storage.tiered._checkpoint_data:1385 <- storage.tiered.checkpoint:1364 (entry cluster.persister._run)": 0.09,
+     "committer: fsync storage.tiered._sync_manifest:1295 <- storage.tiered.accept_replication:1337 (entry transactions.run)": 0.09,
+     "persister: fsync storage.file.fsync:158 <- storage.file.sync:471 (entry cluster.persister._run)": 0.08,
+     "persister: fsync storage.file.fsync_dir:174 <- storage.file._write_out:409 (entry cluster.persister._run)": 0.02,
+     "persister: fsync storage.file.fsync_dir:174 <- storage.file.sync:474 (entry cluster.persister._run)": 0.02,
+     "persister: fsync storage.tiered._checkpoint_data:1390 <- storage.tiered.checkpoint:1364 (entry cluster.persister._run)": 0.02,
+     "persister: fsync storage.tiered._fsync_dir:1778 <- storage.tiered._checkpoint_data:1393 (entry cluster.persister._run)": 0.02,
+     "persister: fsync storage.logfile.prepare_replacement:330 <- cluster.rootlog._compact:606 (entry cluster.persister._run)": 0.02,
+     "persister: fsync storage.logfile.fsync_dir:255 <- cluster.rootlog._compact:610 (entry cluster.persister._run)": 0.02,
+     "persister: fsync storage.file.fsync:158 <- storage.file._write_out:406 (entry cluster.persister._run)": 0.01,
+     "persister: fsync storage.tiered._sync_manifest:1295 <- storage.tiered._checkpoint_data:1391 (entry cluster.persister._run)": 0.0
+    },
+    "3 peer(s), durability=none: commit latency ms (all peers)": {
+     "p50": 36.17,
+     "p95": 52.33
+    },
+    "3 peer(s), durability=none: commit latency ms per peer": [
+     {
+      "p50": 36.18,
+      "p95": 52.33
+     },
+     {
+      "p50": 36.17,
+      "p95": 51.9
+     },
+     {
+      "p50": 36.19,
+      "p95": 53.71
+     }
+    ],
+    "3 peer(s), durability=none: lease acquisitions tried per commit": 0.01,
+    "3 peer(s), durability=none: critical section ms per commit": {
+     "validation": 0.283,
+     "replay": 0.747,
+     "path_copy": 1.549,
+     "replication": 8.537
+    },
+    "3 peer(s), durability=none: commits per peer, each run": [
+     [
+      300,
+      300,
+      304
+     ],
+     [
+      328,
+      328,
+      328
+     ],
+     [
+      324,
+      324,
+      324
+     ]
+    ],
+    "3 peer(s), durability=none: syncs per commit by role (median run)": {
+     "committer": 0.38,
+     "follower": 0.55,
+     "persister": 0.43
+    },
+    "3 peer(s), durability=none: syncs per commit, total (median run)": 1.35,
+    "3 peer(s), durability=none: syncs after the window until persisted (median run)": {
+     "follower": 2,
+     "committer": 0,
+     "persister": 1
+    },
+    "3 peer(s), durability=none: syncs per commit by call site (median run)": {
+     "follower: fsync cluster.rootlog._write:565 <- cluster.rootlog.append_records:484 (entry cluster.coordinator._work)": 0.55,
+     "committer: fsync cluster.rootlog._write:565 <- cluster.rootlog.append_records:484 (entry transactions.run)": 0.3,
+     "persister: fsync storage.tiered._checkpoint_data:1385 <- storage.tiered.checkpoint:1364 (entry cluster.persister._run)": 0.13,
+     "persister: fsync storage.file.fsync:158 <- storage.file.sync:471 (entry cluster.persister._run)": 0.09,
+     "committer: fsync storage.tiered._sync_manifest:1295 <- storage.tiered.accept_replication:1337 (entry transactions.run)": 0.08,
+     "persister: fsync storage.file.fsync_dir:174 <- storage.file.sync:474 (entry cluster.persister._run)": 0.03,
+     "persister: fsync storage.tiered._checkpoint_data:1390 <- storage.tiered.checkpoint:1364 (entry cluster.persister._run)": 0.03,
+     "persister: fsync storage.logfile.prepare_replacement:330 <- cluster.rootlog._compact:606 (entry cluster.persister._run)": 0.03,
+     "persister: fsync storage.logfile.fsync_dir:255 <- cluster.rootlog._compact:610 (entry cluster.persister._run)": 0.03,
+     "persister: fsync storage.tiered._fsync_dir:1778 <- storage.tiered._checkpoint_data:1393 (entry cluster.persister._run)": 0.03,
+     "persister: fsync storage.file.fsync_dir:174 <- storage.file._write_out:409 (entry cluster.persister._run)": 0.03,
+     "persister: fsync storage.file.fsync:158 <- storage.file._write_out:406 (entry cluster.persister._run)": 0.02,
+     "persister: fsync storage.tiered._sync_manifest:1295 <- storage.tiered._checkpoint_data:1391 (entry cluster.persister._run)": 0.01
+    },
+    "3 peer(s), payload 100 B: payload MB/s": 0.023,
+    "3 peer(s), payload 100 B: latency ms": {
+     "p50": 47.97,
+     "p95": 76.17
+    },
+    "3 peer(s), payload 100 B: committer frame bytes per commit": 6188,
+    "3 peer(s), payload 100 B: cluster frame bytes per commit": 13325,
+    "3 peer(s), payload 100 B: loopback bytes per commit": 13669,
+    "3 peer(s), payload 100 B: fsyncs per node per commit": [
+     0.57,
+     0.54,
+     0.54
+    ],
+    "3 peer(s), payload 10240 B: payload MB/s": 2.322,
+    "3 peer(s), payload 10240 B: latency ms": {
+     "p50": 50.03,
+     "p95": 80.52
+    },
+    "3 peer(s), payload 10240 B: committer frame bytes per commit": 15336,
+    "3 peer(s), payload 10240 B: cluster frame bytes per commit": 32529,
+    "3 peer(s), payload 10240 B: loopback bytes per commit": 32901,
+    "3 peer(s), payload 10240 B: fsyncs per node per commit": [
+     0.6,
+     0.57,
+     0.61
+    ],
+    "3 peer(s), payload 102400 B: payload MB/s": 19.96,
+    "3 peer(s), payload 102400 B: latency ms": {
+     "p50": 55.54,
+     "p95": 96.88
+    },
+    "3 peer(s), payload 102400 B: committer frame bytes per commit": 91793,
+    "3 peer(s), payload 102400 B: cluster frame bytes per commit": 216778,
+    "3 peer(s), payload 102400 B: loopback bytes per commit": 217357,
+    "3 peer(s), payload 102400 B: fsyncs per node per commit": [
+     0.51,
+     0.62,
+     0.64
+    ]
+   },
+   "notes": [],
+   "params": {
+    "peers": [
+     1,
+     2,
+     3,
+     4,
+     8
+    ],
+    "threads": 4,
+    "seconds": 3.0,
+    "repeat": 3,
+    "durability_peers": 3,
+    "durabilities": [
+     "flush",
+     "none"
+    ],
+    "payloads": [
+     100,
+     10240,
+     102400
+    ]
+   },
+   "elapsed_s": 108.34825499699946,
+   "gil_before": false,
+   "gil_after": false
+  }
+ }
+}
