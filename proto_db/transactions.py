@@ -131,7 +131,7 @@ from .storage.format import WRITE_FORMAT_VERSION, RootRecord
 from .cluster.coordinator import REFOUND_TERM_STEP
 from .cluster.lease import Permission
 from .cluster.rootlog import compare_roots
-from .values import canonical, exact_token
+from .values import canonical, check_text, exact_token
 
 __all__ = ["ObjectSpace", "Database", "Transaction", "HistoryEntry", "SpaceRoot", "DatabaseRoot"]
 
@@ -161,7 +161,10 @@ def _utc_now() -> datetime.datetime:
 def _check_name(name, what: str = "root") -> str:
     if not isinstance(name, str) or not name:
         raise ProtoValidationError(f"A {what} name must be a non-empty str, not {name!r}")
-    return name
+    try:
+        return check_text(name)
+    except ProtoValidationError as e:
+        raise ProtoValidationError(f"Invalid {what} name {name!r}: {e}") from e
 
 
 # -- root atoms -------------------------------------------------------------------------------

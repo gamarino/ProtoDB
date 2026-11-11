@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import re
 import uuid
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
@@ -32,7 +33,7 @@ from msgpack import packb as _packb
 
 from .errors import ProtoUserError, ProtoValidationError
 
-__all__ = ["MISSING", "FrozenList", "FrozenDict", "canonical", "order_key", "rank_bounds", "values_equal", "hash_key",
+__all__ = ["MISSING", "FrozenList", "FrozenDict", "canonical", "check_text", "order_key", "rank_bounds", "values_equal", "hash_key",
            "is_atom", "is_orderable", "exact_token", "MutableObject", "ATOM_TOKEN", "map_key_ids",
            "check_map_keys"]
 
@@ -275,6 +276,25 @@ _TIMEDELTA_FIELDS = tuple(timedelta.__dict__[n] for n in ("days", "seconds", "mi
 _UUID_INT = uuid.UUID.__dict__["int"]
 
 
+_SURROGATE = re.compile("[\ud800-\udfff]")
+
+
+def check_text(text: str) -> str:
+    """Return ``text``; ``ProtoValidationError`` if it holds a surrogate code point (U+D800-U+DFFF).
+
+    Such a ``str`` (from ``surrogateescape`` decoding, or a pair written as two escapes) has no
+    UTF-8 encoding, so the format cannot store it (R128): it is refused where the value is
+    validated, not when its transaction commits."""
+    if not text.isascii():
+        found = _SURROGATE.search(text)
+        if found is not None:
+            raise ProtoValidationError(
+                f"A str holds the surrogate code point U+{ord(found.group()):04X} at index {found.start()}: "
+                f"it has no UTF-8 encoding and cannot be stored (decode the text with a proper error "
+                f"handler, or join surrogate pairs)")
+    return text
+
+
 def canonical(value):
     """Validate ``value`` and return its canonical form.
 
@@ -290,11 +310,13 @@ def canonical(value):
     object.  Raises ``ProtoValidationError`` otherwise.
     """
     cls = type(value)
+    if cls is str:
+        return check_text(value)
     if cls in _EXACT_SCALARS or value is MISSING:
         return value
     plain = plain_scalar(value)
     if plain is not None:
-        return plain
+        return check_text(plain) if type(plain) is str else plain
     if isinstance(value, tuple):
         items = tuple(canonical(v) for v in value)
         return value if type(value) is tuple and all(a is b for a, b in zip(items, value)) else items
