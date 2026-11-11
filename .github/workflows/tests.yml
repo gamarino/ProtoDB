@@ -1,0 +1,58 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  tests:
+    name: Tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.14t is the free-threaded build: the suite runs there with the GIL disabled (its default).
+        python-version: ["3.11", "3.12", "3.13", "3.14", "3.14t"]
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install the package and the test dependencies
+        # msgpack >= 1.2.0 is a hard requirement (its packer nests the 1024 containers the
+        # format needs); it is named here as well so that a resolver can never pick an older one.
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "msgpack>=1.2.0" -e ".[dev,vectors,parquet]"
+          python -c "import sys, msgpack; print(sys.version); print('msgpack', msgpack.version)"
+
+      - name: Run the test suite
+        run: python -m pytest -q -rfEs
+
+  docs:
+    name: Documentation (sphinx-build -W)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install the package and the documentation requirements
+        # autodoc imports proto_db, which refuses msgpack < 1.2.0, so the package is installed
+        # into the same environment as Sphinx (see docs/BUILDING.md).
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e . -r docs/requirements.txt
+
+      - name: Build the HTML documentation, warnings as errors
+        run: python -m sphinx -W -b html docs/source docs/build/html
