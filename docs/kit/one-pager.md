@@ -33,9 +33,10 @@ Y un hueco pedagógico no implica demanda.
 
 ## Escala: no es la liga de Pavlo, es un complemento
 
-El 15-445 tiene 25 clases en unas 15 semanas, cinco proyectos acumulativos sobre BusTub y calificador automático
+El 15-445 tiene 25 clases en unas 15 semanas y cinco proyectos acumulativos sobre BusTub
 ([Syllabus](https://15445.courses.cs.cmu.edu/fall2025/syllabus.html),
-[Assignments](https://15445.courses.cs.cmu.edu/fall2025/assignments.html)); BusTub tiene unas 5,2 mil estrellas
+[Assignments](https://15445.courses.cs.cmu.edu/fall2025/assignments.html)), con calificador automático en
+Gradescope ([Project 4](https://15445.courses.cs.cmu.edu/fall2025/project4/)); BusTub tiene unas 5,2 mil estrellas
 ([BusTub](https://github.com/cmu-db/bustub)) y el canal del grupo, unos 90 mil suscriptores según rastreadores de
 terceros ([developereducators](https://developereducators.com/channel/cmudatabasegroup/)). ProtoBase tiene un
 mantenedor, ningún material público de curso y ningún calificador automático; los proyectos del ecosistema están
@@ -53,8 +54,9 @@ sus clases en video, es un prerrequisito sensato (inferencia del informe).
 | 3. Distribución y coordinador | Clúster de pares con *lease* y *fencing*; la seguridad no depende del tiempo; resultados de commit desconocidos; ejercicios con errores plantados |
 | 4. Registro de clases en tiempo de ejecución | **Pendiente del diseño del runtime.** No entra en ninguna propuesta mientras ese diseño siga abierto |
 
-El ejemplo común es un ERP pequeño (usuarios, grupos, personas, oportunidades): une al programador de sistemas
-y al de aplicaciones, que ve primero qué permite cada propiedad y después cómo funciona.
+El ejemplo común es un ERP pequeño (usuarios, grupos, personas, oportunidades), pensado para unir al programador
+de sistemas y al de aplicaciones, que ve primero qué permite cada propiedad y después cómo funciona. Es una
+decisión de diseño del curso, sin contraparte en las fuentes: ningún programa leído declara dos públicos.
 
 ## Qué existe hoy
 

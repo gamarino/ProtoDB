@@ -14,12 +14,13 @@ destination, then edits only the copy:
 * it puts back the comments and docstrings of that time, so that the code does not describe its
   own fix;
 * it removes what states the solution: ``docs/``, ``CHANGELOG.md``, the C1 regression tests
-  (``tests/unit/test_cluster_recovery_base.py``) and the plant catalogue
-  (``tests/support/plant_defects.py``);
+  (``tests/unit/test_cluster_recovery_base.py``), the plant catalogue
+  (``tests/support/plant_defects.py``) and the kit's own test (``tests/docs/test_kit.py``);
 * it copies this exercise's ``README.md`` and its test into ``exercise_c1/`` (never the solution).
 
-Every edit must match the exported text exactly once; when the code has moved, the script stops
-with an error naming the edit, and nothing half-planted is left behind as a finished exercise.
+Every edit must match the exported text exactly once, and every edited file is checked before any
+is written; when the code has moved, the script stops with an error naming the edit, and no
+planted file is written.
 
 Then, in the destination::
 
@@ -33,7 +34,8 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 #: Paths removed from the copy: they state the fix.
-REMOVED = ("docs", "CHANGELOG.md", "tests/unit/test_cluster_recovery_base.py", "tests/support/plant_defects.py")
+REMOVED = ("docs", "CHANGELOG.md", "tests/unit/test_cluster_recovery_base.py", "tests/support/plant_defects.py",
+           "tests/docs/test_kit.py")
 
 #: Files of this exercise copied into ``exercise_c1/`` (never SOLUTION.md).
 HANDED_OUT = ("README.md", "test_c1_exercise.py")
@@ -143,6 +145,7 @@ def plant(dest: str) -> None:
     for path, text in texts.items():
         if "_phase_1_floor" in text:
             raise SystemExit(f"make_exercise: {path} still names the fix after planting")
+    for path, text in texts.items():           # every check passed: now write
         with open(os.path.join(dest, path), "w", encoding="utf-8") as f:
             f.write(text)
 

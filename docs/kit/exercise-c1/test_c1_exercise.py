@@ -22,12 +22,19 @@ The schedule, step by step:
 The invariant: a committed root extends every acknowledged root.  The test asserts it on the
 root a commits in step 7: what a replicated it as built on (its ``pred``) must be R'.
 
+The test judges safety only.  A fix may also change the schedule: c may refuse R' in step 6, so
+R' is never acknowledged, or a may find no base or fail to commit in step 7.  Nothing acknowledged
+is lost then, so the test passes, and it reports what did not complete ("not completed (safe)")
+as a warning in pytest's summary.  Whether your fix still makes progress is a separate question;
+the README says how to check it.
+
 Run it from the root of the exercise copy::
 
     python -m pytest exercise_c1/test_c1_exercise.py
 """
 import threading
 import time
+import warnings
 
 import pytest
 
@@ -43,6 +50,15 @@ def _call(fn, *args):
         return fn(*args)
     except Exception as ex:     # the outcome under test, reported by the assertions
         return ex
+
+
+class NotCompleted(UserWarning):
+    """A step of the schedule did not complete under the code tested: a liveness report, not a
+    safety failure."""
+
+
+def _not_completed(what: str) -> None:
+    warnings.warn(NotCompleted(f"not completed (safe): {what}"), stacklevel=2)
 
 
 def test_an_acknowledged_root_is_never_lost():
@@ -86,23 +102,33 @@ def test_an_acknowledged_root_is_never_lost():
             h.net.drop(src="a", kinds=("query",))
             h.net.deliver(src=None, dst={"a"}, kinds=("answer",))
         base = h._run(lambda: _lease_base(a, a.tier, lease_a), pump)
-        assert isinstance(base, tuple), f"a found no base to commit on: {base!r}"
-        current, label, _ = base
 
-        # Step 6: e's delayed message reaches c; e counts a majority and R' is acknowledged.
+        # Step 6: e's delayed message reaches c; if c accepts it, e counts a majority and R' is
+        # acknowledged.  The wait is bounded: when R' gets no majority, e's frozen timer would keep
+        # its replication waiting forever, so the test then lets e's lease expire.
         for _, dst, msg in held_for_c:
             h.net.handlers[dst](msg)
             h.nodes[dst].wait_idle(5.0)
-        deadline = time.monotonic() + 10
-        while e_commit.is_alive():
+        deadline = time.monotonic() + 5
+        while e_commit.is_alive() and time.monotonic() < deadline:
             h.net.deliver(src=None, dst={"e"}, kinds=("ack",))
-            assert time.monotonic() < deadline, "e's replication never ended"
             time.sleep(0.001)
-        e_commit.join()
-        assert not isinstance(out["r"], Exception), f"the schedule needs R' acknowledged: {out['r']!r}"
-        assert c.accepted_root()[1] == r_prime
+        if e_commit.is_alive():
+            h.clock.t = max(h.clock.t, lease_e.valid_until + 1)
+            lease_e._clock = h.clock
+            h.net.drop(src="e", kinds=("records", "replicate", "ack"))
+            e_commit.join(10)
+            assert not e_commit.is_alive(), "e's replication did not end after its lease expired"
+        acknowledged = not isinstance(out.get("r"), Exception)
+        if not acknowledged:
+            _not_completed(f"R' was never acknowledged (c accepted it: {c.accepted_root()[1] == r_prime}); "
+                           f"e's replication ended with {out['r']!r}.  Nothing acknowledged can be lost.")
 
         # Step 7: a commits on its base, with c and d, recording what it replicated as built on.
+        if not isinstance(base, tuple):
+            _not_completed(f"a found no base to commit on: {base!r}")
+            return
+        current, label, _ = base
         lease_a.bind_root(current, label)
         new_root = rec(current.epoch + 1)
         preds = []
@@ -114,11 +140,15 @@ def test_an_acknowledged_root_is_never_lost():
             return send(to, msg)
         a._transport.send = recording
         result = h.replicate("a", lease_a, new_root, {"c", "d"})
-        assert not isinstance(result, Exception), result
+        if isinstance(result, Exception):
+            _not_completed(f"a's commit in step 7 did not complete: {result!r}")
+            return
         known, committed, committed_label = a.committed_root()[:3]
         assert known and committed == new_root and committed_label == lease_a.term
 
         # The invariant: the committed root extends the acknowledged R'.
+        if not acknowledged:
+            return
         assert preds and all(p == (True, r_prime, lease_e.term) for p in preds), (
             f"an acknowledged root (R', epoch {r_prime.epoch}, term {lease_e.term}) was superseded by a "
             f"committed root not built on it: a's commit was based on epoch {current.epoch}, term {label}")

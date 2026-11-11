@@ -1,8 +1,7 @@
 # Exercise: the lost acknowledged commit
 
 A planted-bug exercise on the ProtoDB cluster coordinator. The bug is real: an adversarial review found it in
-this code (finding C1 of the second re-review of Task 8.3n), and it was fixed in commit `276a256`. The exercise
-puts it back in a scratch copy of the repository, gives you a test that fails, and asks you to find out why and
+this code (finding C1 of the second re-review of Task 8.3n), and it was fixed. The exercise puts it back in a scratch copy of the repository, gives you a test that fails, and asks you to find out why and
 to fix it.
 
 Expected effort: two to four hours for a student who has seen Paxos or Raft. Solving it does not require reading
@@ -24,7 +23,8 @@ repository, and never writes into the repository), plants the bug, and copies th
 tests and the catalogue of planted defects. The published documentation describes the fix too: do not read the
 section "The 8.3n round 3 mistake" of the coordinator protocol document, step 3 of its "Choosing the base of a
 term's first root", or the design guide's "The mistake: a recovery round that ended too early" until you have an
-answer. A few test docstrings in the copy may still mention it; work from the code and the failing test.
+answer, and do not read the git history of the repository's cluster code. A few comments and test docstrings in
+the copy may still hint at it; work from the code and the failing test.
 
 The test needs Python 3.11 or later and the test dependencies of the repository (`pytest`, `pytest-timeout`).
 It runs in under a second.
@@ -71,13 +71,18 @@ whether it is correct.
 
 ## Checking an answer
 
-* The exercise test passes:
+* The exercise test passes. It judges **safety only**: it fails when an acknowledged root is lost. Your fix may
+  also change the schedule, for example so that R' is never acknowledged, or so that a does not commit. Nothing
+  acknowledged is lost then, so the test passes and reports each step that did not complete as a warning that
+  starts with "not completed (safe)" (shown in pytest's warnings summary, or with `-rw`):
 
   ```
-  python -m pytest exercise_c1/test_c1_exercise.py
+  python -m pytest -rw exercise_c1/test_c1_exercise.py
   ```
 
-* The cluster tests around the commit path still pass, so the fix did not trade safety for a stall (about 15
+* The exercise does not require that this schedule completes, but a fix that stops everything is safe and
+  useless. If the test reports "not completed (safe)", explain in writing why your fix still makes progress in
+  general. The cluster tests around the commit path check that the common paths still make progress (about 15
   seconds):
 
   ```

@@ -20,7 +20,7 @@ The schedule of the test, and what happens at each step:
 1. a commits r1 (label 4096). Time passes.
 2. e owns T' = 4100, granted by b and c. e's timer stands still (a timer-rate fault, allowed by P5).
 3. e replicates R'. b accepts it. The copy for c is held back by the network.
-4. On b's and d's clocks, the promises to e have expired. a owns T = 8192, granted by b and d. **Phase 1 reports
+4. On b's and c's clocks, the promises to e have expired. a owns T = 8192, granted by b and d. **Phase 1 reports
    R'** (b accepted it), so `lease_a.root` is R' and the lease is not certain.
 5. a's recovery round is answered by c and d. Neither has accepted R' yet, so the round returns r1. With a, that
    is a majority of witnesses, so the round ends.
@@ -93,11 +93,36 @@ appears.
 (The docstring also covers the one-lost-disk case: an acceptor that lost its disk regains a root at or above
 what it had before it votes again, through its rejoin's ballot round, R78a.)
 
-### The alternative that was rejected
+### Other correct answers
 
-Ending the recovery round only once **every granter** of the current lease has answered is also safe: the granters
-promised before answering. It was rejected because it brings back the stall `1b3a188` removed: whenever a granter
-dies after granting, every recovery waits `request_timeout` inside the commit's lease.
+**Waiting for every granter (rejected in the product).** Ending the recovery round only once **every granter** of
+the current lease has answered is also safe: the granters promised before answering. It was rejected because it
+brings back the stall `1b3a188` removed: whenever a granter dies after granting, every recovery waits
+`request_timeout` inside the commit's lease.
+
+**A recovery query that carries a ballot (a promise).** Hint 2 leads naturally here: send the recovery `query`
+with the lease's term as its ballot, so that each answering voter promises the term before it answers. The
+coordinator already handles such a query: `_on_ballot_query`, used by a rejoin (R78a), raises the promise, makes
+it durable and only then answers. The change is two lines: a `ballot` parameter on `recover_root`, passed as
+`lease.term` by `_lease_base`.
+
+- **Why it is safe.** The answering round is now a real phase 1 for the term. Every root chosen below T was
+  accepted by a majority that intersects the answering majority; the member in the intersection promised T
+  before it answered, so it accepted that root before answering and reported a root at or above it. A ballot-0
+  answer said nothing about the future; a promise does.
+- **What it does to the test's schedule.** c promises T in step 5, so in step 6 it refuses R'. R' reaches only b
+  and e: it is never acknowledged, and dropping it is legal (an unknown outcome for e's writer). The exercise test
+  passes and reports "not completed (safe): R' was never acknowledged". Nothing *blocks* in the protocol: e's
+  replication would end when e's lease expires on e's timer, and the test, whose e timer stands still, lets it
+  expire after a bounded wait. a's commit completes.
+- **Checked** on a planted copy with this change: the exercise test passes in both GIL modes with that one
+  warning, and the README's regression set passes (28 tests, GIL off).
+- **Its cost, read from the code** (it was not measured, and the decision record does not discuss it): every
+  recovery round makes each answering voter write a durable promise to its acceptor log before it answers, where a
+  ballot-0 answer writes nothing. The floor adds no message and no write to the round (its own cost was a
+  liveness one, below).
+- It is a better answer to task 3 than to the product's constraints; discuss with the student why the product
+  kept the cheaper ballot-0 round and floored its result instead.
 
 ### What the fix cost (a good follow-up question)
 
@@ -113,4 +138,7 @@ progress when the node that holds R' is the one that dies?*
 * Full marks need the step-6 observation (a ballot-0 answer is not a promise) and the use of the phase-1 value.
   Answers that wait longer, add a timeout or compare clocks fail requirement 5 and P5.
 * An answer that waits for every voter, or for every granter, is safe; ask what it costs when one of them is dead.
+* An answer that makes the recovery query carry the lease's term as a ballot is safe and deserves full marks if
+  the argument says why a promise makes the answer stay true. Its test run passes with "not completed (safe): R'
+  was never acknowledged"; ask the student why that is legal, and what the promise write costs.
 * Any other answer needs its own argument at the level of the one above; the exercise test alone does not grade it.

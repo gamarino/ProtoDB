@@ -8,7 +8,8 @@ Run from the repository root::
 
 Act 1: "as of" and audit questions, with no audit table.
 Act 2: a stable paginated report while another user keeps editing.
-Act 3: a cluster of three nodes loses one node, and no acknowledged commit is lost.
+Act 3: a cluster of three nodes has one node cut off by a network partition (as a crashed machine looks
+to its peers), and no acknowledged commit is lost.
 
 The model is the one of the ERP tutorial (docs/source/tutorials/erp.rst): users, persons and sales
 opportunities, where an opportunity is a value and each edit is a new version that points at the
@@ -17,6 +18,8 @@ cluster.rst): three nodes in one process on a simulated network, sharing an in-m
 
 The demo checks what it shows.  Each "[check]" line is an assertion that held; a failed check
 stops the demo with exit status 1.  It ends with "every check passed" only when all of them held.
+The lines that start with "Why (design, not checked here" explain a result with the design's own
+statement and name the document that holds it; the demo does not test those statements.
 """
 import argparse
 import datetime as dt
@@ -179,8 +182,9 @@ def act_1(db) -> None:
               "a user entity shows its current name now and its old name 'as of' Monday")
     finally:
         tr.abort()
-    say("   Why it is free: a commit never overwrites (P1). Every past version is a complete database,")
-    say("   and every version of an opportunity points at the one it replaced.")
+    say("   Why (design, not checked here; docs/source/design-principles.rst, P1): a commit never overwrites,")
+    say("   so every past version is a complete database, and every version of an opportunity points at the")
+    say("   one it replaced.")
 
 
 # ------------------------------------------------------------------------------------------------
@@ -189,14 +193,16 @@ def act_1(db) -> None:
 
 def act_2(db) -> None:
     say("A report of the open opportunities, most valuable first, 100 rows per page.")
-    say("Another user, Cy, keeps winning deals in another thread while the report is read page by page.")
+    say("Another user, Cy, works in another thread: before each page is read, Cy wins a deal on that very")
+    say("page. A pager reading live data would drop those rows; this one must still show them as open.")
     say()
     tr = db.new_transaction()
     try:
         rows_at_start = [o.number for o in from_collection(tr.get_root_object("opportunities"))
                          .where(F.stage != "won").order_by(F.amount, descending=True).then_by(F.number).to_list()]
+        page_size = 100
         pager = tr.pager("opportunities", where=[["stage", "!=", "won"]], order_by=[("amount", True), "number"],
-                         page_size=100)
+                         page_size=page_size)
         token = pager.token()                      # a portable reference to this snapshot and query
         pages = pager.pages
     finally:
@@ -207,29 +213,31 @@ def act_2(db) -> None:
     stop = threading.Event()
 
     def cy_works():
-        """Cy wins the best open deal each time the report reads a page."""
+        """Cy wins a deal in the middle of the page the report reads next, before it is read."""
         while True:
             want_edit.acquire()
             if stop.is_set():
                 return
-            target = rows_at_start[len(edits_done)]
+            k = len(edits_done)
+            target = rows_at_start[min(k * page_size + page_size // 2, len(rows_at_start) - 1)]
             advance(db, target, "won", "cy")
             edits_done.append(target)
 
     cy = threading.Thread(target=cy_works, name="cy")
     cy.start()
-    report = []
+    report, page_rows = [], []
     try:
         resumed = db.resume_pager(token)           # as a web request on another day or process would
         for k in range(pages):
-            report += [o.number for o in resumed.page(k)]
             committed = len(edits_done)
-            want_edit.release()                    # Cy commits one more edit before the next page
+            want_edit.release()                    # Cy wins a deal on page k, and commits, first
             deadline = time.monotonic() + 30
             while len(edits_done) == committed and cy.is_alive():
                 if time.monotonic() > deadline:
                     raise SystemExit("[FAILED] Cy's edit never committed")
                 time.sleep(0.001)
+            page_rows.append([o.number for o in resumed.page(k)])
+            report += page_rows[-1]
     finally:
         stop.set()
         want_edit.release()
@@ -237,22 +245,28 @@ def act_2(db) -> None:
 
     tr = db.new_transaction()
     try:
-        open_now = from_collection(tr.get_root_object("opportunities")).where(F.stage != "won").count()
+        opportunities = tr.get_root_object("opportunities")
+        open_now = from_collection(opportunities).where(F.stage != "won").count()
+        won_now = [number for number in edits_done if opportunities.get_at(number).stage == "won"]
     finally:
         tr.abort()
-    say(f"   pages read: {pages}; Cy's edits committed between them: {len(edits_done)}")
+    say(f"   pages read: {pages}; Cy's edits, each committed just before its page was read: {edits_done}")
     say(f"   rows in the report: {len(report)}, distinct: {len(set(report))}; open at the start: "
         f"{len(rows_at_start)}; open now: {open_now}")
-    check(len(edits_done) == pages and pages >= 3, "another user committed an edit after every page")
+    check(len(edits_done) == pages and pages >= 3, "another user committed an edit before every page was read")
+    check(won_now == edits_done, "every deal Cy edited is 'won' in the live data")
+    check(all(number in page_rows[k] for k, number in enumerate(edits_done)),
+          "every deal Cy won before its page was read is still on that page, as open at the report's start")
     check(report == rows_at_start, "the report has exactly the rows open at its start, in order")
     check(len(set(report)) == len(report), "no row repeated, none skipped")
     check(open_now == len(rows_at_start) - len(edits_done), "the edits did happen: fewer deals are open now")
-    say("   Why it is free: the pager is bound to one snapshot, and a snapshot never changes (P1).")
-    say("   No cursor held open on a server, no long REPEATABLE READ transaction, no temporary table.")
+    say("   Why (design, not checked here; docs/source/tutorials/erp.rst, Question 3): the pager is bound")
+    say("   to one snapshot, and a snapshot never changes (P1). No cursor held open on a server, no long")
+    say("   REPEATABLE READ transaction, no temporary table.")
 
 
 # ------------------------------------------------------------------------------------------------
-# Act 3: a node lost, no acknowledged commit lost
+# Act 3: a node cut off, no acknowledged commit lost
 # ------------------------------------------------------------------------------------------------
 
 class MemoryObjectStore:
@@ -354,8 +368,8 @@ def act_3(workdir: str) -> None:
         cut.wait(60)
         network.partition({"n1", "n2"})            # n0 is in no group: isolated from every node
         worker.join(60)
-        check(not worker.is_alive(), "the salesperson on n0 stopped after the loss")
-        say(f"   on n0 before it was lost: {len(acknowledged)} orders acknowledged; "
+        check(not worker.is_alive(), "the salesperson on n0 stopped after n0 was cut off")
+        say(f"   on n0 before it was cut off: {len(acknowledged)} orders acknowledged; "
             f"{len(unknown)} ended 'outcome unknown', {len(failed)} failed")
 
         for k in range(10):                        # the survivors keep working
@@ -372,16 +386,17 @@ def act_3(workdir: str) -> None:
             in_doubt = [order for order in unknown if orders.has(order)]
         finally:
             tr.abort()
-        say(f"   read on n2 after the loss: {len(present)} of {len(acknowledged)} acknowledged orders present")
+        say(f"   read on n2 after n0 was cut off: {len(present)} of {len(acknowledged)} acknowledged orders present")
         if unknown:
             say(f"   the {len(unknown)} order(s) with an unknown outcome: {len(in_doubt)} present "
                 "(either answer is legal; the application must check, as the outcome said)")
-        check(len(acknowledged) >= 25, "orders were acknowledged both before and after the loss")
-        check(present == acknowledged, "every acknowledged order survived the loss of n0")
-        say("   Why: a commit is acknowledged only once a majority of voters accepted it, and any two")
-        say("   majorities share a node. The protocol never lets the next commit be built on a base that")
-        say("   misses it, and no timer decides safety. (The exercise in docs/kit/exercise-c1 is a case")
-        say("   where an earlier version of this code got that wrong.)")
+        check(len(acknowledged) >= 25, "orders were acknowledged both before and after n0 was cut off")
+        check(present == acknowledged, "every acknowledged order survived cutting n0 off by a partition")
+        say("   Why (design, not checked here; docs/source/tutorials/cluster.rst, design-principles.rst P5):")
+        say("   a commit is acknowledged only once a majority of voters accepted it, and any two majorities")
+        say("   share a node. The protocol never lets the next commit be built on a base that misses it,")
+        say("   and no timer decides safety.")
+        say("   (The exercise in docs/kit/exercise-c1 is a case where an earlier version got that wrong.)")
     finally:
         network.heal()
         for space in spaces.values():
@@ -409,7 +424,7 @@ def main(argv=None) -> int:
             act_2(db)
         finally:
             space.close()
-        title("Act 3: a node lost, no acknowledged commit lost", args.pause)
+        title("Act 3: a node cut off by a partition, no acknowledged commit lost", args.pause)
         act_3(workdir)
     finally:
         if own:

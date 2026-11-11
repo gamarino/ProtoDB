@@ -9,6 +9,7 @@ import os
 import shutil
 import subprocess
 import sys
+import sysconfig
 
 import pytest
 
@@ -18,8 +19,11 @@ EXERCISE = os.path.join(KIT, "exercise-c1")
 
 
 def _run(args, cwd, timeout):
+    """Run ``python args`` in a fresh interpreter of this session's GIL mode (as test_public_api does)."""
     env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
-    return subprocess.run([sys.executable, *args], cwd=cwd, env=env, capture_output=True, text=True,
+    free_threaded_build = bool(sysconfig.get_config_var("Py_GIL_DISABLED"))
+    flags = ["-X", "gil=1"] if free_threaded_build and sys._is_gil_enabled() else []
+    return subprocess.run([sys.executable, *flags, *args], cwd=cwd, env=env, capture_output=True, text=True,
                           timeout=timeout)
 
 
@@ -49,11 +53,20 @@ def test_the_c1_exercise_test_fails_on_the_planted_copy(tmp_path):
     assert made.returncode == 0, made.stdout + made.stderr
     assert not os.path.exists(dest / "exercise_c1" / "SOLUTION.md"), "the solution was handed out"
     assert not os.path.exists(dest / "docs"), "the copy keeps the documents that describe the fix"
+    assert not os.path.exists(dest / "tests" / "docs" / "test_kit.py"), "the copy keeps the kit's test, which names the fix"
     with open(dest / "proto_db" / "transactions.py", encoding="utf-8") as f:
         assert "_phase_1_floor" not in f.read()
     out = _run(["-m", "pytest", "-q", "-p", "no:cacheprovider", "exercise_c1/test_c1_exercise.py"], str(dest), 240)
     assert out.returncode == 1, f"the planted bug was not caught\n{out.stdout}{out.stderr}"
+    assert "not completed (safe)" not in out.stdout, out.stdout
     assert "an acknowledged root (R'" in out.stdout, out.stdout
+
+
+def test_the_child_interpreter_runs_in_this_session_gil_mode():
+    """The demo and the exercise runs above use this session's GIL mode, not the build's default."""
+    out = _run(["-c", "import sys; print(getattr(sys, '_is_gil_enabled', lambda: True)())"], REPO, 60)
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.strip() == str(getattr(sys, "_is_gil_enabled", lambda: True)()), out.stdout
 
 
 def test_make_exercise_refuses_a_destination_inside_the_repository():
