@@ -137,12 +137,28 @@ SQLite, Python and rqlite figures of the two runs are level, which rules out a s
   not measured; it is the same open question as ``parallel_scan`` (`Parallel work`_). Read the
   single-process commit rates of [S0] / [S1] on this page as in-suite figures: alone they are up
   to 1.6x higher.
-- **Cluster commits: a regression of 8-22 % is shown alone**, entering in steps with Task 8.3m's
-  fix rounds and the 8.3n cluster commits, in both rounds. It is largest for commits carrying a
+- **Cluster commits: a regression of 8-22 % is shown alone**, in both rounds. It is largest for commits carrying a
   value (100 B: 191 / 209 commits/s against 288 / 244; 0.66 / 0.86x). The suite's 0.61-0.76x and
   the session's 0.71x exceed it; the rest is the in-suite and session-to-session effect above.
-  Which commit of each step costs what was not isolated. *Before Task 8.3m closed*, its own
-  report measured 9-11 % fewer cluster commits with the GIL off against ``26f3b85``.
+  *Before Task 8.3m closed*, its own report measured 9-11 % fewer cluster commits with the GIL
+  off against ``26f3b85``.
+- **Where the cluster-commit loss comes from (a later bisection, R136).** The two-round
+  bisection above could not place it. A second one, 14 paired interleaved rounds per commit, run
+  one at a time under a CPU gate on a machine shared with other work (driver
+  ``benchmarks/bisect_commit_path.py``, ``5b50252``; its result files are not committed, so
+  these figures are from a single session), found **two steps and nothing else**. Speed of
+  ``c953d7e`` against ``4aab0f2``: 0.898x for a blind add and 0.846x for the 100 B cell. The
+  steps are Task 8.3m's residency (``7ef1636`` and ``700d48f``, with its fix rounds up to ``550dde5``:
+  0.967x blind, 0.919x at 100 B), and ``0eed600`` (the ``class_defines`` check of the
+  pre-tag review fixes: 0.965x blind, 0.936x at 100 B). **Task 8.3n's cluster commits, including the
+  safety fixes (the send-reserve check, the back-off change, the majority-ended recovery round,
+  the C1 floor), cost nothing measurable**: 550dde5 to ec90c25 gave 0.993x blind and 0.987x at
+  100 B, with sign counts at chance, and the per-commit counters (syncs, frame bytes, lease
+  attempts, abandoned terms) did not move. What grows is the build inside the critical section
+  (validation, replay and path copy: 2.82 to 3.71 ms per commit at 100 B), not the wire or the
+  disk. With 14 rounds, an effect of a single commit below about 3 % cannot be excluded. The
+  earlier attribution of a step to the 8.3n cluster commits (``550dde5`` to ``5120cff``) does
+  not reproduce.
 
 The read paths are level or faster (``point_lookup``, ``deep_page`` pager, ``concurrent_reads``
 from 4 threads on 1.37-1.75x); exceptions under 0.85x are the unranked ``islice`` scan (0.84x),
@@ -485,6 +501,23 @@ per node) and 70,780/s (4 per node). Every run of every cell was verified. *Hist
 conservative ``ProtoOutcomeUnknownError``; at ``57fd351`` none did, in the session or in the
 suite.
 
+*Why the writers starve, measured (R137b).* A probe of the acknowledgement path
+(``benchmarks/gil_ack_probe.py``, ``7757fb3``; three interleaved repetitions of each variant in a
+single session on a machine shared with other work, 5 s per run, the result files are not committed, so read
+the figures as indicative) times every hand-off of a ``replicate`` on a reader node. With two reader threads per reader node
+and the GIL on, A's four writers commit 7.5-9.1 commits/s (commit p50 319-453 ms); with no readers, 61-85/s; with
+the GIL off and the same readers, 48-75/s. The cause is CPython's GIL: the readers never block, so every other thread on
+the node waits for a forced switch, which another thread can request only after the switch interval (5 ms by
+default) and may lose to the other reader. Each blocking call on the acknowledgement path gives the GIL away and pays that
+wait again: the acceptor lane's wake-up, the return of each ``fsync`` (about 2 ms of disk become 6-10 ms), the hand-off of
+the reply to the per-peer sender thread (about 11 ms) and the return of ``sendall`` (about 5 ms). A replicate
+that takes 2.8-4.1 ms of lane time with the GIL off took 29-85 ms. Causal test: ``sys.setswitchinterval(0.0005)`` on the two
+reader nodes only brought the writers from 7.5-9 to 27-37 commits/s (the readers' rate was lower in 1 of 3
+repetitions, 22.6k reads/s, and similar in the others). These are latency and liveness effects: none touches a safety
+argument. **Recommendation:** run reader-heavy cluster nodes on the free-threaded build, which does not have the effect;
+where the GIL build is required, shorten the switch interval on the nodes that serve CPU-bound readers
+(``sys.setswitchinterval``), and measure both the readers and the writers.
+
 What the numbers show:
 
 - **Readers never wait on writers in ProtoDB, but they share the CPU.** Read latency moves
@@ -820,19 +853,27 @@ Parallel work
 ``parallel_scan`` (2,000 items, a CPU-bound predicate, ``ParallelPool``), GIL off. Run alone
 [RR], it scales: 1.06 / 1.73 / 3.04 / 4.00 / 4.14x the sequential loop at 1 / 2 / 4 / 8 / 16
 workers. Inside the full suite run [S0] the same code gave 1.07 / 1.06 / 1.18 / 1.11 / 1.10x:
-**the in-suite collapse reproduces at** ``57fd351``, as it did at ``4aab0f2`` (alone 4.93x,
-in suite 1.12x at 16 workers). The suite runs it after workloads that build large data sets
+**the in-suite collapse reproduced at** ``57fd351``, as it did at ``4aab0f2`` (alone 4.93x,
+in suite 1.12x at 16 workers). **It no longer reproduces at the current head** (``c953d7e``, a later single
+session, GIL off, from a clean export, with ``benchmarks/scan_state_probe.py``): 4.13x at 16 workers
+after the suite's 14 preceding workloads, against 4.28x alone, although the process then held a 1.8 GB heap
+with 2.08 million GC-tracked objects. No collection ran during the timed scans, and freezing or disabling the GC
+changed nothing beyond noise, so the heap size, the GC and leftover threads are excluded as causes at this
+head. The earlier collapse is not explained (its shape, every worker count at the sequential time, is what a process
+held to about one CPU would show, and a transient outside the process fits it); if it reappears,
+the probe placed after ``parallel_scan`` would separate the explanations. The paragraph below describes the
+measurement at ``57fd351``. The suite runs it after workloads that build large data sets
 (the 10^6-row pagination and query-cache sets); at ``57fd351`` the process's peak RSS in the
 suite was 9.0 GB, reached in those workloads; how much of it stays live when ``parallel_scan``
 runs was not measured. The cause is not known. The inference of the previous measurement (the
 free-threaded collector's passes grow with a large live heap) is not confirmed: Task 8.3m saw
-the scan scale after the preceding workloads at reduced sizes. Read the in-suite figure as a suite artefact until it is explained, not as the
+the scan scale after the preceding workloads at reduced sizes. Read the in-suite figures of ``57fd351`` as a suite artefact, not as the
 scaling of ``ParallelPool``.
 
 *Where SQLite is the better choice, and why.* Parallel work is where ProtoDB's model pays, and
 the only loss is the one measured: reads scale because they walk immutable nodes that no writer
-changes (4.15x and 4.62x above), but with the GIL on nothing scales (0.9-1.2x) and the in-suite
-``parallel_scan`` figure is unexplained. The cost of the model is paid elsewhere: every write
+changes (4.15x and 4.62x above), but with the GIL on nothing scales (0.9-1.2x); the in-suite
+``parallel_scan`` collapse of the earlier suites is unexplained, and did not reproduce later. The cost of the model is paid elsewhere: every write
 copies a path instead of updating a page in place, which is why the commit rates of `Single-process
 commits`_ are lower than SQLite's even though the readers scale. Parallel writers do not scale
 either: they all publish one root, so conflicting commits retry (5.95 attempts per commit at 16

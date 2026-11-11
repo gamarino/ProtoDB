@@ -184,6 +184,20 @@ and keep local snapshot reads for the rest. (A read that waits
 without writing is proposed in decision D46's amendment but not implemented in 2.0.) The
 :doc:`../coordinator-protocol` document draws the two paths as sequence diagrams.
 
+Readers and writers on one node, with the GIL on
+------------------------------------------------
+
+A node that serves CPU-bound readers while the cluster commits gives the commit's acknowledgement path few
+chances to run when the interpreter has the GIL. In one measured session (3 TCP nodes, four writers on one node,
+two reader threads on each of the others), the writers' rate fell from 61-85 commits/s without readers to
+7.5-9 commits/s with them, and was 48-75 commits/s with the same readers on the free-threaded build with the GIL
+off. The cause is the GIL's switch interval: a thread that gives the GIL away (on a disk sync, on a socket send, on
+a queue hand-off) waits about 5 ms to take it back from a busy reader, several times per commit. The remedy is
+the free-threaded build; if the GIL build is required, ``sys.setswitchinterval(0.0005)`` on the reader-heavy
+nodes brought the same writers to 27-37 commits/s. Readers themselves do not wait on writers in either mode. The
+figures and the probe are in :doc:`../performance` ("With the GIL on"); they come from a single session
+(``benchmarks/gil_ack_probe.py``).
+
 Closing
 -------
 
