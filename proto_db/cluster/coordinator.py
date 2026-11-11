@@ -13,8 +13,8 @@ Write permissions (D50)
     roots; protocol 13 removed the ``pred_committed`` catch-up), refuses siblings and stale
     sequence numbers, and keeps every D46 rule: two roots built on one base can never BOTH be
     committed, whatever the permissions (D50, S3).  Safety across terms DOES rest on the
-    owner's sequencing (D50, S2 and S4; a deviation from ruling R66d awaiting the
-    maintainer's ruling): the next phase 1 ranks the roots of one term by epoch, so a base
+    owner's sequencing (D50, S2 and S4; the reliance of S4 on the owner is accepted design under
+    R79 and D50, not a pending deviation from R66d): the next phase 1 ranks the roots of one term by epoch, so a base
     issued twice could let an uncommitted sibling outrank a committed root.  The owner
     therefore ends a permission only through the incarnation it was issued to: a ``permit``
     names the requester's incarnation, any other incarnation drops it unanswered, and a
@@ -149,8 +149,8 @@ Rejoining and witnesses
     while its acceptor log is loaded (a space is open on it) and rejoined.  A node whose
     log has no rejoined marker (a new node, a disk lost or wiped, or an interrupted rejoin)
     cannot tell what it promised, proposed or accepted in a previous life.  Until it has
-    learnt, from ``N - majority + 1`` other witnesses (``query``/``answer``; for three
-    nodes, both others), the highest term they promised or saw AND the highest root they
+    learnt, from ``V - majority + 1`` other voters that are witnesses (``query``/``answer``, ``V``
+    the number of voters; for three voters, both others), the highest term they promised or saw AND the highest root they
     accepted, it neither grants, nor acknowledges, nor proposes, and its answers are marked
     ``empty``.  It then makes every record of that root durable on its own disk (copied from
     its peers, commit by commit back to the persisted root) or confirms that the object
@@ -249,25 +249,31 @@ Message lanes (Task 8.3f-B, ruling R81; D50 Amendment "Message lanes")
     completes.
 
     - **Dispatcher (control, memory only).**
+
       - ``permit_req``, ``permit``, ``permit_no``, ``grant``, ``reject``, ``answer`` and
         plain ``query``;
       - the fairness part of ``release`` and ``want``;
       - the owner's part of ``done``, which sequences the next permission.
+
     - **Acceptor lane (one thread, ``_jobs``, arrival order).** Every step that writes the
       acceptor log or reads its pending state:
+
       - ``request`` and ``renew``: the grant's promise;
       - a ballot ``query``: the ballot's promise;
       - ``records`` and ``replicate``: the acceptance;
       - the grant-ending and committed-root part of ``release``;
       - the committed-root part of ``done``.
+
       Each step decides, writes, publishes, then replies, exactly as the dispatcher and the
       worker did before, so the safety arguments of the sections below are unchanged:
+
       - a grant leaves only after its promise is durable, and an acknowledgement only after
         its acceptance is;
       - a request decided while an earlier write is pending cannot exist, because steps run
         one at a time;
       - a ``done`` or ``release`` teaches its committed root only after every replication the
         same sender sent earlier (FIFO per lane; on a link that keeps the sender's order).
+
     - **Read lane (one thread, ``_reads``).** ``fetch`` and ``commit_query`` read the local
       tier.
 
@@ -584,10 +590,11 @@ class ClusterCoordinator:
             acceptance or an acknowledgement.
         acquire_timeout: default seconds :meth:`acquire` tries before ``ProtoTimeoutError``.
         backoff: ``(min_seconds, max_seconds)`` of the jittered back-off between lost attempts.
-        startup_grace: seconds after :meth:`start` during which this node grants nothing and
-            accepts no replicated root (default :attr:`restart_grace`, ``lease_duration +
-            drift_margin``): a restarted node does not remember when the grants of its
-            previous life end.  A shorter grace (``0`` included) is accepted only on a
+        startup_grace: seconds after :meth:`start` during which this node grants nothing
+            (default :attr:`restart_grace`, ``lease_duration + drift_margin``): a restarted node
+            does not remember when the grants of its previous life end.  The grace does not
+            apply to acceptances (D50): ``_may_accept`` has no grace check, because accepting reads
+            only the promise and the accepted root, both restored from the log at attach.  A shorter grace (``0`` included) is accepted only on a
             cluster's first start (rulings R50, R51): :meth:`attach` refuses it on an acceptor
             log that is not empty.  A rejoin of an empty log does not depend on it: outside a
             first start it decides on the answers of a ballot round (ruling R78a, module
@@ -738,7 +745,7 @@ class ClusterCoordinator:
         self._rejoining = False             # the acceptor log was empty: learning the promised terms
         self._rejoin_forced = False         # the operator accepted a rejoin from a bare majority
         self._rejoin_blocked = None         # why the running rejoin cannot complete, if it cannot
-        # The ballot of this incarnation's last rejoin: N - majority + 1 members promised it, so
+        # The ballot of this incarnation's last rejoin: V - majority + 1 voters promised it, so
         # no lower term can gain a majority again; this node never replicates under one.
         self._rejoin_ballot = 0
         self._rejoiners = []                # every rejoin thread started (joined by stop)
@@ -1140,10 +1147,11 @@ class ClusterCoordinator:
         return persister, rejoiner
 
     def _rejoin_answers(self) -> int:
-        """Witness answers from other members a rejoin needs: ``N - majority + 1`` (every member
-        when fewer).  Any majority that granted a term, or acknowledged a root, holds at least
-        ``majority - 1`` members other than this node, and that many answers from the ``N - 1``
-        others always include one of them; this node's own (empty) knowledge counts for
+        """Witness answers from other voters a rejoin needs: ``V - majority + 1`` with ``V`` the
+        number of voters, learners excluded (every other voter when fewer, ``min(V - 1, V -
+        majority + 1)``).  Any majority of voters that granted a term, or acknowledged a root,
+        holds at least ``majority - 1`` voters other than this node, and that many answers from
+        the ``V - 1`` other voters always include one of them; this node's own (empty) knowledge counts for
         nothing.  Forced (:meth:`force_rejoin`): ``majority - 1`` answers of any member that
         has its log loaded, witnesses or not."""
         if self._rejoin_forced:
@@ -1173,7 +1181,7 @@ class ClusterCoordinator:
         On a node that has not rejoined yet (rejoining now, or not attached yet: the next
         :meth:`attach`): let its rejoin complete with the answers of a bare majority counting
         itself, ``majority - 1`` other members whose log is loaded (witnesses or rejoining),
-        instead of ``N - majority + 1`` witnesses.  A forced rejoin adopts no committed root
+        instead of ``V - majority + 1`` witnesses.  A forced rejoin adopts no committed root
         above the accepted root it adopts.
 
         On a node that has rejoined (a survivor): forget the committed root it knows when that
@@ -1225,7 +1233,7 @@ class ClusterCoordinator:
         enough -- ``"forced"``, ``"witnesses"``, ``"new"`` (a cluster's first start) or
         ``"rootless"`` -- or ``None`` when they are not enough (lock held).
 
-        Witness answers (``"ok"``) count; ``N - majority + 1`` of them are needed.  Answers of
+        Witness answers (``"ok"``) count; ``V - majority + 1`` of them are needed.  Answers of
         empty members (rejoining) are counted only for a cluster's first start: when every
         other member answered, none of them has accepted any root (each is empty, or a
         witness that completed its own first start and has accepted nothing since) AND each
@@ -1361,11 +1369,11 @@ class ClusterCoordinator:
         cluster's first start late from a wiped one, and a wiped node may have accepted and
         acknowledged a root R just before the loss, under a lease whose holder may still count
         that acknowledgement.  Outside a first start or a forced rejoin, the counted answers
-        come from ``N - majority + 1`` witnesses that each made a promise of ``ballot`` durable
+        come from ``V - majority + 1`` witnesses that each made a promise of ``ballot`` durable
         before answering; ``ballot`` is above every term they reported in the plain round.  Let
         M be a majority that acknowledged R (old incarnation of this node included); ``M``
-        minus this node has at least ``majority - 1`` members among the ``N - 1`` others, and
-        ``(majority - 1) + (N - majority + 1) = N > N - 1``, so some counted witness x is in
+        minus this node has at least ``majority - 1`` members among the ``V - 1`` others, and
+        ``(majority - 1) + (V - majority + 1) = V > V - 1``, so some counted witness x is in
         M.  Either x accepted R before it promised ``ballot`` -- its answer, read after the
         promise and atomically with acceptances (ruling R55), reports R or a root above it --
         or it never accepts R (R's label is below ``ballot``, the ballot rule), and then R has
@@ -3665,7 +3673,7 @@ class ClusterCoordinator:
             # gate and checks again below.
             self._check_reserve(lease, locked=True)
             if label < self._rejoin_ballot:
-                # This node's rejoin ballot (R78a) was promised by N - majority + 1 members: no
+                # This node's rejoin ballot (R78a) was promised by V - majority + 1 voters: no
                 # term below it can gain a majority again, and every one of them refuses this
                 # root.  Nothing is sent: a retry runs under a live term instead of reporting
                 # an outcome that the refusals would leave unknown.
