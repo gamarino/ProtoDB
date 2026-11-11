@@ -321,4 +321,4 @@ What this example does not give you
   outside the database, or an application rule that decides what is shown, can. There is no access
   policy in the database either: show data through methods that apply your rules.
 * An ERP built on a relational database has decades of tooling around reports, reporting engines and
-  access control. This example shows what ProtoDB changes in the model, not that it replaces that tooling.
+  access control. This example shows what ``proto_db`` changes in the model, not that it replaces that tooling.

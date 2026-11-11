@@ -1,7 +1,7 @@
 Concepts
 ========
 
-ProtoDB is an embedded, transactional, object-oriented database for Python. It is built on one idea,
+``proto_db`` is an embedded, transactional, object-oriented database for Python. It is built on one idea,
 stated as the first design principle: **everything stored is immutable**. A modification creates a new
 version that shares what did not change with the old one, and becomes visible only when a new root is
 published. The rest of the design follows from that, and this page introduces the six concepts you need:
@@ -12,7 +12,7 @@ every concept on running code.
 Values
 ------
 
-A value is anything ProtoDB can store: ``None``, ``bool``, ``int``, ``float``, ``Decimal``, ``str``,
+A value is anything ``proto_db`` can store: ``None``, ``bool``, ``int``, ``float``, ``Decimal``, ``str``,
 ``bytes``, ``date``, ``time``, ``datetime`` (naive or aware), ``timedelta``, ``UUID``, ``tuple``, ``list``,
 ``dict``, atoms, and handles on mutable cells (:class:`~proto_db.values.MutableObject`). Anything else is
 refused where you build it (``ProtoValidationError``), not when you commit. A stored ``list`` or ``dict``
@@ -83,7 +83,7 @@ Indexes
 -------
 
 An index is a persistent structure inside a collection that answers "which elements have this key?" without
-reading every element. ProtoDB has three kinds: equality, range and vector. New kinds are added by
+reading every element. ``proto_db`` has three kinds: equality, range and vector. New kinds are added by
 subclassing ``Index``. Every mutator of every collection updates its indexes in the same step as the
 structure, so no code path returns a collection with a stale index (:doc:`indexing-framework`).
 

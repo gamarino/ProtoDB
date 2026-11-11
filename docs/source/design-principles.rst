@@ -37,9 +37,9 @@ P5. Safety never depends on time
 
 P6. Known techniques, honestly measured
    Where a mechanism has an established form (Paxos ballots and quorums, Raft learners, GFS/HDFS replication,
-   BookKeeper ensembles, VR recovery) ProtoDB adopts and cites it. Every performance claim carries a
+   BookKeeper ensembles, VR recovery) ``proto_db`` adopts and cites it. Every performance claim carries a
    measurement on stated hardware, every benchmark verifies the work it reports, and comparisons state where
-   ProtoDB loses.
+   ``proto_db`` loses.
 
 P7. Correct before fast
    A slower correct mechanism beats a faster one with a gap. The failure model is never narrowed to escape a

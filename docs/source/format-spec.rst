@@ -1,7 +1,7 @@
 Storage format specification
 ============================
 
-This page specifies the bytes ProtoDB writes: the storage files, the atom records and the
+This page specifies the bytes ``proto_db`` writes: the storage files, the atom records and the
 canonical values inside them, the logs of a cluster node and the messages cluster nodes
 exchange. It is written for an implementer in another language (protoBaseST, in Smalltalk,
 first of all) who must read and write the same database without reading the Python code.
@@ -111,7 +111,7 @@ keep opening it. Once a feature of version *n* is written, its segment is versio
 later root of the space is too (a root is shared by all the databases of a space): a reader
 that predates *n* refuses that segment or root with ``ProtoNotSupportedError``, never misreads
 it. A reader of version *n* reads every version up to *n*. Processes of different revisions may
-share a directory while only features all of them read are written; ProtoBase writes 4 in this
+share a directory while only features all of them read are written; ``proto_db`` writes 4 in this
 revision (``proto_db.storage.format.WRITE_FORMAT_VERSION``), and ``FEATURE_VERSIONS`` lists the
 version of every feature added later (none yet).
 
@@ -145,7 +145,7 @@ The per-database class registry
     (the installed modules), ``__currentSymbols`` (string to symbol) and a catalog root of class
     objects, whose name the registry specification fixes. Nothing in them is specific to a
     language. **Root names starting with ``__`` are reserved for the format from this revision
-    on**: ProtoBase refuses to write one (``ProtoValidationError``). The registry holds symbols
+    on**: ``proto_db`` refuses to write one (``ProtoValidationError``). The registry holds symbols
     and atoms of new built-in types under ``proto_db.``, which a reader that predates them
     refuses (`Atoms of unknown types (D59)`_), so it is a format-5 feature if it ships with
     ``@sym``, otherwise one of the next version. A space whose data never uses it keeps its
@@ -182,7 +182,7 @@ holding UTF-8. Writers use the smallest encoding of every item, as msgpack-pytho
 The extension types (``ext``, ``fixext``, the timestamp extension) are never written, and a
 reader of this revision refuses them where a canonical value is expected. Readers MUST accept
 any valid encoding of an integer (a positive ``int 64``, say) and accept a ``float 32``, read
-as the float 64 of the same value (ProtoBase does both); a writer MUST NOT write either form.
+as the float 64 of the same value (``proto_db`` does both); a writer MUST NOT write either form.
 The canonical encoding of a value, which exact tokens are made of, is always the smallest
 form. Every msgpack map key in the structures below is a string: an atom envelope or a state
 map with a key of another type (``bin``, an integer) is ``ProtoCorruptionError``, and a cluster
@@ -191,7 +191,7 @@ message with one is dropped (``strict_map_key``). Maps keyed by other values are
 
 **Text.** Strings are sequences of Unicode scalar values encoded in UTF-8. A string holding a
 surrogate code point (U+D800 to U+DFFF, a lone surrogate) has no UTF-8 encoding and cannot be
-written: ProtoBase refuses it with ``ProtoValidationError`` when the value is validated, before
+written: ``proto_db`` refuses it with ``ProtoValidationError`` when the value is validated, before
 anything is packed (R128).
 
 
@@ -218,7 +218,7 @@ File storage (one directory, shared by processes)
     ``space.root.tmp``, ``fsync``-s it, renames it over ``space.root`` and ``fsync``-s the
     directory. The new root's ``epoch`` is the old one plus one (1 for the first root). Every
     record a root references is flushed (and, in the default durability, ``fsync``-ed) before
-    the root is written. An implementation that shares a directory with ProtoBase processes
+    the root is written. An implementation that shares a directory with ``proto_db`` processes
     MUST use the same lock and the same protocol.
 
 Cloud storage (an object store)
@@ -385,14 +385,14 @@ order::
     not significant: readers MUST accept any order, and the reference implementation writes
     the order in which the object's attributes were set (which differs, for example, between
     an empty collection and a later version of it). Writers that want byte equality with
-    ProtoBase reproduce the order shown by the vectors.
+    ``proto_db`` reproduce the order shown by the vectors.
 
 A payload with other keys, or whose ``t`` names another type than the one the reference was
 made with, is ``ProtoCorruptionError``.
 
 **Required fields.** Every field listed for a built-in type in `Atom types and their persisted
 fields`_ is REQUIRED unless it is marked optional. A record of a built-in type that lacks a
-required field is ``ProtoCorruptionError`` when it is loaded (ProtoBase checks it as soon as the
+required field is ``ProtoCorruptionError`` when it is loaded (``proto_db`` checks it as soon as the
 record is decoded, before any field is read). A writer MUST NOT add fields to a built-in type;
 what a reader does with an unknown field of a built-in type is unspecified. Required fields bind
 the built-in types only: an application type, including an application subclass of a built-in
@@ -412,20 +412,20 @@ MUST NOT carry one.
   persisted ``total`` with a Smalltalk accessor ``total`` is valid. A method that does anything
   else is behaviour, a lazily initialising getter (``^total ifNil: [total := 0]``) included.
 - Enforcement: a reader MAY refuse a record whose attribute names collide with the behaviour
-  names of its own class for the type (ProtoBase does); it need not check anything else, since
+  names of its own class for the type (``proto_db`` does); it need not check anything else, since
   it cannot know other implementations' classes. A writer MUST NOT write such a name.
-- In ProtoBase a persisted attribute is read as a plain Python attribute: the field is its own
+- In ``proto_db`` a persisted attribute is read as a plain Python attribute: the field is its own
   accessor, and any attribute of the Python class with the same name, a property written as an
-  accessor included, would hide it. ProtoBase therefore refuses a field named like any attribute
+  accessor included, would hide it. ``proto_db`` therefore refuses a field named like any attribute
   of its Python class, when writing (``ProtoValidationError``) and when reading
   (``ProtoCorruptionError``), and both messages say so. A Python class for a shared type
   defines no accessors; it reads ``order.total`` directly.
 
 An implementation cannot know the behaviour names of the others, so an application that shares
 a type across languages MUST keep its attribute names disjoint from the non-accessor behaviour
-names of every implementation of the type, and, for ProtoBase, from every attribute of the
+names of every implementation of the type, and, for ``proto_db``, from every attribute of the
 Python class: a protoBaseST writer that stores ``total`` on a type whose Python class has a
-method or property ``total`` writes data ProtoBase refuses to open.
+method or property ``total`` writes data ``proto_db`` refuses to open.
 
 Type names (D57)
 ~~~~~~~~~~~~~~~~
@@ -435,7 +435,7 @@ joined by dots, such as ``acme.sales.Order``. It names a type of the format, nev
 an implementation; each implementation maps names to its own classes. Built-in types use the
 prefix ``proto_db.``; applications SHOULD use a prefix of their own.
 
-- In ProtoBase a class declares its name as ``__type_name__`` in its own body. A class that
+- In ``proto_db`` a class declares its name as ``__type_name__`` in its own body. A class that
   does not declare one is registered under its Python ``module.QualifiedName`` for reading
   data written before D57 only; saving an instance raises ``ProtoValidationError``.
 - A class lists in ``__type_aliases__`` the names it was persisted under before. An alias reads
@@ -461,7 +461,7 @@ prefix ``proto_db.``; applications SHOULD use a prefix of their own.
   code older than a rename cannot read the new name.
 
 A reader MUST keep accepting every name it ever accepted. Data written before D57 by
-ProtoBase may contain Python-default names of application classes (``myapp.models.Person``);
+``proto_db`` may contain Python-default names of application classes (``myapp.models.Person``);
 an implementation that needs to read such data maps those names like any other.
 
 Atoms of unknown types (D59)
@@ -479,7 +479,7 @@ A reader:
   in it, references included) and MUST refuse it on the same grounds (``ProtoCorruptionError``);
 - MUST keep its type name, its ``oid``, its pointer and its decoded fields, and present the
   fields for reading;
-- MUST raise an explicit error naming the type (ProtoBase: ``ProtoNotSupportedError``) for every
+- MUST raise an explicit error naming the type (``proto_db``: ``ProtoNotSupportedError``) for every
   operation that needs the type's behaviour: a method, an attribute the record does not hold,
   a change, a construction, or its use where a built-in type is expected (a collection, a root
   atom);
@@ -499,7 +499,7 @@ A writer:
   token (the atom placeholder) need no class, so it is filed exactly where the implementation
   that owns the type files it.
 
-ProtoBase reads an opaque atom as an instance of a per-name subclass of
+``proto_db`` reads an opaque atom as an instance of a per-name subclass of
 ``proto_db.core.atom.OpaqueAtom``; ``type(atom).__type_name__`` is the name it was referenced
 by. A class registered later under that name takes over for the loads that follow. A Python
 application that forgets to import the module of one of its own types meets the same fallback:
@@ -684,7 +684,7 @@ first column is the value's kind in the conformance manifest's value notation.
 ``["fixed", offset, name]``
     A fixed offset: ``offset`` in microseconds east of UTC (``-86400 * 10**6 < offset < 86400 *
     10**6``) and ``name`` the zone's name. A reader rebuilds a fixed offset with that name.
-    ProtoBase writes the name its ``timezone`` object reports, which for an unnamed offset is
+    ``proto_db`` writes the name its ``timezone`` object reports, which for an unnamed offset is
     ``"UTC"`` (offset 0) or ``"UTC+05:30"`` / ``"UTC-03:00"`` (``UTC``, the sign, two-digit hours
     and minutes, then ``:SS`` and ``.ffffff`` only when not zero). The bytes depend only on the
     offset and the name, never on how the object was built.
@@ -705,7 +705,7 @@ first column is the value's kind in the conformance manifest's value notation.
     writers MUST NOT write it (a ``@dt`` in a zone is always written in the instant form).
 
 Any other kind of time zone cannot be stored (``ProtoValidationError`` when writing). A
-reader whose database does not know ``key`` cannot build the value; ProtoBase refuses it with
+reader whose database does not know ``key`` cannot build the value; ``proto_db`` refuses it with
 ``ProtoCorruptionError``.
 
 **The class of a built-in subclass is not persisted.** A value of a subclass of a scalar type
@@ -714,9 +714,9 @@ subclass of ``str``, ``int``, ``float``, ``Decimal``, ``bytes``, ``bytearray``, 
 ``time``, ``datetime``, ``timedelta`` or ``UUID``) is stored as the plain value of its base
 type: its data read with the base type's own methods, never with the subclass's conversions
 or accessors (``__str__``, ``__float__``, ``__buffer__``, a ``year`` or ``days`` property, ...;
-ProtoBase reads a date or time type's stored fields through the base type's pickling state).
+``proto_db`` reads a date or time type's stored fields through the base type's pickling state).
 ``Color.RED`` of ``class Color(str, Enum): RED = "red"`` is stored, ordered, hashed and
-tokenized as the string ``"red"``, and is read back as ``"red"``. ProtoBase converts it when the
+tokenized as the string ``"red"``, and is read back as ``"red"``. ``proto_db`` converts it when the
 value enters a structure (``canonical``), and also converts a lookup's argument (``has``,
 ``get_at``, ``count_of``) and a raw dict given to the encoder, so the order key, the hash, the
 exact token and the bytes always come from one value. A dict whose keys become one base value
@@ -803,7 +803,7 @@ and a reader MUST refuse data deeper than ``MAX_VALUE_DEPTH``, both at that same
 of depth 1022 round trips, and depth 1023 is refused on both sides. So a reader MUST read a
 record payload nested 1024 containers deep: an implementation whose MessagePack layer or whose
 walks stop earlier (at 509 levels, say, the figure of msgpack-python before 1.2.0) is not
-conforming from ``v2.0.0rc2`` on. ProtoBase refuses such a value with ``ProtoValidationError``
+conforming from ``v2.0.0rc2`` on. ``proto_db`` refuses such a value with ``ProtoValidationError``
 naming where it was going (the field of a ``DBObject``, the root, the mutable cell, the element,
 key or value of a collection) when the value is validated, and again when a record is encoded,
 and refuses such data with ``ProtoCorruptionError``. A record whose payload nests deeper than
@@ -850,7 +850,7 @@ write records a reader must refuse). The deepest *element* each structure can st
 The member key is what binds an indexed collection: an element is a member of every index of
 its collection, so a List with an index over its elements stores an element made of nested
 lists at most 254 deep, and a List of maps with an index on a field of them stores the maps,
-unorderable, through their surrogates. ProtoBase refuses an element past these limits when it
+unorderable, through their surrogates. ``proto_db`` refuses an element past these limits when it
 is added (``add``, ``set_at``, ``append_last``, ``extend``, ``from_iterable``, and an index added
 to a collection that already holds one), with ``ProtoValidationError`` naming the collection's
 element, key or value, or the index, and the effective limit; nothing is refused later at
@@ -861,23 +861,23 @@ deferred to the next ``FORMAT_VERSION`` (D60).
 **Why 1022.** A record payload ``{"t", "oid", "s": {name: value}}`` puts a value two containers
 deep, so a value at the limit makes a record exactly 1024 containers deep. 1024 is what the
 MessagePack layer supports on both sides, measured with msgpack-python, the MessagePack library
-ProtoBase writes and reads every record with: its unpacker refuses data nested deeper than 1024
+``proto_db`` writes and reads every record with: its unpacker refuses data nested deeper than 1024
 containers in every release measured (1.0.8, 1.1.0, 1.1.1, 1.1.2 and 1.2.4: 1024 read, 1025
 refused), and its packer writes 1024 since release 1.2.0 (releases up to 1.1.2 stop at 511).
-ProtoBase therefore requires msgpack-python 1.2.0 or later, and refuses to import with an older
+``proto_db`` therefore requires msgpack-python 1.2.0 or later, and refuses to import with an older
 one (``ProtoNotSupportedError``). The often-quoted figure of 509 levels is 511 minus the
 envelope's 2, the packer limit of msgpack-python before 1.2.0; it is not a limit of the format.
 msgpack-python's pure-Python fallback (used where its C extension is
 not available) recurses once per container: under Python's default recursion limit it cannot
-write or read records near 1024 containers, and fails with ``RecursionError``. ProtoBase runs
+write or read records near 1024 containers, and fails with ``RecursionError``. ``proto_db`` runs
 with the C extension.
 
 **No version change.** The limit adds no ``FORMAT_VERSION``: no conforming writer could produce
-deeper data before it. ProtoBase has always packed records with msgpack-python, whose packer
+deeper data before it. ``proto_db`` has always packed records with msgpack-python, whose packer
 refuses more than 1024 containers in every release (more than 511 before 1.2.0), and the
-envelope takes two, so no ProtoBase record holds a value deeper than 1022. The limit states a
-bound every record already met, enforces it before the packer with ProtoBase's own errors, and
-makes a reader refuse only data no conforming writer wrote. Before this rule ProtoBase walked
+envelope takes two, so no ``proto_db`` record holds a value deeper than 1022. The limit states a
+bound every record already met, enforces it before the packer with ``proto_db``'s own errors, and
+makes a reader refuse only data no conforming writer wrote. Before this rule ``proto_db`` walked
 values by recursion, so how deep it could write or read depended on the Python stack in use
 (about 330 nested lists read and 497 written under the default recursion limit, with a bare
 ``RecursionError`` beyond): values written then are read now at any depth up to the limit.
@@ -961,8 +961,8 @@ chooses which value to keep. Atoms that are never changed keep their format-3 ma
 Reserved tags
     ``@sym`` is reserved for symbols (the maintainer's runtime decision of 2026-11-08, option
     (c2): a symbol is an immutable value identified by its name, ``{"@sym": name}``, compared,
-    hashed and ordered by name). **It is not implemented by this revision**: a ProtoBase reader
-    refuses ``@sym`` as an unknown tag, so an implementation MUST NOT write it until ProtoBase
+    hashed and ordered by name). **It is not implemented by this revision**: a ``proto_db`` reader
+    refuses ``@sym`` as an unknown tag, so an implementation MUST NOT write it until ``proto_db``
     reads it. When it is added it will be an additive change marked by ``FORMAT_VERSION`` 5: a
     new tag, and a new rank after the mutable rank in the order below (`Format stability`_).
     Tags starting with ``@`` are reserved to the format.
@@ -1306,11 +1306,11 @@ and vector index: its tokens are canonical encodings. Its **absence** marks an i
 format 3, whose tokens were Python-text tuples (``("i", 1)``, ``("f", "0x1.8p+0")``,
 ``("T", (...))``, ...): readers answer queries from it (lookups do not use tokens), but a
 writer MUST rebuild it from the collection's elements (``empty`` index of the same definition,
-then every element added) before changing it. ProtoBase does so at the collection's first
+then every element added) before changing it. ``proto_db`` does so at the collection's first
 change, inside that change's transaction: a full rebuild, which for an ivf_flat index includes
 a training run and for an hnsw index the graph's construction. Any **other value** is
 reserved for a later format: a reader that does not know it MUST treat the index as one it
-cannot maintain (it may answer queries from it; it MUST NOT change it, and ProtoBase rebuilds
+cannot maintain (it may answer queries from it; it MUST NOT change it, and ``proto_db`` rebuilds
 it like a format-3 index).
 
 Key-group indexes
@@ -1368,7 +1368,7 @@ Vector indexes
     whenever ``centroids`` change: removal and ``validate()`` look a member up only in the list
     its vector belongs to.
 
-    **Training** (writer's choice, not needed to read). ProtoBase trains when the index first
+    **Training** (writer's choice, not needed to read). ``proto_db`` trains when the index first
     holds at least ``nlist`` members, and again when the number of members reaches
     ``retrain_growth`` times ``trained_size``; training computes ``nlist`` centroids (k-means from
     ``seed``, normalized for cosine), sets ``trained_size`` to the number of members and moves
@@ -1664,7 +1664,7 @@ A minimal external writer (file storage)
 ----------------------------------------
 
 A writer that implements neither the merge of concurrent writers nor the cluster protocol can
-still share a file-storage directory with ProtoBase processes. It commits by optimistic
+still share a file-storage directory with ``proto_db`` processes. It commits by optimistic
 retry: when the published root moved since it read it, it **re-reads the root and redoes its
 commit**; it never publishes over a root it did not build on.
 
@@ -1813,7 +1813,7 @@ Every change since format 1 and how a reader of this revision treats data writte
        when two entries become one key with two different values, so it never drops a value.
        A collection held by another atom is repaired by storing the rebuilt collection in
        that atom. A non-canonical text form is refused;
-       ProtoBase never wrote one. A format-3 reader refuses format-4 data
+       ``proto_db`` never wrote one. A format-3 reader refuses format-4 data
        (``ProtoNotSupportedError``)
 
 The cluster protocol has no compatibility across versions: every node of a cluster runs the
@@ -1850,21 +1850,21 @@ None of these breaks a round trip between conforming implementations.
   order key, its hash and, as a map key, its conflicts with other keys (`Map keys`_) all depend
   on the offset the reader's database gives that wall clock. A reader without a tz database,
   or whose database lacks the zone, MUST refuse such a value with an explicit error; it MUST NOT
-  assume an offset. (ProtoBase refuses a ``@dt`` whose zone its database lacks, in either form,
+  assume an offset. (``proto_db`` refuses a ``@dt`` whose zone its database lacks, in either form,
   with ``ProtoCorruptionError`` "Malformed @dt value"; for the format-4 form another reader MAY
   instead present the instant in UTC, since nothing stored depends on the zone's rules.) A reader whose database differs from the writer's may file such a value
-  elsewhere than ProtoBase did; rebuilding the collection (``rebuilt()``) after the first read
+  elsewhere than ``proto_db`` did; rebuilding the collection (``rebuilt()``) after the first read
   refiles it as an instant. Nothing else remains: no conversion tool is planned.
 - **Format-3 indexes are rebuilt only at the first change** (what remains of B4). A format-3
   key-group or vector index (no ``member_tokens``) answers every query, and ``validate()``
-  reports it stale, never corrupt. ProtoBase rebuilds it inside the first write transaction that
+  reports it stale, never corrupt. ``proto_db`` rebuilds it inside the first write transaction that
   changes its collection; nothing rebuilds it ahead of time, and a writer that cannot rebuild
   that index kind MUST NOT change the collection (`A minimal external writer (file storage)`_).
 - **Extractor and vector backends** are per-process functions: an index on an extractor, or an
   hnsw index, is only fully usable by an implementation that provides the same function or
   backend.
 - **The ``numpy`` parameter** of an exact vector index is a Python knob persisted in the format
-  (``params``): it changes no answer, only how ProtoBase computes it. Another implementation
+  (``params``): it changes no answer, only how ``proto_db`` computes it. Another implementation
   preserves it and may ignore it.
 - **Format-3 collections misfiled by built-in subclasses** stay misfiled until rebuilt: see
   the format history (detection with ``validate()``, repair with ``rebuilt()``). Nothing
@@ -1910,7 +1910,7 @@ JSON description of what every file means, in a language-neutral notation), the 
   kind decoded field by field, and a torn tail versus mid-log corruption;
 - one frame of every cluster message type;
 - a ``polyglot`` space holding a record of the type ``polyglot.st.Order``, which no Python class
-  implements (an opaque atom referencing a ProtoBase record), referenced from a root record,
+  implements (an opaque atom referencing a ``proto_db`` record), referenced from a root record,
   and an older record of that type whose ``t`` is its previous name ``polyglot.st.SalesOrder``,
   referenced under the declared name.
   The test changes the referencing record and checks that the opaque record is kept byte for

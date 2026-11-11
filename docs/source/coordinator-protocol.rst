@@ -1,7 +1,7 @@
 The coordinator protocol
 ========================
 
-This page specifies how the members of a ProtoDB cluster agree on one order of commits without letting the
+This page specifies how the members of a ``proto_db`` cluster agree on one order of commits without letting the
 storage arbitrate between them. It is written for two readers: a student who wants to follow the reasoning, and
 an implementer (protoBaseST, for example) who must reproduce the behaviour without reading the Python code.
 
@@ -33,7 +33,7 @@ Some conventions apply throughout:
 The problem in one paragraph
 ----------------------------
 
-Several processes, each with ProtoDB embedded, write one database. A commit builds a new root (an immutable
+Several processes, each with ``proto_db`` embedded, write one database. A commit builds a new root (an immutable
 tree that shares structure with the previous root, P1) on top of the root it read, after validating the read set
 (D34) and merging the intents (D33). Two processes must never both publish a root built on the same predecessor,
 and a commit acknowledged to its caller must never disappear from the history. The first design (D5) made the
@@ -67,7 +67,7 @@ Membership is a static list of peers ``(node_id, host, port)``; there is no dyna
 **rank** of a member is its index among the sorted member ids.
 
 *Member*
-   A process with ProtoDB embedded that runs a ``ClusterCoordinator``. Every member reads, commits and replicates
+   A process with ``proto_db`` embedded that runs a ``ClusterCoordinator``. Every member reads, commits and replicates
    its own work (P3); no member commits another's transactions (R66d).
 
 *Voter* and *learner* (D54)
@@ -141,7 +141,7 @@ State in the object store
 
 Sealed segments and part objects, shipped asynchronously, and **the persisted root**, written by each node's
 persister by compare-and-swap, never backwards in root order (D44 amendments, D46). The object store is
-append-only: no ProtoDB code deletes an object (D46 amendment, Task 8.3l).
+append-only: no ``proto_db`` code deletes an object (D46 amendment, Task 8.3l).
 
 **A backup of one node's directory is therefore not a backup of the cluster.** A node holds its own acceptor
 log, its own segments and the copies it replicates for its predecessors; committed records not yet in the object
@@ -839,7 +839,7 @@ The correspondence:
 
    * -
      - Datomic Pro peer
-     - ProtoDB member
+     - ``proto_db`` member
    * - Fast local read
      - ``d/db``: the peer's latest known value, no transactor round trip.
      - ``new_transaction()``: the newest committed root this node knows, no message.
@@ -863,7 +863,7 @@ model as one that "Merges index trees with an in-memory representation of recent
 up-to-date indexes" (`Indexes <https://docs.datomic.com/indexes/index-model.html>`__), and its capacity page
 says that "Datomic must perform background indexing jobs to copy recent changes from memory into the persistent
 index" (`Capacity Planning <https://docs.datomic.com/operation/capacity.html>`__). Reading these together as "indexing the novelty is deferred
-work" is our summary, not Datomic's wording. ProtoDB propagates *roots and records*: each
+work" is our summary, not Datomic's wording. ``proto_db`` propagates *roots and records*: each
 commit's records are the new nodes of the persistent trees, and **the root is already the index**. A member that
 learns a committed root can read through it at once, with no merge and no index debt; the price was paid by the
 committer, which built the path copies under its permission. Which trade-off suits a workload is not measured

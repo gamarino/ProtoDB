@@ -1,11 +1,11 @@
-# ProtoDB
+# proto_db
 
 [![PyPI version](https://img.shields.io/pypi/v/proto_db.svg)](https://pypi.org/project/proto_db/)
 [![Python Version](https://img.shields.io/pypi/pyversions/proto_db.svg)](https://pypi.org/project/proto_db/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Project Status](https://img.shields.io/badge/status-2.0.0.dev0-orange.svg)](#status)
 
-ProtoDB is an embedded, transactional, object-oriented database for Python. It stores immutable,
+`proto_db` is an embedded, transactional, object-oriented database for Python. It stores immutable,
 persistent collections with secondary indexes, runs queries through an index-aware planner, and
 commits serializable transactions per root, all in-process, without a separate server.
 
@@ -21,22 +21,23 @@ the API may still change before 2.0.0 is released.
 
 ### A note on names
 
-One project, two spellings, and they are not interchangeable:
+The product is named after its import. The repository has its own name, and the sibling
+Smalltalk project keeps its name too:
 
 | | Name |
 |---|---|
-| The project, the repository, and the documentation | **ProtoDB** — `github.com/gamarino/ProtoDB` |
-| The Python distribution and the import | **`proto_db`** — `pip install proto_db`, `import proto_db` |
+| The product (the library, the database) and its documentation | **`proto_db`** — `pip install proto_db`, `import proto_db` |
+| The repository | **protoBase** — `github.com/gamarino/ProtoDB` |
+| The Smalltalk sibling project | **protoBaseST** |
 
-The package keeps its underscore spelling because renaming it would break every
-importer; everything else says ProtoDB. Earlier documentation called the project
-*ProtoBase*, and some checkouts still live in a directory by that name — it is the
-same project. The old spelling survives in `ProtoBaseException`, a deprecated alias of
-`ProtoDBError` (the base of the exception hierarchy) that is removed in 2.1.
+Earlier documentation called the product *ProtoDB* or *ProtoBase*; both are the same
+product, now named `proto_db` everywhere so that the name matches the import. The old
+spelling survives in `ProtoBaseException`, a deprecated alias of `ProtoDBError` (the base
+of the exception hierarchy) that is removed in 2.1.
 
 ## Design principles
 
-ProtoDB is built from a small set of principles. Every design decision cites them, and
+`proto_db` is built from a small set of principles. Every design decision cites them, and
 a change that contradicts one is treated as conceptual debt, resolved before it is built.
 If you read only one thing before the code, read
 [docs/design-principles.md](docs/design-principles.md).

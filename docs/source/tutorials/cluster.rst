@@ -223,5 +223,5 @@ When another system is the better choice
 * Losing a majority of the voters stops writes (learners keep serving reads). That is the price of never
   acknowledging a commit that could be lost.
 * A managed distributed SQL database, with years of production history, is the safer choice when you need
-  a battle-tested cluster. ProtoDB's cluster is new and is documented, tested and measured in this
+  a battle-tested cluster. ``proto_db``'s cluster is new and is documented, tested and measured in this
   repository, not by a user base.

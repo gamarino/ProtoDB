@@ -34,7 +34,7 @@ Why the obvious solution fails
 ------------------------------
 
 The obvious move for a new database is to offer the same thing: foreign-key-like constraints, checked at
-commit. In ProtoDB it would be both costly and pointless:
+commit. In ``proto_db`` it would be both costly and pointless:
 
 * **costly**, because every reference written would need a check at commit, inside the critical section of a
   cluster commit, which is the one place the design keeps free of storage reads;

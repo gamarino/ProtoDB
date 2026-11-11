@@ -1,6 +1,6 @@
 # Exercise: the lost acknowledged commit
 
-A planted-bug exercise on the ProtoDB cluster coordinator. The bug is real: an adversarial review found it in
+A planted-bug exercise on the `proto_db` cluster coordinator. The bug is real: an adversarial review found it in
 this code (finding C1 of the second re-review of Task 8.3n), and it was fixed. The exercise puts it back in a scratch copy of the repository, gives you a test that
 fails, and asks you to find out why and to fix it.
 
@@ -32,7 +32,7 @@ about 5 seconds, because the test waits a bounded time for replication to finish
 
 ## The setting
 
-Several processes write one ProtoDB space through a cluster of peers. Each commit produces a new **root** (the
+Several processes write one `proto_db` space through a cluster of peers. Each commit produces a new **root** (the
 newest version of the whole database), and the cluster must agree on a single chain of roots.
 
 * **Voters** are the nodes that vote. A **majority** of voters must accept a root before the commit is

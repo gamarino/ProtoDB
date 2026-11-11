@@ -75,7 +75,7 @@ damage inside a record raises ``ProtoCorruptionError`` when it is read.
 Unknown outcomes
 ----------------
 
-If publishing fails, the commit may or may not have been applied. ProtoDB resolves the question where it can
+If publishing fails, the commit may or may not have been applied. ``proto_db`` resolves the question where it can
 prove the answer and reports ``ProtoOutcomeUnknownError`` where it cannot (P5). For a storage whose root lock
 excludes every writer, the root is read again: if it is ours the commit succeeded; if another epoch is
 visible, the commit conflicted. For ``CloudStorage`` the root is read back and our ``(segment, offset,

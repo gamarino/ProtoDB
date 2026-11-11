@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A 10-minute ERP demo of ProtoDB, in three acts (recruiting kit, R109).
+"""A 10-minute ERP demo of proto_db, in three acts (recruiting kit, R109).
 
 Run from the repository root::
 
@@ -415,7 +415,7 @@ def main(argv=None) -> int:
     workdir = tempfile.mkdtemp(prefix="erp-demo-") if own else args.workdir
     os.makedirs(workdir, exist_ok=True)
     try:
-        say("ProtoDB: an ERP demo in three acts")
+        say("proto_db: an ERP demo in three acts")
         space, db = build_erp(os.path.join(workdir, "erp-space"))
         try:
             title("Act 1: 'as of' and audit questions, with no audit table", args.pause)

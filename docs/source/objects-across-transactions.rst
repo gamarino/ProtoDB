@@ -24,7 +24,7 @@ the CAD tutorial.
 Referential integrity by construction
 -------------------------------------
 
-A reference in ProtoDB is a pointer to an atom that is already persisted. Two properties follow, without a
+A reference in ``proto_db`` is a pointer to an atom that is already persisted. Two properties follow, without a
 single constraint declared or checked:
 
 1. **A new reference can only point to something that exists.** Atoms are saved children first: when a
@@ -41,7 +41,7 @@ presence in a collection), and is not integrity.
 Contrast this with a mutable system. There a row is changed in place and may be deleted, so the referencing
 rows need a declared constraint that restricts, nulls or cascades the delete (Odoo's ``ondelete`` on a
 many-to-one field is one such declaration) and that every code path must respect; records that must stop
-being used are hidden with an ``active`` flag instead of deleted. ProtoDB moves the same two ideas to the
+being used are hidden with an ``active`` flag instead of deleted. ``proto_db`` moves the same two ideas to the
 application: whether something is current is a method of your model, and nothing that was ever referenced
 can disappear.
 

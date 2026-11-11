@@ -4,7 +4,7 @@ CAD: reusing what earlier transactions read
 A computer-aided design model is a deep, mostly unchanging graph: an assembly holds subassemblies, which
 hold parts, which hold features, which hold geometry. An engineer opens it, reads most of it, edits one
 feature, and reads it again, many times a day. A database that re-reads the whole graph from storage for
-every transaction wastes almost all of its work. ProtoDB does not have to: a pointer names one content
+every transaction wastes almost all of its work. ``proto_db`` does not have to: a pointer names one content
 forever (P1), so what a transaction decoded can be reused by every later transaction, thread and reader of
 the space with nothing to invalidate. This tutorial builds such a model, shows the cache counters, and then
 shows where the benefit stops. Every code block runs in the test suite.
@@ -195,16 +195,16 @@ When this does not help, or another system is better
 ----------------------------------------------------
 
 * If the model does not fit in the cache (a very large assembly read end to end), every pass reloads it,
-  and ProtoDB is no faster than any database reading from disk.
+  and ``proto_db`` is no faster than any database reading from disk.
 * The benefit is largest where the same data is read repeatedly through new transactions, as in the
   examples above. A workload that reads each record once gains nothing from a cache of any kind.
 * Other systems have caches too. What differs is invalidation: a cache over mutable data must learn
   when something changed, and across nodes that costs messages or staleness. Immutable stores share the property that
   cached data never goes stale (Datomic's peers cache immutable segments; this is general knowledge, not
-  verified here), so it is a consequence of immutability, not something only ProtoDB has. The cluster-wide measurement, by workload (the ``cluster_cache`` profile: reads across transactions on two
+  verified here), so it is a consequence of immutability, not something only ``proto_db`` has. The cluster-wide measurement, by workload (the ``cluster_cache`` profile: reads across transactions on two
   nodes under concurrent writes on a third, with the cache on and off, the decodes per read and the query-result
   hit rate), is in :doc:`../performance`; this page makes no performance claim of its own.
-* A CAD kernel with its own in-memory representation will edit geometry faster than any database. ProtoDB's
+* A CAD kernel with its own in-memory representation will edit geometry faster than any database. ``proto_db``'s
   part here is the persistent, versioned, shareable store of the model and its history, not the modelling
   operations.
 

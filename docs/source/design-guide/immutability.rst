@@ -19,7 +19,7 @@ This chapter explains why a cache that is never invalidated can still never be w
 The problem
 -----------
 
-Transactions in ProtoDB are explicit objects, each reading its own snapshot (P2). Before Task 8.3f, every
+Transactions in ``proto_db`` are explicit objects, each reading its own snapshot (P2). Before Task 8.3f, every
 transaction decoded every atom it touched, even when another transaction had just decoded the same atom. The
 storages already cached record *bytes* by pointer, but each transaction still fetched them, checked them,
 unpacked them and built fresh Python objects.

@@ -13,7 +13,7 @@ why it failed, the choice, and one mistake. The measured costs of the cluster ar
 What it gives the ERP
 ---------------------
 
-Three application servers run the ERP, each with ProtoDB embedded, all writing the same database. A sales
+Three application servers run the ERP, each with ``proto_db`` embedded, all writing the same database. A sales
 person on any server can commit; a report on any server reads its snapshot without asking anyone (readers never
 wait); and if one server dies, no commit any server acknowledged is lost. (Finding C1, told in
 :doc:`unknown-outcomes`, was a schedule with a slow clock and a delayed message that lost an acknowledged

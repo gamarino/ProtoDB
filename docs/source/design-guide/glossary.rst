@@ -11,7 +11,7 @@ Members and roles
 -----------------
 
 member
-   A process (a *node*) of the cluster, with ProtoDB embedded. Membership is a static list of peers.
+   A process (a *node*) of the cluster, with ``proto_db`` embedded. Membership is a static list of peers.
 
 voter, learner
    A fixed, odd set of members (three by default) orders roots: they grant leases and accept roots. The other

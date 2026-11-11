@@ -1,7 +1,7 @@
 Writing a custom index
 ======================
 
-ProtoDB has three index kinds (equality, range, vector). New kinds are added by subclassing ``Index`` and
+``proto_db`` has three index kinds (equality, range, vector). New kinds are added by subclassing ``Index`` and
 implementing a small set of hooks; the planner, the collections and the persistence layer need no change.
 This tutorial builds a **substring index**: it answers ``F.field.contains("abc")`` without reading every
 element, and shows how to prove that it is correct. Every code block runs in the test suite.
@@ -158,7 +158,7 @@ ones this index needs.
 ``with_added`` and ``with_removed``
    Return a **new** index: the receiver is never modified. ``self._with(field=...)`` copies the index with
    some fields replaced. The AVL functions are pure too (path copying), so an update shares almost
-   everything with the version before it, like every ProtoDB structure. An element can occur several times
+   everything with the version before it, like every ``proto_db`` structure. An element can occur several times
    in a ``List``, and ``group_add`` / ``group_remove`` keep that count. Removing an element the index does
    not hold is an error, never a silent no-op: it would mean the collection and its index have diverged.
 
@@ -277,9 +277,9 @@ is exactly the mistake the list element in the first section was there to catch:
    the contract rejects the index that forgets the side group
 
 The contract lives in the repository's test tree (``tests/contracts/index_contract.py``), so a source
-checkout of ProtoDB is needed to use it as above. In a project of your own, put a copy of that module (or the
+checkout of ``proto_db`` is needed to use it as above. In a project of your own, put a copy of that module (or the
 checkout on ``PYTHONPATH``) beside your tests and call ``IndexContract(...).run_all()`` from a test. Inside
-ProtoDB itself, register the contract in the ``REGISTRATIONS`` section of that file.
+``proto_db`` itself, register the contract in the ``REGISTRATIONS`` section of that file.
 
 Persistence and distribution
 ----------------------------

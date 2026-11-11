@@ -1,6 +1,6 @@
-"""ProtoDB: an embedded, transactional, object-oriented database for Python.
+"""proto_db: an embedded, transactional, object-oriented database for Python.
 
-This module is the public API of ProtoDB 2.0 (spec section 3, decision D15; the
+This module is the public API of proto_db 2.0 (spec section 3, decision D15; the
 exported surface is decision D47).  Every name listed in ``__all__`` is re-exported
 from the subpackage that defines it:
 

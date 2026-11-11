@@ -1,7 +1,7 @@
 The design guide
 ================
 
-This guide explains *why* ProtoDB is built the way it is. It is written for students and practitioners,
+This guide explains *why* ``proto_db`` is built the way it is. It is written for students and practitioners,
 and it is meant to be taught from. The reference pages (:doc:`concepts`, :doc:`concurrency-model`,
 :doc:`durability`, :doc:`format-spec`) say what the system does; ``docs/decisions.md`` is the terse record of
 every decision. This guide tells the story behind the decisions that were hard: what went wrong first, what

@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.abspath('../..'))
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
-project = 'ProtoDB'
+project = 'proto_db'
 copyright = '2026, Gustavo Marino'
 author = 'Gustavo Marino'
 # Try to read version from pyproject.toml; fallback to semantic string

@@ -46,7 +46,7 @@ A first transaction
    Ada Lovelace
 
 ``tr.new_list()`` and ``tr.new_object(...)`` create values that belong to this transaction. ``append_last``
-did not change ``numbers``: it returned a new list. That is the rule for every collection in ProtoDB, and
+did not change ``numbers``: it returned a new list. That is the rule for every collection in ``proto_db``, and
 the next section shows what it buys you.
 
 Values do not change

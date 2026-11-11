@@ -42,7 +42,7 @@ A conflict
 ----------
 
 Two transactions read the same value and each writes an increment. If both were applied, one increment
-would be lost. ProtoDB records what each transaction **read** (its read set) and, at commit, refuses a
+would be lost. ``proto_db`` records what each transaction **read** (its read set) and, at commit, refuses a
 transaction that read something that has changed since:
 
 .. code-block:: python
@@ -135,7 +135,7 @@ Writers of different keys do not conflict, and writers of the same key are appli
    events: 100 keys, no conflict, no retry
 
 The merge applies the *intent* of each transaction (set this key to this value), never a guess about what a
-value means: there is no "add the two numbers" for an integer, because ProtoDB cannot know that you meant a
+value means: there is no "add the two numbers" for an integer, because ``proto_db`` cannot know that you meant a
 counter. For counting, use a ``CountedSet`` (``add`` and ``remove`` are counter operations that merge), or
 read-modify-write under ``run``.
 
@@ -206,7 +206,7 @@ across two transactions:
 
 No exception was raised, because the second transaction read nothing. The fix is the rule of the section
 above: read and write in the same transaction. The same applies to reusing an object that came from a
-transaction whose commit failed. ProtoDB documents these cases instead of policing them with expensive
+transaction whose commit failed. ``proto_db`` documents these cases instead of policing them with expensive
 checks.
 
 Outcome unknown
