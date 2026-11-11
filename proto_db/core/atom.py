@@ -254,11 +254,38 @@ def type_tag(type_name: str):
     return type_name if alias is None else alias
 
 
+def _walk_mro(cls: type, name: str) -> bool:
+    return any(name in klass.__dict__ for klass in cls.__mro__)
+
+
+#: Atom class -> {name the class read does not find: whether its MRO defines it anyway} (R137a).
+_unreadable_names: dict = {}
+
+
 def class_defines(cls: type, name: str) -> bool:
     """Whether ``cls`` or a class of its MRO defines ``name``: what an instance attribute read
     would find before a persisted field.  Attributes of the metaclass (``mro``, ``register``)
-    are not seen by instance reads and do not count (pre-tag review m1)."""
-    return any(name in klass.__dict__ for klass in cls.__mro__)
+    are not seen by instance reads and do not count (pre-tag review m1).
+
+    The rule is the MRO walk; this answers it without walking for every field of every saved and
+    loaded atom (R137a).  A name ``hasattr`` finds on the class is walked each time (a metaclass
+    attribute is found too, so the walk decides); every class attribute, however added, is found.
+    A name it does not find is defined only by a descriptor that raises ``AttributeError`` when
+    read on the class: that answer is walked once per class and name and kept, so it assumes no
+    such descriptor is added to or removed from a class after the class is in use.  The cache
+    keeps its classes alive, as the atom type registry already does for every Atom class."""
+    try:
+        if hasattr(cls, name):
+            return _walk_mro(cls, name)
+    except Exception:
+        return _walk_mro(cls, name)     # a descriptor raising another error is still in the MRO
+    known = _unreadable_names.get(cls)
+    if known is None:
+        known = _unreadable_names.setdefault(cls, {})
+    answer = known.get(name)
+    if answer is None:
+        answer = known[name] = _walk_mro(cls, name)
+    return answer
 
 
 def type_name_of(tag) -> str:
