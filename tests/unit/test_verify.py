@@ -85,6 +85,18 @@ def test_the_misfiled_legacy_space_fails_naming_each_collection(tmp_path, capsys
         assert root in err, root
 
 
+def test_a_root_label_that_cannot_be_found_is_reported_not_hidden(tmp_path, capsys, monkeypatch):
+    """A failure while labelling a failed collection is stated in that failure's line, and the
+    collection's own failure is still reported (no broad exception is swallowed)."""
+    def broken(space, atom):
+        raise RuntimeError("label walk broke")
+    monkeypatch.setattr(verify, "_find_root_label", broken)
+    code, _ = _run(_copy("legacy", tmp_path), tmp_path)
+    err = capsys.readouterr().err
+    assert code == 1 and "ProtoMisfiledError" in err
+    assert "root label not found: RuntimeError: label walk broke" in err
+
+
 def test_a_corrupted_copy_fails(tmp_path, capsys):
     target = _copy("database", tmp_path)
     segment = target / MANIFEST["database"]["segment"]

@@ -104,12 +104,9 @@ def _as_stored(stored_tag, written_tag):
     """The type tag to expect: the stored one when it is an application name naming the same
     type as the re-encoded tag (an alias left by a supported rename, D57), else the re-encoded
     one.  A built-in type is canonical only as its alias (an integer)."""
-    if type(stored_tag) is str and stored_tag not in BUILTIN_TYPE_ALIASES and type(written_tag) is str:
-        try:
-            if type_name_of(stored_tag) == type_name_of(written_tag):
-                return stored_tag
-        except Exception:                          # noqa: BLE001 - malformed: compared as written
-            pass
+    if (type(stored_tag) is str and stored_tag not in BUILTIN_TYPE_ALIASES and type(written_tag) is str
+            and type_name_of(stored_tag) == type_name_of(written_tag)):  # a str tag never raises
+        return stored_tag
     return written_tag
 
 
@@ -222,12 +219,13 @@ def verify(directory: str) -> tuple[dict, list[str]]:
 
 
 def _root_label(space, atom) -> str:
-    """`` (root 'name' of database 'db')`` when ``atom`` is the current version of a root (``""``
-    when that cannot be told: the label never turns a reported failure into another one)."""
+    """`` (root 'name' of database 'db')`` when ``atom`` is the current version of a root, ``""``
+    when it is not.  When the label cannot be told, the reason is stated in the label: the failure
+    being labelled is still reported as itself, and the labelling failure is not hidden."""
     try:
         return _find_root_label(space, atom)
-    except Exception:                              # noqa: BLE001
-        return ""
+    except Exception as e:                         # noqa: BLE001 - stated in the reported line
+        return f" (root label not found: {type(e).__name__}: {e})"
 
 
 def _find_root_label(space, atom) -> str:
