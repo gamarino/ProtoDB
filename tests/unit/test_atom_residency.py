@@ -82,8 +82,11 @@ def test_loaded_shared_atoms_stay_within_the_capacity(capacity):
     with db.new_transaction() as tr:            # a full read: before 8.3m it left every node loaded
         assert sum(1 for _, r in tr.get_root_object("objs").items() if r.name) == 12_000
     gc.collect()
+    # Atoms of this space only (whatever their context: the shared cache or a transaction), so
+    # atoms another test left loaded in the process do not count (full-suite 3e07e0b).
     loaded_saved = [o for o in gc.get_objects() if isinstance(o, Atom) and o.__dict__.get("_loaded")
-                    and o.__dict__.get("atom_pointer") is not None]
+                    and o.__dict__.get("atom_pointer") is not None
+                    and getattr(o.__dict__.get("context"), "storage", None) is space.storage]
     # Before 8.3m (26f3b85): 24,000+ loaded saved atoms here whatever the capacity.
     assert len(loaded_saved) <= capacity + 1, f"{len(loaded_saved)} loaded saved atoms, capacity {capacity}"
     resident = {id(a) for a, _ in list(space._atoms._cache._items.values())}
