@@ -792,8 +792,14 @@ def _commit_under_lease(coordinator, lock_timeout, build: Callable) -> bool:
     ``ProtoConflictError`` alone (after the round's replication, so its retry starts from the
     root the round committed), and the round keeps the permission for the retries of such
     commits (D-LIVE-2; :data:`_PERMIT_RETRIES`).  ``ProtoConflictError`` when the permission
-    ended before anything was sent (retryable), ``ProtoOutcomeUnknownError`` when no majority
-    acknowledged in time (never retried).
+    ended before anything was sent (retryable; an unreachable base, R133, is one such case and
+    ends the permission ``"unknown"``), ``ProtoOutcomeUnknownError`` when no majority
+    acknowledged in time (never retried).  A stale base (:func:`_lease_base` answers ``None``:
+    a committed root above the base or the term, or a raised term floor) sends nothing, ends
+    the permission ``"unknown"`` so the owner abandons the term (O6), and puts the round's
+    commits back at the head of this node's queue for the next permission (``_requeue``): they
+    get no error.  A proposal base that was superseded ends ``"none"`` instead, and a held-retry
+    round of a permission already ``"committed"`` keeps that outcome.
     """
     tier = coordinator.tier
     if build is not _confirm_build:
@@ -1239,12 +1245,21 @@ def _lease_base(coordinator, tier, lease) -> Optional[tuple]:
     the lease's term is not above the base's label (the term floor has been raised: acquire
     again).  ``replicated`` is False for the persisted root (no replication carries it).
 
-    The base is the lease's root when it is certain, else the higher, in
-    :func:`~proto_db.cluster.rootlog.compare_roots` order, of the lease's root (its phase-1
-    value, :func:`_phase_1_floor`) and the result of a recovery round.  When neither knows
-    any root (a cluster started on empty local tiers, or one that lost a majority of its
-    disks), the cluster refounds from the persisted root with a term above any root a lost
-    node accepted (D46).
+    The base is the lease's root when it is certain (or a permit issued on a proposal, D55),
+    else the higher, in :func:`~proto_db.cluster.rootlog.compare_roots` order, of the lease's
+    root -- its phase-1 value, the floor (:func:`_phase_1_floor`, R127): the recovery query
+    promises nothing, so its result alone may predate a root accepted afterwards -- and the
+    result of a recovery round.  When neither knows any root (a cluster started on empty
+    local tiers, or one that lost a majority of its disks), the cluster refounds from the
+    persisted root with a term above any root a lost node accepted (D46).
+
+    A base chosen here may still be unreachable: when it is not known committed, the round
+    re-commits it first (:func:`_commit_base`), and if some of its records are on no
+    reachable member and not in the object store that raises :class:`_BaseUnreachable`; the
+    permission then ends ``"unknown"`` so the owner abandons the term (O6) and a fresh phase 1
+    runs on the live majority, instead of issuing the same floor base again (R133).
+    ``None`` from this function (a stale base) ends the permission ``"unknown"`` too, except
+    for a proposal base (``"none"``) and a held-retry round of a committed permission.
 
     Hard guard: the base never orders below the committed root this node knows.  Every
     committed root was accepted by a majority, which every recovery and every granting
@@ -1322,12 +1337,15 @@ def _phase_1_floor(lease) -> bool:
     before it replied, and reported a root that orders at or above C (an acceptor's accepted
     root only moves up; an acceptor that lost its disk, the one-disk loss of the failure
     model, regains a root at or above it before it votes again, through its rejoin's ballot
-    round, in which ``N - majority + 1`` witnesses promise the ballot durably and then report
-    their accepted roots, R78a).  Hence ``lease.root`` orders at or above C.  By induction over terms
-    (every earlier first root obeyed this rule) and the chain rule within a term (D55, V2'),
-    any root that orders at or above C extends C, so a base at or above ``lease.root``
-    extends every chosen root below T.  A recovery result that orders higher is safe to adopt
-    for the same reason: it is a root that some voter accepted, and it orders above C.
+    round, in which ``min(V - 1, V - majority + 1)`` of the other voters -- V counts voters,
+    learners excluded -- promise the ballot durably and then report their accepted roots,
+    R78a).  Hence ``lease.root`` orders at or above C.  By induction over terms (every earlier
+    first root obeyed this rule) and two premises within a term -- each acceptor accepts only
+    roots that extend its own accepted root (D55, V2'), and every root of one term lies on one
+    chain across acceptors (S2, ruling R79) -- any root that orders at or above C extends C, so
+    a base at or above ``lease.root`` extends every chosen root below T.  A recovery result that orders higher is safe to adopt
+    for the same reason (V2' and S2 again): it is a root that some voter accepted, and it
+    orders above C.
 
     Why the recovery result alone is not: the recovery query carries ballot 0 and promises
     nothing, so a voter that answered it may accept an older term's root afterwards -- the
