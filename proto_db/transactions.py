@@ -131,7 +131,7 @@ from .storage.format import WRITE_FORMAT_VERSION, RootRecord
 from .cluster.coordinator import REFOUND_TERM_STEP
 from .cluster.lease import Permission
 from .cluster.rootlog import compare_roots
-from .values import canonical, check_text, exact_token
+from .values import canonical_for, check_text, exact_token
 
 __all__ = ["ObjectSpace", "Database", "Transaction", "HistoryEntry", "SpaceRoot", "DatabaseRoot"]
 
@@ -2018,7 +2018,7 @@ class Transaction:
             raise ProtoValidationError(f"Root names starting with '__' are reserved for the format, not {name!r}")
         if not isinstance(replace, bool):
             raise ProtoValidationError("replace must be a bool")
-        value = canonical(value)
+        value = canonical_for(value, f"Root {name!r}")
         with self._lock:
             self._check_active()
             if replace or self._writes.get(name) is _REMOVED:
@@ -2074,7 +2074,7 @@ class Transaction:
         name makes one of the two commits raise ``ProtoConflictError``.
         """
         _check_name(name, "mutable")
-        value = canonical(value)
+        value = canonical_for(value, f"Mutable {name!r}")
         with self._lock:
             self._check_active()
             if self._mutable_view(name, record=True) is not _ABSENT:
@@ -2104,7 +2104,7 @@ class Transaction:
         wins), but a concurrent removal of the cell is.
         """
         _check_name(name, "mutable")
-        value = canonical(value)
+        value = canonical_for(value, f"Mutable {name!r}")
         with self._lock:
             self._check_active()
             if self._mutable_view(name, record=False) is _ABSENT:

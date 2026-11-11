@@ -66,7 +66,7 @@ from ..core.dbobject import DBObject
 from ..errors import ProtoNotSupportedError, ProtoValidationError
 from ..query.linq import Queryable
 from ..query.plans import QueryPlan
-from ..values import MISSING, MutableObject, is_atom
+from ..values import MISSING, MutableObject, fold_hybrid, is_atom
 
 __all__ = ["to_arrow", "vectors_fixed_size_list", "to_parquet", "scan_parquet", "from_parquet_to_rows"]
 
@@ -124,39 +124,50 @@ def _plain(value, column: str, path: tuple = (), zones: dict | None = None):
     """``value`` as plain Python for pyarrow (module docstring, "Value mapping").
 
     ``zones`` maps a position (``path`` inside the column) to whether its
-    datetimes are aware, to reject mixtures (D42 fix round 1).
+    datetimes are aware, to reject mixtures (D42 fix round 1).  Any depth: the walk is
+    :func:`fold_hybrid` over ``(value, path)`` items.
     """
     if zones is None:
         zones = {}
-    if value is MISSING:
-        return None
-    if isinstance(value, (datetime, time)):
-        _check_temporal(value, column, path, zones)
-        return value
-    if isinstance(value, Decimal):
-        if not value.is_finite():
-            raise ProtoValidationError(f"to_arrow: column {_describe_path(column, path)} holds the non-finite "
-                                       f"Decimal {value}; Arrow decimals have no NaN or Infinity")
-        return value
-    if isinstance(value, DBObject):
-        return {k: _plain(v, column, path + (k,), zones) for k, v in value._state().items()}
-    if isinstance(value, MutableObject):
-        raise ProtoNotSupportedError(f"to_arrow: column {column!r} holds a MutableObject handle "
-                                     f"({value.name!r}); resolve it with a transaction first")
-    if is_atom(value):
-        raise ProtoNotSupportedError(f"to_arrow: column {column!r} holds a {type(value).__name__} atom; "
-                                     f"convert it to a list or dict first")
-    if isinstance(value, Mapping):
-        out = {}
-        for k, v in value.items():
-            if not isinstance(k, str):
-                raise ProtoValidationError(f"to_arrow: column {column!r} holds a mapping with a non-string key "
-                                           f"{k!r}; Arrow structs need string keys")
-            out[k] = _plain(v, column, path + (k,), zones)
-        return out
-    if isinstance(value, (list, tuple)):
-        return [_plain(v, column, path + ("[]",), zones) for v in value]
-    return value
+
+    def expand(item):
+        value, path = item
+        if value is MISSING:
+            return None, None
+        if isinstance(value, (datetime, time)):
+            _check_temporal(value, column, path, zones)
+            return None, value
+        if isinstance(value, Decimal):
+            if not value.is_finite():
+                raise ProtoValidationError(f"to_arrow: column {_describe_path(column, path)} holds the non-finite "
+                                           f"Decimal {value}; Arrow decimals have no NaN or Infinity")
+            return None, value
+        if isinstance(value, DBObject):
+            return _struct_items(value._state(), path)
+        if isinstance(value, MutableObject):
+            raise ProtoNotSupportedError(f"to_arrow: column {column!r} holds a MutableObject handle "
+                                         f"({value.name!r}); resolve it with a transaction first")
+        if is_atom(value):
+            raise ProtoNotSupportedError(f"to_arrow: column {column!r} holds a {type(value).__name__} atom; "
+                                         f"convert it to a list or dict first")
+        if isinstance(value, Mapping):
+            for k in value:
+                if not isinstance(k, str):
+                    raise ProtoValidationError(f"to_arrow: column {column!r} holds a mapping with a non-string "
+                                               f"key {k!r}; Arrow structs need string keys")
+            return _struct_items(value, path)
+        if isinstance(value, (list, tuple)):
+            inner = path + ("[]",)
+            return [(v, inner) for v in value], list
+        return None, value
+
+    return fold_hybrid((value, path), expand)
+
+
+def _struct_items(state: Mapping, path: tuple) -> tuple:
+    """The ``(children, finish)`` of a struct: its values at their paths, rebuilt as a dict."""
+    keys = list(state)
+    return [(state[k], path + (k,)) for k in keys], lambda values: dict(zip(keys, values))
 
 
 def _record(row, index: int) -> Mapping:

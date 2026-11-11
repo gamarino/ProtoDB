@@ -29,13 +29,15 @@ import uuid
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
+import msgpack
 from msgpack import packb as _packb
 
-from .errors import ProtoUserError, ProtoValidationError
+from .errors import ProtoNotSupportedError, ProtoUserError, ProtoValidationError
 
 __all__ = ["MISSING", "FrozenList", "FrozenDict", "canonical", "check_text", "order_key", "rank_bounds", "values_equal", "hash_key",
            "is_atom", "is_orderable", "exact_token", "MutableObject", "ATOM_TOKEN", "map_key_ids",
-           "check_map_keys", "MAX_VALUE_DEPTH", "leaf_containers", "fold"]
+           "check_map_keys", "MAX_VALUE_DEPTH", "leaf_containers", "fold", "fold_hybrid", "value_depth", "check_wrapped",
+           "canonical_for"]
 
 
 class _Missing:
@@ -301,6 +303,25 @@ def check_text(text: str) -> str:
 #: the depth MessagePack's C packer (msgpack >= 1.2) and unpacker (every release) support.
 MAX_VALUE_DEPTH = 1022
 
+#: The oldest msgpack release whose packer nests the 1024 containers of a record holding a value
+#: of MAX_VALUE_DEPTH (earlier releases stop at 511, so they would refuse values this format
+#: allows, with a bare ``ValueError`` at commit).  Checked when this module is imported.
+MSGPACK_MINIMUM = (1, 2, 0)
+
+
+def check_msgpack(version) -> None:
+    """Raise ``ProtoNotSupportedError`` when the msgpack release ``version`` (a tuple such as
+    ``msgpack.version``) is older than :data:`MSGPACK_MINIMUM`."""
+    if tuple(version[:3]) < MSGPACK_MINIMUM:
+        raise ProtoNotSupportedError(
+            f"ProtoBase needs msgpack {'.'.join(map(str, MSGPACK_MINIMUM))} or later, but msgpack "
+            f"{'.'.join(map(str, version))} is installed: older releases cannot write a value nested "
+            f"MAX_VALUE_DEPTH = {MAX_VALUE_DEPTH} containers deep, which the storage format allows (format "
+            f"spec, \"Value nesting depth\"). Upgrade it: pip install 'msgpack>=1.2.0'")
+
+
+check_msgpack(msgpack.version)
+
 #: The native integer range of the wire form; an int outside it is written as ``{"@int": text}``.
 _INT_MIN = -2**63
 _INT_MAX = 2**64 - 1
@@ -362,11 +383,117 @@ def fold(value, expand):
         stack[-1][2].append(result)
 
 
+_NATIVE_LEAVES = frozenset({str, bytes, float, bool, type(None)})
+
+
+def value_depth(value, _depth: int = 0) -> int:
+    """The MessagePack containers the wire form of ``value`` nests (format spec, "Value nesting
+    depth"): a list adds 1, a tuple 2 (``{"@tup": [...]}``), a map 3 (``{"@map": [[k, v]]}``, 2 when
+    empty), and a scalar its :func:`leaf_containers`.  ``value`` is a canonical value, or a
+    structure a collection or an index stores (tuples of canonical values).  Recursive over the
+    first :data:`RECURSIVE_DEPTH` levels, then an explicit stack (:func:`_value_depth_tree`)."""
+    t = type(value)
+    if t in _NATIVE_LEAVES:
+        return 0
+    if t is tuple:
+        cost, items = 2, value
+    elif t is list or t is FrozenList:
+        cost, items = 1, value
+    elif t is dict or t is FrozenDict:
+        if not value:
+            return 2
+        cost, items = 3, [x for pair in value.items() for x in pair]
+    elif isinstance(value, (list, tuple, dict)):
+        return _value_depth_tree(value)
+    else:
+        return leaf_containers(value)
+    if _depth >= RECURSIVE_DEPTH:
+        return _value_depth_tree(value)
+    best = 0
+    for item in items:
+        if type(item) not in _NATIVE_LEAVES:
+            d = value_depth(item, _depth + 1)
+            if d > best:
+                best = d
+    return cost + best
+
+
+def _value_depth_tree(value) -> int:
+    """:func:`value_depth` with an explicit stack: any depth, whatever the Python stack in use."""
+    best = 0
+    stack = [(value, 0)]
+    pop, push = stack.pop, stack.append
+    while stack:
+        item, depth = pop()
+        if isinstance(item, list):
+            depth += 1
+            children = item
+        elif isinstance(item, tuple):
+            depth += 2
+            children = item
+        elif isinstance(item, dict):
+            if not item:
+                depth += 2
+                children = ()
+            else:
+                depth += 3
+                children = [x for pair in item.items() for x in pair]
+        else:
+            depth += leaf_containers(item)
+            if depth > best:
+                best = depth
+            continue
+        if not children and depth > best:
+            best = depth
+        for child in children:
+            push((child, depth))
+    return best
+
+
+def check_wrapped(value, wrapping: int, holder: str, wrapper: str) -> None:
+    """Refuse the canonical value ``value`` when ``wrapping`` containers that a structure stores
+    around it would make the stored attribute value nest deeper than :data:`MAX_VALUE_DEPTH`.
+
+    ``holder`` names the value in the error (``"Set element"``), ``wrapper`` what adds the
+    containers (``"its bucket"``).  A scalar nests at most 3 containers, so only a container is
+    walked."""
+    limit = MAX_VALUE_DEPTH - wrapping
+    if isinstance(value, (list, tuple, dict)):
+        depth = value_depth(value)
+        if depth > limit:
+            raise ProtoValidationError(
+                f"{holder} nests {depth} MessagePack containers deep, and {wrapper} adds {wrapping} "
+                f"around it, so it may nest at most {limit} (MAX_VALUE_DEPTH = {MAX_VALUE_DEPTH}, "
+                f"format spec \"Value nesting depth\")")
+
+
+def canonical_for(value, holder: str):
+    """:func:`canonical` of ``value``, with any ``ProtoValidationError`` naming ``holder`` (a root,
+    a mutable cell, a collection's element, key or value) the way a DBObject names its field."""
+    try:
+        return canonical(value)
+    except ProtoValidationError as e:
+        raise ProtoValidationError(f"{holder}: {e}") from e
+
+
 #: MessagePack containers above which :func:`canonical` stops recursing and goes on with an
 #: explicit stack (the codec's walks do the same, :data:`proto_db.core.codec.RECURSIVE_DEPTH`):
 #: values of ordinary shape take the plain recursive code, deeper ones the iterative walk, so the
 #: Python stack a call needs stays a few dozen frames at any depth of the value.
 RECURSIVE_DEPTH = 12
+
+
+def fold_hybrid(value, expand, _depth: int = 0):
+    """:func:`fold`, by plain recursion over the first :data:`RECURSIVE_DEPTH` levels and with
+    the explicit stack below them: the same calls of ``expand`` in the same order, and the same
+    result, at any depth whatever the Python stack in use, without the stack's cost on the
+    shallow values that are the common case."""
+    if _depth >= RECURSIVE_DEPTH:
+        return fold(value, expand)
+    children, result = expand(value)
+    if children is None:
+        return result
+    return result([fold_hybrid(child, expand, _depth + 1) for child in children])
 
 
 def canonical(value, _depth: int = 0):

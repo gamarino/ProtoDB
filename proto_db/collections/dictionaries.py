@@ -36,7 +36,7 @@ from itertools import islice
 
 from ..core.atom import PersistenceContext
 from ..errors import ProtoValidationError
-from ..values import canonical, order_key
+from ..values import canonical, canonical_for, check_wrapped, order_key
 from . import avl
 from .base import ConcurrentOptimized, IndexedCollection, check_sorted_keys, repair_pairs, same_value
 from .sets import CountedSet, counter_net_effect, counter_transform
@@ -47,22 +47,28 @@ _SET = "set"
 _REMOVE = "remove"
 
 
-def _canonical_key(key):
-    """Return the canonical form of ``key``, checking that it is orderable."""
-    key = canonical(key)
+def _canonical_key(key, holder: str = "Key"):
+    """Return the canonical form of ``key``, checking that it is orderable; errors name ``holder``."""
+    key = canonical_for(key, holder)
     order_key(key)
     return key
 
 
-def sorted_unique_pairs(pairs: Iterable[tuple]) -> list[tuple]:
+def sorted_unique_pairs(pairs: Iterable[tuple], owner: str = "Dictionary", wrapping: int = 0,
+                        wrapper: str = "") -> list[tuple]:
     """Canonicalise ``(key, value)`` pairs and return them sorted by ``order_key(key)``, one per key.
 
     A later pair for an equal key wins its value; the first key object is kept,
-    as ``dict`` does.
+    as ``dict`` does.  Errors name ``owner``'s key or value; a key or value that ``wrapping``
+    containers (added by ``wrapper``) would nest deeper than MAX_VALUE_DEPTH is refused.
     """
     by_key: dict = {}
+    key_holder, value_holder = f"{owner} key", f"{owner} value"
     for key, value in pairs:
-        key, value = _canonical_key(key), canonical(value)
+        key, value = _canonical_key(key, key_holder), canonical_for(value, value_holder)
+        if wrapping:
+            check_wrapped(key, wrapping, key_holder, wrapper)
+            check_wrapped(value, wrapping, value_holder, wrapper)
         okey = order_key(key)
         previous = by_key.get(okey)
         by_key[okey] = (key if previous is None else previous[0], value)
@@ -86,7 +92,7 @@ class Dictionary(ConcurrentOptimized, IndexedCollection):
 
         A later pair for an equal key wins; the result has an empty op log.
         """
-        items = sorted_unique_pairs(pairs)
+        items = sorted_unique_pairs(pairs, cls.__name__)
         empty = cls(context=context)
         if not items:
             return empty
@@ -142,7 +148,9 @@ class Dictionary(ConcurrentOptimized, IndexedCollection):
 
     def set_at(self, key, value) -> "Dictionary":
         """Return a dictionary with ``key`` mapped to ``value`` (add or replace event)."""
-        key, stored = _canonical_key(key), avl.boxed(canonical(value))
+        name = type(self).__name__
+        key = _canonical_key(key, f"{name} key")
+        stored = avl.boxed(canonical_for(value, f"{name} value"))
         value = avl.unboxed(stored)
         root, replaced, old = avl.key_put(self.root, key, stored)
         # The log keeps the stored form: a merge replaying it (D33) reuses the box, which the
@@ -154,7 +162,7 @@ class Dictionary(ConcurrentOptimized, IndexedCollection):
 
     def remove_at(self, key) -> "Dictionary":
         """Return a dictionary without ``key``; an absent key yields a new version with the same content."""
-        key = _canonical_key(key)
+        key = _canonical_key(key, f"{type(self).__name__} key")
         root, removed, old = avl.key_remove(self.root, key)
         log = self._logged((_REMOVE, key))
         if not removed:
@@ -213,10 +221,10 @@ class RepeatedKeysDictionary(ConcurrentOptimized, IndexedCollection):
         The first object of equal keys is kept.  The result has an empty op log.
         """
         groups: dict = {}
-        for key, record in pairs:
-            key = _canonical_key(key)
-            groups.setdefault(order_key(key), (key, []))[1].append(record)
         empty = cls(context=context)
+        for key, record in pairs:
+            key, record = _canonical_key(key, f"{cls.__name__} key"), empty._record(record)
+            groups.setdefault(order_key(key), (key, []))[1].append(record)
         if not groups:
             return empty
         tree = [(key, CountedSet.from_iterable(records, context=context))
@@ -269,6 +277,18 @@ class RepeatedKeysDictionary(ConcurrentOptimized, IndexedCollection):
 
     # -- mutators -----------------------------------------------------------------------
 
+    def _key(self, key):
+        return _canonical_key(key, f"{type(self).__name__} key")
+
+    def _record(self, record):
+        """``record`` canonical, refused when the CountedSet of its key would nest it deeper than
+        MAX_VALUE_DEPTH (:attr:`CountedSet.ELEMENT_WRAPPING`): at the call, not at commit."""
+        holder = f"{type(self).__name__} record"
+        record = canonical_for(record, holder)
+        check_wrapped(record, CountedSet.ELEMENT_WRAPPING, holder,
+                      "the CountedSet of its key (a bucket entry (record, count) in a bucket tuple)")
+        return record
+
     def _record_step(self, key, record, removes: int, adds: int, op: tuple) -> "RepeatedKeysDictionary":
         """Apply the counter transform ``(removes, adds)`` to ``record`` under ``key`` and log ``op``.
 
@@ -309,7 +329,7 @@ class RepeatedKeysDictionary(ConcurrentOptimized, IndexedCollection):
 
         Fires ``on_add(record)`` when the record is new under that key.
         """
-        key, record = _canonical_key(key), canonical(record)
+        key, record = self._key(key), self._record(record)
         return self._record_step(key, record, 0, 1, (_ADD, key, record))
 
     def remove_record(self, key, record) -> "RepeatedKeysDictionary":
@@ -320,12 +340,12 @@ class RepeatedKeysDictionary(ConcurrentOptimized, IndexedCollection):
         that key goes.  An absent key or record yields a new version with the
         same content; the record must be orderable even then.
         """
-        key, record = _canonical_key(key), canonical(record)
+        key, record = self._key(key), canonical_for(record, f"{type(self).__name__} record")
         return self._record_step(key, record, 1, 0, (_REMOVE_RECORD, key, record))
 
     def _transform_record(self, key, record, removes: int, adds: int) -> "RepeatedKeysDictionary":
         """Apply a composed counter transform to one record as one adjustment (concurrent merge, D26)."""
-        key, record = _canonical_key(key), canonical(record)
+        key, record = self._key(key), self._record(record)
         return self._record_step(key, record, removes, adds, (_TRANSFORM_RECORD, key, record, removes, adds))
 
     def remove_at(self, key) -> "RepeatedKeysDictionary":
@@ -333,7 +353,7 @@ class RepeatedKeysDictionary(ConcurrentOptimized, IndexedCollection):
 
         An absent key yields a new version with the same content.
         """
-        key = _canonical_key(key)
+        key = self._key(key)
         log = self._logged((_REMOVE_KEY, key))
         root, removed, records = avl.key_remove(self.root, key)
         if not removed:

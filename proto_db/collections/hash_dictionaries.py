@@ -26,7 +26,7 @@ from collections.abc import Iterable, Iterator
 
 from ..core.atom import PersistenceContext
 from ..errors import ProtoValidationError
-from ..values import canonical, hash_key, order_key
+from ..values import canonical, canonical_for, check_wrapped, hash_key, order_key
 from . import avl
 from .base import ConcurrentOptimized, IndexedCollection, repair_pairs, same_value
 from .dictionaries import sorted_unique_pairs
@@ -42,6 +42,11 @@ class HashDictionary(ConcurrentOptimized, IndexedCollection):
 
     __type_name__ = "proto_db.collections.HashDictionary"
     _fields = ("root", "count", "indexes")
+
+    #: MessagePack containers a bucket node value adds around a key and its value (format spec,
+    #: "Value nesting depth"): the bucket tuple and the entry ``(key, value)``, two ``@tup``.
+    ENTRY_WRAPPING = 4
+    _WRAPPER = "its bucket entry (key, value) in its bucket tuple"
 
     def __init__(self, *, context: PersistenceContext | None = None):
         """Create an empty hash dictionary."""
@@ -63,7 +68,7 @@ class HashDictionary(ConcurrentOptimized, IndexedCollection):
         A later pair for an equal key wins; the result has an empty op log.
         """
         empty = cls(context=context)
-        items = sorted_unique_pairs(pairs)
+        items = sorted_unique_pairs(pairs, cls.__name__, cls.ENTRY_WRAPPING, cls._WRAPPER)
         if not items:
             return empty
         buckets: dict = {}
@@ -132,7 +137,10 @@ class HashDictionary(ConcurrentOptimized, IndexedCollection):
 
         Replacing keeps the stored key object, as ``dict`` does.
         """
-        key, value = canonical(key), canonical(value)
+        name = type(self).__name__
+        key, value = canonical_for(key, f"{name} key"), canonical_for(value, f"{name} value")
+        check_wrapped(key, self.ENTRY_WRAPPING, f"{name} key", self._WRAPPER)
+        check_wrapped(value, self.ENTRY_WRAPPING, f"{name} value", self._WRAPPER)
         h, bucket, position = self._find(key)
         log = self._logged((_SET, key, value))
         if position >= 0:
@@ -145,7 +153,7 @@ class HashDictionary(ConcurrentOptimized, IndexedCollection):
 
     def remove_at(self, key) -> "HashDictionary":
         """Return a hash dictionary without ``key``; an absent key yields a new version with the same content."""
-        key = canonical(key)
+        key = canonical_for(key, f"{type(self).__name__} key")
         h, bucket, position = self._find(key)
         log = self._logged((_REMOVE, key))
         if position < 0:

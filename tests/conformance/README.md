@@ -114,9 +114,10 @@ A reader passes when, for every entry of `manifest.json`:
 10. `values_depth`: `max_value_depth` is `MAX_VALUE_DEPTH` (1022), the deepest nesting of
     MessagePack containers a value may have (format spec, "Value nesting depth": a list adds 1, a
     `@tup` 2, a `@map` 3, a tag 1, 2 or 3 by the arrays in its body). Each entry describes its
-    value as `levels`, `[kind, count]` pairs from the outside in (`list`, `tuple`, or `map`: a map
-    of one pair whose key is the string `"k"`), around `leaf` (a value description); `containers`
-    is the file's depth. Decoding the file and encoding the value give each other, and one more
+    value as `levels`, `[kind, count]` pairs from the outside in (`list`, `tuple`, `map`: a map
+    of one pair whose key is the string `"k"`, or `keymap`: a map of one pair whose key is the
+    inner value and whose value is the string `"v"`), around `leaf` (a value description, an
+    empty container included: it counts like any other); `containers` is the file's depth. Decoding the file and encoding the value give each other, and one more
     list around the value is refused by a writer (ProtoValidationError). Readers and writers
     accept these depths and refuse one container more; the vectors nest deeper than recursion in
     many languages allows by default.

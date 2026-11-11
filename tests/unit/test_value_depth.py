@@ -334,7 +334,9 @@ def test_the_verifier_names_a_record_deeper_than_the_limit(tmp_path, capsys):
 def test_the_over_limit_conformance_vectors_are_named_failures():
     manifest = json.loads((ROOT / "tests" / "conformance" / "manifest.json").read_text())
     ids = {v["id"] for v in manifest["invalid"] if v["id"].startswith("value-depth-over-")}
-    assert ids == {"value-depth-over-list", "value-depth-over-mixed", "value-depth-over-leaf"}
+    assert ids == {"value-depth-over-list", "value-depth-over-mixed", "value-depth-over-leaf",
+                   "value-depth-over-empty-list", "value-depth-over-empty-tuple", "value-depth-over-empty-map",
+                   "value-depth-over-map-key"}
     for vid in sorted(ids):
         data = (ROOT / "tests" / "conformance" / "vectors" / "invalid" / f"{vid}.bin").read_bytes()
         with pytest.raises(ProtoCorruptionError, match="MAX_VALUE_DEPTH = 1022"):
@@ -568,5 +570,157 @@ def test_random_values_near_the_limit_round_trip_on_a_deep_stack(seed):
             assert wire_depth(msgpack.unpackb(data, raw=False)) == MAX_VALUE_DEPTH
             with pytest.raises(ProtoValidationError, match="MAX_VALUE_DEPTH"):
                 canonical([deep])
+        return True
+    assert on_deep_stack(check)
+
+
+# -- other walks over stored values: the query result cache, explain() and to_arrow -------------
+#
+# Off the storage paths, but they walk values the product now writes at any depth up to the
+# limit (review M1): each must work on a deep stack and give what its recursive form gave.
+
+def _ref_freeze(value, size, refs):
+    """The query cache's recursive ``_freeze`` before B12 (reference)."""
+    from proto_db.query import cache
+    if value is None or value is MISSING:
+        return value
+    if isinstance(value, Atom):
+        size[0] += cache._REF_SIZE
+        refs[0] += 1
+        return cache._AtomRef(value.atom_pointer, type(value).__type_name__)
+    if isinstance(value, dict):
+        size[0] += sys.getsizeof(value)
+        return FrozenDict((_ref_freeze(k, size, refs), _ref_freeze(v, size, refs)) for k, v in value.items())
+    if isinstance(value, list):
+        size[0] += sys.getsizeof(value)
+        return FrozenList(_ref_freeze(v, size, refs) for v in value)
+    if isinstance(value, tuple):
+        size[0] += sys.getsizeof(value)
+        return tuple(_ref_freeze(v, size, refs) for v in value)
+    size[0] += sys.getsizeof(value)
+    return value
+
+
+def _ref_display(value):
+    """``display_value`` before B12 (reference)."""
+    import math
+    if value is None or isinstance(value, (bool, int, str)):
+        return value
+    if isinstance(value, float) and math.isfinite(value):
+        return value
+    if isinstance(value, (list, tuple)):
+        return [_ref_display(v) for v in value]
+    if isinstance(value, dict):
+        return {"@dict": [[_ref_display(k), _ref_display(v)] for k, v in value.items()]}
+    return repr(value)
+
+
+def _cache_shape(value):
+    """A comparable rendering of a frozen value: atom references by pointer, containers by type."""
+    from proto_db.query import cache
+    if type(value) is cache._AtomRef:
+        return ("ref", value.ptr, value.type_name)
+    if isinstance(value, dict):
+        return (type(value).__name__, [(_cache_shape(k), _cache_shape(v)) for k, v in value.items()])
+    if isinstance(value, (list, tuple)):
+        return (type(value).__name__, [_cache_shape(v) for v in value])
+    return notation.describe(value)
+
+
+@pytest.mark.parametrize("seed", range(10))
+def test_the_cache_and_explain_walks_give_what_the_recursive_walks_gave(seed):
+    from proto_db.query import cache
+    from proto_db.query.terms import display_value
+    rng = random.Random(500 + seed)
+    for _ in range(10):
+        value = canonical(_random_value(rng, rng.choice([3, 8, 20])))
+        size, refs, ref_size, ref_refs = [0], [0], [0], [0]
+        frozen = cache._freeze(value, size, refs)
+        assert _cache_shape(frozen) == _cache_shape(_ref_freeze(value, ref_size, ref_refs))
+        assert (size, refs) == (ref_size, ref_refs)
+        loads = []
+        thawed = cache._thaw(frozen, lambda p, t: loads.append(p) or stub(p, t))
+        assert notation.describe(thawed) == notation.describe(value)
+        assert loads == [a.atom_pointer for a in _atoms_in_order(value)]
+        rendered = display_value(value)
+        assert rendered == _ref_display(value) or (rendered != rendered)   # NaN renders as its repr
+        assert json.dumps(rendered) == json.dumps(_ref_display(value))
+
+
+def _atoms_in_order(value):
+    """The atoms of ``value`` in the order a pre-order walk meets them."""
+    out, pending = [], [value]
+    while pending:
+        item = pending.pop()
+        if isinstance(item, Atom):
+            out.append(item)
+        elif isinstance(item, dict):
+            pending.extend(reversed([x for pair in item.items() for x in pair]))
+        elif isinstance(item, (list, tuple)):
+            pending.extend(reversed(item))
+    return out
+
+
+def test_the_query_result_cache_holds_values_at_the_limit_on_a_deep_stack():
+    """The reviewer's case: a cached result row nested 400 lists deep raised RecursionError."""
+    from proto_db.query.linq import from_collection
+    space = ObjectSpace(_memory())
+    db = space.new_database("d")
+    deep = [nest(MAX_VALUE_DEPTH), nest((MAX_VALUE_DEPTH - 2) // 2, saved_atom(7), "tuple"),
+            nest((MAX_VALUE_DEPTH - 2) // 3, 5, "map")]
+
+    def write(tr):
+        tr.set_root_object("items", tr.new_list().extend(deep))
+        tr.set_root_object("refs", tr.new_list().extend([nest(MAX_VALUE_DEPTH - 2, DBObject(x=1))]))
+    db.run(write)
+
+    def check():
+        with db.new_transaction() as tr:
+            for name, expected in (("items", deep), ("refs", None)):
+                query = from_collection(tr.get_root_object(name))
+                first = list(space.query_cache.result(query))
+                again = list(space.query_cache.result(query))  # from the cache: thawed again
+                assert [notation.describe(v) for v in again] == [notation.describe(v) for v in first]
+                if expected is not None:
+                    assert [notation.describe(v) for v in first] == [notation.describe(canonical(v))
+                                                                      for v in expected]
+                else:
+                    assert bottom(again[0]).x == 1
+        return True
+    try:
+        assert on_deep_stack(check)
+    finally:
+        space.close()
+
+
+def test_explain_renders_operands_at_the_limit_on_a_deep_stack():
+    from proto_db.query.terms import display_value
+
+    def check():
+        rendered = display_value(nest(MAX_VALUE_DEPTH))
+        assert wire_depth(rendered) == MAX_VALUE_DEPTH and bottom(rendered) == 1
+        maps = display_value(nest(300, "x", "map"))
+        assert wire_depth(maps) == 300 * 3                     # {"@dict": [[k, v]]}: 3 per map
+        return True
+    assert on_deep_stack(check)
+
+
+def test_to_arrow_converts_values_at_the_limit_on_a_deep_stack():
+    """``_plain`` (pure Python: pyarrow is not needed to call it) walks lists, maps and DBObjects."""
+    from proto_db.interop import arrow
+
+    def check():
+        assert bottom(arrow._plain(nest(MAX_VALUE_DEPTH), "c")) == 1
+        maps = arrow._plain(nest(340, 5, "map"), "c")
+        assert wire_depth(maps) == 340 and bottom(maps) == 5
+        chain = DBObject(a=1)
+        for _ in range(600):
+            chain = DBObject(a=chain)
+        plain = arrow._plain(chain, "c")
+        assert wire_depth(plain) == 601 and bottom(plain) == 1
+        with pytest.raises(ProtoValidationError, match=r"column 'c'(\.k)+ holds the non-finite Decimal"):
+            arrow._plain(nest(400, Decimal("NaN"), "map"), "c")
+        with pytest.raises(ProtoValidationError, match=r"column 'c'(\[\])+ mixes naive and aware"):
+            arrow._plain(nest(500, [datetime(2026, 1, 1), datetime(2026, 1, 1, tzinfo=timezone.utc)]), "c")
         return True
     assert on_deep_stack(check)

@@ -80,7 +80,9 @@ that only adds readable inputs (a new reader-side tolerance) raises nothing and 
 ``FORMAT_VERSION`` (segment headers and root records) covers:
 
 - the value encoding: every tag and its body, the one spelling per value, the map-key rule, the
-  nesting limit (`Value nesting depth`_);
+  nesting limit (`Value nesting depth`_: 1022 containers per value, so every reader accepts
+  records 1024 containers deep; a reader that stops earlier, at 509 levels for example, is not
+  conforming from ``v2.0.0rc2`` on);
 - the atom envelope, the type-name grammar, the built-in alias table (an added built-in type is
   a change: an older reader refuses its name), and the reserved attribute and root names;
 - the persisted fields of every built-in type: their names, types, whether each is required,
@@ -116,7 +118,7 @@ version of every feature added later (none yet).
 **The pinned vectors.** ``tests/conformance/vectors.sha256`` lists the SHA-256 of every file
 under ``tests/conformance/vectors/`` (``<hex digest>  <path>``, one line per file, sorted by path
 in code point order, ``/`` as the separator), then the digest of ``manifest.json``. The SHA-256
-of that list file is ``2f5df6819f153c0fb85ba791b392f30aa0e3c7098c8596428a6102cd6c814265``. ``test_conformance.py`` checks that the committed files
+of that list file is ``392f2d0bd580d6b0afa1feaf305e36265b808f7dd381e9bfa1f44d37ce914af5``. ``test_conformance.py`` checks that the committed files
 match the list and that this page states the list's digest. Each vector file is governed by
 the number that covers what it holds: ``vectors/cluster/*.log`` by ``LOG_FORMAT_VERSION``,
 ``vectors/cluster/messages/`` by ``PROTOCOL_VERSION``, every other file by ``FORMAT_VERSION``.
@@ -188,8 +190,9 @@ message with one is dropped (``strict_map_key``). Maps keyed by other values are
 ``@map`` values.
 
 **Text.** Strings are sequences of Unicode scalar values encoded in UTF-8. A string holding a
-lone surrogate cannot be written (the reference implementation fails with
-``UnicodeEncodeError`` when packing; see `Known gaps`_).
+surrogate code point (U+D800 to U+DFFF, a lone surrogate) has no UTF-8 encoding and cannot be
+written: ProtoBase refuses it with ``ProtoValidationError`` when the value is validated, before
+anything is packed (R128).
 
 
 Storage layouts
@@ -763,9 +766,9 @@ The wire form of a canonical value nests at most ``MAX_VALUE_DEPTH = 1022`` Mess
 containers.
 
 **What is counted.** The *depth* of a wire form is the largest number of msgpack containers
-(arrays and maps) on a path from its outermost item down to a scalar, the outermost item
-included when it is a container. The count starts at the canonical value itself: an attribute
-value (the value of one entry of a state map ``s``), or a value-layer vector file. The atom
+(arrays and maps) on a path from its outermost item down to a scalar or an empty container,
+the outermost item included when it is a container, and an empty container counted like any
+other. The count starts at the canonical value itself: an attribute value (the value of one entry of a state map ``s``), or a value-layer vector file. The atom
 envelope and the state map are not counted; in a record they add two. Each kind adds:
 
 .. list-table::
@@ -789,18 +792,71 @@ envelope and the state map are not counted; in a record they add two. Each kind 
    * - ``@time`` and ``@dt`` whose ``tz`` is an array (``fixed``, ``instant``, ``zone``)
      - 3
 
-So 1022 lists around ``1`` are exactly at the limit, and so is a ``@dt`` with a fixed offset
-inside 1019 lists. The count is a property of the wire form alone: it does not depend on the
-host language, its stack or its recursion limit.
+So 1022 lists around ``1`` are exactly at the limit, and so are 1021 lists around an empty
+list (``[]`` counts 1, ``{"@tup": []}`` and ``{"@map": []}`` count 2), and a ``@dt`` with a fixed
+offset inside 1019 lists. The keys of a map are on its paths too: a map whose key is a tuple
+nests that tuple 3 containers below the map's own depth. The count is a property of the wire
+form alone: it does not depend on the host language, its stack or its recursion limit.
 
 **Writers and readers.** A writer MUST refuse to store a value deeper than ``MAX_VALUE_DEPTH``,
 and a reader MUST refuse data deeper than ``MAX_VALUE_DEPTH``, both at that same number: a value
-of depth 1022 round trips, and depth 1023 is refused on both sides. ProtoBase refuses such a
-value with ``ProtoValidationError`` naming the field, when the value is validated (constructing
-a ``DBObject``, setting a root, changing a collection) and again when a record is encoded, and
-refuses such data with ``ProtoCorruptionError``. A record whose payload nests deeper than 1024
-containers (one of its values deeper than the limit) is refused before any value is decoded,
-because MessagePack's unpacker refuses it.
+of depth 1022 round trips, and depth 1023 is refused on both sides. So a reader MUST read a
+record payload nested 1024 containers deep: an implementation whose MessagePack layer or whose
+walks stop earlier (at 509 levels, say, the figure of msgpack-python before 1.2.0) is not
+conforming from ``v2.0.0rc2`` on. ProtoBase refuses such a value with ``ProtoValidationError``
+naming where it was going (the field of a ``DBObject``, the root, the mutable cell, the element,
+key or value of a collection) when the value is validated, and again when a record is encoded,
+and refuses such data with ``ProtoCorruptionError``. A record whose payload nests deeper than
+1024 containers (one of its values deeper than the limit) is refused before any value is
+decoded, because MessagePack's unpacker refuses it.
+
+**Every attribute value, internal nodes included.** The limit applies to every attribute value
+of every record, not only to the values an application writes: a node of a collection or of an
+index stores a value inside the shapes `Atom types and their persisted fields`_ and
+`Index maintenance contract`_ give, and those shapes add containers. The following is
+informative, a consequence of
+those normative shapes (a writer that applied the limit to the application's value alone would
+write records a reader must refuse). The deepest *element* each structure can store:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 40 30 30
+
+   * - Where the value is stored
+     - Containers added
+     - Deepest value accepted
+   * - a DBObject field, a root, a mutable cell, a List element, a Dictionary key or value, a
+       RepeatedKeysDictionary key
+     - 0
+     - 1022
+   * - a Set element (in its bucket tuple)
+     - 2
+     - 1020
+   * - a CountedSet element, a RepeatedKeysDictionary record (``(element, count)`` in a bucket
+       tuple); a HashDictionary key or value (``(key, value)`` in a bucket tuple)
+     - 4
+     - 1018
+   * - an element of an indexed collection, orderable (member key ``((0, element), token)``)
+     - 4 (6 in a vector index's ``store``, whose key is ``(list number, member key)``)
+     - 1018 (1016)
+   * - an element of an indexed collection, unorderable (a list, a map, NaN, or a tuple holding
+       one): member key ``((1, surrogate), token)``
+     - 4, plus the surrogate's: 4 per list level (where the list costs 1), 4 per tuple level
+       holding an unorderable value (where it costs 2), 6 per map level (where it costs 3), 2
+       around each orderable leaf
+     - 254 nested lists, or 169 nested maps, around a native scalar (253 and 169 in a vector
+       index's ``store``)
+
+The member key is what binds an indexed collection: an element is a member of every index of
+its collection, so a List with an index over its elements stores an element made of nested
+lists at most 254 deep, and a List of maps with an index on a field of them stores the maps,
+unorderable, through their surrogates. ProtoBase refuses an element past these limits when it
+is added (``add``, ``set_at``, ``append_last``, ``extend``, ``from_iterable``, and an index added
+to a collection that already holds one), with ``ProtoValidationError`` naming the collection's
+element, key or value, or the index, and the effective limit; nothing is refused later at
+commit. The surrogate's cost per level is the price of the frozen member-key shape
+(`Index maintenance contract`_); a flatter key (a non-nesting ``bin`` equality encoding) is
+deferred to the next ``FORMAT_VERSION`` (D60).
 
 **Why 1022.** A record payload ``{"t", "oid", "s": {name: value}}`` puts a value two containers
 deep, so a value at the limit makes a record exactly 1024 containers deep. 1024 is what the
@@ -808,9 +864,10 @@ MessagePack layer supports on both sides, measured with msgpack-python, the Mess
 ProtoBase writes and reads every record with: its unpacker refuses data nested deeper than 1024
 containers in every release measured (1.0.8, 1.1.0, 1.1.1, 1.1.2 and 1.2.4: 1024 read, 1025
 refused), and its packer writes 1024 since release 1.2.0 (releases up to 1.1.2 stop at 511).
-ProtoBase therefore requires msgpack-python 1.2.0 or later. The often-quoted figure of 509
-levels is 511 minus the envelope's 2, the packer limit of msgpack-python before 1.2.0; it is
-not a limit of the format. msgpack-python's pure-Python fallback (used where its C extension is
+ProtoBase therefore requires msgpack-python 1.2.0 or later, and refuses to import with an older
+one (``ProtoNotSupportedError``). The often-quoted figure of 509 levels is 511 minus the
+envelope's 2, the packer limit of msgpack-python before 1.2.0; it is not a limit of the format.
+msgpack-python's pure-Python fallback (used where its C extension is
 not available) recurses once per container: under Python's default recursion limit it cannot
 write or read records near 1024 containers, and fails with ``RecursionError``. ProtoBase runs
 with the C extension.
@@ -1803,10 +1860,6 @@ None of these breaks a round trip between conforming implementations.
   reports it stale, never corrupt. ProtoBase rebuilds it inside the first write transaction that
   changes its collection; nothing rebuilds it ahead of time, and a writer that cannot rebuild
   that index kind MUST NOT change the collection (`A minimal external writer (file storage)`_).
-- **Lone surrogates.** ``canonical`` accepts a Python string holding a lone surrogate, the hash
-  function encodes it (``surrogatepass``), but msgpack cannot pack it: the save fails with
-  ``UnicodeEncodeError`` instead of ``ProtoValidationError``. Strings in the format are valid
-  UTF-8.
 - **Extractor and vector backends** are per-process functions: an index on an extractor, or an
   hnsw index, is only fully usable by an implementation that provides the same function or
   backend.
@@ -1817,12 +1870,13 @@ None of these breaks a round trip between conforming implementations.
   the format history (detection with ``validate()``, repair with ``rebuilt()``). Nothing
   repairs them automatically: a reader cannot tell which value an application meant.
 - **Cost of exact tokens.** A token is a msgpack packing of the value. Measured on the
-  reference platform (free-threaded CPython 3.14, whose msgpack runs its pure-Python fallback:
-  ``msgpack.packb(1)`` alone takes about 4.5 µs), a token costs 5 to 6 µs for a scalar or a
-  small tuple, against 0.5 to 3 µs for the format-3 Python-text tuples. In an indexed write
-  workload (40 commits of 200 appends and 20 removals each on two lists with three indexes,
-  FileStorage), tokens took 0.34 % of commit time, so no fast path was added (the bytes would be
-  identical; with msgpack's C extension the cost falls with ``packb``'s).
+  reference platform (free-threaded CPython 3.14 with msgpack's C extension, where
+  ``msgpack.packb(1)`` alone takes about 4.6 µs, nearly all of it building a ``Packer``: packing
+  ``1`` with a reused one takes 0.14 µs), a token costs 5 to 7 µs for a scalar or a small tuple,
+  against 0.5 to 3 µs for the format-3 Python-text tuples. In an indexed write workload (40
+  commits of 200 appends and 20 removals each on two lists with three indexes, FileStorage),
+  tokens took 0.34 % of commit time, so no fast path was added (a reused packer would give the
+  same bytes).
 - **Zone datetimes after a tz-database change.** A stored zone datetime keeps its instant; the
   wall clock a reader shows is computed with the reader's database, so a future appointment
   written as "09:00 in São Paulo" shows another wall clock if that zone's rules change before

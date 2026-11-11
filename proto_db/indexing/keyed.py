@@ -55,12 +55,14 @@ from ..errors import ProtoCorruptionError, ProtoMisfiledError, ProtoValidationEr
 from ..query.plans import Estimate, IndexPlan
 from ..query.terms import (BETWEEN, BETWEEN_EXCL_BOTH, BETWEEN_EXCL_HIGH, BETWEEN_EXCL_LOW, EQ, GE, GT, IN,
                            IS_NONE, LE, LT, NE, NOT_NONE, Term, is_orderable)
-from ..values import MISSING, exact_token, fold, is_atom, order_key, rank_bounds
+from ..values import MAX_VALUE_DEPTH, MISSING, exact_token, fold, is_atom, order_key, rank_bounds, value_depth
 from .base import Index, element_identity
 from .keyspec import KeySpec
 
 __all__ = ["KeyGroupIndex", "surrogate", "exact_token", "EMPTY_GROUP", "member_key", "equal_members_bounds",
-           "group_add", "group_remove", "group_iter", "MEMBER_TOKENS"]
+           "group_add", "group_remove", "group_iter", "MEMBER_TOKENS", "MEMBER_KEY_WRAPPING",
+           "SURROGATE_LIST_LEVEL", "SURROGATE_MAP_LEVEL", "SURROGATE_LEAF", "element_depth_limits",
+           "check_member_key"]
 
 #: The member-token scheme of this revision (D58): an exact token is the canonical encoding.
 #: Persisted as ``member_tokens`` by the key-group and vector indexes; absent on format-3 indexes.
@@ -156,11 +158,71 @@ def member_key_matches(key, element, current: bool) -> bool:
     return isinstance(key[1], tuple) and order_key(key[0]) == order_key(_equality_part(element))
 
 
+# -- nesting depth of member keys (format spec, "Value nesting depth") ------------------------
+#
+# A member key is an attribute value (the ``key`` of a members-tree node), so the format's
+# MAX_VALUE_DEPTH applies to it, not only to the element it stands for.  These constants are the
+# containers the shapes above add; :func:`check_member_key` refuses an element whose member key
+# would nest deeper, when the element is added, naming the index.
+
+#: Containers a member key ``((0|1, part), token)`` adds around ``part``: two ``@tup`` (2 each).
+MEMBER_KEY_WRAPPING = 4
+#: Containers a surrogate adds per level of the element: a list ``("l", (items...))`` or a tuple
+#: holding an unorderable value ``("t", (items...))`` is two ``@tup``, 4 containers where the list
+#: costs 1 (the tuple 2); a map ``("d", ((k, v), ...))`` is three, 6 where the map costs 3.
+SURROGATE_LIST_LEVEL = 4
+SURROGATE_MAP_LEVEL = 6
+#: Containers ``("v", value)`` adds around an orderable value inside a surrogate.
+SURROGATE_LEAF = 2
+
+
+def element_depth_limits(wrapping: int = MEMBER_KEY_WRAPPING) -> dict:
+    """The deepest elements an index whose member keys sit inside ``wrapping`` containers can
+    store: ``"orderable"`` (containers of an orderable element, its own wire depth), ``"lists"``
+    and ``"maps"`` (levels of an element made of nested lists, or of nested maps, around a scalar
+    leaf, which go through the surrogate)."""
+    room = MAX_VALUE_DEPTH - wrapping
+    return {"orderable": room,
+            "lists": (room - SURROGATE_LEAF) // SURROGATE_LIST_LEVEL,
+            "maps": (room - SURROGATE_LEAF) // SURROGATE_MAP_LEVEL}
+
+
+def check_member_key(index, element, key, outer: int = 0) -> None:
+    """Refuse (``ProtoValidationError``) adding ``element`` to ``index`` when its member key ``key``,
+    stored inside ``outer`` more containers (a vector index's store key adds 2), would nest deeper
+    than MAX_VALUE_DEPTH.  The error names the index and the effective limits: an unorderable
+    element nests about 4 times deeper in its member key than in itself."""
+    if not isinstance(element, (list, tuple, dict)):
+        return  # a scalar or an atom: its member key nests at most a few containers
+    # A bound first, from the element alone: a surrogate nests at most 4 containers per container
+    # level of the element (a list's 1 becomes 4, a map's 3 becomes 6, a tuple's 2 becomes 4) plus 2
+    # around its leaf, so the member key nests at most MEMBER_KEY_WRAPPING + 4 * depth + 2; only an
+    # element that could pass the limit costs the walk of its member key.
+    if MEMBER_KEY_WRAPPING + outer + SURROGATE_LIST_LEVEL * value_depth(element) + SURROGATE_LEAF <= MAX_VALUE_DEPTH:
+        return
+    depth = value_depth(key) + outer
+    if depth <= MAX_VALUE_DEPTH:
+        return
+    wrapping = MEMBER_KEY_WRAPPING + outer
+    limits = element_depth_limits(wrapping)
+    raise ProtoValidationError(
+        f"Index {index.name!r} ({type(index).__name__} on {index.key_spec.describe()}) cannot store this "
+        f"element: its member key would nest {depth} MessagePack containers deep, more than "
+        f"MAX_VALUE_DEPTH = {MAX_VALUE_DEPTH} (format spec, \"Value nesting depth\"). The index stores an "
+        f"orderable element inside {wrapping} containers, so it may nest at most {limits['orderable']}; an "
+        f"unorderable one (holding a list, a map or NaN) through its surrogate, {SURROGATE_LIST_LEVEL} "
+        f"containers per list level and {SURROGATE_MAP_LEVEL} per map level: at most {limits['lists']} "
+        f"nested lists or {limits['maps']} nested maps")
+
+
 # -- groups ---------------------------------------------------------------------------------
 
-def _group_add(group: tuple, element) -> tuple:
+def _group_add(group: tuple, element, key=None) -> tuple:
+    """The group with one more occurrence of ``element``, whose member key is ``key`` (computed
+    when None)."""
     members, total = group
-    key = _member_key(element)
+    if key is None:
+        key = _member_key(element)
     entry = avl.key_get(members, key)
     members = avl.key_put(members, key, (element, 1) if entry is None else (entry[0], entry[1] + 1),
                           node_class=CountedKeyNode)[0]
@@ -277,9 +339,10 @@ def _weighted(tree) -> bool:
 class _GroupBuilder:
     """Accumulates one group during a bulk build, by exact member key."""
 
-    __slots__ = ("key", "members", "total")
+    __slots__ = ("index", "key", "members", "total")
 
-    def __init__(self, key):
+    def __init__(self, index, key):
+        self.index = index
         self.key = key
         self.members: dict = {}
         self.total = 0
@@ -287,6 +350,7 @@ class _GroupBuilder:
     def add(self, element) -> None:
         self.total += 1
         key = _member_key(element)
+        check_member_key(self.index, element, key)
         slot = self.members.get(ok := order_key(key))
         if slot is None:
             self.members[ok] = [key, element, 1]
@@ -339,11 +403,13 @@ class KeyGroupIndex(Index):
 
     def with_added(self, element) -> "KeyGroupIndex":
         """The index after one more occurrence of ``element`` (filed under its key, MISSING included)."""
+        member = _member_key(element)
+        check_member_key(self, element, member)
         key = self.key_spec.extract(element)
         if not is_orderable(key):
-            return self._with(side=_group_add(self.side, element), total_count=self.total_count + 1)
+            return self._with(side=_group_add(self.side, element, member), total_count=self.total_count + 1)
         group = avl.key_get(self.groups, key, EMPTY_GROUP)
-        groups = avl.key_put(self.groups, key, _group_add(group, element), node_class=CountedKeyNode)[0]
+        groups = avl.key_put(self.groups, key, _group_add(group, element, member), node_class=CountedKeyNode)[0]
         return self._with(groups=groups, total_count=self.total_count + 1)
 
     def with_removed(self, element) -> "KeyGroupIndex":
@@ -373,7 +439,7 @@ class KeyGroupIndex(Index):
         O(n log n) for the sort, O(n) tree construction; the receiver's content is never kept.
         """
         builders: dict = {}
-        side = _GroupBuilder(None)
+        side = _GroupBuilder(self, None)
         total = 0
         extract = self.key_spec.extract
         for element in elements:
@@ -382,7 +448,7 @@ class KeyGroupIndex(Index):
             if is_orderable(key):
                 builder = builders.get(ok := order_key(key))
                 if builder is None:
-                    builder = builders[ok] = _GroupBuilder(key)
+                    builder = builders[ok] = _GroupBuilder(self, key)
             else:
                 builder = side
             builder.add(element)

@@ -52,12 +52,19 @@ from ..query.plans import Estimate, IndexPlan
 from ..query.terms import NEAR, NearQuery, Term
 from ..values import exact_token, order_key
 from .base import Index, element_identity
-from .keyed import EMPTY_GROUP, MEMBER_TOKENS, group_add, group_remove, member_key, member_key_matches
+from .keyed import (EMPTY_GROUP, MEMBER_TOKENS, check_member_key, group_add, group_remove, member_key,
+                    member_key_matches)
 from .keyspec import KeySpec
 from .vector_backends import (METRICS, backend_for, canonical_vector, iter_entries,
                               normalize_params, rank_entries, store_key_okey)
 
 __all__ = ["VectorIndex", "near_oracle"]
+
+
+#: MessagePack containers a store key ``(list number, member key)`` adds around the member key
+#: (an ``@tup``): an element with a valid vector may nest 2 containers less than in a key-group
+#: index (format spec, "Value nesting depth").
+STORE_KEY_WRAPPING = 2
 
 
 def _check_dim(dim) -> int:
@@ -176,11 +183,14 @@ class VectorIndex(Index):
     def with_added(self, element) -> "VectorIndex":
         """The index after one more occurrence of ``element`` (an invalid key goes to ``invalid``)."""
         vector = self._vector(element)
+        mk = member_key(element)
         if vector is None:
-            return self._with(invalid=group_add(self.invalid, element), total_count=self.total_count + 1)
+            check_member_key(self, element, mk)
+            return self._with(invalid=group_add(self.invalid, element, mk), total_count=self.total_count + 1)
+        check_member_key(self, element, mk, STORE_KEY_WRAPPING)
         impl = self._impl()
         list_no = impl.list_for(self, vector)
-        key = (list_no, member_key(element))
+        key = (list_no, mk)
         entry = avl.key_get(self.store, key)
         value = (element, 1, vector) if entry is None else (entry[0], entry[1] + 1, entry[2])
         grown = self._with(store=avl.key_put(self.store, key, value)[0], total_count=self.total_count + 1)
@@ -224,6 +234,7 @@ class VectorIndex(Index):
             total += 1
             vector = empty._vector(element)
             mk = member_key(element)
+            check_member_key(self, element, mk, 0 if vector is None else STORE_KEY_WRAPPING)
             target = invalid if vector is None else members
             slot = target.get(okey := order_key(mk))
             if slot is None:

@@ -200,12 +200,23 @@ _DT_UTC = _V("datetime", [2026, 11, 10, 12, 30, 45, 0, 0, ["fixed", 0, "UTC"]])
 
 #: Values at the nesting limit (format spec, "Value nesting depth"): (id, levels, leaf, note).
 #: ``levels`` lists ``[kind, count]`` from the outside in; a ``map`` level is a map of one pair whose
-#: key is the str ``"k"``.  Every one is exactly MAX_VALUE_DEPTH containers deep and round-trips.
+#: key is the str ``"k"``, a ``keymap`` level a map of one pair whose *key* is the inner value (a
+#: tuple, so the deepest path runs through a map key) and whose value is the str ``"v"``.  Every one
+#: is exactly MAX_VALUE_DEPTH containers deep and round-trips.
 DEPTH_VALUES = [
     ("depth-max-list", [["list", MAX_VALUE_DEPTH]], _I(1),
      "1022 lists around 1: exactly MAX_VALUE_DEPTH containers"),
     ("depth-max-mixed", [["tuple", 200], ["map", 100], ["list", 319]], _DT_UTC,
      "200 tuples (2 each), 100 maps (3 each), 319 lists and an aware @dt (3): exactly MAX_VALUE_DEPTH"),
+    ("depth-max-empty-list", [["list", MAX_VALUE_DEPTH - 1]], _V("list", []),
+     "1021 lists around an empty list (1): an empty container counts"),
+    ("depth-max-empty-tuple", [["list", MAX_VALUE_DEPTH - 2]], _V("tuple", []),
+     "1020 lists around an empty tuple (2: {\"@tup\": []})"),
+    ("depth-max-empty-map", [["list", MAX_VALUE_DEPTH - 2]], _V("map", []),
+     "1020 lists around an empty map (2: {\"@map\": []})"),
+    ("depth-max-map-key", [["list", 100], ["keymap", 1], ["tuple", 459]], _V("decimal", "1.5"),
+     "100 lists, a map (3) whose key holds 459 tuples around a @dec (1): the deepest path runs "
+     "through the map key"),
 ]
 
 #: One container deeper than the limit; readers refuse them (``invalid``, layer ``value``).  Their
@@ -216,6 +227,14 @@ DEPTH_INVALID = [
      "200 tuples, 100 maps, 320 lists and an aware @dt: 1023 containers"),
     ("value-depth-over-leaf", [["list", MAX_VALUE_DEPTH - 2]], _DT_UTC,
      "1020 lists around an aware @dt, whose time-zone array is container 1023"),
+    ("value-depth-over-empty-list", [["list", MAX_VALUE_DEPTH]], _V("list", []),
+     "1022 lists around an empty list: 1023 containers"),
+    ("value-depth-over-empty-tuple", [["list", MAX_VALUE_DEPTH - 1]], _V("tuple", []),
+     "1021 lists around an empty tuple: 1023 containers"),
+    ("value-depth-over-empty-map", [["list", MAX_VALUE_DEPTH - 1]], _V("map", []),
+     "1021 lists around an empty map: 1023 containers"),
+    ("value-depth-over-map-key", [["list", 101], ["keymap", 1], ["tuple", 459]], _V("decimal", "1.5"),
+     "101 lists, a map whose key holds 459 tuples around a @dec: 1023 containers through the key"),
 ]
 
 
@@ -229,6 +248,8 @@ def nest(levels, leaf, wire: bool = False):
                 value = [value]
             elif kind == "tuple":
                 value = {"@tup": [value]} if wire else (value,)
+            elif kind == "keymap":
+                value = {"@map": [[value, "v"]]} if wire else {value: "v"}
             else:
                 value = {"@map": [["k", value]]} if wire else {"k": value}
     return value

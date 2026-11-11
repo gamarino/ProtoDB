@@ -1086,6 +1086,74 @@
     },
     "containers": 1022,
     "note": "200 tuples (2 each), 100 maps (3 each), 319 lists and an aware @dt (3): exactly MAX_VALUE_DEPTH"
+   },
+   {
+    "id": "depth-max-empty-list",
+    "file": "values/depth-max-empty-list.msgpack",
+    "levels": [
+     [
+      "list",
+      1021
+     ]
+    ],
+    "leaf": {
+     "list": []
+    },
+    "containers": 1022,
+    "note": "1021 lists around an empty list (1): an empty container counts"
+   },
+   {
+    "id": "depth-max-empty-tuple",
+    "file": "values/depth-max-empty-tuple.msgpack",
+    "levels": [
+     [
+      "list",
+      1020
+     ]
+    ],
+    "leaf": {
+     "tuple": []
+    },
+    "containers": 1022,
+    "note": "1020 lists around an empty tuple (2: {\"@tup\": []})"
+   },
+   {
+    "id": "depth-max-empty-map",
+    "file": "values/depth-max-empty-map.msgpack",
+    "levels": [
+     [
+      "list",
+      1020
+     ]
+    ],
+    "leaf": {
+     "map": []
+    },
+    "containers": 1022,
+    "note": "1020 lists around an empty map (2: {\"@map\": []})"
+   },
+   {
+    "id": "depth-max-map-key",
+    "file": "values/depth-max-map-key.msgpack",
+    "levels": [
+     [
+      "list",
+      100
+     ],
+     [
+      "keymap",
+      1
+     ],
+     [
+      "tuple",
+      459
+     ]
+    ],
+    "leaf": {
+     "decimal": "1.5"
+    },
+    "containers": 1022,
+    "note": "100 lists, a map (3) whose key holds 459 tuples around a @dec (1): the deepest path runs through the map key"
    }
   ]
  },
@@ -1313,6 +1381,34 @@
    "error": "corruption",
    "file": "invalid/value-depth-over-leaf.bin",
    "note": "1020 lists around an aware @dt, whose time-zone array is container 1023 (deeper than MAX_VALUE_DEPTH = 1022)"
+  },
+  {
+   "id": "value-depth-over-empty-list",
+   "layer": "value",
+   "error": "corruption",
+   "file": "invalid/value-depth-over-empty-list.bin",
+   "note": "1022 lists around an empty list: 1023 containers (deeper than MAX_VALUE_DEPTH = 1022)"
+  },
+  {
+   "id": "value-depth-over-empty-tuple",
+   "layer": "value",
+   "error": "corruption",
+   "file": "invalid/value-depth-over-empty-tuple.bin",
+   "note": "1021 lists around an empty tuple: 1023 containers (deeper than MAX_VALUE_DEPTH = 1022)"
+  },
+  {
+   "id": "value-depth-over-empty-map",
+   "layer": "value",
+   "error": "corruption",
+   "file": "invalid/value-depth-over-empty-map.bin",
+   "note": "1021 lists around an empty map: 1023 containers (deeper than MAX_VALUE_DEPTH = 1022)"
+  },
+  {
+   "id": "value-depth-over-map-key",
+   "layer": "value",
+   "error": "corruption",
+   "file": "invalid/value-depth-over-map-key.bin",
+   "note": "101 lists, a map whose key holds 459 tuples around a @dec: 1023 containers through the key (deeper than MAX_VALUE_DEPTH = 1022)"
   },
   {
    "id": "record-header-crc",
