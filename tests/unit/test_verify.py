@@ -245,3 +245,75 @@ def test_a_root_record_with_a_wide_integer_is_non_canonical(tmp_path, capsys):
     code, _ = _run(target, tmp_path)
     err = capsys.readouterr().err
     assert code == 1 and "non-canonical space.root" in err
+
+
+# -- any depth the product writes (R128, ruling R138) ---------------------------------------------
+
+DEEP = 10_000
+
+
+def _deep_space(path):
+    space = ObjectSpace(FileStorage(str(path)))
+    with space.new_database("d").new_transaction() as tr:
+        obj = DBObject(v=0, previous=None)
+        for i in range(1, DEEP):
+            obj = obj.with_(v=i, previous=obj, note=(i, [obj]) if i % 2500 == 0 else None)
+        tr.set_root_object("entity", obj)
+    space.close()
+
+
+def _chain_values(description) -> list:
+    """The ``v`` of every record down the ``previous`` links of a described chain (no recursion)."""
+    values = []
+    node = description
+    while "object" in node:
+        attrs = dict(node["attrs"])
+        values.append(int(attrs["v"]["int"]))
+        node = attrs["previous"]
+    assert node == {"nil": None}
+    return values
+
+
+def test_a_ten_thousand_version_chain_is_described_and_verifies(tmp_path, capsys):
+    assert DEEP >= 10 * sys.getrecursionlimit()
+    _deep_space(tmp_path / "db")
+    out = tmp_path / "dump.json"
+    code = verify.main([str(tmp_path / "db"), "--out", str(out)])
+    assert code == 0, capsys.readouterr().err
+    text = out.read_text(encoding="utf-8")
+    # The chain, plus the chains below the copies held in notes (at 2500, 5000 and 7500, each
+    # described in full, holding the notes below it): 10,000 + 7,500 + 2 * 5,000 + 4 * 2,500.
+    assert text.count('"object": "proto_db.core.dbobject.DBObject"') == 37_500
+    report, failures = verify.verify(str(tmp_path / "db"))
+    assert failures == []
+    entity = dict(report["databases"]["d"]["roots"])["entity"]
+    assert _chain_values(entity) == list(range(DEEP - 1, -1, -1))
+    # The nested copy inside a tuple is described in full, like any record.
+    attrs = dict(entity["attrs"])
+    while int(attrs["v"]["int"]) != 5000:
+        attrs = dict(attrs["previous"]["attrs"])
+    note = attrs["note"]["tuple"]
+    assert note[0] == {"int": "5000"} and _chain_values(note[1]["list"][0]) == list(range(4999, -1, -1))
+
+
+@pytest.mark.parametrize("value", [
+    MANIFEST, {}, [], {"a": []}, [{}], {"k": [1, 2.5, None, True, "ñ\U0001F600", {"x": {"y": [[]]}}]},
+    {"esc": "quote \" back \\ nl \n tab \t ctl \x01"}, 0, "s", None, float("nan"),
+])
+def test_the_dump_writer_writes_what_json_dumps_writes(value):
+    assert verify.dump_text(value) == json.dumps(value, indent=1, ensure_ascii=False)
+
+
+def test_the_dump_writer_reaches_any_depth_in_linear_text():
+    def nest(levels):
+        value = [1, "x"]
+        for _ in range(levels):
+            value = [{"k": value, "n": None}]
+        return value
+    # Past the indented levels the same JSON value is written on one line.
+    middle = nest(100)
+    assert json.loads(verify.dump_text(middle)) == middle
+    deep = 5 * sys.getrecursionlimit()
+    text = verify.dump_text(nest(deep))
+    assert text.count('"k"') == deep
+    assert len(text) < 40 * deep + 64 * 64 * 4

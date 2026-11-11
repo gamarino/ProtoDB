@@ -88,28 +88,65 @@ def describe(value):
 
 def describe_object(o):
     """The content description of a stored object: records, collections and opaque atoms are
-    described by their content (recursively), any other value by :func:`describe`."""
+    described by their content (recursively), any other value by :func:`describe`.
+
+    Nested content is described with an explicit stack, not by recursion, so a record at any depth
+    the product writes (a chain of 10,000 versions, R128) is described; the notation is unchanged."""
+    root = [None]
+    stack = [(o, root, 0)]
+    while stack:
+        value, parent, slot = stack.pop()
+        parent[slot], children = _shape(value)
+        stack.extend(reversed(children))
+    return root[0]
+
+
+def _shape(o) -> tuple:
+    """``(description, children)``: the description of ``o`` with ``None`` where the description
+    of each nested value goes, and ``children``, the ``(value, container, index)`` to fill in."""
     if isinstance(o, DBObject):
-        return {"object": type(o).__type_name__,
-                "attrs": [[k, describe_object(v)] for k, v in sorted(o._state().items())]}
+        return _with_attrs("object", o)
     if isinstance(o, OpaqueAtom):
-        return {"opaque": type(o).__type_name__,
-                "attrs": [[k, describe_object(v)] for k, v in sorted(o._state().items())]}
+        return _with_attrs("opaque", o)
     if isinstance(o, (List, Set)):
-        return {"collection": type(o).__type_name__, "elements": [describe_object(e) for e in o.elements()]}
+        elements = list(o.elements())
+        out = [None] * len(elements)
+        return ({"collection": type(o).__type_name__, "elements": out},
+                [(e, out, i) for i, e in enumerate(elements)])
     if isinstance(o, CountedSet):
-        return {"collection": type(o).__type_name__, "items": [[describe_object(e), {"int": str(n)}]
-                                                               for e, n in o.items()]}
+        items, children = [], []
+        for e, n in o.items():
+            item = [None, {"int": str(n)}]
+            items.append(item)
+            children.append((e, item, 0))
+        return {"collection": type(o).__type_name__, "items": items}, children
     if isinstance(o, (Dictionary, HashDictionary, RepeatedKeysDictionary)):
-        return {"collection": type(o).__type_name__, "items": [[describe_object(k), describe_object(v)]
-                                                               for k, v in o.items()]}
+        return _pairs({"collection": type(o).__type_name__}, "items", o.items())
     if isinstance(o, tuple):
-        return {"tuple": [describe_object(v) for v in o]}
+        out = [None] * len(o)
+        return {"tuple": out}, [(v, out, i) for i, v in enumerate(o)]
     if isinstance(o, list):
-        return {"list": [describe_object(v) for v in o]}
+        out = [None] * len(o)
+        return {"list": out}, [(v, out, i) for i, v in enumerate(o)]
     if isinstance(o, dict):
-        return {"map": [[describe_object(k), describe_object(v)] for k, v in o.items()]}
-    return describe(o)
+        return _pairs({}, "map", o.items())
+    return describe(o), []
+
+
+def _with_attrs(kind: str, o) -> tuple:
+    return _pairs({kind: type(o).__type_name__}, "attrs", sorted(o._state().items()), keys_described=False)
+
+
+def _pairs(head: dict, field: str, pairs, keys_described: bool = True) -> tuple:
+    items, children = [], []
+    for k, v in pairs:
+        item = [None, None] if keys_described else [k, None]
+        items.append(item)
+        if keys_described:
+            children.append((k, item, 0))
+        children.append((v, item, 1))
+    head[field] = items
+    return head, children
 
 
 def describe_database(tx) -> dict:
