@@ -100,7 +100,8 @@ version is reachable only through the new version's ``previous``. Therefore:
   entries, while SO-2's chain has 201 versions;
 * a query's cost depends on the collection and its indexes, which do not contain the history, so it does not
   grow with the depth of the chains. This last step is a structural argument. The timing measurement against
-  history depth is pending (``TODO(9c)`` in the modelling tutorial), and no timing is claimed here.
+  history depth is the ``history_depth`` benchmark of :doc:`/performance`: 35.78 decodes per uncached query at
+  every depth from 1 to 1,000 versions, and a latency that does not move.
 
 By P1, the chain cannot be wrong: a version points at the exact version it replaced, and nothing can change
 what that pointer returns.

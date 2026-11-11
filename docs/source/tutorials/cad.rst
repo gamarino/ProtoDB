@@ -201,15 +201,9 @@ When this does not help, or another system is better
 * Other systems have caches too. What differs is invalidation: a cache over mutable data must learn
   when something changed, and across nodes that costs messages or staleness. Immutable stores share the property that
   cached data never goes stale (Datomic's peers cache immutable segments; this is general knowledge, not
-  verified here), so it is a consequence of immutability, not something only ProtoDB has. The cluster-wide measurement, by workload, is
-  still to be added:
-
-  .. note::
-
-     TODO(9c): the R110 profile ("reads across transactions in a cluster under concurrent writes", with the
-     cache on and off, the decodes per read and the query-result hit rate) is not in ``benchmarks/results``
-     yet. Add its figures and a link to :doc:`../performance` here when the regeneration lands. Until then
-     this page makes no cluster-wide performance claim.
+  verified here), so it is a consequence of immutability, not something only ProtoDB has. The cluster-wide measurement, by workload (the ``cluster_cache`` profile: reads across transactions on two
+  nodes under concurrent writes on a third, with the cache on and off, the decodes per read and the query-result
+  hit rate), is in :doc:`../performance`; this page makes no performance claim of its own.
 * A CAD kernel with its own in-memory representation will edit geometry faster than any database. ProtoDB's
   part here is the persistent, versioned, shareable store of the model and its history, not the modelling
   operations.

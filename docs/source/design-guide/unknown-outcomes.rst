@@ -183,7 +183,7 @@ What was tried and rejected
   the base without containing the commit. That conclusion holds only if (1) the root read is known to be
   committed, and (2) no acknowledged or committed root is ever superseded by a root that does not descend from
   it. Condition (2) was exactly what finding C1 broke; since ``276a256`` the code holds it, but the rule as a
-whole has still not been reviewed, so it stays parked.
+  whole has still not been reviewed, so it stays parked.
 
 Back to the ERP
 ---------------
