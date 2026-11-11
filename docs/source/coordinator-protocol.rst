@@ -349,13 +349,15 @@ choice of base decides what the history keeps**. The rule (``_lease_base`` in ``
    after the persisted one (labelled far below) are superseded instead of resurrecting when it returns (D46,
    fix round 2).
 5. **Stale base.** The base is stale when this node knows a committed root labelled above the term (or
-   labelled exactly the term: for a plain lease always, under a permission when it orders above the permit's
-   base), when the base itself is labelled above the term (or exactly the term, for a plain lease), or when a
+   labelled exactly the term: for a plain lease always, under a permission when it orders above the base
+   chosen in steps 1 to 4, that is after the recovery and the floor), when the base itself is labelled above the term (or exactly the term, for a plain lease), or when a
    refound raised the term floor (steps 4 and 6). Every commit, the attach confirmation included, runs under a
    permission (``_commit_under_lease``), so in practice: the round sends nothing, its commits are put back at the
    head of the node's queue for its next permission (``_requeue``; they get no error), and the permission ends
-   ``unknown``, so the owner abandons the term (O6) and the next owner's phase 1 starts above it. The single
-   exception is a permit issued on a proposal (D55, H2), whose superseded base ends ``none``.
+   ``unknown``, so the owner abandons the term (O6) and the next owner's phase 1 starts above it. Two
+   exceptions keep another outcome: a permit issued on a proposal (D55, H2), whose superseded base ends
+   ``none``; and a held-retry round of a permission already ``committed`` (D-LIVE-2, ``_PERMIT_RETRIES``), which
+   keeps ``committed``, since its earlier round's root did commit.
 6. **Hard guard (D46 fix rounds 3 and 4).** The base never orders below the committed root this node knows.
    If it would, acceptor logs were lost beyond the failure model; when the known committed root is the
    persisted one (or older) the cluster refounds from the persisted root, otherwise the commit raises
