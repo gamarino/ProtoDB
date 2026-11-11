@@ -29,10 +29,11 @@ import msgpack
 
 from ..core.atom import AtomPointer
 from ..errors import ProtoCorruptionError, ProtoNotSupportedError, ProtoValidationError
+from ..values import MAX_VALUE_DEPTH
 
 __all__ = ["SEGMENT_MAGIC", "FORMAT_VERSION", "WRITE_FORMAT_VERSION", "FEATURE_VERSIONS", "write_version", "READABLE_FORMAT_VERSIONS", "SEGMENT_HEADER_SIZE", "RECORD_HEADER_SIZE", "RECORD_MAGIC",
            "RecordKind", "RootRecord", "encode_segment_header", "decode_segment_header", "encode_record",
-           "record_header", "record_size", "read_record", "encode_root", "decode_root"]
+           "record_header", "record_size", "read_record", "encode_root", "decode_root", "undecodable_atom"]
 
 SEGMENT_MAGIC = b"PDB2SEG\0"
 #: Version of the segment, record and root formats; bump it when any of them changes.
@@ -212,3 +213,16 @@ def decode_root(data: bytes) -> RootRecord:
     if version not in READABLE_FORMAT_VERSIONS:
         raise ProtoNotSupportedError(f"Unsupported root format version {version}")
     return RootRecord(WRITE_FORMAT_VERSION, uuid.UUID(bytes=raw), offset, epoch)
+
+
+def undecodable_atom(ptr, error: Exception) -> ProtoCorruptionError:
+    """The error of an atom record at ``ptr`` whose msgpack payload ``error`` refused to unpack.
+
+    MessagePack's unpacker refuses data nested deeper than 1024 containers (``StackError``): an
+    atom payload nests two (its envelope and its state map) above its attribute values, so such
+    a record holds a value deeper than ``MAX_VALUE_DEPTH`` (format spec, "Value nesting depth")."""
+    if isinstance(error, msgpack.exceptions.StackError):
+        return ProtoCorruptionError(
+            f"Undecodable atom at {ptr}: it nests deeper than 1024 MessagePack containers, so a value "
+            f"in it nests deeper than MAX_VALUE_DEPTH = {MAX_VALUE_DEPTH} (format spec, \"Value nesting depth\")")
+    return ProtoCorruptionError(f"Undecodable atom at {ptr}")

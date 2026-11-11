@@ -45,7 +45,7 @@ from proto_db.storage import cloud, format as fmt, logfile, tiered
 from proto_db.storage.file import FileStorage
 from proto_db.transactions import ObjectSpace, SpaceRoot, _ClusterStamp
 from proto_db.errors import ProtoValidationError
-from proto_db.values import MISSING, FrozenDict, FrozenList, MutableObject, is_atom
+from proto_db.values import MAX_VALUE_DEPTH, MISSING, FrozenDict, FrozenList, MutableObject, is_atom
 from tests.conformance import typed
 from tests.conformance.model import Invoice
 from tests.support.persistence import DirectContext
@@ -196,6 +196,80 @@ VALUES = [
 ]
 
 
+_DT_UTC = _V("datetime", [2026, 11, 10, 12, 30, 45, 0, 0, ["fixed", 0, "UTC"]])
+
+#: Values at the nesting limit (format spec, "Value nesting depth"): (id, levels, leaf, note).
+#: ``levels`` lists ``[kind, count]`` from the outside in; a ``map`` level is a map of one pair whose
+#: key is the str ``"k"``.  Every one is exactly MAX_VALUE_DEPTH containers deep and round-trips.
+DEPTH_VALUES = [
+    ("depth-max-list", [["list", MAX_VALUE_DEPTH]], _I(1),
+     "1022 lists around 1: exactly MAX_VALUE_DEPTH containers"),
+    ("depth-max-mixed", [["tuple", 200], ["map", 100], ["list", 319]], _DT_UTC,
+     "200 tuples (2 each), 100 maps (3 each), 319 lists and an aware @dt (3): exactly MAX_VALUE_DEPTH"),
+]
+
+#: One container deeper than the limit; readers refuse them (``invalid``, layer ``value``).  Their
+#: bytes come from a raw msgpack packer: no conforming writer produces them.
+DEPTH_INVALID = [
+    ("value-depth-over-list", [["list", MAX_VALUE_DEPTH + 1]], _I(1), "1023 lists around 1"),
+    ("value-depth-over-mixed", [["tuple", 200], ["map", 100], ["list", 320]], _DT_UTC,
+     "200 tuples, 100 maps, 320 lists and an aware @dt: 1023 containers"),
+    ("value-depth-over-leaf", [["list", MAX_VALUE_DEPTH - 2]], _DT_UTC,
+     "1020 lists around an aware @dt, whose time-zone array is container 1023"),
+]
+
+
+def nest(levels, leaf, wire: bool = False):
+    """``leaf`` inside ``levels`` (``[kind, count]`` from the outside in), built without recursion:
+    as a value, or (``wire``) as wire data around ``leaf``'s wire form."""
+    value = leaf
+    for kind, count in reversed(levels):
+        for _ in range(count):
+            if kind == "list":
+                value = [value]
+            elif kind == "tuple":
+                value = {"@tup": [value]} if wire else (value,)
+            else:
+                value = {"@map": [["k", value]]} if wire else {"k": value}
+    return value
+
+
+def wire_depth(data) -> int:
+    """The MessagePack containers ``data`` (plain msgpack data) nests, counted with an explicit stack."""
+    deepest = 0
+    pending = [(data, 0)]
+    while pending:
+        item, depth = pending.pop()
+        if type(item) is list:
+            depth += 1
+            pending.extend((x, depth) for x in item)
+        elif type(item) is dict:
+            depth += 1
+            pending.extend((x, depth) for pair in item.items() for x in pair)
+        deepest = max(deepest, depth)
+    return deepest
+
+
+def gen_depth(manifest):
+    out = []
+    for vid, levels, leaf, note in DEPTH_VALUES:
+        data = _pack(codec.encode_value(nest(levels, typed.build(leaf, stub)), saved_pointer))
+        containers = wire_depth(msgpack.unpackb(data, raw=False))
+        assert containers == MAX_VALUE_DEPTH, (vid, containers)
+        out.append({"id": vid, "file": _write(f"values/{vid}.msgpack", data), "levels": levels, "leaf": leaf,
+                    "containers": containers, "note": note})
+    manifest["values_depth"] = {"max_value_depth": MAX_VALUE_DEPTH, "values": out}
+
+
+def depth_invalid_cases() -> list:
+    cases = []
+    for vid, levels, leaf, note in DEPTH_INVALID:
+        data = _pack(nest(levels, codec.encode_value(typed.build(leaf, stub), saved_pointer), wire=True))
+        assert wire_depth(msgpack.unpackb(data, raw=False)) == MAX_VALUE_DEPTH + 1, vid
+        cases.append((vid, "value", data, f"{note} (deeper than MAX_VALUE_DEPTH = {MAX_VALUE_DEPTH})"))
+    return cases
+
+
 class _NoContext:
     """The context of the stubs that stand for referenced atoms: never used to load."""
 
@@ -303,6 +377,7 @@ def gen_invalid(manifest):
         ("map-key-zone-datetime", "value", _pack({"@map": [[{"@dt": dt + [0, ["instant", "America/New_York"]]}, 1]]}),
          "a datetime in an IANA zone cannot be a map key"),
     ]
+    cases += depth_invalid_cases()
     out = [(i, layer, data, note, "corruption", None) for i, layer, data, note in cases]
     record = fmt.encode_record(fmt.RecordKind.ATOM, _pack({"t": 19, "oid": bytes(16), "s": {}}))
     bad_header = bytearray(record)
@@ -1059,6 +1134,7 @@ def main():
         "builtin_type_aliases": list(BUILTIN_TYPE_ALIASES),
     }
     gen_values(manifest)
+    gen_depth(manifest)
     gen_invalid(manifest)
     gen_value_model(manifest)
     gen_framing(manifest)

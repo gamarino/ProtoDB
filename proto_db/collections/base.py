@@ -108,20 +108,37 @@ def same_value(a, b) -> bool:
     """Content equality of two stored values (D27).
 
     :func:`values_equal` for orderable values; lists, dicts and tuples compare
-    recursively (a list never equals a tuple); NaN equals NaN, since a stored
-    NaN is the same content.  Atoms compare by identity (oid).
+    item by item at any depth (an explicit stack; a list never equals a tuple); NaN equals NaN,
+    since a stored NaN is the same content.  Atoms compare by identity (oid).
     """
-    if isinstance(a, (list, dict, tuple)) or isinstance(b, (list, dict, tuple)):
-        if isinstance(a, list) and isinstance(b, list) or isinstance(a, tuple) and isinstance(b, tuple):
-            return len(a) == len(b) and all(same_value(x, y) for x, y in zip(a, b))
-        if isinstance(a, dict) and isinstance(b, dict):
-            return len(a) == len(b) and all(k in b and same_value(v, b[k]) for k, v in a.items())
-        return False
-    a_nan = not is_atom(a) and a != a
-    b_nan = not is_atom(b) and b != b
-    if a_nan or b_nan:
-        return a_nan and b_nan
-    return values_equal(a, b)
+    pending = [(a, b)]
+    while pending:
+        a, b = pending.pop()
+        if isinstance(a, (list, dict, tuple)) or isinstance(b, (list, dict, tuple)):
+            if isinstance(a, list) and isinstance(b, list) or isinstance(a, tuple) and isinstance(b, tuple):
+                if len(a) != len(b):
+                    return False
+                pending.extend(reversed(list(zip(a, b))))
+                continue
+            if isinstance(a, dict) and isinstance(b, dict):
+                if len(a) != len(b):
+                    return False
+                pairs = []
+                for k, v in a.items():
+                    if k not in b:
+                        return False
+                    pairs.append((v, b[k]))
+                pending.extend(reversed(pairs))
+                continue
+            return False
+        a_nan = not is_atom(a) and a != a
+        b_nan = not is_atom(b) and b != b
+        if a_nan or b_nan:
+            if not (a_nan and b_nan):
+                return False
+        elif not values_equal(a, b):
+            return False
+    return True
 
 
 # -- IndexSet ------------------------------------------------------------------------------

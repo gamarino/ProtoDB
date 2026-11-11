@@ -35,7 +35,7 @@ from .errors import ProtoUserError, ProtoValidationError
 
 __all__ = ["MISSING", "FrozenList", "FrozenDict", "canonical", "check_text", "order_key", "rank_bounds", "values_equal", "hash_key",
            "is_atom", "is_orderable", "exact_token", "MutableObject", "ATOM_TOKEN", "map_key_ids",
-           "check_map_keys"]
+           "check_map_keys", "MAX_VALUE_DEPTH", "leaf_containers", "fold"]
 
 
 class _Missing:
@@ -295,19 +295,96 @@ def check_text(text: str) -> str:
     return text
 
 
-def canonical(value):
+#: The deepest nesting of MessagePack containers (arrays and maps) a stored value may have,
+#: counted from the value itself (format spec, "Value nesting depth"; D60).  An atom
+#: payload adds two (its envelope and its state map), so a record never nests deeper than 1024,
+#: the depth MessagePack's C packer (msgpack >= 1.2) and unpacker (every release) support.
+MAX_VALUE_DEPTH = 1022
+
+#: The native integer range of the wire form; an int outside it is written as ``{"@int": text}``.
+_INT_MIN = -2**63
+_INT_MAX = 2**64 - 1
+
+
+def too_deep_error() -> ProtoValidationError:
+    """The error of a writer asked to store a value nested deeper than :data:`MAX_VALUE_DEPTH`."""
+    return ProtoValidationError(
+        f"The value nests deeper than MAX_VALUE_DEPTH = {MAX_VALUE_DEPTH} MessagePack containers, "
+        f"the most the storage format allows (format spec, \"Value nesting depth\")")
+
+
+def leaf_containers(value) -> int:
+    """The MessagePack containers the wire form of the canonical non-container value ``value``
+    nests (format spec, "Value nesting depth"): 0 for a value written natively, 1 for a tag whose
+    body is a scalar (``@int``, ``@dec``, ``@uuid``, ``@missing``, ``@mut``), 2 for a tag whose body
+    is an array of scalars (``@date``, ``@td``, ``@ref``, a naive ``@time`` or ``@dt``), 3 for an
+    aware ``@time`` or ``@dt`` (its time zone is an array inside the body)."""
+    t = type(value)
+    if t is int:
+        return 0 if _INT_MIN <= value <= _INT_MAX else 1
+    if t is str or t is bytes or t is float or t is bool or value is None:
+        return 0
+    if t is datetime or t is time:
+        return 2 if value.tzinfo is None else 3
+    if t is date or t is timedelta:
+        return 2
+    if t is Decimal or t is uuid.UUID or value is MISSING or isinstance(value, MutableObject):
+        return 1
+    return 2 if is_atom(value) else 0
+
+
+def fold(value, expand):
+    """Fold the nested value ``value`` bottom-up with an explicit stack, never by recursion, so
+    any depth works whatever the Python stack in use.
+
+    ``expand(v)`` returns ``(None, result)`` for a leaf, or ``(children, finish)`` for a node:
+    ``children`` a sequence whose items are expanded in order, ``finish(results)`` the node's
+    result from the list of its children's results."""
+    children, result = expand(value)
+    if children is None:
+        return result
+    stack = [[children, 0, [], result]]
+    while True:
+        frame = stack[-1]
+        kids, i = frame[0], frame[1]
+        if i < len(kids):
+            frame[1] = i + 1
+            children, result = expand(kids[i])
+            if children is None:
+                frame[2].append(result)
+            else:
+                stack.append([children, 0, [], result])
+            continue
+        stack.pop()
+        result = frame[3](frame[2])
+        if not stack:
+            return result
+        stack[-1][2].append(result)
+
+
+#: MessagePack containers above which :func:`canonical` stops recursing and goes on with an
+#: explicit stack (the codec's walks do the same, :data:`proto_db.core.codec.RECURSIVE_DEPTH`):
+#: values of ordinary shape take the plain recursive code, deeper ones the iterative walk, so the
+#: Python stack a call needs stays a few dozen frames at any depth of the value.
+RECURSIVE_DEPTH = 12
+
+
+def canonical(value, _depth: int = 0):
     """Validate ``value`` and return its canonical form.
 
     Supported: MISSING, None, bool, int, float (NaN allowed as a stored value),
     Decimal, str, bytes (``bytearray`` is converted), date, time, datetime,
     timedelta, UUID, atoms, ``MutableObject`` handles, tuples, and lists/dicts of supported values
-    (processed recursively).  An instance of a subclass of a scalar type (an ``Enum`` with a
+    (processed at any depth).  An instance of a subclass of a scalar type (an ``Enum`` with a
     ``str`` or ``int`` mixin, a ``StrEnum``, an ``IntEnum``, any subclass of ``str``, ``int``,
     ``float``, ``Decimal``, ``bytes`` or of the date and time types) becomes its plain base value
     (:func:`plain_scalar`): the class of a built-in subclass is not persisted, so the bytes
     written, the order key and the hash all come from one value.  Lists and dicts become
     :class:`FrozenList` and :class:`FrozenDict`; already-canonical input is returned as the same
-    object.  Raises ``ProtoValidationError`` otherwise.
+    object.  Raises ``ProtoValidationError`` otherwise, and for a value whose wire form would nest
+    deeper than :data:`MAX_VALUE_DEPTH` MessagePack containers.  ``_depth`` (internal) is the
+    number of containers enclosing ``value``; past :data:`RECURSIVE_DEPTH` the walk goes on with
+    an explicit stack (:func:`_canonical_tree`).
     """
     cls = type(value)
     if cls is str:
@@ -318,32 +395,122 @@ def canonical(value):
     if plain is not None:
         return check_text(plain) if type(plain) is str else plain
     if isinstance(value, tuple):
-        items = tuple(canonical(v) for v in value)
+        if _depth >= RECURSIVE_DEPTH:
+            return _canonical_tree(value, _depth)
+        _depth += 2
+        items = tuple([canonical(v, _depth) for v in value])
         return value if type(value) is tuple and all(a is b for a, b in zip(items, value)) else items
     if isinstance(value, list):
-        items = [canonical(v) for v in value]
+        if _depth >= RECURSIVE_DEPTH:
+            return _canonical_tree(value, _depth)
+        _depth += 1
+        items = [canonical(v, _depth) for v in value]
         if type(value) is FrozenList and all(a is b for a, b in zip(items, value)):
             return value
         return FrozenList(items)
     if isinstance(value, dict):
-        pairs = [(canonical(k), canonical(v)) for k, v in value.items()]
-        if type(value) is FrozenDict and all(
-                ka is kb and va is vb for (ka, va), (kb, vb) in zip(pairs, value.items())):
-            return value
-        if not all(type(k) in _PLAIN_KEY_TYPES for k, _ in pairs):
-            check_map_keys(k for k, _ in pairs)   # Python's dict already told these apart
-        out = FrozenDict(pairs)
-        if len(out) != len(pairs):                # subclass keys that are one base value
-            raise ProtoValidationError("Two keys of one map conflict as map keys (D58): "
-                                       "they hold one base value")
-        return out
+        if _depth >= RECURSIVE_DEPTH:
+            return _canonical_tree(value, _depth)
+        _depth += 3
+        return _canonical_map(value, [(canonical(k, _depth), canonical(v, _depth)) for k, v in value.items()])
     if is_atom(value) or isinstance(value, MutableObject):
         return value
     raise ProtoValidationError(f"Unsupported value type: {type(value).__name__}")
 
 
-def order_key(value) -> tuple:
+def _canonical_leaf(value):
+    """:func:`canonical` of a value that is not a tuple, list or dict."""
+    cls = type(value)
+    if cls is str:
+        return check_text(value)
+    if cls in _EXACT_SCALARS or value is MISSING:
+        return value
+    plain = plain_scalar(value)
+    if plain is not None:
+        return check_text(plain) if type(plain) is str else plain
+    if is_atom(value) or isinstance(value, MutableObject):
+        return value
+    raise ProtoValidationError(f"Unsupported value type: {type(value).__name__}")
+
+
+_TUPLE, _LIST, _DICT = 0, 1, 2
+
+
+def _canonical_tree(value, depth: int):
+    """:func:`canonical` of a tuple, list or dict enclosed by ``depth`` MessagePack containers,
+    walked with an explicit stack.
+
+    Each pending entry is ``(item, results of its container, slot, containers enclosing its wire
+    form)``.  A tuple adds two containers (``{"@tup": [...]}``), a list one, a map three
+    (``{"@map": [[k, v]]}``; two when empty).  Containers are expanded in pre-order and finished
+    in reverse, so every container is finished after the containers it holds."""
+    root = [None]
+    nodes = []
+    pending = [(value, root, 0, depth)]
+    while pending:
+        item, parent, slot, depth = pending.pop()
+        if isinstance(item, tuple):
+            kind, items, inner = _TUPLE, item, depth + 2
+        elif isinstance(item, list):
+            kind, items, inner = _LIST, item, depth + 1
+        elif isinstance(item, dict):
+            kind, items = _DICT, [x for pair in item.items() for x in pair]
+            inner = depth + (3 if items else 2)
+        else:
+            leaf = _canonical_leaf(item)
+            if depth + leaf_containers(leaf) > MAX_VALUE_DEPTH:
+                raise too_deep_error()
+            parent[slot] = leaf
+            continue
+        if inner > MAX_VALUE_DEPTH:
+            raise too_deep_error()
+        results = [None] * len(items)
+        nodes.append((item, kind, results, parent, slot))
+        later = []
+        for i, v in enumerate(items):
+            if type(v) is str and v.isascii():
+                results[i] = v
+            else:
+                later.append((v, results, i, inner))
+        pending.extend(reversed(later))
+    for item, kind, results, parent, slot in reversed(nodes):
+        parent[slot] = _canonical_finish(item, kind, results)
+    return root[0]
+
+
+def _canonical_finish(value, kind, results):
+    """The canonical container of the kind ``kind`` holding ``results``, the canonical forms of
+    the items of ``value`` (a dict's keys and values alternating): ``value`` itself when it is
+    already canonical."""
+    if kind == _TUPLE:
+        items = tuple(results)
+        return value if type(value) is tuple and all(a is b for a, b in zip(items, value)) else items
+    if kind == _LIST:
+        if type(value) is FrozenList and all(a is b for a, b in zip(results, value)):
+            return value
+        return FrozenList(results)
+    return _canonical_map(value, list(zip(results[0::2], results[1::2])))
+
+
+def _canonical_map(value, pairs: list):
+    """The canonical map of ``value`` (a dict), whose canonical ``(key, value)`` pairs are ``pairs``."""
+    if type(value) is FrozenDict and all(
+            ka is kb and va is vb for (ka, va), (kb, vb) in zip(pairs, value.items())):
+        return value
+    if not all(type(k) in _PLAIN_KEY_TYPES for k, _ in pairs):
+        check_map_keys(k for k, _ in pairs)   # Python's dict already told these apart
+    out = FrozenDict(pairs)
+    if len(out) != len(pairs):                # subclass keys that are one base value
+        raise ProtoValidationError("Two keys of one map conflict as map keys (D58): "
+                                   "they hold one base value")
+    return out
+
+
+def order_key(value, _depth: int = 0) -> tuple:
     """Return ``(rank, payload)``, a key that totally orders orderable values.
+
+    Nested tuples are walked recursively for :data:`RECURSIVE_DEPTH` levels, then with an
+    explicit stack (``_depth``, internal, counts the levels above ``value``).
 
     Invariant (relied upon by :func:`rank_bounds` and by index range scans):
     every order key is a 2-element tuple ``(rank, payload)`` whose ``rank`` is
@@ -385,7 +552,10 @@ def order_key(value) -> tuple:
     if isinstance(value, uuid.UUID):
         return (_R_UUID, value.int)
     if isinstance(value, tuple):
-        return (_R_TUPLE, tuple(order_key(v) for v in value))
+        if _depth >= RECURSIVE_DEPTH:
+            return fold(value, _order_key_expand)   # deeper: an explicit stack
+        _depth += 1
+        return (_R_TUPLE, tuple([order_key(v, _depth) for v in value]))
     if is_atom(value):
         return (_R_ATOM, value.oid.int)
     if isinstance(value, MutableObject):
@@ -393,6 +563,16 @@ def order_key(value) -> tuple:
     if isinstance(value, (list, dict)):
         raise ProtoValidationError(f"{type(value).__name__} is not an orderable key")
     raise ProtoValidationError(f"Unsupported value type: {type(value).__name__}")
+
+
+def _order_key_expand(value):
+    if isinstance(value, tuple):
+        return value, _tuple_order_key
+    return None, order_key(value)
+
+
+def _tuple_order_key(items: list) -> tuple:
+    return (_R_TUPLE, tuple(items))
 
 
 _ORDERABLE_TYPES = (bool, int, str, bytes, bytearray, date, time, timedelta, uuid.UUID, MutableObject)
@@ -410,7 +590,14 @@ def is_orderable(value) -> bool:
     if isinstance(value, Decimal):
         return not value.is_nan()
     if isinstance(value, tuple):
-        return all(is_orderable(v) for v in value)
+        pending = list(value)                       # any depth: no recursion
+        while pending:
+            item = pending.pop()
+            if isinstance(item, tuple):
+                pending.extend(item)
+            elif not is_orderable(item):
+                return False
+        return True
     if isinstance(value, (list, dict)):
         return False
     return is_atom(value)
@@ -470,33 +657,36 @@ def _number_residue(x) -> bytes:
 
 
 def _feed_hash(h, key: tuple) -> None:
-    """Feed an order key into the hash object ``h`` with an unambiguous, process-independent encoding."""
-    rank, payload = key
-    h.update(rank.to_bytes(1, "little"))
-    if rank == _R_NUMBER:
-        h.update(_number_residue(payload))
-        return
-    if rank == _R_TUPLE:
-        h.update(len(payload).to_bytes(8, "little"))
-        for item in payload:
-            _feed_hash(h, item)
-        return
-    if isinstance(payload, str):
-        data = payload.encode("utf-8", "surrogatepass")
-    elif isinstance(payload, bytes):
-        data = payload
-    else:
-        if isinstance(payload, datetime):  # naive datetime
-            payload = (payload - _NAIVE_ORIGIN) // _MICROSECOND
-        elif isinstance(payload, date):
-            payload = payload.toordinal()
-        elif isinstance(payload, timedelta):
-            payload = payload // _MICROSECOND
-        if type(payload) is not int:
-            raise ProtoValidationError(f"Cannot hash order-key payload of type {type(payload).__name__}")
-        data = payload.to_bytes(payload.bit_length() // 8 + 1, "little", signed=True)
-    h.update(len(data).to_bytes(8, "little"))
-    h.update(data)
+    """Feed an order key into the hash object ``h`` with an unambiguous, process-independent encoding.
+
+    A tuple's items follow its length, depth first (an explicit stack: any depth)."""
+    pending = [key]
+    while pending:
+        rank, payload = pending.pop()
+        h.update(rank.to_bytes(1, "little"))
+        if rank == _R_NUMBER:
+            h.update(_number_residue(payload))
+            continue
+        if rank == _R_TUPLE:
+            h.update(len(payload).to_bytes(8, "little"))
+            pending.extend(reversed(payload))
+            continue
+        if isinstance(payload, str):
+            data = payload.encode("utf-8", "surrogatepass")
+        elif isinstance(payload, bytes):
+            data = payload
+        else:
+            if isinstance(payload, datetime):  # naive datetime
+                payload = (payload - _NAIVE_ORIGIN) // _MICROSECOND
+            elif isinstance(payload, date):
+                payload = payload.toordinal()
+            elif isinstance(payload, timedelta):
+                payload = payload // _MICROSECOND
+            if type(payload) is not int:
+                raise ProtoValidationError(f"Cannot hash order-key payload of type {type(payload).__name__}")
+            data = payload.to_bytes(payload.bit_length() // 8 + 1, "little", signed=True)
+        h.update(len(data).to_bytes(8, "little"))
+        h.update(data)
 
 
 def hash_key(value) -> int:
@@ -613,12 +803,19 @@ def map_key_ids(value, *, reading: bool = False, zone_form: bool = False) -> fro
         raise ProtoValidationError(
             "A datetime in an IANA time zone cannot be a map key: use its UTC or fixed-offset form")
     if isinstance(value, tuple):
-        combos = [()]
-        for item in value:
-            ids = map_key_ids(item, reading=reading, zone_form=zone_form)
-            combos = [c + (i,) for c in combos for i in ids]
-        return frozenset(("tuple", c) for c in combos)
+        def expand(item):                           # any depth: no recursion
+            if isinstance(item, tuple):
+                return item, _tuple_key_ids
+            return None, map_key_ids(item, reading=reading, zone_form=zone_form)
+        return fold(value, expand)
     return frozenset({order_key(value)})
+
+
+def _tuple_key_ids(item_ids: list) -> frozenset:
+    combos = [()]
+    for ids in item_ids:
+        combos = [c + (i,) for c in combos for i in ids]
+    return frozenset(("tuple", c) for c in combos)
 
 
 def _format3_zone_key_id(value):

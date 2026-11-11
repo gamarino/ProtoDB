@@ -79,7 +79,8 @@ that only adds readable inputs (a new reader-side tolerance) raises nothing and 
 
 ``FORMAT_VERSION`` (segment headers and root records) covers:
 
-- the value encoding: every tag and its body, the one spelling per value, the map-key rule;
+- the value encoding: every tag and its body, the one spelling per value, the map-key rule, the
+  nesting limit (`Value nesting depth`_);
 - the atom envelope, the type-name grammar, the built-in alias table (an added built-in type is
   a change: an older reader refuses its name), and the reserved attribute and root names;
 - the persisted fields of every built-in type: their names, types, whether each is required,
@@ -115,7 +116,7 @@ version of every feature added later (none yet).
 **The pinned vectors.** ``tests/conformance/vectors.sha256`` lists the SHA-256 of every file
 under ``tests/conformance/vectors/`` (``<hex digest>  <path>``, one line per file, sorted by path
 in code point order, ``/`` as the separator), then the digest of ``manifest.json``. The SHA-256
-of that list file is ``5f86eb09ed1683aa9f048051c64cca68d23b9fb753e87416cb1ecf11ed406df0``. ``test_conformance.py`` checks that the committed files
+of that list file is ``2f5df6819f153c0fb85ba791b392f30aa0e3c7098c8596428a6102cd6c814265``. ``test_conformance.py`` checks that the committed files
 match the list and that this page states the list's digest. Each vector file is governed by
 the number that covers what it holds: ``vectors/cluster/*.log`` by ``LOG_FORMAT_VERSION``,
 ``vectors/cluster/messages/`` by ``PROTOCOL_VERSION``, every other file by ``FORMAT_VERSION``.
@@ -754,6 +755,77 @@ Every tagged form is a msgpack map with **exactly one** key. A reader refuses wi
 - a msgpack ``ext`` value (the timestamp extension included) where a value is expected.
 
 The vectors include one input of each kind of refusal (``invalid``).
+
+Value nesting depth
+~~~~~~~~~~~~~~~~~~~
+
+The wire form of a canonical value nests at most ``MAX_VALUE_DEPTH = 1022`` MessagePack
+containers.
+
+**What is counted.** The *depth* of a wire form is the largest number of msgpack containers
+(arrays and maps) on a path from its outermost item down to a scalar, the outermost item
+included when it is a container. The count starts at the canonical value itself: an attribute
+value (the value of one entry of a state map ``s``), or a value-layer vector file. The atom
+envelope and the state map are not counted; in a record they add two. Each kind adds:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 40 60
+
+   * - Kind
+     - Containers it adds
+   * - nil, bool, native int, float, str, bytes
+     - 0
+   * - list
+     - 1, plus the depth of its deepest item
+   * - tuple (``{"@tup": [...]}``)
+     - 2, plus the depth of its deepest item
+   * - map (``{"@map": [[key, value], ...]}``)
+     - 3 (the map, its array, a pair), plus the depth of its deepest key or value; 2 when empty
+   * - ``@int``, ``@dec``, ``@uuid``, ``@missing``, ``@mut``
+     - 1
+   * - ``@date``, ``@td``, ``@ref``; ``@time`` and ``@dt`` whose ``tz`` is nil
+     - 2
+   * - ``@time`` and ``@dt`` whose ``tz`` is an array (``fixed``, ``instant``, ``zone``)
+     - 3
+
+So 1022 lists around ``1`` are exactly at the limit, and so is a ``@dt`` with a fixed offset
+inside 1019 lists. The count is a property of the wire form alone: it does not depend on the
+host language, its stack or its recursion limit.
+
+**Writers and readers.** A writer MUST refuse to store a value deeper than ``MAX_VALUE_DEPTH``,
+and a reader MUST refuse data deeper than ``MAX_VALUE_DEPTH``, both at that same number: a value
+of depth 1022 round trips, and depth 1023 is refused on both sides. ProtoBase refuses such a
+value with ``ProtoValidationError`` naming the field, when the value is validated (constructing
+a ``DBObject``, setting a root, changing a collection) and again when a record is encoded, and
+refuses such data with ``ProtoCorruptionError``. A record whose payload nests deeper than 1024
+containers (one of its values deeper than the limit) is refused before any value is decoded,
+because MessagePack's unpacker refuses it.
+
+**Why 1022.** A record payload ``{"t", "oid", "s": {name: value}}`` puts a value two containers
+deep, so a value at the limit makes a record exactly 1024 containers deep. 1024 is what the
+MessagePack layer supports on both sides, measured with msgpack-python, the MessagePack library
+ProtoBase writes and reads every record with: its unpacker refuses data nested deeper than 1024
+containers in every release measured (1.0.8, 1.1.0, 1.1.1, 1.1.2 and 1.2.4: 1024 read, 1025
+refused), and its packer writes 1024 since release 1.2.0 (releases up to 1.1.2 stop at 511).
+ProtoBase therefore requires msgpack-python 1.2.0 or later. The often-quoted figure of 509
+levels is 511 minus the envelope's 2, the packer limit of msgpack-python before 1.2.0; it is
+not a limit of the format. msgpack-python's pure-Python fallback (used where its C extension is
+not available) recurses once per container: under Python's default recursion limit it cannot
+write or read records near 1024 containers, and fails with ``RecursionError``. ProtoBase runs
+with the C extension.
+
+**No version change.** The limit adds no ``FORMAT_VERSION``: no conforming writer could produce
+deeper data before it. ProtoBase has always packed records with msgpack-python, whose packer
+refuses more than 1024 containers in every release (more than 511 before 1.2.0), and the
+envelope takes two, so no ProtoBase record holds a value deeper than 1022. The limit states a
+bound every record already met, enforces it before the packer with ProtoBase's own errors, and
+makes a reader refuse only data no conforming writer wrote. Before this rule ProtoBase walked
+values by recursion, so how deep it could write or read depended on the Python stack in use
+(about 330 nested lists read and 497 written under the default recursion limit, with a bare
+``RecursionError`` beyond): values written then are read now at any depth up to the limit.
+The vectors hold values at the limit (``values_depth``) and must-reject inputs one level deeper
+(``invalid``, ``value-depth-over-*``).
 
 Decimal text
 ~~~~~~~~~~~~
@@ -1593,7 +1665,7 @@ What is normative and what is not
 ---------------------------------
 
 Normative: every byte layout on this page; the type names and the alias table; the value
-encoding with its one spelling per value and the map-key rule; the order, hash and exact-token
+encoding with its one spelling per value, the map-key rule and the nesting limit; the order, hash and exact-token
 functions (for writers of keyed structures); the structure invariants of the AVL trees and
 collections; the index maintenance contract and the IVF list assignment; the field names,
 their optionality, the meaning of absence and the reserved attribute names (accessors

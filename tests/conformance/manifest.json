@@ -1032,6 +1032,63 @@
    "note": "an integer in a wider encoding than needed"
   }
  ],
+ "values_depth": {
+  "max_value_depth": 1022,
+  "values": [
+   {
+    "id": "depth-max-list",
+    "file": "values/depth-max-list.msgpack",
+    "levels": [
+     [
+      "list",
+      1022
+     ]
+    ],
+    "leaf": {
+     "int": "1"
+    },
+    "containers": 1022,
+    "note": "1022 lists around 1: exactly MAX_VALUE_DEPTH containers"
+   },
+   {
+    "id": "depth-max-mixed",
+    "file": "values/depth-max-mixed.msgpack",
+    "levels": [
+     [
+      "tuple",
+      200
+     ],
+     [
+      "map",
+      100
+     ],
+     [
+      "list",
+      319
+     ]
+    ],
+    "leaf": {
+     "datetime": [
+      2026,
+      11,
+      10,
+      12,
+      30,
+      45,
+      0,
+      0,
+      [
+       "fixed",
+       0,
+       "UTC"
+      ]
+     ]
+    },
+    "containers": 1022,
+    "note": "200 tuples (2 each), 100 maps (3 each), 319 lists and an aware @dt (3): exactly MAX_VALUE_DEPTH"
+   }
+  ]
+ },
  "invalid": [
   {
    "id": "value-unknown-tag",
@@ -1235,6 +1292,27 @@
    "error": "corruption",
    "file": "invalid/map-key-zone-datetime.bin",
    "note": "a datetime in an IANA zone cannot be a map key"
+  },
+  {
+   "id": "value-depth-over-list",
+   "layer": "value",
+   "error": "corruption",
+   "file": "invalid/value-depth-over-list.bin",
+   "note": "1023 lists around 1 (deeper than MAX_VALUE_DEPTH = 1022)"
+  },
+  {
+   "id": "value-depth-over-mixed",
+   "layer": "value",
+   "error": "corruption",
+   "file": "invalid/value-depth-over-mixed.bin",
+   "note": "200 tuples, 100 maps, 320 lists and an aware @dt: 1023 containers (deeper than MAX_VALUE_DEPTH = 1022)"
+  },
+  {
+   "id": "value-depth-over-leaf",
+   "layer": "value",
+   "error": "corruption",
+   "file": "invalid/value-depth-over-leaf.bin",
+   "note": "1020 lists around an aware @dt, whose time-zone array is container 1023 (deeper than MAX_VALUE_DEPTH = 1022)"
   },
   {
    "id": "record-header-crc",

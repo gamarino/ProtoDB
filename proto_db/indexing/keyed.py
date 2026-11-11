@@ -55,7 +55,7 @@ from ..errors import ProtoCorruptionError, ProtoMisfiledError, ProtoValidationEr
 from ..query.plans import Estimate, IndexPlan
 from ..query.terms import (BETWEEN, BETWEEN_EXCL_BOTH, BETWEEN_EXCL_HIGH, BETWEEN_EXCL_LOW, EQ, GE, GT, IN,
                            IS_NONE, LE, LT, NE, NOT_NONE, Term, is_orderable)
-from ..values import MISSING, exact_token, is_atom, order_key, rank_bounds
+from ..values import MISSING, exact_token, fold, is_atom, order_key, rank_bounds
 from .base import Index, element_identity
 from .keyspec import KeySpec
 
@@ -81,24 +81,40 @@ def surrogate(value):
 
     Lists become ``("l", items)``, dicts ``("d", pairs sorted by key)``, tuples
     holding an unorderable value ``("t", items)``, NaN ``("n",)`` and every
-    orderable value ``("v", value)``; items are encoded recursively.  The tags
+    orderable value ``("v", value)``; items are encoded at any depth (an explicit stack).  The tags
     make the encoding injective up to value equality (``values_equal`` for
     orderable parts, every NaN equal to every NaN, as
     :func:`proto_db.indexing.element_identity`).  Used as the equality part
     ``(1, surrogate)`` of member keys, tagged apart from orderable elements
     ``(0, element)``, so a surrogate cannot collide with a real element.
     """
+    return fold(value, _surrogate_expand)          # any depth: an explicit stack
+
+
+def _surrogate_expand(value):
     if isinstance(value, list):
-        return ("l", tuple(surrogate(v) for v in value))
+        return value, _list_surrogate
     if isinstance(value, dict):
-        pairs = [(surrogate(k), surrogate(v)) for k, v in value.items()]
-        pairs.sort(key=lambda p: order_key(p[0]))
-        return ("d", tuple(pairs))
+        return [x for pair in value.items() for x in pair], _dict_surrogate
     if isinstance(value, tuple) and not is_orderable(value):
-        return ("t", tuple(surrogate(v) for v in value))
+        return value, _tuple_surrogate
     if isinstance(value, (float, Decimal)) and not is_orderable(value):
-        return ("n",)
-    return ("v", value)
+        return None, ("n",)
+    return None, ("v", value)
+
+
+def _list_surrogate(items: list) -> tuple:
+    return ("l", tuple(items))
+
+
+def _tuple_surrogate(items: list) -> tuple:
+    return ("t", tuple(items))
+
+
+def _dict_surrogate(items: list) -> tuple:
+    pairs = list(zip(items[0::2], items[1::2]))
+    pairs.sort(key=lambda p: order_key(p[0]))
+    return ("d", tuple(pairs))
 
 
 # -- exact member keys ------------------------------------------------------------------------

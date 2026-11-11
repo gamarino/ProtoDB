@@ -39,7 +39,29 @@ def _tz(tz):
 
 def describe(value):
     """The value description of a decoded canonical value (types are matched exactly); an atom
-    is described as the ``ref`` to its record."""
+    is described as the ``ref`` to its record.  Lists, tuples and maps are described with an
+    explicit stack (any depth)."""
+    root = [None]
+    stack = [(value, root, 0)]
+    while stack:
+        item, parent, slot = stack.pop()
+        parent[slot], children = _value_shape(item)
+        stack.extend(reversed(children))
+    return root[0]
+
+
+def _value_shape(value) -> tuple:
+    """``(description, children)`` of a canonical value, as :func:`_shape` gives them."""
+    t = type(value)
+    if t is FrozenList or t is list or t is tuple:
+        out = [None] * len(value)
+        return {"list" if t is not tuple else "tuple": out}, [(v, out, i) for i, v in enumerate(value)]
+    if t is FrozenDict or t is dict:
+        return _pairs({}, "map", value.items())
+    return _describe_leaf(value), []
+
+
+def _describe_leaf(value):
     t = type(value)
     if value is None:
         return {"nil": None}
@@ -70,12 +92,6 @@ def describe(value):
         return {"timedelta": [value.days, value.seconds, value.microseconds]}
     if t is uuid.UUID:
         return {"uuid": value.hex}
-    if t is FrozenList or t is list:
-        return {"list": [describe(v) for v in value]}
-    if t is tuple:
-        return {"tuple": [describe(v) for v in value]}
-    if t is FrozenDict or t is dict:
-        return {"map": [[describe(k), describe(v)] for k, v in value.items()]}
     if value is MISSING:
         return {"missing": True}
     if t is MutableObject:
@@ -130,7 +146,7 @@ def _shape(o) -> tuple:
         return {"list": out}, [(v, out, i) for i, v in enumerate(o)]
     if isinstance(o, dict):
         return _pairs({}, "map", o.items())
-    return describe(o), []
+    return _value_shape(o)
 
 
 def _with_attrs(kind: str, o) -> tuple:
