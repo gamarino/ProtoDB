@@ -1,0 +1,10 @@
+4aab0f2 1857.35
+c953d7e 2572.9
+c953d7e+class_defines_fast 2203.4
+c953d7e+class_defines_fast,pointer_hash_cached 2272.2
+4aab0f2+pointer_hash_cached 1774.4499999999998
+4aab0f2 -> c953d7e (1.348, '10/10 slower')
+c953d7e -> c953d7e+class_defines_fast (0.85, '0/10 slower')
+c953d7e+class_defines_fast -> c953d7e+class_defines_fast,pointer_hash_cached (1.01, '5/10 slower')
+4aab0f2 -> 4aab0f2+pointer_hash_cached (0.912, '2/10 slower')
+4aab0f2 -> c953d7e+class_defines_fast,pointer_hash_cached (1.159, '10/10 slower')

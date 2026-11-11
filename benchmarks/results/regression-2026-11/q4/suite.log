@@ -1,0 +1,282 @@
+ProtoDB performance suite (full)
+python 3.14.6 free-threaded build=True gil_enabled=False cpus=12 (AMD Ryzen 5 5500U with Radeon Graphics); cpu frequency {'governor': 'powersave', 'driver': 'amd-pstate-epp', 'energy_performance_preference': 'balance_power', 'boost': '1'}
+workdir /home/gamarino/Documentos/proyectos/scratch-8.3n/regr/q4/work-suite (zfs); threads [1, 2, 4, 8, 16]; repeat 5 warmup 1
+source 7757fb3 clean=True (git archive export)
+stray-process check: none; free 998 GiB in /home/gamarino/Documentos/proyectos/scratch-8.3n/regr/q4/work-suite
+
+== point_lookup ==  Point lookups: primary key, secondary EqualityIndex, unindexed scan; dict/list and sqlite3.
+   work: {"indexed_plan": "IndexLookup", "lookups": 2000, "rows": 20000, "scan_lookups": 10}
+   verified: checksum 19947702 == expected; 10/10 checks passed
+  protodb get_at(id)                           median     9.77 ms  max    10.79 ms  (4.9 us/op, max 5.4)  [n=5]
+  protodb EqualityIndex(code)                  median   173.94 ms  max   179.57 ms  (87.0 us/op, max 89.8)  [n=5]
+  protodb scan(code), no index                 median   640.88 ms  max   697.52 ms  (64087.8 us/op, max 69751.9)  [n=5]
+  python dict[id]                              median    234.3 us  max    304.8 us  (0.1 us/op, max 0.2)  [n=5]
+  python dict as code index                    median    308.3 us  max    726.0 us  (0.2 us/op, max 0.4)  [n=5]
+  python list scan(code)                       median     9.97 ms  max    10.16 ms  (997.2 us/op, max 1016.5)  [n=5]
+  sqlite3 primary key                          median     9.23 ms  max    10.20 ms  (4.6 us/op, max 5.1)  [n=5]
+  sqlite3 index(code)                          median    12.09 ms  max    13.24 ms  (6.0 us/op, max 6.6)  [n=5]
+  sqlite3 scan(code), no index                 median    13.52 ms  max    15.14 ms  (1352.2 us/op, max 1514.1)  [n=5]
+
+== range_query ==  Range queries (1 % selectivity): RangeIndex vs scan vs sorted list/bisect vs sqlite3.
+   work: {"indexed_plan": "IndexRange", "queries": 50, "rows": 20000, "rows_per_query": 200, "scan_queries": 5}
+   verified: checksum [10000, 100293203] == expected; 7/7 checks passed
+  protodb RangeIndex(score)                    median    37.91 ms  max    40.07 ms  (758.2 us/op, max 801.4)  [n=5]
+  protodb scan, no index                       median   381.47 ms  max   417.67 ms  (76293.2 us/op, max 83534.6)  [n=5]
+  python list scan                             median    23.28 ms  max    34.06 ms  (4655.8 us/op, max 6811.6)  [n=5]
+  python sorted list + bisect                  median     5.29 ms  max     5.66 ms  (105.8 us/op, max 113.2)  [n=5]
+  sqlite3 index(score)                         median    22.75 ms  max    24.51 ms  (454.9 us/op, max 490.2)  [n=5]
+  sqlite3 scan, no index                       median     8.79 ms  max    10.05 ms  (1757.4 us/op, max 2010.7)  [n=5]
+
+== topk ==  Top-k by an indexed key (ruling R28 carry item: no early termination yet) vs heapq and sqlite3.
+   work: {"k": 10, "plan_selective": "Limit <- Sort <- IndexLookup", "plan_wide": "Limit <- Filter <- IndexOrderedScan", "queries": 20, "rows": 20000}
+   verified: checksum [[3116, 1694, 11925, 18379, 11816, 13315, 14691, 19098, 4622, 16226], [11982, 8374, 5825, 4364, 8... == expected; 6/6 checks passed
+  protodb score>=x order_by(score) take k      median     4.23 ms  max     4.39 ms  (211.5 us/op, max 219.7)  [n=5]
+  python heapq.nsmallest (score>=x)            median    57.32 ms  max    64.49 ms  (2866.0 us/op, max 3224.5)  [n=5]
+  sqlite3 score>=x ORDER BY LIMIT              median    340.9 us  max    366.4 us  (17.0 us/op, max 18.3)  [n=5]
+  protodb city==c order_by(score) take k       median    17.68 ms  max    18.17 ms  (884.2 us/op, max 908.7)  [n=5]
+  python heapq.nsmallest (city==c)             median    28.96 ms  max    33.01 ms  (1448.0 us/op, max 1650.6)  [n=5]
+  sqlite3 city=c ORDER BY LIMIT                median     2.26 ms  max     2.57 ms  (113.2 us/op, max 128.4)  [n=5]
+   note: R28: the ordered index scan feeds a Filter and a Limit; the measured cost shows whether the scan stops after k rows (early termination) or not
+
+== deep_page ==  Page of 50 rows at deep offsets: ProtoDB pager by rank vs islice vs sqlite3 OFFSET and keyset.
+   work: {"offsets": [0, 10000, 100000, 900000], "page_size": 50, "plan_ordered": "IndexOrderedScan", "plan_ranged": "Filter <- IndexOrderedScan", "requests_per_sample": 20, "rows": 1000000}
+   verified: checksum [[613918, 132781, 190366, 872695, 674289, 856686, 802000, 805392, 73659, 273552, 364675, 471457, ... == expected; 28/28 checks passed
+  protodb pager.page by rank @0                median     4.97 ms  max     5.53 ms  (248.7 us/op, max 276.4)  [n=5]
+  protodb islice ordered scan (no rank) @0     median     3.64 ms  max     4.11 ms  (182.0 us/op, max 205.6)  [n=5]
+  sqlite3 OFFSET @0                            median    750.8 us  max    864.5 us  (37.5 us/op, max 43.2)  [n=5]
+  sqlite3 keyset next page @0                  median    769.3 us  max    807.3 us  (38.5 us/op, max 40.4)  [n=5]
+  protodb pager, index without weights (materializes) @0 median     1.546 s  max     1.568 s  [n=5]
+  protodb pager k>=N/2 by rank @0              median     7.62 ms  max     7.85 ms  (380.8 us/op, max 392.7)  [n=5]
+  sqlite3 k>=N/2 OFFSET @0                     median    757.7 us  max    775.6 us  (37.9 us/op, max 38.8)  [n=5]
+  protodb pager.page by rank @10000            median     4.90 ms  max     7.39 ms  (245.1 us/op, max 369.6)  [n=5]
+  protodb islice ordered scan (no rank) @10000 median   297.57 ms  max   310.46 ms  (14878.4 us/op, max 15523.1)  [n=5]
+  sqlite3 OFFSET @10000                        median     7.50 ms  max     9.03 ms  (374.8 us/op, max 451.4)  [n=5]
+  sqlite3 keyset next page @10000              median    865.4 us  max    925.2 us  (43.3 us/op, max 46.3)  [n=5]
+  protodb pager k>=N/2 by rank @10000          median     9.31 ms  max    10.23 ms  (465.3 us/op, max 511.5)  [n=5]
+  sqlite3 k>=N/2 OFFSET @10000                 median     7.40 ms  max     7.60 ms  (370.2 us/op, max 380.2)  [n=5]
+  sqlite3 keyset jump (chained) @10000         median   141.51 ms  max   151.03 ms  (70753.6 us/op, max 75512.6)  [n=5]
+  protodb pager.page by rank @100000           median     5.07 ms  max     5.38 ms  (253.4 us/op, max 269.1)  [n=5]
+  protodb islice ordered scan (no rank) @100000 median    38.056 s  max    41.145 s  (19027834.4 us/op, max 20572300.0)  [n=5]
+  sqlite3 OFFSET @100000                       median    59.01 ms  max    60.54 ms  (2950.4 us/op, max 3027.1)  [n=5]
+  sqlite3 keyset next page @100000             median    751.7 us  max    789.0 us  (37.6 us/op, max 39.4)  [n=5]
+  protodb pager k>=N/2 by rank @100000         median     7.55 ms  max     9.01 ms  (377.7 us/op, max 450.3)  [n=5]
+  sqlite3 k>=N/2 OFFSET @100000                median    59.21 ms  max    60.04 ms  (2960.7 us/op, max 3002.0)  [n=5]
+  sqlite3 keyset jump (chained) @100000        median     1.120 s  max     1.149 s  (559863.3 us/op, max 574478.5)  [n=5]
+  protodb pager.page by rank @900000           median     4.21 ms  max     4.28 ms  (210.4 us/op, max 213.8)  [n=5]
+  sqlite3 OFFSET @900000                       median   769.88 ms  max   795.04 ms  (38494.1 us/op, max 39752.1)  [n=5]
+  sqlite3 keyset next page @900000             median    683.9 us  max    716.5 us  (34.2 us/op, max 35.8)  [n=5]
+  protodb pager, index without weights (materializes) @900000 median     1.367 s  max     1.372 s  [n=5]
+
+== query_cache ==  A repeated query: ProtoDB without cache, cache miss, cache hit vs sqlite3 re-execution.
+   work: {"plan_A@100000": "Filter <- IndexRange", "plan_A@1000000": "Filter <- IndexRange", "plan_B@100000": "Filter <- IndexOrderedScan", "plan_B@1000000": "Filter <- IndexOrderedScan", "sizes": [100000, 1000000], "span": 20000}
+   verified: checksum [[10026, 503917031], [1000, 49957000, [54307, 69807, 20207, 75307, 70807]], [10063, 5024867444]] == expected; 17/17 checks passed
+  N=100000 A range+filter: protodb no cache    median    72.12 ms  max    74.25 ms  [n=5]
+  N=100000 A range+filter: protodb cache miss  median   125.98 ms  max   128.05 ms  [n=5]
+  N=100000 A range+filter: protodb cache hit   median     4.01 ms  max     4.68 ms  [n=5]
+  N=100000 A range+filter: sqlite3 (re-executes) median    12.80 ms  max    14.75 ms  [n=5]
+  N=100000 B filter ordered by k: protodb no cache median    16.030 s  max    16.202 s  [n=5]
+  N=100000 B filter ordered by k: protodb cache miss median    23.924 s  max    26.346 s  [n=5]
+  N=100000 B filter ordered by k: protodb cache hit median     1.16 ms  max     1.27 ms  [n=5]
+  N=100000 B filter ordered by k: sqlite3 (re-executes) median    46.58 ms  max    57.60 ms  [n=5]
+  N=1000000 A range+filter: protodb no cache   median    80.79 ms  max    85.20 ms  [n=5]
+  N=1000000 A range+filter: protodb cache miss median   143.64 ms  max   152.61 ms  [n=5]
+  N=1000000 A range+filter: protodb cache hit  median     4.47 ms  max     4.60 ms  [n=5]
+  N=1000000 A range+filter: sqlite3 (re-executes) median   123.97 ms  max   132.01 ms  [n=5]
+   cache_stats: {'100000': {'hits': 14, 'misses': 12, 'entries': 1, 'bytes': 501134, 'capacity': 67108864, 'admissions': 12, 'evictions': 0, 'uncacheable': 0, 'refused': 0}, '1000000': {'hits': 7, 'misses': 6, 'entries': 1, 'bytes': 5023674, 'capacity': 67108864, 'admissions': 6, 'evictions': 0, 'uncacheable': 0, 'refused': 0}}
+
+== inventory ==  Telecom inventory graph (sites/equipment/cards/ports/links, history): ProtoDB vs sqlite3.
+   work: {"atom_cache_entries": "default", "bulk change: sites, equipment": [2, 20], "durability": "ProtoDB fsync, SQLite FULL", "fan_out": "10 equipment/site, 10 cards/equipment, 8-48 ports/card, links on about half the ports", "mean path length (ports)": 30.4, "model_count_s": 0.06, "objects": 95645, "sites": 28}
+   verified: checksum [28, 280, 2800, 78523, 14014] == expected; 3/3 checks passed
+  protodb build (one commit per site)          median    50.385 s  max    50.385 s  (526.8 us/op, max 526.8)  [n=1] SINGLE SAMPLE
+  sqlite3 build (one transaction per site)     median   309.53 ms  max   309.53 ms  (3.2 us/op, max 3.2)  [n=1] SINGLE SAMPLE
+  protodb point lookup of a port (warm)        median     5.12 ms  max     5.90 ms  (51.2 us/op, max 59.0)  [n=5]
+  sqlite3 point lookup of a port (warm)        median    431.7 us  max    461.8 us  (4.3 us/op, max 4.6)  [n=5]
+  protodb equipment at a site (warm)           median    13.60 ms  max    14.90 ms  (136.0 us/op, max 149.0)  [n=5]
+  sqlite3 equipment at a site (warm)           median    712.2 us  max    792.7 us  (7.1 us/op, max 7.9)  [n=5]
+  protodb ports at a site (3 levels / 3-way join) (warm) median    57.92 ms  max    61.26 ms  (11584.4 us/op, max 12251.8)  [n=5]
+  sqlite3 ports at a site (3 levels / 3-way join) (warm) median     3.65 ms  max     4.08 ms  (730.7 us/op, max 815.1)  [n=5]
+  protodb path trace (warm)                    median     5.95 ms  max     8.84 ms  (297.6 us/op, max 442.1)  [n=5]
+  sqlite3 path trace (warm)                    median    725.3 us  max    753.9 us  (36.3 us/op, max 37.7)  [n=5]
+  protodb point lookup, cold (first request of a new instance) median     2.31 ms  max     2.50 ms  [n=5]
+  sqlite3 point lookup, cold (first request of a new instance) median    171.0 us  max    194.5 us  [n=5]
+  protodb equipment at a site, cold (first request of a new instance) median     2.74 ms  max     2.80 ms  [n=5]
+  sqlite3 equipment at a site, cold (first request of a new instance) median    183.5 us  max    195.8 us  [n=5]
+  protodb path trace, cold (first request of a new instance) median    33.23 ms  max    35.79 ms  [n=5]
+  sqlite3 path trace, cold (first request of a new instance) median    528.3 us  max    628.1 us  [n=5]
+  protodb bulk status change of one region (one commit) median    16.16 ms  max    18.32 ms  (808.2 us/op, max 916.0)  [n=5]
+  protodb as-of: region status before the last change median    183.8 us  max    209.8 us  (9.2 us/op, max 10.5)  [n=5]
+  sqlite3 bulk status change of one region (one commit) median     1.68 ms  max     2.38 ms  (84.0 us/op, max 119.1)  [n=5]
+  sqlite3 as-of: region status before the last change median     24.7 us  max     30.5 us  (1.2 us/op, max 1.5)  [n=5]
+   build commits/s: {'protodb': 0.56, 'sqlite3': 90.46}
+   build objects/s: {'protodb': 1898, 'sqlite3': 309005}
+   after build: peak RSS kB (both systems, one process): 8707828
+   after build: atom cache: {'hits': 445910, 'misses': 8, 'entries': 50000, 'capacity': 50000, 'loads': 20, 'saved': 278837, 'unloads': 228857, 'read_unloads': 13, 'identity_map': 52300}
+   on-disk bytes (allocated, apparent): {'protodb': [14072832, 40463204], 'sqlite3': [1725440, 2965504]}
+   bytes per object (allocated, apparent): {'protodb': [147.1, 423.1], 'sqlite3': [18.0, 31.0]}
+   on-disk bytes after the bulk changes (allocated): {'protodb': 15039488, 'sqlite3': 1725440}
+   end: peak RSS kB (both systems, one process): 8707828
+   end: atom cache: {'hits': 460398, 'misses': 31619, 'entries': 50000, 'capacity': 50000, 'loads': 24720, 'saved': 279359, 'unloads': 254079, 'read_unloads': 24713, 'identity_map': 59488}
+   note: cold = a new storage instance or connection (empty in-process caches); the OS page cache and the ZFS ARC are not dropped, which needs root
+
+== bulk_insert ==  Bulk insert of n records in one transaction (fsync), with and without indexes; dict and sqlite3.
+   work: {"durability": "fsync / synchronous=FULL", "rows": 10000, "transactions": 1}
+   verified: checksum [10000, 49995000] == expected; 5/5 checks passed
+  protodb Dictionary, no index                 median     1.874 s  max     1.881 s  (187.4 us/op, max 188.1)  [n=3]
+  protodb Dictionary + EqualityIndex + RangeIndex median     6.923 s  max     9.227 s  (692.3 us/op, max 922.7)  [n=3]
+  python dict (memory only)                    median     5.06 ms  max     5.20 ms  (0.5 us/op, max 0.5)  [n=3]
+  sqlite3 table, primary key only              median    34.56 ms  max    36.47 ms  (3.5 us/op, max 3.6)  [n=3]
+  sqlite3 + 2 indexes                          median    63.46 ms  max    72.18 ms  (6.3 us/op, max 7.2)  [n=3]
+
+== index_update_cost ==  Marginal cost of each index on an update (carry item: ~80-95 us per index update).
+   work: {"index_counts": [0, 1, 2, 3], "rows": 10000, "updates_per_sample": 2000}
+   verified: checksum [2, 7, 9, 17, 20, 31, 32, 46, 49, 52, 53, 59, 61, 62, 65, 90, 99, 104, 124, 128, 142, 145, 146, 1... == expected; 11/11 checks passed
+  set_at (replace) with 0 index(es)            median    97.29 ms  max   100.13 ms  (48.6 us/op, max 50.1)  [n=5]
+  set_at (replace) with 1 index(es)            median   514.19 ms  max   516.61 ms  (257.1 us/op, max 258.3)  [n=5]
+  set_at (replace) with 2 index(es)            median     1.177 s  max     1.213 s  (588.5 us/op, max 606.4)  [n=5]
+  set_at (replace) with 3 index(es)            median     1.742 s  max    25.910 s  (870.9 us/op, max 12955.2)  [n=5]
+   marginal_us_per_index: {'0->1': 208.4, '1->2': 331.4, '2->3': 282.4}
+
+== commit_durability ==  Small read-modify-write commits per durability mode vs sqlite3 at the matching synchronous level.
+   work: {"commit": "read counter n, n+1, set_at(i, i) on a Dictionary root", "commits_per_sample": {"flush": 300, "fsync": 300, "none": 2000}, "sqlite": "BEGIN; UPDATE n=n+1; INSERT (i, i); COMMIT (WAL)"}
+   verified: checksum {'protodb fsync': [300, 300, 44850], 'sqlite3 FULL': [300, 300, 44850], 'protodb flush': [300, 30... == expected; 6/6 checks passed
+  protodb FileStorage durability=fsync         median     2.371 s  max     2.424 s  (7901.7 us/op, max 8080.8)  [n=5]
+  protodb durability=fsync commits/s           median       126.6 commits/s  min     123.7  [n=5]
+  sqlite3 synchronous=FULL                     median   514.44 ms  max   529.71 ms  (1714.8 us/op, max 1765.7)  [n=5]
+  sqlite3 synchronous=FULL commits/s           median       583.2 commits/s  min     566.3  [n=5]
+  protodb FileStorage durability=flush         median     1.842 s  max     1.896 s  (6141.3 us/op, max 6318.4)  [n=5]
+  protodb durability=flush commits/s           median       162.8 commits/s  min     158.3  [n=5]
+  sqlite3 synchronous=NORMAL                   median    31.25 ms  max    32.89 ms  (104.2 us/op, max 109.6)  [n=5]
+  sqlite3 synchronous=NORMAL commits/s         median      9601.2 commits/s  min    9120.9  [n=5]
+  protodb FileStorage durability=none          median     5.470 s  max     7.353 s  (2735.2 us/op, max 3676.7)  [n=5]
+  protodb durability=none commits/s            median       365.6 commits/s  min     272.0  [n=5]
+  sqlite3 synchronous=OFF                      median   190.74 ms  max   195.18 ms  (95.4 us/op, max 97.6)  [n=5]
+  sqlite3 synchronous=OFF commits/s            median     10485.7 commits/s  min   10246.9  [n=5]
+   note: flush and SQLite NORMAL are in the same class: process-crash safe, not power-loss safe. ProtoDB flush also fsyncs the root (D19), which costs sync work without making the commit's data power-loss safe; no crash-matrix test covers flush under power loss
+
+== versions ==  Persistent update cost: one new version per update (path copy) vs a full dict copy, by size.
+   work: {"committed_updates": 200, "dict_copy_updates_per_sample": 50, "sizes": [1000, 10000, 100000], "updates_per_sample": 2000}
+   verified: checksum {'1000': -1146686, '10000': -1888055, '100000': -1986221} == expected; 12/12 checks passed
+  protodb set_at -> new version, n=1000        median   184.79 ms  max   192.02 ms  (92.4 us/op, max 96.0)  [n=5]
+  python dict copy + update, n=1000            median     1.91 ms  max     2.70 ms  (38.2 us/op, max 53.9)  [n=5]
+  protodb committed update (durability=none), n=1000 median   639.35 ms  max   708.47 ms  (3196.7 us/op, max 3542.4)  [n=3]
+  protodb set_at -> new version, n=10000       median   151.63 ms  max   195.15 ms  (75.8 us/op, max 97.6)  [n=5]
+  python dict copy + update, n=10000           median    11.54 ms  max    18.04 ms  (230.9 us/op, max 360.9)  [n=5]
+  protodb committed update (durability=none), n=10000 median   570.98 ms  max   607.33 ms  (2854.9 us/op, max 3036.6)  [n=3]
+  protodb set_at -> new version, n=100000      median   233.43 ms  max   308.76 ms  (116.7 us/op, max 154.4)  [n=5]
+  python dict copy + update, n=100000          median   279.18 ms  max   409.58 ms  (5583.5 us/op, max 8191.6)  [n=5]
+  protodb committed update (durability=none), n=100000 median   591.82 ms  max   729.94 ms  (2959.1 us/op, max 3649.7)  [n=3]
+
+== canonical_rewalk ==  canonical() on a list vs on an already frozen list (carry item: the frozen input is re-walked).
+   work: {"elements": 220000}
+   verified: checksum [220000, 24199890000] == expected; 2/2 checks passed
+  canonical(list) -> FrozenList                median    35.66 ms  max    42.22 ms  (0.2 us/op, max 0.2)  [n=5]
+  canonical(FrozenList) re-walk                median    54.03 ms  max    56.06 ms  (0.2 us/op, max 0.3)  [n=5]
+
+== cold_open ==  Cold open (time to first read), cold vs warm full walk, page-cache hit rates, tiered recovery.
+   work: {"history_commits": 500, "random_lookups": 2000, "rows": 20000}
+   verified: checksum [20000, 199990000] == expected; 7/7 checks passed
+  open + first read                            median     2.51 ms  max     3.04 ms  [n=5]
+  cold walk (new storage instance)             median     1.998 s  max     2.026 s  (99.9 us/op, max 101.3)  [n=5]
+  warm walk (new transaction, warm page cache) median     9.54 ms  max     9.70 ms  (0.5 us/op, max 0.5)  [n=5]
+  random get_at, new transaction per batch     median     8.34 ms  max     8.80 ms  (4.2 us/op, max 4.4)  [n=5]
+  TieredStorage reopen (log + segment scan), 500 commits median     4.95 ms  max     6.56 ms  [n=5]
+   page cache hit rate: {'cold walk': 0.9961, 'warm walk': 0.0}
+   page cache hit rate, random lookups: 0.0
+   page cache reads per lookup: 0.0
+
+== concurrent_commits ==  Commit throughput and conflict rate with 1..N threads (conflicting, blind merge, disjoint).
+   work: {"commits_per_run": 240, "indexed_base_entries": 1000, "storage": "FileStorage durability=none", "threads": [1, 2, 4, 8, 16]}
+   verified: checksum {'conflicting, 1 thread(s)': 240, 'conflicting, 2 thread(s)': 240, 'conflicting, 4 thread(s)': 24... == expected; 20/20 checks passed
+  conflicting: commits/s, 1 thread(s)          median       791.1 commits/s  min     735.2  [n=5]
+  conflicting: commits/s, 2 thread(s)          median       767.5 commits/s  min     731.1  [n=5]
+  conflicting: commits/s, 4 thread(s)          median       669.5 commits/s  min     540.2  [n=5]
+  conflicting: commits/s, 8 thread(s)          median       608.2 commits/s  min     521.7  [n=5]
+  conflicting: commits/s, 16 thread(s)         median       431.8 commits/s  min     425.9  [n=5]
+  blind merge: commits/s, 1 thread(s)          median       470.3 commits/s  min     467.0  [n=5]
+  blind merge: commits/s, 2 thread(s)          median       371.2 commits/s  min     311.0  [n=5]
+  blind merge: commits/s, 4 thread(s)          median       445.6 commits/s  min     412.3  [n=5]
+  blind merge: commits/s, 8 thread(s)          median       439.4 commits/s  min     415.9  [n=5]
+  blind merge: commits/s, 16 thread(s)         median       469.2 commits/s  min     446.2  [n=5]
+  blind merge, indexed dict: commits/s, 1 thread(s) median       231.2 commits/s  min     220.3  [n=5]
+  blind merge, indexed dict: commits/s, 2 thread(s) median       223.7 commits/s  min     213.9  [n=5]
+  blind merge, indexed dict: commits/s, 4 thread(s) median       281.7 commits/s  min     270.8  [n=5]
+  blind merge, indexed dict: commits/s, 8 thread(s) median       282.0 commits/s  min     225.9  [n=5]
+  blind merge, indexed dict: commits/s, 16 thread(s) median       277.6 commits/s  min     239.3  [n=5]
+  disjoint roots: commits/s, 1 thread(s)       median       896.8 commits/s  min     518.3  [n=5]
+  disjoint roots: commits/s, 2 thread(s)       median       711.4 commits/s  min     426.5  [n=5]
+  disjoint roots: commits/s, 4 thread(s)       median       838.9 commits/s  min     585.3  [n=5]
+  disjoint roots: commits/s, 8 thread(s)       median       728.4 commits/s  min     709.2  [n=5]
+  disjoint roots: commits/s, 16 thread(s)      median       898.1 commits/s  min     825.6  [n=5]
+   conflicting: attempts per commit, 1 thread(s): 1.0
+   conflicting: attempts per commit, 2 thread(s): 1.15
+   conflicting: attempts per commit, 4 thread(s): 2.11
+   conflicting: attempts per commit, 8 thread(s): 2.55
+   conflicting: attempts per commit, 16 thread(s): 5.75
+   blind merge: attempts per commit, 1 thread(s): 1.0
+   blind merge: attempts per commit, 2 thread(s): 1.0
+   blind merge: attempts per commit, 4 thread(s): 1.0
+   blind merge: attempts per commit, 8 thread(s): 1.0
+   blind merge: attempts per commit, 16 thread(s): 1.0
+   blind merge, indexed dict: attempts per commit, 1 thread(s): 1.0
+   blind merge, indexed dict: attempts per commit, 2 thread(s): 1.0
+   blind merge, indexed dict: attempts per commit, 4 thread(s): 1.0
+   blind merge, indexed dict: attempts per commit, 8 thread(s): 1.0
+   blind merge, indexed dict: attempts per commit, 16 thread(s): 1.0
+   disjoint roots: attempts per commit, 1 thread(s): 1.0
+   disjoint roots: attempts per commit, 2 thread(s): 1.0
+   disjoint roots: attempts per commit, 4 thread(s): 1.0
+   disjoint roots: attempts per commit, 8 thread(s): 1.0
+   disjoint roots: attempts per commit, 16 thread(s): 1.0
+
+== concurrent_reads ==  Read scaling with 1..N threads (own transaction per thread): get_at and index queries; dict baseline.
+   work: {"lookups_per_thread": 4000, "queries_per_thread": 200, "rows": 20000, "threads": [1, 2, 4, 8, 16]}
+   verified: checksum {'protodb get_at, 1 thread(s)': True, 'protodb EqualityIndex query, 1 thread(s)': True, 'python d... == expected; 15/15 checks passed
+  protodb get_at: ops/s, 1 thread(s)           median    165131.3 ops/s  min   30831.5  [n=5]
+  protodb EqualityIndex query: ops/s, 1 thread(s) median      3512.2 ops/s  min    3414.5  [n=5]
+  python dict lookup: ops/s, 1 thread(s)       median    932575.9 ops/s  min  909951.2  [n=5]
+  protodb get_at: ops/s, 2 thread(s)           median    273826.1 ops/s  min  192641.5  [n=5]
+  protodb EqualityIndex query: ops/s, 2 thread(s) median      7099.5 ops/s  min    7010.4  [n=5]
+  python dict lookup: ops/s, 2 thread(s)       median   1584763.4 ops/s  min 1193012.6  [n=5]
+  protodb get_at: ops/s, 4 thread(s)           median    370321.7 ops/s  min  355458.0  [n=5]
+  protodb EqualityIndex query: ops/s, 4 thread(s) median     11897.1 ops/s  min    9436.2  [n=5]
+  python dict lookup: ops/s, 4 thread(s)       median   2841719.4 ops/s  min 2707325.3  [n=5]
+  protodb get_at: ops/s, 8 thread(s)           median    597924.5 ops/s  min  556940.3  [n=5]
+  protodb EqualityIndex query: ops/s, 8 thread(s) median     15096.5 ops/s  min   11826.0  [n=5]
+  python dict lookup: ops/s, 8 thread(s)       median   2835037.9 ops/s  min 1358563.3  [n=5]
+  protodb get_at: ops/s, 16 thread(s)          median    679341.6 ops/s  min  640678.1  [n=5]
+  protodb EqualityIndex query: ops/s, 16 thread(s) median     15610.3 ops/s  min   15074.8  [n=5]
+  python dict lookup: ops/s, 16 thread(s)      median   3537911.6 ops/s  min 3435928.9  [n=5]
+   protodb get_at: speedup vs 1 thread(s): {'1': 1.0, '2': 1.66, '4': 2.24, '8': 3.62, '16': 4.11}
+   protodb EqualityIndex query: speedup vs 1 thread(s): {'1': 1.0, '2': 2.02, '4': 3.39, '8': 4.3, '16': 4.44}
+   python dict lookup: speedup vs 1 thread(s): {'1': 1.0, '2': 1.7, '4': 3.05, '8': 3.04, '16': 3.79}
+
+== parallel_scan ==  ParallelPool.scan of a CPU-bound function with 1..N workers vs a sequential loop (D40).
+   work: {"items": 2000, "spin": 4000, "workers": [1, 2, 4, 8, 16]}
+   verified: checksum 4299980615064 == expected; 6/6 checks passed
+  sequential loop                              median   997.66 ms  max     1.005 s  (498.8 us/op, max 502.7)  [n=5]
+  ParallelPool.scan, 1 worker(s)               median   994.93 ms  max     1.040 s  (497.5 us/op, max 520.0)  [n=5]
+  ParallelPool.scan, 2 worker(s)               median   548.70 ms  max   567.97 ms  (274.4 us/op, max 284.0)  [n=5]
+  ParallelPool.scan, 4 worker(s)               median   341.07 ms  max   378.09 ms  (170.5 us/op, max 189.0)  [n=5]
+  ParallelPool.scan, 8 worker(s)               median   275.16 ms  max   284.99 ms  (137.6 us/op, max 142.5)  [n=5]
+  ParallelPool.scan, 16 worker(s)              median   241.65 ms  max   249.15 ms  (120.8 us/op, max 124.6)  [n=5]
+   speedup vs sequential: {'1': 1.0, '2': 1.82, '4': 2.93, '8': 3.63, '16': 4.13}
+
+== scan_state_probe ==  parallel_scan's body under the process state left by earlier workloads (R136 Q4).
+   work: {"items": 2000, "spin": 4000, "state": {"full_collection_s": 1.652, "gc_count": [322058, 46, 0], "gc_enabled": true, "gc_get_objects_s": 0.483, "gc_threshold": [2000, 10, 10], "gc_tracked_objects": 2082100, "gil_enabled": false, "os_threads": 1, "rss_mb": 1815.3, "thread_names": ["MainThread"], "threads_alive": 1}, "workers": [1, 8]}
+   verified: checksum 4299980615064 == expected; 10/10 checks passed
+  sequential loop                              median     1.039 s  max     1.043 s  (519.5 us/op, max 521.6)  [n=5]
+  as is: ParallelPool.scan, 1 worker(s)        median     1.051 s  max     1.064 s  (525.6 us/op, max 532.0)  [n=5]
+  as is: ParallelPool.scan, 8 worker(s)        median   280.41 ms  max   291.39 ms  (140.2 us/op, max 145.7)  [n=5]
+  gc callbacks: ParallelPool.scan, 1 worker(s) median     1.099 s  max     1.147 s  (549.5 us/op, max 573.6)  [n=5]
+  gc callbacks: ParallelPool.scan, 8 worker(s) median   281.07 ms  max   295.47 ms  (140.5 us/op, max 147.7)  [n=5]
+  gc.freeze(): ParallelPool.scan, 1 worker(s)  median     1.132 s  max     1.153 s  (565.8 us/op, max 576.4)  [n=5]
+  gc.freeze(): ParallelPool.scan, 8 worker(s)  median   294.95 ms  max   300.53 ms  (147.5 us/op, max 150.3)  [n=5]
+  gc.disable(): ParallelPool.scan, 1 worker(s) median     1.074 s  max     1.093 s  (537.0 us/op, max 546.7)  [n=5]
+  gc.disable(): ParallelPool.scan, 8 worker(s) median   279.31 ms  max   294.72 ms  (139.7 us/op, max 147.4)  [n=5]
+  as is, again: ParallelPool.scan, 1 worker(s) median     1.082 s  max     1.171 s  (541.2 us/op, max 585.5)  [n=5]
+  as is, again: ParallelPool.scan, 8 worker(s) median   288.10 ms  max   295.46 ms  (144.0 us/op, max 147.7)  [n=5]
+   state: {'threads_alive': 1, 'thread_names': ['MainThread'], 'os_threads': 1, 'rss_mb': 1815.3, 'gc_tracked_objects': 2082100, 'gc_get_objects_s': 0.483, 'gc_threshold': [2000, 10, 10], 'gc_count': [322058, 46, 0], 'gc_enabled': True, 'gil_enabled': False, 'full_collection_s': 1.652}
+   figures: {'as is, 1 worker(s)': {'speedup': 0.99, 'collections': None, 'collection_s_total': None, 'cpu_ticks_main': 627, 'cpu_ticks_new_threads': 0, 'cpu_ticks_other_old_threads': 0, 'busiest_old_threads': []}, 'as is, 8 worker(s)': {'speedup': 3.71, 'collections': None, 'collection_s_total': None, 'cpu_ticks_main': 144, 'cpu_ticks_new_threads': 0, 'cpu_ticks_other_old_threads': 0, 'busiest_old_threads': []}, 'gc callbacks, 1 worker(s)': {'speedup': 0.95, 'collections': 0, 'collection_s_total': 0, 'cpu_ticks_main': 657, 'cpu_ticks_new_threads': 0, 'cpu_ticks_other_old_threads': 0, 'busiest_old_threads': []}, 'gc callbacks, 8 worker(s)': {'speedup': 3.7, 'collections': 0, 'collection_s_total': 0, 'cpu_ticks_main': 154, 'cpu_ticks_new_threads': 0, 'cpu_ticks_other_old_threads': 0, 'busiest_old_threads': []}, 'gc.freeze(), 1 worker(s)': {'speedup': 0.92, 'collections': None, 'collection_s_total': None, 'cpu_ticks_main': 676, 'cpu_ticks_new_threads': 0, 'cpu_ticks_other_old_threads': 0, 'busiest_old_threads': []}, 'gc.freeze(), 8 worker(s)': {'speedup': 3.52, 'collections': None, 'collection_s_total': None, 'cpu_ticks_main': 150, 'cpu_ticks_new_threads': 0, 'cpu_ticks_other_old_threads': 0, 'busiest_old_threads': []}, 'gc.disable(), 1 worker(s)': {'speedup': 0.97, 'collections': None, 'collection_s_total': None, 'cpu_ticks_main': 646, 'cpu_ticks_new_threads': 0, 'cpu_ticks_other_old_threads': 0, 'busiest_old_threads': []}, 'gc.disable(), 8 worker(s)': {'speedup': 3.72, 'collections': None, 'collection_s_total': None, 'cpu_ticks_main': 146, 'cpu_ticks_new_threads': 0, 'cpu_ticks_other_old_threads': 0, 'busiest_old_threads': []}, 'as is, again, 1 worker(s)': {'speedup': 0.96, 'collections': None, 'collection_s_total': None, 'cpu_ticks_main': 658, 'cpu_ticks_new_threads': 0, 'cpu_ticks_other_old_threads': 0, 'busiest_old_threads': []}, 'as is, again, 8 worker(s)': {'speedup': 3.61, 'collections': None, 'collection_s_total': None, 'cpu_ticks_main': 146, 'cpu_ticks_new_threads': 0, 'cpu_ticks_other_old_threads': 0, 'busiest_old_threads': []}}
+
+16 workload(s) in 1835.7 s: 16 verified, 0 pending, 0 failed
+results written to /home/gamarino/Documentos/proyectos/scratch-8.3n/regr/q4/suite-prefix-gil-off.json

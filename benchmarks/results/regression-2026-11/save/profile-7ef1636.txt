@@ -1,0 +1,48 @@
+         3061944 function calls (2732630 primitive calls) in 10.396 seconds
+
+   Ordered by: internal time
+   List reduced from 208 to 40 due to restriction <40>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+24617/1200    0.529    0.000    8.326    0.007 /home/gamarino/Documentos/proyectos/scratch-8.3n/regr/exp/7ef1636/proto_db/core/atom.py:642(_save)
+223932/111966    0.517    0.000    0.842    0.000 {built-in method builtins.hash}
+    15024    0.363    0.000    0.623    0.000 /home/gamarino/Documentos/proyectos/scratch-8.3n/regr/exp/7ef1636/proto_db/core/atom.py:606(_restore)
+    15024    0.339    0.000    2.933    0.000 /home/gamarino/Documentos/proyectos/scratch-8.3n/regr/exp/7ef1636/proto_db/core/atom.py:675(_decoded_twin)
+   111966    0.332    0.000    1.174    0.000 <string>:23(__hash__)
+   218057    0.324    0.000    0.324    0.000 {built-in method builtins.isinstance}
+   111966    0.324    0.000    0.489    0.000 /home/gamarino/.local/share/uv/python/cpython-3.14.6+freethreaded-linux-x86_64-gnu/lib/python3.14t/uuid.py:319(__hash__)
+   220384    0.323    0.000    0.323    0.000 {method 'startswith' of 'str' objects}
+    15024    0.314    0.000    0.678    0.000 /home/gamarino/Documentos/proyectos/scratch-8.3n/regr/exp/7ef1636/proto_db/core/atom.py:622(_state)
+   164274    0.299    0.000    0.563    0.000 {method 'get' of 'dict' objects}
+   201147    0.298    0.000    0.298    0.000 {built-in method builtins.hasattr}
+92288/77744    0.281    0.000    1.728    0.000 /home/gamarino/Documentos/proyectos/scratch-8.3n/regr/exp/7ef1636/proto_db/core/codec.py:106(redecode_value)
+92688/3200    0.229    0.000    7.788    0.002 /home/gamarino/Documentos/proyectos/scratch-8.3n/regr/exp/7ef1636/proto_db/core/codec.py:86(encode_value)
+    15024    0.228    0.000    4.319    0.000 /home/gamarino/Documentos/proyectos/scratch-8.3n/regr/exp/7ef1636/proto_db/transactions.py:486(_atom_saved)
+    24217    0.208    0.000    1.430    0.000 /home/gamarino/Documentos/proyectos/scratch-8.3n/regr/exp/7ef1636/proto_db/transactions.py:441(load)
+    24217    0.198    0.000    0.799    0.000 /home/gamarino/Documentos/proyectos/scratch-8.3n/regr/exp/7ef1636/proto_db/storage/cache.py:94(touch)
+23417/2000    0.198    0.000    7.779    0.004 /home/gamarino/Documentos/proyectos/scratch-8.3n/regr/exp/7ef1636/proto_db/core/codec.py:146(_encode_ref)
+15024/1200    0.194    0.000    7.800    0.007 /home/gamarino/Documentos/proyectos/scratch-8.3n/regr/exp/7ef1636/proto_db/core/codec.py:63(encode_state)
+    15024    0.181    0.000    0.427    0.000 /home/gamarino/Documentos/proyectos/scratch-8.3n/regr/exp/7ef1636/proto_db/storage/memory.py:46(_append)
+    15024    0.159    0.000    0.159    0.000 /home/gamarino/Documentos/proyectos/ProtoBase/.venv314t/lib/python3.14t/site-packages/msgpack/__init__.py:30(packb)
+    15024    0.157    0.000    0.591    0.000 /home/gamarino/Documentos/proyectos/scratch-8.3n/regr/exp/7ef1636/proto_db/storage/cache.py:100(put_evicting)
+    95506    0.150    0.000    0.150    0.000 {method '__exit__' of '_thread.lock' objects}
+    95506    0.149    0.000    0.149    0.000 {method '__enter__' of '_thread.lock' objects}
+    30048    0.143    0.000    0.233    0.000 <frozen importlib._bootstrap>:1409(_handle_fromlist)
+    15024    0.128    0.000    0.758    0.000 /home/gamarino/Documentos/proyectos/scratch-8.3n/regr/exp/7ef1636/proto_db/storage/memory.py:65(push_atom)
+    12048    0.124    0.000    0.211    0.000 /home/gamarino/Documentos/proyectos/scratch-8.3n/regr/exp/7ef1636/proto_db/collections/avl.py:157(_init_shape)
+    38441    0.116    0.000    0.179    0.000 /home/gamarino/.local/share/uv/python/cpython-3.14.6+freethreaded-linux-x86_64-gnu/lib/python3.14t/uuid.py:335(bytes)
+    38441    0.116    0.000    0.174    0.000 /home/gamarino/Documentos/proyectos/scratch-8.3n/regr/exp/7ef1636/proto_db/core/atom.py:227(type_tag)
+    18624    0.115    0.000    0.277    0.000 /home/gamarino/Documentos/proyectos/scratch-8.3n/regr/exp/7ef1636/proto_db/values.py:252(order_key)
+    15024    0.109    0.000    0.277    0.000 /home/gamarino/.local/share/uv/python/cpython-3.14.6+freethreaded-linux-x86_64-gnu/lib/python3.14t/uuid.py:774(uuid4)
+    25920    0.101    0.000    0.287    0.000 /home/gamarino/Documentos/proyectos/scratch-8.3n/regr/exp/7ef1636/proto_db/collections/avl.py:216(_order_key)
+    61696    0.096    0.000    0.096    0.000 {method 'items' of 'dict' objects}
+24617/1200    0.096    0.000    8.331    0.007 /home/gamarino/Documentos/proyectos/scratch-8.3n/regr/exp/7ef1636/proto_db/transactions.py:367(_save_atom)
+    30048    0.093    0.000    0.144    0.000 <frozen importlib._bootstrap>:648(parent)
+    12048    0.090    0.000    0.471    0.000 /home/gamarino/Documentos/proyectos/scratch-8.3n/regr/exp/7ef1636/proto_db/collections/avl.py:208(__init__)
+    48272    0.088    0.000    0.088    0.000 {built-in method __new__ of type object at 0x15c5840}
+    17024    0.087    0.000    0.391    0.000 /home/gamarino/Documentos/proyectos/scratch-8.3n/regr/exp/7ef1636/proto_db/core/atom.py:524(_oid_locked)
+    15024    0.080    0.000    0.839    0.000 /home/gamarino/Documentos/proyectos/scratch-8.3n/regr/exp/7ef1636/proto_db/transactions.py:470(_admit)
+    15024    0.076    0.000    0.127    0.000 /home/gamarino/Documentos/proyectos/scratch-8.3n/regr/exp/7ef1636/proto_db/core/atom.py:466(_snapshot)
+11424/2800    0.074    0.000    0.860    0.000 /home/gamarino/Documentos/proyectos/scratch-8.3n/regr/exp/7ef1636/proto_db/collections/avl.py:529(put)
+
+

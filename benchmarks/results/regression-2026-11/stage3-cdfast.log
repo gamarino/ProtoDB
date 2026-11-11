@@ -1,0 +1,67 @@
+Running as unit: r136-stage3.scope; invocation ID: ca3e8504660640f5bd7c5ae6b707415e
+waiting: 4.8 foreign busy CPUs >= 2.0
+[     57s] r0 ec90c25 blind  ok   321.7/s p50 35.47 ms
+[     62s] r0 ec90c25 p100   ok   269.4/s p50 43.09 ms
+[     66s] r0 c953d7e blind  ok   331.3/s p50 33.65 ms
+[     71s] r0 c953d7e p100   ok   240.2/s p50 48.42 ms
+[     76s] r0 cdfast: blind  ok   351.0/s p50 31.87 ms
+[     80s] r0 cdfast: p100   ok   261.0/s p50 42.9 ms
+[     85s] r1 cdfast: p100   ok   256.2/s p50 44.65 ms
+[     90s] r1 cdfast: blind  ok   355.1/s p50 31.64 ms
+[     95s] r1 c953d7e p100   ok   248.2/s p50 46.49 ms
+[     99s] r1 c953d7e blind  ok   347.6/s p50 32.56 ms
+[    104s] r1 ec90c25 p100   ok   273.3/s p50 41.85 ms
+[    109s] r1 ec90c25 blind  ok   365.6/s p50 31.26 ms
+[    114s] r2 ec90c25 blind  ok   354.2/s p50 31.13 ms
+[    118s] r2 ec90c25 p100   ok   266.3/s p50 42.88 ms
+[    123s] r2 c953d7e blind  ok   306.2/s p50 33.95 ms
+[    128s] r2 c953d7e p100   ok   235.1/s p50 49.13 ms
+discarded: 4.5 foreign CPUs during the run
+waiting: 5.1 foreign busy CPUs >= 2.0
+waiting: 6.3 foreign busy CPUs >= 2.0
+[    205s] r2 cdfast: blind  ok   323.3/s p50 35.8 ms
+waiting: 2.7 foreign busy CPUs >= 2.0
+[    211s] r2 cdfast: p100   ok   239.9/s p50 48.88 ms
+waiting: 2.4 foreign busy CPUs >= 2.0
+[    217s] r3 cdfast: p100   ok   233.8/s p50 48.73 ms
+waiting: 2.1 foreign busy CPUs >= 2.0
+[    224s] r3 cdfast: blind  ok   323.7/s p50 35.4 ms
+[    228s] r3 c953d7e p100   ok   209.9/s p50 55.63 ms
+[    233s] r3 c953d7e blind  ok   293.0/s p50 38.4 ms
+[    238s] r3 ec90c25 p100   ok   247.0/s p50 47.08 ms
+[    243s] r3 ec90c25 blind  ok   334.0/s p50 34.25 ms
+[    247s] r4 ec90c25 blind  ok   322.9/s p50 34.49 ms
+[    252s] r4 ec90c25 p100   ok   238.6/s p50 47.52 ms
+[    257s] r4 c953d7e blind  ok   306.4/s p50 37.49 ms
+[    262s] r4 c953d7e p100   ok   224.5/s p50 52.29 ms
+[    266s] r4 cdfast: blind  ok   328.3/s p50 33.87 ms
+[    271s] r4 cdfast: p100   ok   247.1/s p50 46.3 ms
+[    276s] r5 cdfast: p100   ok   174.1/s p50 49.15 ms
+waiting: 2.5 foreign busy CPUs >= 2.0
+waiting: 5.0 foreign busy CPUs >= 2.0
+[    345s] r5 cdfast: blind  ok   316.3/s p50 36.61 ms
+discarded: 3.82 foreign CPUs during the run
+waiting: 5.4 foreign busy CPUs >= 2.0
+[    392s] r5 c953d7e p100   ok   247.6/s p50 46.89 ms
+[    397s] r5 c953d7e blind  ok   312.8/s p50 37.12 ms
+[    402s] r5 ec90c25 p100   ok   223.0/s p50 50.45 ms
+waiting: 2.1 foreign busy CPUs >= 2.0
+[    414s] r5 ec90c25 blind  ok   321.5/s p50 34.23 ms
+waiting: 2.1 foreign busy CPUs >= 2.0
+discarded: 2.56 foreign CPUs during the run
+waiting: 3.1 foreign busy CPUs >= 2.0
+[    459s] r6 ec90c25 blind  ok   331.3/s p50 33.91 ms
+waiting: 3.1 foreign busy CPUs >= 2.0
+[    491s] r6 ec90c25 p100   ok   239.0/s p50 48.64 ms
+waiting: 2.3 foreign busy CPUs >= 2.0
+[    497s] r6 c953d7e blind  ok   306.8/s p50 37.86 ms
+waiting: 2.0 foreign busy CPUs >= 2.0
+[    503s] r6 c953d7e p100   ok   224.5/s p50 51.68 ms
+waiting: 2.5 foreign busy CPUs >= 2.0
+[    509s] r6 cdfast: blind  ok   322.0/s p50 34.72 ms
+waiting: 2.1 foreign busy CPUs >= 2.0
+[    515s] r6 cdfast: p100   ok   237.0/s p50 48.28 ms
+waiting: 2.3 foreign busy CPUs >= 2.0
+[    552s] r7 cdfast: p100   ok   242.6/s p50 47.28 ms
+[    556s] r7 cdfast: blind  ok   321.0/s p50 35.82 ms
+waiting: 4.1 foreign busy CPUs >= 2.0
