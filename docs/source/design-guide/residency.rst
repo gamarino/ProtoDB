@@ -4,6 +4,11 @@ Residency: bounding what a process keeps decoded
 *Task 8.3m. Decision D53 (amendments of Tasks 8.3l and 8.3m); rulings R92, R102 to R105; principles P1, P6
 and P7.*
 
+Read :doc:`immutability` first: this chapter rests on its one fact, that the content at a storage pointer never
+changes. The chapter carries three lessons that reach beyond ProtoDB: a bound on a cache's *entries* bounds nothing
+when cached objects reference each other; a rule can move from the edges of a graph to its nodes; and a
+check-then-act protocol is only as safe as its longest unlocked gap.
+
 What it gives the ERP
 ---------------------
 
@@ -190,8 +195,11 @@ every piece of bookkeeping in the *value* of ``_loaded`` and never reads an atom
 residency paths. Both facts are pinned by tests (``test_cache_atoms_keep_the_inline_values_layout``,
 ``test_the_residency_paths_never_materialize_the_instance_dict``).
 
-The mistake: the C1 race
-------------------------
+The mistake: a load racing an unload
+------------------------------------
+
+*Finding C1 of the residency design review. The cluster has a different finding C1, of a later review, told in
+:doc:`unknown-outcomes`; the two are unrelated.*
 
 The design argued: "the unload and the publish of a load are serialized on the atom's lock (its *stripe*), and
 an atom is admitted only after it is loaded, so the cache never unloads an atom that is half loaded". The
@@ -259,16 +267,34 @@ Its cost, stated honestly
 **Memory, the reason for the change** (``benchmarks/results/2026-11-06-1845993-residency-ladder.log``, base
 ``26f3b85`` against ``1845993``, default capacity, GIL off, single runs):
 
-===========================  ===================  =================  ==================================
-Inventory                    Peak RSS             Loaded atoms       Warm port lookup / path trace
-===========================  ===================  =================  ==================================
-958,665 objects, base        2.61 GB              2,756,907          78.3 us / 0.87 ms
-958,665 objects, residency   **0.26 GB**          **50,000**         926.6 us / 29.3 ms
-2,972,442, residency         0.26 GB              50,000             1,132.2 us / 36.7 ms
-9,626,985, residency         **0.27 GB**          50,000             1,398.4 us / 47.2 ms
-958,665 objects, capacity    4.09 GB              2,790,616          74.9 us / 0.78 ms
-3,000,000 (the set fits)
-===========================  ===================  =================  ==================================
+.. list-table::
+   :header-rows: 1
+   :widths: 34 16 16 34
+
+   * - Inventory
+     - Peak RSS
+     - Loaded atoms
+     - Warm port lookup / path trace
+   * - 958,665 objects, base
+     - 2.61 GB
+     - 2,756,907
+     - 78.3 us / 0.87 ms
+   * - 958,665 objects, residency
+     - **0.26 GB**
+     - **50,000**
+     - 926.6 us / 29.3 ms
+   * - 2,972,442, residency
+     - 0.26 GB
+     - 50,000
+     - 1,132.2 us / 36.7 ms
+   * - 9,626,985, residency
+     - **0.27 GB**
+     - 50,000
+     - 1,398.4 us / 47.2 ms
+   * - 958,665 objects, residency with capacity 3,000,000 (the set fits)
+     - 4.09 GB
+     - 2,790,616
+     - 74.9 us / 0.78 ms
 
 The 10^7 step did not fit in 20 GB before (D53); it now peaks at 0.27 GB. The table also shows the price.
 
@@ -333,3 +359,23 @@ again, and the next read loads the same content, because the content at a pointe
 question about last quarter loads what it reads and lets it go. The operator's part is to watch
 ``read_unloads / loads`` on the real workload and raise the capacity until it is near zero, knowing the price:
 a cache too small for the daily reports turns them into disk reads, never into wrong answers.
+
+Questions for discussion
+------------------------
+
+These questions use only what this chapter and its evidence note state.
+
+1. The default cache held exactly 50,000 entries while 2,756,907 loaded atoms were alive. Draw the smallest object
+   graph in which a cache of one entry keeps an unbounded number of loaded atoms alive.
+2. Options (a) and (b) put a cost on every edge a traversal crosses; (d) puts it on the reload of an evicted
+   atom. For a workload whose working set fits in the cache, which costs nothing per read, and why? For one whose
+   working set is 20 % larger than the cache, what does the probe say happens?
+3. Why does residency need the identity map? Describe what goes wrong without it when a parent's child and a fresh
+   load of the same pointer are two different Python objects.
+4. Correctness "reduces to excluding exactly two failures". Why can a reader that sees attributes from two
+   generations of the same atom never read a wrong value? Which principle does the argument use, and what would
+   break if records could be updated in place?
+5. In the load-unload race, which phase of the load held no lock, and why was it left unlocked? Give another
+   check-then-act protocol you know whose safety depends on its longest unlocked gap.
+6. The CLOCK bit helped over the capacity (201 to 144 us) and cost with a capacity that fits. Explain both
+   results with the sentence "no recency policy survives a cyclic access pattern larger than the cache".
