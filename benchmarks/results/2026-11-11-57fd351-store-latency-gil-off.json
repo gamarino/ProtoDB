@@ -1,0 +1,169 @@
+{
+ "schema": 1,
+ "mode": "full",
+ "environment": {
+  "timestamp": "2026-11-11T03:14:33+00:00",
+  "cpu_model": "AMD Ryzen 5 5500U with Radeon Graphics",
+  "cpu_count": 12,
+  "cpu_affinity": 12,
+  "cpu_frequency": {
+   "governor": "powersave",
+   "driver": "amd-pstate-epp",
+   "energy_performance_preference": "balance_power",
+   "boost": "1"
+  },
+  "platform": "Linux-7.0.0-43-generic-x86_64-desconocido-with-glibc2.43",
+  "python": "3.14.6",
+  "python_implementation": "CPython",
+  "free_threaded_build": true,
+  "gil_enabled": false,
+  "xoptions": {
+   "gil": "0"
+  },
+  "proto_db": "2.0.0.dev0",
+  "git": {
+   "commit": "57fd351",
+   "commit_full": "57fd351591063ef31e6c6cad5cfb43b89d8fe423",
+   "dirty": false,
+   "clean": true,
+   "source": "git archive export",
+   "changed": [],
+   "missing": [],
+   "added": []
+  },
+  "sqlite": "3.53.1",
+  "numpy": "2.5.4",
+  "hnswlib": "0.8.0",
+  "workdir": "/home/gamarino/Documentos/proyectos/scratch-8.3n/9c/run-57fd351",
+  "workdir_fs": "zfs",
+  "rqlite": null
+ },
+ "check": {
+  "stray_processes": [],
+  "checked_at": "2026-11-11T00:14:33-0300",
+  "workdir_free_bytes": 1073105469440
+ },
+ "options": {
+  "threads": [
+   1,
+   2,
+   4,
+   8,
+   16
+  ],
+  "repeat": 5,
+  "warmup": 1,
+  "params": {}
+ },
+ "total_s": 16.08486554599949,
+ "results": {
+  "cluster_store_latency": {
+   "status": "ok",
+   "work": {
+    "peers": 3,
+    "threads_per_peer": 4,
+    "store_latency_s": [
+     0.0,
+     0.03
+    ],
+    "seconds": 2.0,
+    "mode": "blind"
+   },
+   "checksum": {
+    "store latency 0 ms": true,
+    "store latency 30 ms": true
+   },
+   "expected": {
+    "store latency 0 ms": true,
+    "store latency 30 ms": true
+   },
+   "checks": [
+    {
+     "name": "store latency 0 ms: exact final state, persisted, healthy",
+     "ok": true,
+     "detail": "ids True, counter True, per-peer split True, persisted True; ids True, counter True, per-peer split True, persisted True; ids True, counter True, per-peer split True, persisted True"
+    },
+    {
+     "name": "store latency 30 ms: exact final state, persisted, healthy",
+     "ok": true,
+     "detail": "ids True, counter True, per-peer split True, persisted True; ids True, counter True, per-peer split True, persisted True; ids True, counter True, per-peer split True, persisted True"
+    }
+   ],
+   "timings": {
+    "commits/s, store latency 0 ms": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      303.9432309775218,
+      292.6059261268343,
+      292.583135578638
+     ],
+     "n": 3,
+     "median": 292.6059261268343,
+     "p95": null,
+     "min": 292.583135578638,
+     "max": 303.9432309775218,
+     "mean": 296.3774308943314,
+     "tail_label": "min",
+     "tail": 292.583135578638
+    },
+    "commits/s, store latency 30 ms": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      285.43370920454373,
+      294.8167910690058,
+      303.1042224400817
+     ],
+     "n": 3,
+     "median": 294.8167910690058,
+     "p95": null,
+     "min": 285.43370920454373,
+     "max": 303.1042224400817,
+     "mean": 294.4515742378771,
+     "tail_label": "min",
+     "tail": 285.43370920454373
+    }
+   },
+   "metrics": {
+    "store latency 0 ms: commit latency ms": {
+     "p50": 38.93,
+     "p95": 56.21
+    },
+    "store latency 0 ms: critical section ms per commit": {
+     "validation": 0.182,
+     "replay": 0.937,
+     "path_copy": 1.761,
+     "replication": 7.85
+    },
+    "store latency 30 ms: commit latency ms": {
+     "p50": 37.76,
+     "p95": 59.17
+    },
+    "store latency 30 ms: critical section ms per commit": {
+     "validation": 0.178,
+     "replay": 0.945,
+     "path_copy": 1.729,
+     "replication": 7.257
+    },
+    "rate ratio (slow store / fast store)": 1.01
+   },
+   "notes": [],
+   "params": {
+    "latencies": [
+     0.0,
+     0.03
+    ],
+    "peers": 3,
+    "threads": 4,
+    "seconds": 2.0,
+    "repeat": 3
+   },
+   "elapsed_s": 16.084505799997714,
+   "gil_before": false,
+   "gil_after": false
+  }
+ }
+}

@@ -1,0 +1,617 @@
+{
+ "schema": 1,
+ "mode": "full",
+ "environment": {
+  "timestamp": "2026-11-11T01:05:01+00:00",
+  "cpu_model": "AMD Ryzen 5 5500U with Radeon Graphics",
+  "cpu_count": 12,
+  "cpu_affinity": 12,
+  "cpu_frequency": {
+   "governor": "powersave",
+   "driver": "amd-pstate-epp",
+   "energy_performance_preference": "balance_power",
+   "boost": "1"
+  },
+  "platform": "Linux-7.0.0-43-generic-x86_64-desconocido-with-glibc2.43",
+  "python": "3.14.6",
+  "python_implementation": "CPython",
+  "free_threaded_build": true,
+  "gil_enabled": false,
+  "xoptions": {
+   "gil": "0"
+  },
+  "proto_db": "2.0.0.dev0",
+  "git": {
+   "commit": "57fd351",
+   "commit_full": "57fd351591063ef31e6c6cad5cfb43b89d8fe423",
+   "dirty": false,
+   "clean": true,
+   "source": "git archive export",
+   "changed": [],
+   "missing": [],
+   "added": []
+  },
+  "sqlite": "3.53.1",
+  "numpy": "2.5.4",
+  "hnswlib": "0.8.0",
+  "workdir": "/home/gamarino/Documentos/proyectos/scratch-8.3n/9c/run-57fd351",
+  "workdir_fs": "zfs",
+  "rqlite": null
+ },
+ "check": {
+  "stray_processes": [],
+  "checked_at": "2026-11-10T22:05:01-0300",
+  "workdir_free_bytes": 1073142824960
+ },
+ "options": {
+  "threads": [
+   1,
+   2,
+   4,
+   8,
+   16
+  ],
+  "repeat": 5,
+  "warmup": 1,
+  "params": {
+   "inventory": {
+    "objects": 1000000,
+    "atom_cache_entries": 3000000
+   }
+  }
+ },
+ "total_s": 431.9809186850034,
+ "results": {
+  "inventory": {
+   "status": "ok",
+   "work": {
+    "sites": 277,
+    "objects": 958665,
+    "fan_out": "10 equipment/site, 10 cards/equipment, 8-48 ports/card, links on about half the ports",
+    "durability": "ProtoDB fsync, SQLite FULL",
+    "model_count_s": 0.59,
+    "atom_cache_entries": 3000000,
+    "mean path length (ports)": 32.4,
+    "bulk change: sites, equipment": [
+     14,
+     140
+    ]
+   },
+   "checksum": [
+    277,
+    2770,
+    27700,
+    776089,
+    151829
+   ],
+   "expected": [
+    277,
+    2770,
+    27700,
+    776089,
+    151829
+   ],
+   "checks": [
+    {
+     "name": "protodb objects == model",
+     "ok": true,
+     "detail": "(277, 2770, 27700, 776089, 151829) vs 958665"
+    },
+    {
+     "name": "sqlite3 rows == model",
+     "ok": true,
+     "detail": "(277, 2770, 27700, 776089, 151829) vs (277, 2770, 27700, 776089, 151829)"
+    },
+    {
+     "name": "sqlite3 audit rows == changes made",
+     "ok": true,
+     "detail": "840"
+    }
+   ],
+   "timings": {
+    "protodb build (one commit per site)": {
+     "unit": "s",
+     "better": "lower",
+     "per": 958665,
+     "samples": [
+      411.90271895397746
+     ],
+     "n": 1,
+     "median": 411.90271895397746,
+     "p95": null,
+     "min": 411.90271895397746,
+     "max": 411.90271895397746,
+     "mean": 411.90271895397746,
+     "tail_label": "max",
+     "tail": 411.90271895397746,
+     "per_op_us": 429.6628321196429,
+     "per_op_us_tail": 429.6628321196429
+    },
+    "sqlite3 build (one transaction per site)": {
+     "unit": "s",
+     "better": "lower",
+     "per": 958665,
+     "samples": [
+      2.8156990420357033
+     ],
+     "n": 1,
+     "median": 2.8156990420357033,
+     "p95": null,
+     "min": 2.8156990420357033,
+     "max": 2.8156990420357033,
+     "mean": 2.8156990420357033,
+     "tail_label": "max",
+     "tail": 2.8156990420357033,
+     "per_op_us": 2.9371042460460153,
+     "per_op_us_tail": 2.9371042460460153
+    },
+    "protodb point lookup of a port (warm)": {
+     "unit": "s",
+     "better": "lower",
+     "per": 100,
+     "samples": [
+      0.005545306998101296,
+      0.005384325999330031,
+      0.005502216001332272,
+      0.005658168000081787,
+      0.005510735001735156
+     ],
+     "n": 5,
+     "median": 0.005510735001735156,
+     "p95": null,
+     "min": 0.005384325999330031,
+     "max": 0.005658168000081787,
+     "mean": 0.005520150400116108,
+     "tail_label": "max",
+     "tail": 0.005658168000081787,
+     "per_op_us": 55.107350017351564,
+     "per_op_us_tail": 56.58168000081787
+    },
+    "sqlite3 point lookup of a port (warm)": {
+     "unit": "s",
+     "better": "lower",
+     "per": 100,
+     "samples": [
+      0.0006530749997182284,
+      0.0004766589991049841,
+      0.000516538002557354,
+      0.0005863770020368975,
+      0.0005961549977655523
+     ],
+     "n": 5,
+     "median": 0.0005863770020368975,
+     "p95": null,
+     "min": 0.0004766589991049841,
+     "max": 0.0006530749997182284,
+     "mean": 0.0005657608002366032,
+     "tail_label": "max",
+     "tail": 0.0006530749997182284,
+     "per_op_us": 5.863770020368975,
+     "per_op_us_tail": 6.5307499971822836
+    },
+    "protodb equipment at a site (warm)": {
+     "unit": "s",
+     "better": "lower",
+     "per": 100,
+     "samples": [
+      0.014874481999868294,
+      0.016377861000364646,
+      0.015927671000099508,
+      0.016413130000728415,
+      0.017072910002752906
+     ],
+     "n": 5,
+     "median": 0.016377861000364646,
+     "p95": null,
+     "min": 0.014874481999868294,
+     "max": 0.017072910002752906,
+     "mean": 0.016133210800762753,
+     "tail_label": "max",
+     "tail": 0.017072910002752906,
+     "per_op_us": 163.77861000364646,
+     "per_op_us_tail": 170.72910002752906
+    },
+    "sqlite3 equipment at a site (warm)": {
+     "unit": "s",
+     "better": "lower",
+     "per": 100,
+     "samples": [
+      0.0010413159980089404,
+      0.0012588680001499597,
+      0.001442338001652388,
+      0.001198038000438828,
+      0.0011761070018110331
+     ],
+     "n": 5,
+     "median": 0.001198038000438828,
+     "p95": null,
+     "min": 0.0010413159980089404,
+     "max": 0.001442338001652388,
+     "mean": 0.00122333340041223,
+     "tail_label": "max",
+     "tail": 0.001442338001652388,
+     "per_op_us": 11.98038000438828,
+     "per_op_us_tail": 14.423380016523879
+    },
+    "protodb ports at a site (3 levels / 3-way join) (warm)": {
+     "unit": "s",
+     "better": "lower",
+     "per": 5,
+     "samples": [
+      0.06534941400241223,
+      0.06344082299983711,
+      0.060979238001891645,
+      0.060230970000702655,
+      0.06102882399864029
+     ],
+     "n": 5,
+     "median": 0.06102882399864029,
+     "p95": null,
+     "min": 0.060230970000702655,
+     "max": 0.06534941400241223,
+     "mean": 0.062205853800696785,
+     "tail_label": "max",
+     "tail": 0.06534941400241223,
+     "per_op_us": 12205.764799728058,
+     "per_op_us_tail": 13069.882800482446
+    },
+    "sqlite3 ports at a site (3 levels / 3-way join) (warm)": {
+     "unit": "s",
+     "better": "lower",
+     "per": 5,
+     "samples": [
+      0.004167639999650419,
+      0.004126853000343544,
+      0.0041385170006833505,
+      0.004426677001902135,
+      0.00440677299775416
+     ],
+     "n": 5,
+     "median": 0.004167639999650419,
+     "p95": null,
+     "min": 0.004126853000343544,
+     "max": 0.004426677001902135,
+     "mean": 0.0042532920000667215,
+     "tail_label": "max",
+     "tail": 0.004426677001902135,
+     "per_op_us": 833.5279999300838,
+     "per_op_us_tail": 885.335400380427
+    },
+    "protodb path trace (warm)": {
+     "unit": "s",
+     "better": "lower",
+     "per": 20,
+     "samples": [
+      0.009243761000107042,
+      0.008533836000424344,
+      0.008508484002959449,
+      0.00867519299936248,
+      0.009473813999647973
+     ],
+     "n": 5,
+     "median": 0.00867519299936248,
+     "p95": null,
+     "min": 0.008508484002959449,
+     "max": 0.009473813999647973,
+     "mean": 0.008887017600500258,
+     "tail_label": "max",
+     "tail": 0.009473813999647973,
+     "per_op_us": 433.759649968124,
+     "per_op_us_tail": 473.69069998239866
+    },
+    "sqlite3 path trace (warm)": {
+     "unit": "s",
+     "better": "lower",
+     "per": 20,
+     "samples": [
+      0.008086860001640161,
+      0.0073284649988636374,
+      0.007472405999578768,
+      0.0072189559978141915,
+      0.007183825997344684
+     ],
+     "n": 5,
+     "median": 0.0073284649988636374,
+     "p95": null,
+     "min": 0.007183825997344684,
+     "max": 0.008086860001640161,
+     "mean": 0.007458102599048289,
+     "tail_label": "max",
+     "tail": 0.008086860001640161,
+     "per_op_us": 366.4232499431819,
+     "per_op_us_tail": 404.3430000820081
+    },
+    "protodb point lookup, cold (first request of a new instance)": {
+     "unit": "s",
+     "better": "lower",
+     "per": 1,
+     "samples": [
+      0.0027351489989086986,
+      0.0027070040014223196,
+      0.0028393510001478717,
+      0.0031212249996315222,
+      0.002973442999063991
+     ],
+     "n": 5,
+     "median": 0.0028393510001478717,
+     "p95": null,
+     "min": 0.0027070040014223196,
+     "max": 0.0031212249996315222,
+     "mean": 0.0028752343998348804,
+     "tail_label": "max",
+     "tail": 0.0031212249996315222,
+     "per_op_us": 2839.3510001478717,
+     "per_op_us_tail": 3121.224999631522
+    },
+    "sqlite3 point lookup, cold (first request of a new instance)": {
+     "unit": "s",
+     "better": "lower",
+     "per": 1,
+     "samples": [
+      0.00039864800055511296,
+      0.00033146100031444803,
+      0.00023047300055623055,
+      0.00024018000112846494,
+      0.0002102189973811619
+     ],
+     "n": 5,
+     "median": 0.00024018000112846494,
+     "p95": null,
+     "min": 0.0002102189973811619,
+     "max": 0.00039864800055511296,
+     "mean": 0.00028219619998708366,
+     "tail_label": "max",
+     "tail": 0.00039864800055511296,
+     "per_op_us": 240.18000112846494,
+     "per_op_us_tail": 398.64800055511296
+    },
+    "protodb equipment at a site, cold (first request of a new instance)": {
+     "unit": "s",
+     "better": "lower",
+     "per": 1,
+     "samples": [
+      0.003628125003160676,
+      0.0036431409971555695,
+      0.003615693000028841,
+      0.0036746389996551443,
+      0.0037120029992365744
+     ],
+     "n": 5,
+     "median": 0.0036431409971555695,
+     "p95": null,
+     "min": 0.003615693000028841,
+     "max": 0.0037120029992365744,
+     "mean": 0.003654720199847361,
+     "tail_label": "max",
+     "tail": 0.0037120029992365744,
+     "per_op_us": 3643.1409971555695,
+     "per_op_us_tail": 3712.0029992365744
+    },
+    "sqlite3 equipment at a site, cold (first request of a new instance)": {
+     "unit": "s",
+     "better": "lower",
+     "per": 1,
+     "samples": [
+      0.0002594559991848655,
+      0.00022614299814449623,
+      0.00021776100038550794,
+      0.00021566600116784684,
+      0.0002313110016984865
+     ],
+     "n": 5,
+     "median": 0.00022614299814449623,
+     "p95": null,
+     "min": 0.00021566600116784684,
+     "max": 0.0002594559991848655,
+     "mean": 0.0002300674001162406,
+     "tail_label": "max",
+     "tail": 0.0002594559991848655,
+     "per_op_us": 226.14299814449623,
+     "per_op_us_tail": 259.4559991848655
+    },
+    "protodb path trace, cold (first request of a new instance)": {
+     "unit": "s",
+     "better": "lower",
+     "per": 1,
+     "samples": [
+      0.04603924500042922,
+      0.04508983900086605,
+      0.046040154000365874,
+      0.044345132999296766,
+      0.04934380200211308
+     ],
+     "n": 5,
+     "median": 0.04603924500042922,
+     "p95": null,
+     "min": 0.044345132999296766,
+     "max": 0.04934380200211308,
+     "mean": 0.0461716346006142,
+     "tail_label": "max",
+     "tail": 0.04934380200211308,
+     "per_op_us": 46039.24500042922,
+     "per_op_us_tail": 49343.80200211308
+    },
+    "sqlite3 path trace, cold (first request of a new instance)": {
+     "unit": "s",
+     "better": "lower",
+     "per": 1,
+     "samples": [
+      0.001076445998478448,
+      0.0010239959992759395,
+      0.001054516000294825,
+      0.0010015770021709614,
+      0.0010535389992583077
+     ],
+     "n": 5,
+     "median": 0.0010535389992583077,
+     "p95": null,
+     "min": 0.0010015770021709614,
+     "max": 0.001076445998478448,
+     "mean": 0.0010420147998956963,
+     "tail_label": "max",
+     "tail": 0.001076445998478448,
+     "per_op_us": 1053.5389992583077,
+     "per_op_us_tail": 1076.445998478448
+    },
+    "protodb bulk status change of one region (one commit)": {
+     "unit": "s",
+     "better": "lower",
+     "per": 140,
+     "samples": [
+      0.08439761299814563,
+      0.0792955120014085,
+      0.07283089900010964,
+      0.06934908999755862,
+      0.07008925500122132
+     ],
+     "n": 5,
+     "median": 0.07283089900010964,
+     "p95": null,
+     "min": 0.06934908999755862,
+     "max": 0.08439761299814563,
+     "mean": 0.07519247379968874,
+     "tail_label": "max",
+     "tail": 0.08439761299814563,
+     "per_op_us": 520.2207071436402,
+     "per_op_us_tail": 602.8400928438974
+    },
+    "protodb as-of: region status before the last change": {
+     "unit": "s",
+     "better": "lower",
+     "per": 140,
+     "samples": [
+      0.0010958610000670888,
+      0.0010670869996829424,
+      0.0010764460021164268,
+      0.0010635260005074088,
+      0.0010775640002975706
+     ],
+     "n": 5,
+     "median": 0.0010764460021164268,
+     "p95": null,
+     "min": 0.0010635260005074088,
+     "max": 0.0010958610000670888,
+     "mean": 0.0010760968005342874,
+     "tail_label": "max",
+     "tail": 0.0010958610000670888,
+     "per_op_us": 7.688900015117334,
+     "per_op_us_tail": 7.827578571907777
+    },
+    "sqlite3 bulk status change of one region (one commit)": {
+     "unit": "s",
+     "better": "lower",
+     "per": 140,
+     "samples": [
+      0.0030587180008296855,
+      0.003291634999186499,
+      0.002495946999260923,
+      0.0024618649986223318,
+      0.002415561000816524
+     ],
+     "n": 5,
+     "median": 0.002495946999260923,
+     "p95": null,
+     "min": 0.002415561000816524,
+     "max": 0.003291634999186499,
+     "mean": 0.0027447451997431927,
+     "tail_label": "max",
+     "tail": 0.003291634999186499,
+     "per_op_us": 17.828192851863733,
+     "per_op_us_tail": 23.511678565617853
+    },
+    "sqlite3 as-of: region status before the last change": {
+     "unit": "s",
+     "better": "lower",
+     "per": 140,
+     "samples": [
+      0.00015211199934128672,
+      0.0001743909997458104,
+      0.00017907000074046664,
+      0.00021014899903093465,
+      0.00015308900037780404
+     ],
+     "n": 5,
+     "median": 0.0001743909997458104,
+     "p95": null,
+     "min": 0.00015211199934128672,
+     "max": 0.00021014899903093465,
+     "mean": 0.00017376219984726048,
+     "tail_label": "max",
+     "tail": 0.00021014899903093465,
+     "per_op_us": 1.24564999818436,
+     "per_op_us_tail": 1.5010642787923905
+    }
+   },
+   "metrics": {
+    "build commits/s": {
+     "protodb": 0.67,
+     "sqlite3": 98.38
+    },
+    "build objects/s": {
+     "protodb": 2327,
+     "sqlite3": 340471
+    },
+    "after build: peak RSS kB (both systems, one process)": 3869164,
+    "after build: atom cache": {
+     "hits": 4455410,
+     "misses": 8,
+     "entries": 2789445,
+     "capacity": 3000000,
+     "loads": 7,
+     "saved": 2789438,
+     "unloads": 0,
+     "read_unloads": 0,
+     "identity_map": 2789446
+    },
+    "on-disk bytes (allocated, apparent)": {
+     "protodb": [
+      150683648,
+      406634502
+     ],
+     "sqlite3": [
+      17392640,
+      29933568
+     ]
+    },
+    "bytes per object (allocated, apparent)": {
+     "protodb": [
+      157.2,
+      424.2
+     ],
+     "sqlite3": [
+      18.1,
+      31.2
+     ]
+    },
+    "on-disk bytes after the bulk changes (allocated)": {
+     "protodb": 150683648,
+     "sqlite3": 17392640
+    },
+    "end: peak RSS kB (both systems, one process)": 3869164,
+    "end: atom cache": {
+     "hits": 4465144,
+     "misses": 8,
+     "entries": 2792901,
+     "capacity": 3000000,
+     "loads": 7,
+     "saved": 2792894,
+     "unloads": 0,
+     "read_unloads": 0,
+     "identity_map": 2792902
+    }
+   },
+   "notes": [
+    "cold = a new storage instance or connection (empty in-process caches); the OS page cache and the ZFS ARC are not dropped, which needs root"
+   ],
+   "params": {
+    "objects": 1000000,
+    "requests": 100,
+    "path_requests": 20,
+    "atom_cache_entries": 3000000
+   },
+   "elapsed_s": 431.9800910090016,
+   "gil_before": false,
+   "gil_after": false
+  }
+ }
+}

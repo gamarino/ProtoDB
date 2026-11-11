@@ -196,12 +196,13 @@ def iter_entries(store, list_no: int | None = None) -> Iterator[tuple]:
 # -- derived per-version structures ---------------------------------------------------------------
 
 class _Slot:
-    __slots__ = ("lock", "value", "ready")
+    __slots__ = ("lock", "value", "ready", "owner")
 
-    def __init__(self):
+    def __init__(self, owner):
         self.lock = threading.Lock()
         self.value = None
         self.ready = False
+        self.owner = owner
 
 
 class DerivedCache:
@@ -211,7 +212,10 @@ class DerivedCache:
     once with ``build()``: concurrent callers for one key wait for a single
     build; a failed build leaves nothing cached.  Keys are ``(index oid, kind)``,
     so a version and every stub loaded from it share one structure, and a new
-    version never sees a stale one.
+    version never sees a stale one.  Each entry records its *owner*, the storage of
+    the index it was built from: :meth:`release` drops an owner's entries when its
+    space closes, so a structure (which holds the stored elements) never keeps a
+    closed space's atoms reachable.
     """
 
     def __init__(self, capacity: int = 16):
@@ -221,12 +225,13 @@ class DerivedCache:
         self._lock = threading.Lock()
         self._slots: OrderedDict = OrderedDict()
 
-    def get(self, key, build: Callable):
-        """The structure for ``key``, built by ``build()`` on a miss."""
+    def get(self, key, build: Callable, owner=None):
+        """The structure for ``key``, built by ``build()`` on a miss; ``owner`` (the storage of
+        the index, or None) is recorded for :meth:`release`."""
         with self._lock:
             slot = self._slots.get(key)
             if slot is None:
-                slot = self._slots[key] = _Slot()
+                slot = self._slots[key] = _Slot(owner)
                 while len(self._slots) > self._capacity:
                     self._slots.popitem(last=False)
             else:
@@ -237,9 +242,26 @@ class DerivedCache:
                 slot.ready = True
             return slot.value
 
+    def release(self, owner) -> None:
+        """Drop every entry whose owner is ``owner`` (its space is closing).  A build in progress
+        for such an entry completes for its caller and is not cached."""
+        with self._lock:
+            for key in [k for k, slot in self._slots.items() if slot.owner is owner]:
+                del self._slots[key]
+
+    def owners(self) -> list:
+        """The owners of the cached entries (diagnostics, tests)."""
+        with self._lock:
+            return [slot.owner for slot in self._slots.values()]
+
     def __len__(self):
         with self._lock:
             return len(self._slots)
+
+
+def _owner(index):
+    """The storage an index version belongs to (its context's), or None for a context-free one."""
+    return getattr(getattr(index, "context", None), "storage", None)
 
 
 #: The process-wide cache of flat snapshots and HNSW graphs.
@@ -474,7 +496,7 @@ class ExactBackend(_Backend):
             if np is None or not entries:
                 return _FlatSnapshot(entries, None, None)
             return _FlatSnapshot(entries, *_matrix(np, entries, index.dim))
-        return DERIVED.get((index.oid, "flat"), build)
+        return DERIVED.get((index.oid, "flat"), build, _owner(index))
 
     def search(self, index, q: tuple, k, threshold, eligible) -> list:
         """Exact k nearest / threshold search over the members satisfying ``eligible``."""
@@ -641,7 +663,7 @@ class IvfFlatBackend(_Backend):
                 matrix, norms = _matrix(np, entries, index.dim) if np is not None else (None, None)
                 out[j] = (tuple(entries), matrix, norms)
             return out
-        return DERIVED.get((index.oid, "ivf"), build)
+        return DERIVED.get((index.oid, "ivf"), build, _owner(index))
 
     def search(self, index, q: tuple, k, threshold, eligible) -> list:
         """Probe the best ``nprobe`` lists (plus list -1); widen while fewer than ``k`` members match."""
@@ -746,7 +768,7 @@ class HnswBackend(_Backend):
                 graph.add_items(data, np.arange(len(entries)), num_threads=1)
             graph.set_ef(params["ef_search"])
             return _HnswGraph(graph, entries, np)
-        return DERIVED.get((index.oid, "hnsw"), build)
+        return DERIVED.get((index.oid, "hnsw"), build, _owner(index))
 
     def search(self, index, q: tuple, k, threshold, eligible) -> list:
         """Widen the hnsw candidate count until the answer is settled (module docstring)."""

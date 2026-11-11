@@ -1,0 +1,231 @@
+quiet check 2026-11-10T17:34:38-03:00: no other pytest/benchmark/rqlited process
+=== suite-gil-off
+start 2026-11-10T17:34:38-03:00 MemAvailable: 30864 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  free: 1000G
+cmd: /home/gamarino/Documentos/proyectos/ProtoBase/.venv314t/bin/python -X gil=0 -m benchmarks --rqlite /home/gamarino/Documentos/proyectos/scratch-8.3n/scratchpad-backup/rqlite/dist/rqlite-v10.6.6-linux-amd64/rqlited --workdir /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/run --json /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/results/suite-gil-off.json
+guarded pid 836025 (scope c9-suite-gil-off-835989)
+end 2026-11-10T17:57:56-03:00 rc=143 MemAvailable: 25351 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  maxrss: 
+quiet check 2026-11-10T17:57:56-03:00: no other pytest/benchmark/rqlited process
+=== session
+start 2026-11-10T17:57:56-03:00 MemAvailable: 25772 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  free: 1000G
+cmd: /home/gamarino/Documentos/proyectos/ProtoBase/.venv314t/bin/python -m benchmarks.session --reps 5 --rqlite /home/gamarino/Documentos/proyectos/scratch-8.3n/scratchpad-backup/rqlite/dist/rqlite-v10.6.6-linux-amd64/rqlited --workdir /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/run --json /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/results/session.json
+guarded pid 957004 (scope c9-session-835989)
+note 2026-11-10T17:59:19-03:00: suite-gil-off rc=143 was the scope's own OOM kill at its 12G cap (journal: 'The kernel OOM killer killed some processes in this unit', 12G memory peak, 23 min); output buffered, workload unknown. Driver 1 stopped after starting the session; driver2 guards the session and reruns the suite unbuffered with a memory sampler.
+end session 2026-11-10T18:40:54-03:00 MemAvailable: 29526 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  maxrss: 	Maximum resident set size (kbytes): 201340 (driver 1 was stopped after its suite step; this driver guarded the session to its end)
+scope: c9-session-835989.scope: Consumed 1h 27min 37.473s CPU time over 42min 44.486s wall clock time, 439.1M memory peak. 
+quiet check 2026-11-10T18:40:54-03:00: waiting for:
+1116031 /bin/bash -c source /home/gamarino/.claude/shell-snapshots/snapshot-bash-1794335968245-ynts29.sh 2>/dev/null || true && shopt -u extglob 2>/dev/null || true && { \builtin unalias -- 'which'; \builtin unset -f -- 'which'; } >/dev/null 2>&1 || true && { \builtin unalias -- 'unsetenv'; \builtin unset -f -- 'unsetenv'; } >/dev/null 2>&1 || true && eval 'cd /home/gamarino/Documentos/proyectos/scratch-8.3n/wt-fmt && P=/home/gamarino/Documentos/proyectos/ProtoBase/.venv314t/bin/python; for g in 0 1; do systemd-run --user --scope -q -p MemoryMax=12G -p MemorySwapMax=0 timeout 1500 $P -X gil=$g -m pytest -q -p no:cacheprovider --basetemp=/home/gamarino/Documentos/proyectos/scratch-8.3n/fmt2/pt$g $(cat /home/gamarino/Documentos/proyectos/scratch-8.3n/fmt2/suite.txt) tests/conformance tests/unit/test_planner.py tests/unit/test_query_cache.py tests/unit/test_query_plans.py tests/unit/test_plan_windows.py tests/unit/test_pager.py tests/unit/test_transactions.py tests/unit/test_history_links.py 2>&1 | grep -E "^FAILED|^ERROR|passed|failed" | tail -8; echo "gil=$g"; done' < /dev/null && pwd -P >| /tmp/claude-f580-cwd
+1172321 /usr/bin/timeout 1500 /home/gamarino/Documentos/proyectos/ProtoBase/.venv314t/bin/python -X gil=1 -m pytest -q -p no:cacheprovider --basetemp=/home/gamarino/Documentos/proyectos/scratch-8.3n/fmt2/pt1 tests/unit/test_format_neutral.py tests/unit/test_type_names.py tests/unit/test_values.py tests/unit/test_codec.py tests/unit/test_atom.py tests/unit/test_atom_cost.py tests/unit/test_atom_type_modules.py tests/unit/test_frozen_containers.py tests/unit/test_mutable_object.py tests/unit/test_value_box.py tests/unit/test_collection_base.py tests/unit/test_collection_contract.py tests/unit/test_content_equals.py tests/unit/test_counted_set.py tests/unit/test_dictionary.py tests/unit/test_hash_dictionary.py tests/unit/test_list.py tests/unit/test_set.py tests/unit/test_repeated_keys_dictionary.py tests/unit/test_equality_index.py tests/unit/test_range_index.py tests/unit/test_index_base.py tests/unit/test_index_contract.py tests/unit/test_keyspec.py tests/unit/test_vector_index.py tests/unit/test_plans.py tests/unit/test_format.py tests/property/test_avl.py tests/property/test_avl_weights.py tests/property/test_codec_roundtrip.py tests/property/test_collections_model.py tests/property/test_index_equals_scan.py tests/property/test_index_rank.py tests/property/test_values_order.py tests/contracts/test_collections_with_indexes.py tests/conformance tests/unit/test_planner.py tests/unit/test_query_cache.py tests/unit/test_query_plans.py tests/unit/test_plan_windows.py tests/unit/test_pager.py tests/unit/test_transactions.py tests/unit/test_history_links.py
+1172322 /bin/bash -c source /home/gamarino/.claude/shell-snapshots/snapshot-bash-1794335968245-ynts29.sh 2>/dev/null || true && shopt -u extglob 2>/dev/null || true && { \builtin unalias -- 'which'; \builtin unset -f -- 'which'; } >/dev/null 2>&1 || true && { \builtin unalias -- 'unsetenv'; \builtin unset -f -- 'unsetenv'; } >/dev/null 2>&1 || true && eval 'cd /home/gamarino/Documentos/proyectos/scratch-8.3n/wt-fmt && P=/home/gamarino/Documentos/proyectos/ProtoBase/.venv314t/bin/python; for g in 0 1; do systemd-run --user --scope -q -p MemoryMax=12G -p MemorySwapMax=0 timeout 1500 $P -X gil=$g -m pytest -q -p no:cacheprovider --basetemp=/home/gamarino/Documentos/proyectos/scratch-8.3n/fmt2/pt$g $(cat /home/gamarino/Documentos/proyectos/scratch-8.3n/fmt2/suite.txt) tests/conformance tests/unit/test_planner.py tests/unit/test_query_cache.py tests/unit/test_query_plans.py tests/unit/test_plan_windows.py tests/unit/test_pager.py tests/unit/test_transactions.py tests/unit/test_history_links.py 2>&1 | grep -E "^FAILED|^ERROR|passed|failed" | tail -8; echo "gil=$g"; done' < /dev/null && pwd -P >| /tmp/claude-f580-cwd
+1172326 /home/gamarino/Documentos/proyectos/ProtoBase/.venv314t/bin/python -X gil=1 -m pytest -q -p no:cacheprovider --basetemp=/home/gamarino/Documentos/proyectos/scratch-8.3n/fmt2/pt1 tests/unit/test_format_neutral.py tests/unit/test_type_names.py tests/unit/test_values.py tests/unit/test_codec.py tests/unit/test_atom.py tests/unit/test_atom_cost.py tests/unit/test_atom_type_modules.py tests/unit/test_frozen_containers.py tests/unit/test_mutable_object.py tests/unit/test_value_box.py tests/unit/test_collection_base.py tests/unit/test_collection_contract.py tests/unit/test_content_equals.py tests/unit/test_counted_set.py tests/unit/test_dictionary.py tests/unit/test_hash_dictionary.py tests/unit/test_list.py tests/unit/test_set.py tests/unit/test_repeated_keys_dictionary.py tests/unit/test_equality_index.py tests/unit/test_range_index.py tests/unit/test_index_base.py tests/unit/test_index_contract.py tests/unit/test_keyspec.py tests/unit/test_vector_index.py tests/unit/test_plans.py tests/unit/test_format.py tests/property/test_avl.py tests/property/test_avl_weights.py tests/property/test_codec_roundtrip.py tests/property/test_collections_model.py tests/property/test_index_equals_scan.py tests/property/test_index_rank.py tests/property/test_values_order.py tests/contracts/test_collections_with_indexes.py tests/conformance tests/unit/test_planner.py tests/unit/test_query_cache.py tests/unit/test_query_plans.py tests/unit/test_plan_windows.py tests/unit/test_pager.py tests/unit/test_transactions.py tests/unit/test_history_links.py
+quiet check 2026-11-10T18:43:54-03:00: no other pytest/benchmark/rqlited process
+=== suite-gil-off
+start 2026-11-10T18:43:54-03:00 MemAvailable: 29643 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  free: 1000G
+cmd: /home/gamarino/Documentos/proyectos/ProtoBase/.venv314t/bin/python -X gil=0 -u -m benchmarks --rqlite /home/gamarino/Documentos/proyectos/scratch-8.3n/scratchpad-backup/rqlite/dist/rqlite-v10.6.6-linux-amd64/rqlited --workdir /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/run --json /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/results/suite-gil-off.json
+guarded pid 1225390 (c9-suite-gil-off-968029.scope)
+note 2026-11-10T19:05:52-03:00: maintainer decision via the controller: the 10^7 inventory step is dropped from this task (deferred to the branch's final verification pass). driver2 stopped while suite-gil-off (pid 1225390) ran; driver3 guards it, then runs suite1 inv6-0 inv6-fit inv6-1.
+note 2026-11-10T19:06:57-03:00: controller: product changed (57fd351: C1 recovery-base fix, storage format 4). The 585ab3a suite (export, so not mixed: proto_db is not installed in the venv and every process imported the export) was stopped as superseded at cluster_cas_baseline; driver3 stopped. Everything is remeasured from a clean export of 57fd351 into a fresh work directory: suite0 suite1 session inv6-0 inv6-fit inv6-1; no 10^7 step.
+quiet check 2026-11-10T19:07:05-03:00: no other pytest/benchmark/rqlited process
+=== suite-gil-off
+start 2026-11-10T19:07:05-03:00 MemAvailable: 28532 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  free: 1000G
+cmd: /home/gamarino/Documentos/proyectos/ProtoBase/.venv314t/bin/python -X gil=0 -u -m benchmarks --rqlite /home/gamarino/Documentos/proyectos/scratch-8.3n/scratchpad-backup/rqlite/dist/rqlite-v10.6.6-linux-amd64/rqlited --workdir /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/run-57fd351 --json /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/results-57fd351/suite-gil-off.json
+guarded pid 1336460 (c9-suite-gil-off-1336438.scope)
+end 2026-11-10T20:00:28-03:00 rc=1 MemAvailable: 24565 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  maxrss: 	Maximum resident set size (kbytes): 9002160
+scope: c9-suite-gil-off-1336438.scope: Consumed 1h 11min 634ms CPU time over 53min 15.152s wall clock time, 8.5G memory peak. 
+quiet check 2026-11-10T20:00:28-03:00: waiting for:
+1576100 /bin/bash /home/gamarino/Documentos/proyectos/scratch-8.3n/c1/runall.sh pytest-queued-c1
+quiet check 2026-11-10T20:31:30-03:00: no other pytest/benchmark/rqlited process
+=== suite-gil-on
+start 2026-11-10T20:31:30-03:00 MemAvailable: 24307 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  free: 1000G
+cmd: /home/gamarino/Documentos/proyectos/ProtoBase/.venv314t/bin/python -X gil=1 -u -m benchmarks --rqlite /home/gamarino/Documentos/proyectos/scratch-8.3n/scratchpad-backup/rqlite/dist/rqlite-v10.6.6-linux-amd64/rqlited --workdir /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/run-57fd351 --json /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/results-57fd351/suite-gil-on.json
+guarded pid 1816524 (c9-suite-gil-on-1336438.scope)
+end 2026-11-10T21:14:51-03:00 rc=1 MemAvailable: 23738 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  maxrss: 	Maximum resident set size (kbytes): 6420652
+scope: c9-suite-gil-on-1336438.scope: Consumed 50min 28.668s CPU time over 43min 17.427s wall clock time, 6.1G memory peak. 
+quiet check 2026-11-10T21:14:51-03:00: no other pytest/benchmark/rqlited process
+=== session
+start 2026-11-10T21:14:51-03:00 MemAvailable: 23736 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  free: 1000G
+cmd: /home/gamarino/Documentos/proyectos/ProtoBase/.venv314t/bin/python -u -m benchmarks.session --reps 5 --rqlite /home/gamarino/Documentos/proyectos/scratch-8.3n/scratchpad-backup/rqlite/dist/rqlite-v10.6.6-linux-amd64/rqlited --workdir /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/run-57fd351 --json /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/results-57fd351/session.json
+guarded pid 2036873 (c9-session-1336438.scope)
+end 2026-11-10T21:56:43-03:00 rc=0 MemAvailable: 34748 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  maxrss: 	Maximum resident set size (kbytes): 205852
+scope: c9-session-1336438.scope: Consumed 1h 27min 28.957s CPU time over 41min 45.275s wall clock time, 429.9M memory peak. 
+quiet check 2026-11-10T21:56:43-03:00: no other pytest/benchmark/rqlited process
+=== inventory-1000000-gil-off
+start 2026-11-10T21:56:43-03:00 MemAvailable: 34750 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  free: 1000G
+cmd: /home/gamarino/Documentos/proyectos/ProtoBase/.venv314t/bin/python -X gil=0 -u -m benchmarks --only inventory --param inventory.objects=1000000 --workdir /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/run-57fd351 --json /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/results-57fd351/inventory-1000000-gil-off.json
+guarded pid 2334864 (c9-inventory-1000000-gil-off-1336438.scope)
+end 2026-11-10T22:05:01-03:00 rc=0 MemAvailable: 32843 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  maxrss: 	Maximum resident set size (kbytes): 228148
+scope: c9-inventory-1000000-gil-off-1336438.scope: Consumed 7min 49.249s CPU time over 8min 4.246s wall clock time, 214.4M memory peak. 
+quiet check 2026-11-10T22:05:01-03:00: no other pytest/benchmark/rqlited process
+=== inventory-1000000-fit-gil-off
+start 2026-11-10T22:05:01-03:00 MemAvailable: 32842 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  free: 1000G
+cmd: /home/gamarino/Documentos/proyectos/ProtoBase/.venv314t/bin/python -X gil=0 -u -m benchmarks --only inventory --param inventory.objects=1000000 --param inventory.atom_cache_entries=3000000 --workdir /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/run-57fd351 --json /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/results-57fd351/inventory-1000000-fit-gil-off.json
+guarded pid 2373263 (c9-inventory-1000000-fit-gil-off-1336438.scope)
+end 2026-11-10T22:12:34-03:00 rc=0 MemAvailable: 31672 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  maxrss: 	Maximum resident set size (kbytes): 3869164
+scope: c9-inventory-1000000-fit-gil-off-1336438.scope: Consumed 7min 6.095s CPU time over 7min 20.969s wall clock time, 3.6G memory peak. 
+quiet check 2026-11-10T22:12:34-03:00: no other pytest/benchmark/rqlited process
+=== inventory-1000000-gil-on
+start 2026-11-10T22:12:34-03:00 MemAvailable: 31672 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  free: 1000G
+cmd: /home/gamarino/Documentos/proyectos/ProtoBase/.venv314t/bin/python -X gil=1 -u -m benchmarks --only inventory --param inventory.objects=1000000 --workdir /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/run-57fd351 --json /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/results-57fd351/inventory-1000000-gil-on.json
+guarded pid 2408042 (c9-inventory-1000000-gil-on-1336438.scope)
+end 2026-11-10T22:20:37-03:00 rc=0 MemAvailable: 33613 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  maxrss: 	Maximum resident set size (kbytes): 228608
+scope: c9-inventory-1000000-gil-on-1336438.scope: Consumed 7min 41.512s CPU time over 7min 58.858s wall clock time, 215.3M memory peak. 
+driver2 done 2026-11-10T22:20:37-03:00
+note 2026-11-11T00:02:13-03:00: controller notice: its focused pytest ran 20:36-20:40:55, overlapping suite-gil-on workloads deep_page (20:31:53-20:38:48) and query_cache (20:38:48-20:42:00), times from each record's elapsed_s; both rerun alone (pages1). Solo contrasts: parallel_scan GIL off; cluster_store_latency GIL off and cluster_peers GIL on (each failed once in its suite with ProtoOutcomeUnknownError).
+quiet check 2026-11-11T00:02:13-03:00: no other pytest/benchmark/rqlited process
+=== pages-gil-on
+start 2026-11-11T00:02:13-03:00 MemAvailable: 34903 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  free: 1000G
+cmd: /home/gamarino/Documentos/proyectos/ProtoBase/.venv314t/bin/python -X gil=1 -u -m benchmarks --only deep_page query_cache --workdir /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/run-57fd351 --json /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/results-57fd351/pages-gil-on.json
+guarded pid 2991171 (c9-pages-gil-on-2991160.scope)
+end 2026-11-11T00:14:01-03:00 rc=0 MemAvailable: 33188 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  maxrss: 	Maximum resident set size (kbytes): 5123548
+scope: c9-pages-gil-on-2991160.scope: Consumed 11min 44.876s CPU time over 11min 46.373s wall clock time, 4.8G memory peak. 
+quiet check 2026-11-11T00:14:01-03:00: no other pytest/benchmark/rqlited process
+=== parallel-alone-gil-off
+start 2026-11-11T00:14:01-03:00 MemAvailable: 33157 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  free: 1000G
+cmd: /home/gamarino/Documentos/proyectos/ProtoBase/.venv314t/bin/python -X gil=0 -u -m benchmarks --only parallel_scan --workdir /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/run-57fd351 --json /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/results-57fd351/parallel-alone-gil-off.json
+guarded pid 3048609 (c9-parallel-alone-gil-off-2991160.scope)
+end 2026-11-11T00:14:33-03:00 rc=0 MemAvailable: 32897 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  maxrss: 	Maximum resident set size (kbytes): 36332
+scope: c9-parallel-alone-gil-off-2991160.scope: Consumed 57.822s CPU time over 24.813s wall clock time, 30.3M memory peak. 
+quiet check 2026-11-11T00:14:33-03:00: no other pytest/benchmark/rqlited process
+=== store-latency-gil-off
+start 2026-11-11T00:14:33-03:00 MemAvailable: 32903 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  free: 1000G
+cmd: /home/gamarino/Documentos/proyectos/ProtoBase/.venv314t/bin/python -X gil=0 -u -m benchmarks --only cluster_store_latency --workdir /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/run-57fd351 --json /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/results-57fd351/store-latency-gil-off.json
+guarded pid 3051486 (c9-store-latency-gil-off-2991160.scope)
+end 2026-11-11T00:14:50-03:00 rc=0 MemAvailable: 32630 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  maxrss: 	Maximum resident set size (kbytes): 136276
+scope: c9-store-latency-gil-off-2991160.scope: Consumed 27.523s CPU time over 16.444s wall clock time, 127.8M memory peak. 
+quiet check 2026-11-11T00:14:50-03:00: no other pytest/benchmark/rqlited process
+=== peers-gil-on
+start 2026-11-11T00:14:50-03:00 MemAvailable: 32788 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  free: 1000G
+cmd: /home/gamarino/Documentos/proyectos/ProtoBase/.venv314t/bin/python -X gil=1 -u -m benchmarks --only cluster_peers --workdir /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/run-57fd351 --json /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/results-57fd351/peers-gil-on.json
+guarded pid 3053148 (c9-peers-gil-on-2991160.scope)
+end 2026-11-11T00:16:08-03:00 rc=0 MemAvailable: 33088 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  maxrss: 	Maximum resident set size (kbytes): 149208
+scope: c9-peers-gil-on-2991160.scope: Consumed 57.466s CPU time over 1min 3.426s wall clock time, 142.6M memory peak. 
+driver5 done 2026-11-11T00:16:08-03:00
+note 2026-11-11T00:16:16-03:00: driver6 = commit-path bisect: concurrent_commits alone, GIL off, 2 interleaved rounds over 4aab0f2 1845993 550dde5 5120cff 57fd351 (clean exports). Reason: ProtoDB commit paths 0.4-0.8x vs 4aab0f2 suite with SQLite/rqlite level.
+quiet check 2026-11-11T00:16:59-03:00: no other pytest/benchmark/rqlited process
+=== bis-4aab0f2-r1
+start 2026-11-11T00:16:59-03:00 MemAvailable: 33275 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  free: 1000G
+cmd: /home/gamarino/Documentos/proyectos/ProtoBase/.venv314t/bin/python -X gil=0 -u -m benchmarks --only concurrent_commits --workdir /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/run-bisect --json /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/results-bisect/bis-4aab0f2-r1.json
+guarded pid 3066894 (c9-bis-4aab0f2-r1-3066870.scope)
+end 2026-11-11T00:19:02-03:00 rc=0 MemAvailable: 34147 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  maxrss: 	Maximum resident set size (kbytes): 203932
+scope: c9-bis-4aab0f2-r1-3066870.scope: Consumed 2min 18.775s CPU time over 1min 55.089s wall clock time, 193.4M memory peak. 
+quiet check 2026-11-11T00:19:02-03:00: no other pytest/benchmark/rqlited process
+=== bis-1845993-r1
+start 2026-11-11T00:19:02-03:00 MemAvailable: 34104 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  free: 1000G
+cmd: /home/gamarino/Documentos/proyectos/ProtoBase/.venv314t/bin/python -X gil=0 -u -m benchmarks --only concurrent_commits --workdir /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/run-bisect --json /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/results-bisect/bis-1845993-r1.json
+guarded pid 3078233 (c9-bis-1845993-r1-3066870.scope)
+end 2026-11-11T00:21:04-03:00 rc=0 MemAvailable: 33508 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  maxrss: 	Maximum resident set size (kbytes): 176956
+scope: c9-bis-1845993-r1-3066870.scope: Consumed 2min 23.800s CPU time over 1min 59.036s wall clock time, 166M memory peak. 
+quiet check 2026-11-11T00:21:04-03:00: no other pytest/benchmark/rqlited process
+=== bis-550dde5-r1
+start 2026-11-11T00:21:04-03:00 MemAvailable: 33507 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  free: 1000G
+cmd: /home/gamarino/Documentos/proyectos/ProtoBase/.venv314t/bin/python -X gil=0 -u -m benchmarks --only concurrent_commits --workdir /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/run-bisect --json /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/results-bisect/bis-550dde5-r1.json
+guarded pid 3089643 (c9-bis-550dde5-r1-3066870.scope)
+end 2026-11-11T00:23:06-03:00 rc=0 MemAvailable: 34633 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  maxrss: 	Maximum resident set size (kbytes): 170720
+scope: c9-bis-550dde5-r1-3066870.scope: Consumed 2min 11.682s CPU time over 1min 48.646s wall clock time, 160.6M memory peak. 
+quiet check 2026-11-11T00:23:06-03:00: no other pytest/benchmark/rqlited process
+=== bis-5120cff-r1
+start 2026-11-11T00:23:06-03:00 MemAvailable: 34638 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  free: 1000G
+cmd: /home/gamarino/Documentos/proyectos/ProtoBase/.venv314t/bin/python -X gil=0 -u -m benchmarks --only concurrent_commits --workdir /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/run-bisect --json /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/results-bisect/bis-5120cff-r1.json
+guarded pid 3099856 (c9-bis-5120cff-r1-3066870.scope)
+end 2026-11-11T00:25:09-03:00 rc=0 MemAvailable: 33293 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  maxrss: 	Maximum resident set size (kbytes): 171180
+scope: c9-bis-5120cff-r1-3066870.scope: Consumed 2min 26.666s CPU time over 2min 2.138s wall clock time, 160.6M memory peak. 
+quiet check 2026-11-11T00:25:09-03:00: no other pytest/benchmark/rqlited process
+=== bis-57fd351-r1
+start 2026-11-11T00:25:09-03:00 MemAvailable: 33375 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  free: 1000G
+cmd: /home/gamarino/Documentos/proyectos/ProtoBase/.venv314t/bin/python -X gil=0 -u -m benchmarks --only concurrent_commits --workdir /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/run-bisect --json /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/results-bisect/bis-57fd351-r1.json
+guarded pid 3109708 (c9-bis-57fd351-r1-3066870.scope)
+end 2026-11-11T00:27:11-03:00 rc=0 MemAvailable: 34410 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  maxrss: 	Maximum resident set size (kbytes): 164816
+scope: c9-bis-57fd351-r1-3066870.scope: Consumed 2min 12.604s CPU time over 1min 48.284s wall clock time, 154.7M memory peak. 
+quiet check 2026-11-11T00:27:11-03:00: no other pytest/benchmark/rqlited process
+=== bis-4aab0f2-r2
+start 2026-11-11T00:27:11-03:00 MemAvailable: 34409 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  free: 1000G
+cmd: /home/gamarino/Documentos/proyectos/ProtoBase/.venv314t/bin/python -X gil=0 -u -m benchmarks --only concurrent_commits --workdir /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/run-bisect --json /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/results-bisect/bis-4aab0f2-r2.json
+guarded pid 3119631 (c9-bis-4aab0f2-r2-3066870.scope)
+end 2026-11-11T00:28:58-03:00 rc=0 MemAvailable: 34561 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  maxrss: 	Maximum resident set size (kbytes): 187204
+scope: c9-bis-4aab0f2-r2-3066870.scope: Consumed 2min 9.740s CPU time over 1min 45.077s wall clock time, 177.1M memory peak. 
+quiet check 2026-11-11T00:28:58-03:00: no other pytest/benchmark/rqlited process
+=== bis-1845993-r2
+start 2026-11-11T00:28:58-03:00 MemAvailable: 34555 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  free: 1000G
+cmd: /home/gamarino/Documentos/proyectos/ProtoBase/.venv314t/bin/python -X gil=0 -u -m benchmarks --only concurrent_commits --workdir /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/run-bisect --json /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/results-bisect/bis-1845993-r2.json
+guarded pid 3128756 (c9-bis-1845993-r2-3066870.scope)
+end 2026-11-11T00:31:01-03:00 rc=0 MemAvailable: 33585 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  maxrss: 	Maximum resident set size (kbytes): 169636
+scope: c9-bis-1845993-r2-3066870.scope: Consumed 2min 10.258s CPU time over 1min 47.503s wall clock time, 160.1M memory peak. 
+quiet check 2026-11-11T00:31:01-03:00: no other pytest/benchmark/rqlited process
+=== bis-550dde5-r2
+start 2026-11-11T00:31:01-03:00 MemAvailable: 33583 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  free: 1000G
+cmd: /home/gamarino/Documentos/proyectos/ProtoBase/.venv314t/bin/python -X gil=0 -u -m benchmarks --only concurrent_commits --workdir /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/run-bisect --json /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/results-bisect/bis-550dde5-r2.json
+guarded pid 3140397 (c9-bis-550dde5-r2-3066870.scope)
+end 2026-11-11T00:33:03-03:00 rc=0 MemAvailable: 34116 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  maxrss: 	Maximum resident set size (kbytes): 171336
+scope: c9-bis-550dde5-r2-3066870.scope: Consumed 2min 21.602s CPU time over 1min 57.457s wall clock time, 161.3M memory peak. 
+quiet check 2026-11-11T00:33:03-03:00: no other pytest/benchmark/rqlited process
+=== bis-5120cff-r2
+start 2026-11-11T00:33:03-03:00 MemAvailable: 34115 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  free: 1000G
+cmd: /home/gamarino/Documentos/proyectos/ProtoBase/.venv314t/bin/python -X gil=0 -u -m benchmarks --only concurrent_commits --workdir /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/run-bisect --json /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/results-bisect/bis-5120cff-r2.json
+guarded pid 3151034 (c9-bis-5120cff-r2-3066870.scope)
+end 2026-11-11T00:35:05-03:00 rc=0 MemAvailable: 34498 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  maxrss: 	Maximum resident set size (kbytes): 166428
+scope: c9-bis-5120cff-r2-3066870.scope: Consumed 2min 20.620s CPU time over 1min 54.873s wall clock time, 156.8M memory peak. 
+quiet check 2026-11-11T00:35:05-03:00: no other pytest/benchmark/rqlited process
+=== bis-57fd351-r2
+start 2026-11-11T00:35:05-03:00 MemAvailable: 34489 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  free: 1000G
+cmd: /home/gamarino/Documentos/proyectos/ProtoBase/.venv314t/bin/python -X gil=0 -u -m benchmarks --only concurrent_commits --workdir /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/run-bisect --json /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/results-bisect/bis-57fd351-r2.json
+guarded pid 3162143 (c9-bis-57fd351-r2-3066870.scope)
+end 2026-11-11T00:37:08-03:00 rc=0 MemAvailable: 33799 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  maxrss: 	Maximum resident set size (kbytes): 171620
+scope: c9-bis-57fd351-r2-3066870.scope: Consumed 2min 22.092s CPU time over 1min 55.243s wall clock time, 161.5M memory peak. 
+driver6 done 2026-11-11T00:37:08-03:00
+note 2026-11-11T00:37:09-03:00: driver7 = cluster bisect: cluster_tcp alone, GIL off, 2 interleaved rounds over 4aab0f2 550dde5 5120cff 57fd351. Reason: concurrent_commits alone shows no single-process regression (57fd351 1.03x 4aab0f2, round 1); the cluster drop (session 285.8 -> 202.5) is separate processes.
+quiet check 2026-11-11T00:37:09-03:00: no other pytest/benchmark/rqlited process
+=== tcp-4aab0f2-r1
+start 2026-11-11T00:37:09-03:00 MemAvailable: 33769 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  free: 1000G
+cmd: /home/gamarino/Documentos/proyectos/ProtoBase/.venv314t/bin/python -X gil=0 -u -m benchmarks --only cluster_tcp --workdir /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/run-bisect --json /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/results-bisect/tcp-4aab0f2-r1.json
+guarded pid 3172798 (c9-tcp-4aab0f2-r1-3125399.scope)
+end 2026-11-11T00:39:12-03:00 rc=0 MemAvailable: 34519 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  maxrss: 	Maximum resident set size (kbytes): 333920
+scope: c9-tcp-4aab0f2-r1-3125399.scope: Consumed 4min 27.304s CPU time over 1min 48.808s wall clock time, 830.2M memory peak. 
+quiet check 2026-11-11T00:39:12-03:00: no other pytest/benchmark/rqlited process
+=== tcp-550dde5-r1
+start 2026-11-11T00:39:12-03:00 MemAvailable: 34519 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  free: 1000G
+cmd: /home/gamarino/Documentos/proyectos/ProtoBase/.venv314t/bin/python -X gil=0 -u -m benchmarks --only cluster_tcp --workdir /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/run-bisect --json /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/results-bisect/tcp-550dde5-r1.json
+guarded pid 3183618 (c9-tcp-550dde5-r1-3125399.scope)
+end 2026-11-11T00:41:14-03:00 rc=0 MemAvailable: 33149 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  maxrss: 	Maximum resident set size (kbytes): 236348
+scope: c9-tcp-550dde5-r1-3125399.scope: Consumed 4min 20.194s CPU time over 1min 48.619s wall clock time, 728.2M memory peak. 
+quiet check 2026-11-11T00:41:14-03:00: no other pytest/benchmark/rqlited process
+=== tcp-5120cff-r1
+start 2026-11-11T00:41:14-03:00 MemAvailable: 33142 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  free: 1000G
+cmd: /home/gamarino/Documentos/proyectos/ProtoBase/.venv314t/bin/python -X gil=0 -u -m benchmarks --only cluster_tcp --workdir /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/run-bisect --json /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/results-bisect/tcp-5120cff-r1.json
+guarded pid 3193965 (c9-tcp-5120cff-r1-3125399.scope)
+end 2026-11-11T00:43:16-03:00 rc=0 MemAvailable: 33427 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  maxrss: 	Maximum resident set size (kbytes): 224472
+scope: c9-tcp-5120cff-r1-3125399.scope: Consumed 4min 18.328s CPU time over 1min 49.587s wall clock time, 703.8M memory peak. 
+quiet check 2026-11-11T00:43:16-03:00: no other pytest/benchmark/rqlited process
+=== tcp-57fd351-r1
+start 2026-11-11T00:43:16-03:00 MemAvailable: 33435 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  free: 1000G
+cmd: /home/gamarino/Documentos/proyectos/ProtoBase/.venv314t/bin/python -X gil=0 -u -m benchmarks --only cluster_tcp --workdir /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/run-bisect --json /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/results-bisect/tcp-57fd351-r1.json
+guarded pid 3205600 (c9-tcp-57fd351-r1-3125399.scope)
+end 2026-11-11T00:45:19-03:00 rc=0 MemAvailable: 34076 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  maxrss: 	Maximum resident set size (kbytes): 217876
+scope: c9-tcp-57fd351-r1-3125399.scope: Consumed 4min 20.292s CPU time over 1min 51.312s wall clock time, 673.4M memory peak. 
+quiet check 2026-11-11T00:45:19-03:00: no other pytest/benchmark/rqlited process
+=== tcp-4aab0f2-r2
+start 2026-11-11T00:45:19-03:00 MemAvailable: 34029 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  free: 1000G
+cmd: /home/gamarino/Documentos/proyectos/ProtoBase/.venv314t/bin/python -X gil=0 -u -m benchmarks --only cluster_tcp --workdir /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/run-bisect --json /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/results-bisect/tcp-4aab0f2-r2.json
+guarded pid 3217529 (c9-tcp-4aab0f2-r2-3125399.scope)
+end 2026-11-11T00:47:21-03:00 rc=0 MemAvailable: 33514 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  maxrss: 	Maximum resident set size (kbytes): 316740
+scope: c9-tcp-4aab0f2-r2-3125399.scope: Consumed 4min 25.569s CPU time over 1min 51.021s wall clock time, 794.8M memory peak. 
+quiet check 2026-11-11T00:47:21-03:00: no other pytest/benchmark/rqlited process
+=== tcp-550dde5-r2
+start 2026-11-11T00:47:21-03:00 MemAvailable: 33513 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  free: 1000G
+cmd: /home/gamarino/Documentos/proyectos/ProtoBase/.venv314t/bin/python -X gil=0 -u -m benchmarks --only cluster_tcp --workdir /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/run-bisect --json /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/results-bisect/tcp-550dde5-r2.json
+guarded pid 3228549 (c9-tcp-550dde5-r2-3125399.scope)
+end 2026-11-11T00:49:23-03:00 rc=0 MemAvailable: 33806 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  maxrss: 	Maximum resident set size (kbytes): 234552
+scope: c9-tcp-550dde5-r2-3125399.scope: Consumed 4min 29.224s CPU time over 1min 52.935s wall clock time, 738.1M memory peak. 
+quiet check 2026-11-11T00:49:23-03:00: no other pytest/benchmark/rqlited process
+=== tcp-5120cff-r2
+start 2026-11-11T00:49:23-03:00 MemAvailable: 33796 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  free: 1000G
+cmd: /home/gamarino/Documentos/proyectos/ProtoBase/.venv314t/bin/python -X gil=0 -u -m benchmarks --only cluster_tcp --workdir /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/run-bisect --json /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/results-bisect/tcp-5120cff-r2.json
+guarded pid 3239489 (c9-tcp-5120cff-r2-3125399.scope)
+end 2026-11-11T00:51:26-03:00 rc=0 MemAvailable: 32849 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  maxrss: 	Maximum resident set size (kbytes): 266152
+scope: c9-tcp-5120cff-r2-3125399.scope: Consumed 4min 15.991s CPU time over 1min 50.246s wall clock time, 741.4M memory peak. 
+quiet check 2026-11-11T00:51:26-03:00: no other pytest/benchmark/rqlited process
+=== tcp-57fd351-r2
+start 2026-11-11T00:51:26-03:00 MemAvailable: 32838 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  free: 1000G
+cmd: /home/gamarino/Documentos/proyectos/ProtoBase/.venv314t/bin/python -X gil=0 -u -m benchmarks --only cluster_tcp --workdir /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/run-bisect --json /home/gamarino/Documentos/proyectos/scratch-8.3n/9c/results-bisect/tcp-57fd351-r2.json
+guarded pid 3251120 (c9-tcp-57fd351-r2-3125399.scope)
+end 2026-11-11T00:53:28-03:00 rc=0 MemAvailable: 33590 MB; SwapTotal: 2047 MB; SwapFree: 2047 MB;  maxrss: 	Maximum resident set size (kbytes): 228848
+scope: c9-tcp-57fd351-r2-3125399.scope: Consumed 4min 22.265s CPU time over 1min 49.320s wall clock time, 735.3M memory peak. 
+driver7 done 2026-11-11T00:53:28-03:00

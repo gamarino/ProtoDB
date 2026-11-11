@@ -1,0 +1,30 @@
+%% Pipelined permits (D55, DEPTH = 1): the next holder builds on a proposal; the gate guards what voters may accept.
+sequenceDiagram
+    autonumber
+    participant B as Node B (holder of seq k)
+    participant O as Owner A (term T)
+    participant C as Node C (holder of seq k+1)
+    participant V as Data replicas and voters
+    Note over B: round k had no conflict (H1)
+    B-)V: warm(records of root k) (H4: records first)
+    B->>O: propose(T, k, inc, root k, pred)
+    Note over O: rule O4: from the issued entry, built on its base, once<br/>rule O2: issue on the newest proposal once
+    O-->>C: permit(T, k+1, root k, certain=False, after=[k, B])
+    Note over C: H2: a proposal base is never certain, never re-proposed
+    Note over C: builds on root k at once (records from the warm cache)
+    alt gate closed at send (root k not yet known committed here)
+        C->>V: store(T, root k+1, records) (V1: never an acceptance)
+        V-->>C: ack(ok=False, stored=True)
+        B->>V: replicate(root k) ... majority acknowledges root k
+        B->>O: done(T, k, committed, root k) (broadcast, also to C)
+        Note over C: gate opens (H5): root k known committed AND accepted here
+        Note over C: send_reserve check (R121), then own acceptance of root k+1 alone
+        C->>V: replicate(T, root k+1 alone, pred = root k, copies)
+    else gate open at send
+        C->>V: replicate(T, root k+1, records) as in a serial round
+    end
+    Note over V: V2': accepts root k+1 only if its accepted root IS root k
+    V-->>C: ack(ok)
+    C->>O: done(T, k+1, committed, root k+1)
+    Note over O: rule O3: retires k+1 and every older entry
+    Note over C: if no done and no answer within request_timeout:<br/>plain query to B and the voters, every request_timeout (R94)<br/>gate closes on: permission end, newer term, done(k) unknown or none

@@ -1,0 +1,31 @@
+%% The commit path end to end under a write permission (bounded replication, f = 1, three voters A, B, C).
+sequenceDiagram
+    autonumber
+    participant T as Client thread (node B)
+    participant B as Node B (holder)
+    participant O as Node A (owner of term T)
+    participant R as Node C (data replica, voter)
+    participant S as Object store
+    T->>B: commit(): new atoms written locally, queued in the node's group (D50, D52)
+    B->>O: permit_req(T, rid, inc)
+    Note over O: rule O1: queue not empty, term serving, at least belief/4 left (D50, D55)
+    O-->>B: permit(T, rid, seq, inc, root, certain, valid, after=None)
+    Note over B: valid counted from the request's send (D45)<br/>base = permit root if certain, else recovery with the phase-1 floor (R127)
+    Note over B: build every queued transaction in turn on the base:<br/>read-set validation (D34), intent merge (D33), path copy
+    Note over B: send_reserve check (R121): too little left, retryable conflict, nothing sent (H7)
+    B->>R: replicate(T, rid, root, seq, pred, records, copies=[B]) (D54)
+    Note over B: own synced acceptance (one kind-5 entry with the records),<br/>overlapped with the replica's sync (D50 phase B, R90)
+    B-)O: warm(records) to non-replicas, best effort (R89)
+    Note over R: acceptor lane: ballot rule (D46), chain rule V2' (D55),<br/>one synced append of root and records, then ack (D50)
+    R-->>B: ack(ok=True, stored=True)
+    B->>O: replicate(T, root alone, copies=[B, C]) (D54)
+    Note over O: accepts only when copies reach a majority (D54) and V2' holds
+    O-->>B: ack(ok)
+    Note over B: majority of voters (B, C) acknowledged within the permission: COMMITTED (D46)
+    B-->>T: commit returns
+    B->>O: done(T, seq, inc, committed, root, copies, ranges) (broadcast)
+    B->>R: done(...)
+    Note over O: rule O3: retire the entry, the root becomes the base of the next permit
+    Note over R: learns the committed root on its acceptor lane (D50)
+    Note over B,S: later, off the commit path (D44 amendment, D46)
+    B->>S: persister: ship sealed segments, then CAS the newest committed root,<br/>never backwards in (label, epoch) order (fencing only, D44)

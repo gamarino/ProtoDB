@@ -1,0 +1,260 @@
+{
+ "schema": 1,
+ "mode": "full",
+ "environment": {
+  "timestamp": "2026-11-11T03:14:01+00:00",
+  "cpu_model": "AMD Ryzen 5 5500U with Radeon Graphics",
+  "cpu_count": 12,
+  "cpu_affinity": 12,
+  "cpu_frequency": {
+   "governor": "powersave",
+   "driver": "amd-pstate-epp",
+   "energy_performance_preference": "balance_power",
+   "boost": "1"
+  },
+  "platform": "Linux-7.0.0-43-generic-x86_64-desconocido-with-glibc2.43",
+  "python": "3.14.6",
+  "python_implementation": "CPython",
+  "free_threaded_build": true,
+  "gil_enabled": false,
+  "xoptions": {
+   "gil": "0"
+  },
+  "proto_db": "2.0.0.dev0",
+  "git": {
+   "commit": "57fd351",
+   "commit_full": "57fd351591063ef31e6c6cad5cfb43b89d8fe423",
+   "dirty": false,
+   "clean": true,
+   "source": "git archive export",
+   "changed": [],
+   "missing": [],
+   "added": []
+  },
+  "sqlite": "3.53.1",
+  "numpy": "2.5.4",
+  "hnswlib": "0.8.0",
+  "workdir": "/home/gamarino/Documentos/proyectos/scratch-8.3n/9c/run-57fd351",
+  "workdir_fs": "zfs",
+  "rqlite": null
+ },
+ "check": {
+  "stray_processes": [],
+  "checked_at": "2026-11-11T00:14:01-0300",
+  "workdir_free_bytes": 1073106386944
+ },
+ "options": {
+  "threads": [
+   1,
+   2,
+   4,
+   8,
+   16
+  ],
+  "repeat": 5,
+  "warmup": 1,
+  "params": {}
+ },
+ "total_s": 24.524784438995994,
+ "results": {
+  "parallel_scan": {
+   "status": "ok",
+   "work": {
+    "items": 2000,
+    "spin": 4000,
+    "workers": [
+     1,
+     2,
+     4,
+     8,
+     16
+    ]
+   },
+   "checksum": 4299980615064,
+   "expected": 4299980615064,
+   "checks": [
+    {
+     "name": "sequential results",
+     "ok": true,
+     "detail": ""
+    },
+    {
+     "name": "1 worker(s): results equal the sequential run",
+     "ok": true,
+     "detail": ""
+    },
+    {
+     "name": "2 worker(s): results equal the sequential run",
+     "ok": true,
+     "detail": ""
+    },
+    {
+     "name": "4 worker(s): results equal the sequential run",
+     "ok": true,
+     "detail": ""
+    },
+    {
+     "name": "8 worker(s): results equal the sequential run",
+     "ok": true,
+     "detail": ""
+    },
+    {
+     "name": "16 worker(s): results equal the sequential run",
+     "ok": true,
+     "detail": ""
+    }
+   ],
+   "timings": {
+    "sequential loop": {
+     "unit": "s",
+     "better": "lower",
+     "per": 2000,
+     "samples": [
+      1.1622420700005023,
+      1.1269096010000794,
+      1.1802790240035392,
+      1.1723541440005647,
+      1.1507886740000686
+     ],
+     "n": 5,
+     "median": 1.1622420700005023,
+     "p95": null,
+     "min": 1.1269096010000794,
+     "max": 1.1802790240035392,
+     "mean": 1.1585147026009508,
+     "tail_label": "max",
+     "tail": 1.1802790240035392,
+     "per_op_us": 581.1210350002511,
+     "per_op_us_tail": 590.1395120017696
+    },
+    "ParallelPool.scan, 1 worker(s)": {
+     "unit": "s",
+     "better": "lower",
+     "per": 2000,
+     "samples": [
+      1.0860880709951743,
+      1.1243709369955468,
+      1.105425234993163,
+      1.0786276319995522,
+      1.0982296259971918
+     ],
+     "n": 5,
+     "median": 1.0982296259971918,
+     "p95": null,
+     "min": 1.0786276319995522,
+     "max": 1.1243709369955468,
+     "mean": 1.0985483001961256,
+     "tail_label": "max",
+     "tail": 1.1243709369955468,
+     "per_op_us": 549.1148129985959,
+     "per_op_us_tail": 562.1854684977734
+    },
+    "ParallelPool.scan, 2 worker(s)": {
+     "unit": "s",
+     "better": "lower",
+     "per": 2000,
+     "samples": [
+      0.6997517280033207,
+      0.7094601879944094,
+      0.6724431040056515,
+      0.6573304280027514,
+      0.658429012997658
+     ],
+     "n": 5,
+     "median": 0.6724431040056515,
+     "p95": null,
+     "min": 0.6573304280027514,
+     "max": 0.7094601879944094,
+     "mean": 0.6794828922007582,
+     "tail_label": "max",
+     "tail": 0.7094601879944094,
+     "per_op_us": 336.2215520028258,
+     "per_op_us_tail": 354.7300939972047
+    },
+    "ParallelPool.scan, 4 worker(s)": {
+     "unit": "s",
+     "better": "lower",
+     "per": 2000,
+     "samples": [
+      0.38961409400508273,
+      0.3717503490042873,
+      0.4024449580028886,
+      0.3593730950015015,
+      0.3817251779983053
+     ],
+     "n": 5,
+     "median": 0.3817251779983053,
+     "p95": null,
+     "min": 0.3593730950015015,
+     "max": 0.4024449580028886,
+     "mean": 0.3809815348024131,
+     "tail_label": "max",
+     "tail": 0.4024449580028886,
+     "per_op_us": 190.86258899915265,
+     "per_op_us_tail": 201.2224790014443
+    },
+    "ParallelPool.scan, 8 worker(s)": {
+     "unit": "s",
+     "better": "lower",
+     "per": 2000,
+     "samples": [
+      0.29074537999986205,
+      0.30338669900083914,
+      0.2889223480015062,
+      0.29117308200511616,
+      0.29042195200599963
+     ],
+     "n": 5,
+     "median": 0.29074537999986205,
+     "p95": null,
+     "min": 0.2889223480015062,
+     "max": 0.30338669900083914,
+     "mean": 0.29292989220266463,
+     "tail_label": "max",
+     "tail": 0.30338669900083914,
+     "per_op_us": 145.37268999993103,
+     "per_op_us_tail": 151.69334950041957
+    },
+    "ParallelPool.scan, 16 worker(s)": {
+     "unit": "s",
+     "better": "lower",
+     "per": 2000,
+     "samples": [
+      0.2700860820041271,
+      0.28161540900327964,
+      0.26374719399609603,
+      0.2807773289969191,
+      0.28185824299725937
+     ],
+     "n": 5,
+     "median": 0.2807773289969191,
+     "p95": null,
+     "min": 0.26374719399609603,
+     "max": 0.28185824299725937,
+     "mean": 0.27561685139953623,
+     "tail_label": "max",
+     "tail": 0.28185824299725937,
+     "per_op_us": 140.38866449845955,
+     "per_op_us_tail": 140.92912149862968
+    }
+   },
+   "metrics": {
+    "speedup vs sequential": {
+     "1": 1.06,
+     "2": 1.73,
+     "4": 3.04,
+     "8": 4.0,
+     "16": 4.14
+    }
+   },
+   "notes": [],
+   "params": {
+    "items": 2000,
+    "spin": 4000
+   },
+   "elapsed_s": 24.52415280599962,
+   "gil_before": false,
+   "gil_after": false
+  }
+ }
+}

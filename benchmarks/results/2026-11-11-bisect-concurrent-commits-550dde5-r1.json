@@ -1,0 +1,714 @@
+{
+ "schema": 1,
+ "mode": "full",
+ "environment": {
+  "timestamp": "2026-11-11T03:21:04+00:00",
+  "cpu_model": "AMD Ryzen 5 5500U with Radeon Graphics",
+  "cpu_count": 12,
+  "cpu_affinity": 12,
+  "cpu_frequency": {
+   "governor": "powersave",
+   "driver": "amd-pstate-epp",
+   "energy_performance_preference": "balance_power",
+   "boost": "1"
+  },
+  "platform": "Linux-7.0.0-43-generic-x86_64-desconocido-with-glibc2.43",
+  "python": "3.14.6",
+  "python_implementation": "CPython",
+  "free_threaded_build": true,
+  "gil_enabled": false,
+  "xoptions": {
+   "gil": "0"
+  },
+  "proto_db": "2.0.0.dev0",
+  "git": {
+   "commit": "550dde5",
+   "commit_full": "550dde572ec18c85ce958e163d71dd41d43660a4",
+   "dirty": false,
+   "clean": true,
+   "source": "git archive export",
+   "changed": [],
+   "missing": [],
+   "added": []
+  },
+  "sqlite": "3.53.1",
+  "numpy": "2.5.4",
+  "hnswlib": "0.8.0",
+  "workdir": "/home/gamarino/Documentos/proyectos/scratch-8.3n/9c/run-bisect",
+  "workdir_fs": "zfs",
+  "rqlite": null
+ },
+ "check": {
+  "stray_processes": [],
+  "checked_at": "2026-11-11T00:21:04-0300",
+  "workdir_free_bytes": 1073069031424
+ },
+ "options": {
+  "threads": [
+   1,
+   2,
+   4,
+   8,
+   16
+  ],
+  "repeat": 5,
+  "warmup": 1,
+  "params": {}
+ },
+ "total_s": 108.18097250100254,
+ "results": {
+  "concurrent_commits": {
+   "status": "ok",
+   "work": {
+    "threads": [
+     1,
+     2,
+     4,
+     8,
+     16
+    ],
+    "commits_per_run": 240,
+    "storage": "FileStorage durability=none",
+    "indexed_base_entries": 1000
+   },
+   "checksum": {
+    "conflicting, 1 thread(s)": 240,
+    "conflicting, 2 thread(s)": 240,
+    "conflicting, 4 thread(s)": 240,
+    "conflicting, 8 thread(s)": 240,
+    "conflicting, 16 thread(s)": 240,
+    "blind merge, 1 thread(s)": [
+     true,
+     true
+    ],
+    "blind merge, 2 thread(s)": [
+     true,
+     true
+    ],
+    "blind merge, 4 thread(s)": [
+     true,
+     true
+    ],
+    "blind merge, 8 thread(s)": [
+     true,
+     true
+    ],
+    "blind merge, 16 thread(s)": [
+     true,
+     true
+    ],
+    "blind merge, indexed dict, 1 thread(s)": [
+     1240,
+     true
+    ],
+    "blind merge, indexed dict, 2 thread(s)": [
+     1240,
+     true
+    ],
+    "blind merge, indexed dict, 4 thread(s)": [
+     1240,
+     true
+    ],
+    "blind merge, indexed dict, 8 thread(s)": [
+     1240,
+     true
+    ],
+    "blind merge, indexed dict, 16 thread(s)": [
+     1240,
+     true
+    ],
+    "disjoint roots, 1 thread(s)": 240,
+    "disjoint roots, 2 thread(s)": 240,
+    "disjoint roots, 4 thread(s)": 240,
+    "disjoint roots, 8 thread(s)": 240,
+    "disjoint roots, 16 thread(s)": 240
+   },
+   "expected": {
+    "conflicting, 1 thread(s)": 240,
+    "conflicting, 2 thread(s)": 240,
+    "conflicting, 4 thread(s)": 240,
+    "conflicting, 8 thread(s)": 240,
+    "conflicting, 16 thread(s)": 240,
+    "blind merge, 1 thread(s)": [
+     true,
+     true
+    ],
+    "blind merge, 2 thread(s)": [
+     true,
+     true
+    ],
+    "blind merge, 4 thread(s)": [
+     true,
+     true
+    ],
+    "blind merge, 8 thread(s)": [
+     true,
+     true
+    ],
+    "blind merge, 16 thread(s)": [
+     true,
+     true
+    ],
+    "blind merge, indexed dict, 1 thread(s)": [
+     1240,
+     true
+    ],
+    "blind merge, indexed dict, 2 thread(s)": [
+     1240,
+     true
+    ],
+    "blind merge, indexed dict, 4 thread(s)": [
+     1240,
+     true
+    ],
+    "blind merge, indexed dict, 8 thread(s)": [
+     1240,
+     true
+    ],
+    "blind merge, indexed dict, 16 thread(s)": [
+     1240,
+     true
+    ],
+    "disjoint roots, 1 thread(s)": 240,
+    "disjoint roots, 2 thread(s)": 240,
+    "disjoint roots, 4 thread(s)": 240,
+    "disjoint roots, 8 thread(s)": 240,
+    "disjoint roots, 16 thread(s)": 240
+   },
+   "checks": [
+    {
+     "name": "conflicting, 1 thread(s): final state",
+     "ok": true,
+     "detail": "240 != 240"
+    },
+    {
+     "name": "conflicting, 2 thread(s): final state",
+     "ok": true,
+     "detail": "240 != 240"
+    },
+    {
+     "name": "conflicting, 4 thread(s): final state",
+     "ok": true,
+     "detail": "240 != 240"
+    },
+    {
+     "name": "conflicting, 8 thread(s): final state",
+     "ok": true,
+     "detail": "240 != 240"
+    },
+    {
+     "name": "conflicting, 16 thread(s): final state",
+     "ok": true,
+     "detail": "240 != 240"
+    },
+    {
+     "name": "blind merge, 1 thread(s): final state",
+     "ok": true,
+     "detail": "(True, True) != (True, True)"
+    },
+    {
+     "name": "blind merge, 2 thread(s): final state",
+     "ok": true,
+     "detail": "(True, True) != (True, True)"
+    },
+    {
+     "name": "blind merge, 4 thread(s): final state",
+     "ok": true,
+     "detail": "(True, True) != (True, True)"
+    },
+    {
+     "name": "blind merge, 8 thread(s): final state",
+     "ok": true,
+     "detail": "(True, True) != (True, True)"
+    },
+    {
+     "name": "blind merge, 16 thread(s): final state",
+     "ok": true,
+     "detail": "(True, True) != (True, True)"
+    },
+    {
+     "name": "blind merge, indexed dict, 1 thread(s): final state",
+     "ok": true,
+     "detail": "(1240, True) != (1240, True)"
+    },
+    {
+     "name": "blind merge, indexed dict, 2 thread(s): final state",
+     "ok": true,
+     "detail": "(1240, True) != (1240, True)"
+    },
+    {
+     "name": "blind merge, indexed dict, 4 thread(s): final state",
+     "ok": true,
+     "detail": "(1240, True) != (1240, True)"
+    },
+    {
+     "name": "blind merge, indexed dict, 8 thread(s): final state",
+     "ok": true,
+     "detail": "(1240, True) != (1240, True)"
+    },
+    {
+     "name": "blind merge, indexed dict, 16 thread(s): final state",
+     "ok": true,
+     "detail": "(1240, True) != (1240, True)"
+    },
+    {
+     "name": "disjoint roots, 1 thread(s): final state",
+     "ok": true,
+     "detail": "240 != 240"
+    },
+    {
+     "name": "disjoint roots, 2 thread(s): final state",
+     "ok": true,
+     "detail": "240 != 240"
+    },
+    {
+     "name": "disjoint roots, 4 thread(s): final state",
+     "ok": true,
+     "detail": "240 != 240"
+    },
+    {
+     "name": "disjoint roots, 8 thread(s): final state",
+     "ok": true,
+     "detail": "240 != 240"
+    },
+    {
+     "name": "disjoint roots, 16 thread(s): final state",
+     "ok": true,
+     "detail": "240 != 240"
+    }
+   ],
+   "timings": {
+    "conflicting: commits/s, 1 thread(s)": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      806.7957264626971,
+      843.9828228801298,
+      770.7842750422226,
+      751.8538059988069,
+      747.5021794223272
+     ],
+     "n": 5,
+     "median": 770.7842750422226,
+     "p95": null,
+     "min": 747.5021794223272,
+     "max": 843.9828228801298,
+     "mean": 784.1837619612368,
+     "tail_label": "min",
+     "tail": 747.5021794223272
+    },
+    "conflicting: commits/s, 2 thread(s)": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      791.5305962289831,
+      768.063870961107,
+      826.2713584398448,
+      593.1720675018876,
+      667.6692908024523
+     ],
+     "n": 5,
+     "median": 768.063870961107,
+     "p95": null,
+     "min": 593.1720675018876,
+     "max": 826.2713584398448,
+     "mean": 729.341436786855,
+     "tail_label": "min",
+     "tail": 593.1720675018876
+    },
+    "conflicting: commits/s, 4 thread(s)": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      714.0711252871399,
+      751.7962291365919,
+      628.8192681091169,
+      455.34574020733896,
+      681.165561347809
+     ],
+     "n": 5,
+     "median": 681.165561347809,
+     "p95": null,
+     "min": 455.34574020733896,
+     "max": 751.7962291365919,
+     "mean": 646.2395848175994,
+     "tail_label": "min",
+     "tail": 455.34574020733896
+    },
+    "conflicting: commits/s, 8 thread(s)": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      621.8180034402284,
+      593.4970205011616,
+      608.1630888239607,
+      648.462704595065,
+      509.8307162540633
+     ],
+     "n": 5,
+     "median": 608.1630888239607,
+     "p95": null,
+     "min": 509.8307162540633,
+     "max": 648.462704595065,
+     "mean": 596.3543067228959,
+     "tail_label": "min",
+     "tail": 509.8307162540633
+    },
+    "conflicting: commits/s, 16 thread(s)": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      543.8046976206388,
+      471.13691950256475,
+      464.4995874504748,
+      522.9576399236956,
+      506.7121016824152
+     ],
+     "n": 5,
+     "median": 506.7121016824152,
+     "p95": null,
+     "min": 464.4995874504748,
+     "max": 543.8046976206388,
+     "mean": 501.8221892359578,
+     "tail_label": "min",
+     "tail": 464.4995874504748
+    },
+    "blind merge: commits/s, 1 thread(s)": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      443.8660302884297,
+      456.833028635675,
+      501.8156694495953,
+      495.6671483449918,
+      508.7454131414468
+     ],
+     "n": 5,
+     "median": 495.6671483449918,
+     "p95": null,
+     "min": 443.8660302884297,
+     "max": 508.7454131414468,
+     "mean": 481.38545797202767,
+     "tail_label": "min",
+     "tail": 443.8660302884297
+    },
+    "blind merge: commits/s, 2 thread(s)": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      437.84279829993756,
+      467.8650186983403,
+      449.49396896019914,
+      438.0791255474112,
+      421.15878649373195
+     ],
+     "n": 5,
+     "median": 438.0791255474112,
+     "p95": null,
+     "min": 421.15878649373195,
+     "max": 467.8650186983403,
+     "mean": 442.887939599924,
+     "tail_label": "min",
+     "tail": 421.15878649373195
+    },
+    "blind merge: commits/s, 4 thread(s)": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      559.0209471067172,
+      567.4759179114152,
+      525.2198433986348,
+      507.7257023693915,
+      443.99522980543367
+     ],
+     "n": 5,
+     "median": 525.2198433986348,
+     "p95": null,
+     "min": 443.99522980543367,
+     "max": 567.4759179114152,
+     "mean": 520.6875281183185,
+     "tail_label": "min",
+     "tail": 443.99522980543367
+    },
+    "blind merge: commits/s, 8 thread(s)": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      619.7013341155791,
+      565.7223123029371,
+      615.4355718700139,
+      576.4360646612885,
+      477.04279928407567
+     ],
+     "n": 5,
+     "median": 576.4360646612885,
+     "p95": null,
+     "min": 477.04279928407567,
+     "max": 619.7013341155791,
+     "mean": 570.8676164467788,
+     "tail_label": "min",
+     "tail": 477.04279928407567
+    },
+    "blind merge: commits/s, 16 thread(s)": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      596.0016958084487,
+      638.2805980262067,
+      650.8410065815576,
+      521.7217468926805,
+      412.90850251099823
+     ],
+     "n": 5,
+     "median": 596.0016958084487,
+     "p95": null,
+     "min": 412.90850251099823,
+     "max": 650.8410065815576,
+     "mean": 563.9507099639784,
+     "tail_label": "min",
+     "tail": 412.90850251099823
+    },
+    "blind merge, indexed dict: commits/s, 1 thread(s)": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      238.8342138984967,
+      219.1442787360745,
+      231.50708458422062,
+      225.27646758899687,
+      258.2509541564683
+     ],
+     "n": 5,
+     "median": 231.50708458422062,
+     "p95": null,
+     "min": 219.1442787360745,
+     "max": 258.2509541564683,
+     "mean": 234.60259979285138,
+     "tail_label": "min",
+     "tail": 219.1442787360745
+    },
+    "blind merge, indexed dict: commits/s, 2 thread(s)": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      264.75971277183004,
+      265.36986634483816,
+      258.72644520572106,
+      256.8139053126663,
+      261.9661924313736
+     ],
+     "n": 5,
+     "median": 261.9661924313736,
+     "p95": null,
+     "min": 256.8139053126663,
+     "max": 265.36986634483816,
+     "mean": 261.5272244132858,
+     "tail_label": "min",
+     "tail": 256.8139053126663
+    },
+    "blind merge, indexed dict: commits/s, 4 thread(s)": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      281.019927120376,
+      276.938902277976,
+      278.4043580417175,
+      362.8524478615466,
+      354.9663440316497
+     ],
+     "n": 5,
+     "median": 281.019927120376,
+     "p95": null,
+     "min": 276.938902277976,
+     "max": 362.8524478615466,
+     "mean": 310.83639586665316,
+     "tail_label": "min",
+     "tail": 276.938902277976
+    },
+    "blind merge, indexed dict: commits/s, 8 thread(s)": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      387.5860834928368,
+      367.15024458772103,
+      356.36855418302156,
+      334.4132116543953,
+      394.006007618112
+     ],
+     "n": 5,
+     "median": 367.15024458772103,
+     "p95": null,
+     "min": 334.4132116543953,
+     "max": 394.006007618112,
+     "mean": 367.90482030721734,
+     "tail_label": "min",
+     "tail": 334.4132116543953
+    },
+    "blind merge, indexed dict: commits/s, 16 thread(s)": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      337.2744034751732,
+      389.31353425233095,
+      371.2763718071885,
+      395.9290071365748,
+      332.03833586184413
+     ],
+     "n": 5,
+     "median": 371.2763718071885,
+     "p95": null,
+     "min": 332.03833586184413,
+     "max": 395.9290071365748,
+     "mean": 365.16633050662233,
+     "tail_label": "min",
+     "tail": 332.03833586184413
+    },
+    "disjoint roots: commits/s, 1 thread(s)": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      976.465544808716,
+      894.1942693336729,
+      760.4328535782428,
+      836.5778640335625,
+      894.941324030564
+     ],
+     "n": 5,
+     "median": 894.1942693336729,
+     "p95": null,
+     "min": 760.4328535782428,
+     "max": 976.465544808716,
+     "mean": 872.5223711569517,
+     "tail_label": "min",
+     "tail": 760.4328535782428
+    },
+    "disjoint roots: commits/s, 2 thread(s)": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      594.9166233636994,
+      587.1003557399829,
+      658.2084594126327,
+      617.9341785284798,
+      673.4947434620728
+     ],
+     "n": 5,
+     "median": 617.9341785284798,
+     "p95": null,
+     "min": 587.1003557399829,
+     "max": 673.4947434620728,
+     "mean": 626.3308721013735,
+     "tail_label": "min",
+     "tail": 587.1003557399829
+    },
+    "disjoint roots: commits/s, 4 thread(s)": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      880.1333419680069,
+      925.1059151902034,
+      1001.920912008079,
+      941.7843979533327,
+      963.3002628414113
+     ],
+     "n": 5,
+     "median": 941.7843979533327,
+     "p95": null,
+     "min": 880.1333419680069,
+     "max": 1001.920912008079,
+     "mean": 942.4489659922067,
+     "tail_label": "min",
+     "tail": 880.1333419680069
+    },
+    "disjoint roots: commits/s, 8 thread(s)": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      1160.577447247129,
+      1053.1510364696187,
+      1179.2946752538217,
+      1233.0068600376048,
+      1257.860989123787
+     ],
+     "n": 5,
+     "median": 1179.2946752538217,
+     "p95": null,
+     "min": 1053.1510364696187,
+     "max": 1257.860989123787,
+     "mean": 1176.7782016263923,
+     "tail_label": "min",
+     "tail": 1053.1510364696187
+    },
+    "disjoint roots: commits/s, 16 thread(s)": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      1324.2198682770422,
+      1318.663813750653,
+      954.1729611226023,
+      1064.1766824045847,
+      1292.1882156373413
+     ],
+     "n": 5,
+     "median": 1292.1882156373413,
+     "p95": null,
+     "min": 954.1729611226023,
+     "max": 1324.2198682770422,
+     "mean": 1190.6843082384446,
+     "tail_label": "min",
+     "tail": 954.1729611226023
+    }
+   },
+   "metrics": {
+    "conflicting: attempts per commit, 1 thread(s)": 1.0,
+    "conflicting: attempts per commit, 2 thread(s)": 1.24,
+    "conflicting: attempts per commit, 4 thread(s)": 1.54,
+    "conflicting: attempts per commit, 8 thread(s)": 2.65,
+    "conflicting: attempts per commit, 16 thread(s)": 5.81,
+    "blind merge: attempts per commit, 1 thread(s)": 1.0,
+    "blind merge: attempts per commit, 2 thread(s)": 1.0,
+    "blind merge: attempts per commit, 4 thread(s)": 1.0,
+    "blind merge: attempts per commit, 8 thread(s)": 1.0,
+    "blind merge: attempts per commit, 16 thread(s)": 1.0,
+    "blind merge, indexed dict: attempts per commit, 1 thread(s)": 1.0,
+    "blind merge, indexed dict: attempts per commit, 2 thread(s)": 1.0,
+    "blind merge, indexed dict: attempts per commit, 4 thread(s)": 1.0,
+    "blind merge, indexed dict: attempts per commit, 8 thread(s)": 1.0,
+    "blind merge, indexed dict: attempts per commit, 16 thread(s)": 1.0,
+    "disjoint roots: attempts per commit, 1 thread(s)": 1.0,
+    "disjoint roots: attempts per commit, 2 thread(s)": 1.0,
+    "disjoint roots: attempts per commit, 4 thread(s)": 1.0,
+    "disjoint roots: attempts per commit, 8 thread(s)": 1.0,
+    "disjoint roots: attempts per commit, 16 thread(s)": 1.0
+   },
+   "notes": [],
+   "params": {
+    "commits": 240,
+    "base_entries": 1000
+   },
+   "elapsed_s": 108.17997462699714,
+   "gil_before": false,
+   "gil_after": false
+  }
+ }
+}

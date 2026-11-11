@@ -125,6 +125,7 @@ from .errors import (ProtoClosedError, ProtoConflictError, ProtoCorruptionError,
 from .storage.base import check_lock_timeout
 from .storage.cache import BoundedCache
 from .query.cache import QUERY_CACHE_BYTES, QueryCache
+from .indexing.vector_backends import DERIVED
 from .query.pager import check_resumed, decode_ref, encode_ref, pager_arguments, portable_pager
 from .storage.format import WRITE_FORMAT_VERSION, RootRecord
 from .cluster.coordinator import REFOUND_TERM_STEP
@@ -1672,6 +1673,7 @@ class ObjectSpace:
                 self._tier.close()          # the node's acceptor log of a shared storage
         if self._atoms is not None:
             self._atoms.close()
+        DERIVED.release(self._storage)      # process-wide vector structures built from this space
         self._storage.close()
 
     def __enter__(self):

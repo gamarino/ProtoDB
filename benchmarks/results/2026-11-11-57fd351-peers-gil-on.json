@@ -1,0 +1,559 @@
+{
+ "schema": 1,
+ "mode": "full",
+ "environment": {
+  "timestamp": "2026-11-11T03:14:51+00:00",
+  "cpu_model": "AMD Ryzen 5 5500U with Radeon Graphics",
+  "cpu_count": 12,
+  "cpu_affinity": 12,
+  "cpu_frequency": {
+   "governor": "powersave",
+   "driver": "amd-pstate-epp",
+   "energy_performance_preference": "balance_power",
+   "boost": "1"
+  },
+  "platform": "Linux-7.0.0-43-generic-x86_64-desconocido-with-glibc2.43",
+  "python": "3.14.6",
+  "python_implementation": "CPython",
+  "free_threaded_build": true,
+  "gil_enabled": true,
+  "xoptions": {
+   "gil": "1"
+  },
+  "proto_db": "2.0.0.dev0",
+  "git": {
+   "commit": "57fd351",
+   "commit_full": "57fd351591063ef31e6c6cad5cfb43b89d8fe423",
+   "dirty": false,
+   "clean": true,
+   "source": "git archive export",
+   "changed": [],
+   "missing": [],
+   "added": []
+  },
+  "sqlite": "3.53.1",
+  "numpy": "2.5.4",
+  "hnswlib": "0.8.0",
+  "workdir": "/home/gamarino/Documentos/proyectos/scratch-8.3n/9c/run-57fd351",
+  "workdir_fs": "zfs",
+  "rqlite": null
+ },
+ "check": {
+  "stray_processes": [],
+  "checked_at": "2026-11-11T00:14:51-0300",
+  "workdir_free_bytes": 1073102192640
+ },
+ "options": {
+  "threads": [
+   1,
+   2,
+   4,
+   8,
+   16
+  ],
+  "repeat": 5,
+  "warmup": 1,
+  "params": {}
+ },
+ "total_s": 63.046276381995995,
+ "results": {
+  "cluster_peers": {
+   "status": "ok",
+   "work": {
+    "peers": [
+     1,
+     2,
+     4,
+     8
+    ],
+    "threads_per_peer": 4,
+    "seconds": 2.0,
+    "modes": [
+     "blind",
+     "increment"
+    ],
+    "durability": "fsync (local tier)",
+    "store_latency_s": 0.0
+   },
+   "checksum": {
+    "blind, 1 peer(s)": true,
+    "blind, 2 peer(s)": true,
+    "blind, 4 peer(s)": true,
+    "blind, 8 peer(s)": true,
+    "increment, 1 peer(s)": true,
+    "increment, 2 peer(s)": true,
+    "increment, 4 peer(s)": true,
+    "increment, 8 peer(s)": true
+   },
+   "expected": {
+    "blind, 1 peer(s)": true,
+    "blind, 2 peer(s)": true,
+    "blind, 4 peer(s)": true,
+    "blind, 8 peer(s)": true,
+    "increment, 1 peer(s)": true,
+    "increment, 2 peer(s)": true,
+    "increment, 4 peer(s)": true,
+    "increment, 8 peer(s)": true
+   },
+   "checks": [
+    {
+     "name": "blind, 1 peer(s): exact final state, no failed replication, healthy",
+     "ok": true,
+     "detail": "ids True, counter True, per-peer split True, persisted True; ids True, counter True, per-peer split True, persisted True; ids True, counter True, per-peer split True, persisted True"
+    },
+    {
+     "name": "blind, 2 peer(s): exact final state, no failed replication, healthy",
+     "ok": true,
+     "detail": "ids True, counter True, per-peer split True, persisted True; ids True, counter True, per-peer split True, persisted True; ids True, counter True, per-peer split True, persisted True"
+    },
+    {
+     "name": "blind, 4 peer(s): exact final state, no failed replication, healthy",
+     "ok": true,
+     "detail": "ids True, counter True, per-peer split True, persisted True; ids True, counter True, per-peer split True, persisted True; ids True, counter True, per-peer split True, persisted True"
+    },
+    {
+     "name": "blind, 8 peer(s): exact final state, no failed replication, healthy",
+     "ok": true,
+     "detail": "ids True, counter True, per-peer split True, persisted True; ids True, counter True, per-peer split True, persisted True; ids True, counter True, per-peer split True, persisted True"
+    },
+    {
+     "name": "increment, 1 peer(s): exact final state, no failed replication, healthy",
+     "ok": true,
+     "detail": "ids True, counter True, per-peer split True, persisted True; ids True, counter True, per-peer split True, persisted True; ids True, counter True, per-peer split True, persisted True"
+    },
+    {
+     "name": "increment, 2 peer(s): exact final state, no failed replication, healthy",
+     "ok": true,
+     "detail": "ids True, counter True, per-peer split True, persisted True; ids True, counter True, per-peer split True, persisted True; ids True, counter True, per-peer split True, persisted True"
+    },
+    {
+     "name": "increment, 4 peer(s): exact final state, no failed replication, healthy",
+     "ok": true,
+     "detail": "ids True, counter True, per-peer split True, persisted True; ids True, counter True, per-peer split True, persisted True; ids True, counter True, per-peer split True, persisted True"
+    },
+    {
+     "name": "increment, 8 peer(s): exact final state, no failed replication, healthy",
+     "ok": true,
+     "detail": "ids True, counter True, per-peer split True, persisted True; ids True, counter True, per-peer split True, persisted True; ids True, counter True, per-peer split True, persisted True"
+    }
+   ],
+   "timings": {
+    "blind: commits/s, 1 peer(s) x 4 threads": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      273.96096945263827,
+      251.8461424993762,
+      234.341111424216
+     ],
+     "n": 3,
+     "median": 251.8461424993762,
+     "p95": null,
+     "min": 234.341111424216,
+     "max": 273.96096945263827,
+     "mean": 253.38274112541015,
+     "tail_label": "min",
+     "tail": 234.341111424216
+    },
+    "blind: commits/s, 2 peer(s) x 4 threads": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      130.30131215426175,
+      114.20168238093318,
+      133.3582506873571
+     ],
+     "n": 3,
+     "median": 130.30131215426175,
+     "p95": null,
+     "min": 114.20168238093318,
+     "max": 133.3582506873571,
+     "mean": 125.95374840751735,
+     "tail_label": "min",
+     "tail": 114.20168238093318
+    },
+    "blind: commits/s, 4 peer(s) x 4 threads": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      147.55852682258893,
+      134.72712990887175,
+      144.0352224572486
+     ],
+     "n": 3,
+     "median": 144.0352224572486,
+     "p95": null,
+     "min": 134.72712990887175,
+     "max": 147.55852682258893,
+     "mean": 142.10695972956975,
+     "tail_label": "min",
+     "tail": 134.72712990887175
+    },
+    "blind: commits/s, 8 peer(s) x 4 threads": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      95.95056021250464,
+      108.99806368651323,
+      101.20776167204966
+     ],
+     "n": 3,
+     "median": 101.20776167204966,
+     "p95": null,
+     "min": 95.95056021250464,
+     "max": 108.99806368651323,
+     "mean": 102.05212852368918,
+     "tail_label": "min",
+     "tail": 95.95056021250464
+    },
+    "increment: commits/s, 1 peer(s) x 4 threads": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      166.12868308176797,
+      160.4677277888769,
+      173.05954921044227
+     ],
+     "n": 3,
+     "median": 166.12868308176797,
+     "p95": null,
+     "min": 160.4677277888769,
+     "max": 173.05954921044227,
+     "mean": 166.55198669369574,
+     "tail_label": "min",
+     "tail": 160.4677277888769
+    },
+    "increment: commits/s, 2 peer(s) x 4 threads": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      76.05226458566682,
+      77.89717960189245,
+      61.88496254100551
+     ],
+     "n": 3,
+     "median": 76.05226458566682,
+     "p95": null,
+     "min": 61.88496254100551,
+     "max": 77.89717960189245,
+     "mean": 71.94480224285492,
+     "tail_label": "min",
+     "tail": 61.88496254100551
+    },
+    "increment: commits/s, 4 peer(s) x 4 threads": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      43.88639751212303,
+      51.00332303712108,
+      56.859764099206735
+     ],
+     "n": 3,
+     "median": 51.00332303712108,
+     "p95": null,
+     "min": 43.88639751212303,
+     "max": 56.859764099206735,
+     "mean": 50.58316154948361,
+     "tail_label": "min",
+     "tail": 43.88639751212303
+    },
+    "increment: commits/s, 8 peer(s) x 4 threads": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      42.281391374553984,
+      46.08686239468835,
+      42.80427011834598
+     ],
+     "n": 3,
+     "median": 42.80427011834598,
+     "p95": null,
+     "min": 42.281391374553984,
+     "max": 46.08686239468835,
+     "mean": 43.724174629196106,
+     "tail_label": "min",
+     "tail": 42.281391374553984
+    }
+   },
+   "metrics": {
+    "blind, 1 peer(s): commit latency ms": {
+     "p50": 14.12,
+     "p95": 28.1
+    },
+    "blind, 1 peer(s): attempts per commit": 1.0,
+    "blind, 1 peer(s): lease acquisitions tried per commit": 0.0,
+    "blind, 1 peer(s): critical section ms per commit": {
+     "validation": 0.019,
+     "replay": 0.133,
+     "path_copy": 1.67,
+     "replication": 4.291
+    },
+    "blind, 1 peer(s): commits per peer, each run": [
+     [
+      558
+     ],
+     [
+      511
+     ],
+     [
+      476
+     ]
+    ],
+    "blind, 2 peer(s): commit latency ms": {
+     "p50": 59.5,
+     "p95": 91.19
+    },
+    "blind, 2 peer(s): attempts per commit": 1.0,
+    "blind, 2 peer(s): lease acquisitions tried per commit": 0.01,
+    "blind, 2 peer(s): critical section ms per commit": {
+     "validation": 0.136,
+     "replay": 0.547,
+     "path_copy": 1.553,
+     "replication": 32.802
+    },
+    "blind, 2 peer(s): commits per peer, each run": [
+     [
+      122,
+      152
+     ],
+     [
+      108,
+      131
+     ],
+     [
+      125,
+      155
+     ]
+    ],
+    "blind, 4 peer(s): commit latency ms": {
+     "p50": 105.7,
+     "p95": 159.57
+    },
+    "blind, 4 peer(s): attempts per commit": 1.0,
+    "blind, 4 peer(s): lease acquisitions tried per commit": 0.01,
+    "blind, 4 peer(s): critical section ms per commit": {
+     "validation": 0.125,
+     "replay": 0.623,
+     "path_copy": 1.631,
+     "replication": 40.147
+    },
+    "blind, 4 peer(s): commits per peer, each run": [
+     [
+      81,
+      80,
+      77,
+      80
+     ],
+     [
+      73,
+      75,
+      72,
+      72
+     ],
+     [
+      77,
+      79,
+      77,
+      76
+     ]
+    ],
+    "blind, 8 peer(s): commit latency ms": {
+     "p50": 269.89,
+     "p95": 459.27
+    },
+    "blind, 8 peer(s): attempts per commit": 1.0,
+    "blind, 8 peer(s): lease acquisitions tried per commit": 0.01,
+    "blind, 8 peer(s): critical section ms per commit": {
+     "validation": 0.319,
+     "replay": 0.745,
+     "path_copy": 2.299,
+     "replication": 55.707
+    },
+    "blind, 8 peer(s): commits per peer, each run": [
+     [
+      28,
+      28,
+      27,
+      29,
+      28,
+      28,
+      28,
+      29
+     ],
+     [
+      33,
+      29,
+      32,
+      32,
+      32,
+      32,
+      32,
+      31
+     ],
+     [
+      33,
+      28,
+      32,
+      29,
+      32,
+      28,
+      32,
+      32
+     ]
+    ],
+    "increment, 1 peer(s): commit latency ms": {
+     "p50": 18.5,
+     "p95": 85.61
+    },
+    "increment, 1 peer(s): attempts per commit": 2.61,
+    "increment, 1 peer(s): lease acquisitions tried per commit": 0.01,
+    "increment, 1 peer(s): critical section ms per commit": {
+     "validation": 0.005,
+     "replay": 0.109,
+     "path_copy": 1.317,
+     "replication": 3.193
+    },
+    "increment, 1 peer(s): commits per peer, each run": [
+     [
+      337
+     ],
+     [
+      326
+     ],
+     [
+      350
+     ]
+    ],
+    "increment, 2 peer(s): commit latency ms": {
+     "p50": 86.27,
+     "p95": 256.54
+    },
+    "increment, 2 peer(s): attempts per commit": 4.75,
+    "increment, 2 peer(s): lease acquisitions tried per commit": 0.01,
+    "increment, 2 peer(s): critical section ms per commit": {
+     "validation": 0.005,
+     "replay": 0.429,
+     "path_copy": 2.077,
+     "replication": 7.285
+    },
+    "increment, 2 peer(s): commits per peer, each run": [
+     [
+      82,
+      77
+     ],
+     [
+      85,
+      81
+     ],
+     [
+      67,
+      65
+     ]
+    ],
+    "increment, 4 peer(s): commit latency ms": {
+     "p50": 246.93,
+     "p95": 907.63
+    },
+    "increment, 4 peer(s): attempts per commit": 4.44,
+    "increment, 4 peer(s): lease acquisitions tried per commit": 0.02,
+    "increment, 4 peer(s): critical section ms per commit": {
+     "validation": 0.006,
+     "replay": 0.975,
+     "path_copy": 2.27,
+     "replication": 11.303
+    },
+    "increment, 4 peer(s): commits per peer, each run": [
+     [
+      26,
+      27,
+      26,
+      24
+     ],
+     [
+      26,
+      32,
+      27,
+      31
+     ],
+     [
+      31,
+      34,
+      28,
+      37
+     ]
+    ],
+    "increment, 8 peer(s): commit latency ms": {
+     "p50": 499.18,
+     "p95": 1620.81
+    },
+    "increment, 8 peer(s): attempts per commit": 4.33,
+    "increment, 8 peer(s): lease acquisitions tried per commit": 0.02,
+    "increment, 8 peer(s): critical section ms per commit": {
+     "validation": 0.005,
+     "replay": 0.86,
+     "path_copy": 1.797,
+     "replication": 14.927
+    },
+    "increment, 8 peer(s): commits per peer, each run": [
+     [
+      15,
+      12,
+      14,
+      17,
+      13,
+      12,
+      17,
+      19
+     ],
+     [
+      16,
+      14,
+      16,
+      17,
+      14,
+      18,
+      16,
+      17
+     ],
+     [
+      14,
+      16,
+      15,
+      14,
+      13,
+      16,
+      15,
+      16
+     ]
+    ]
+   },
+   "notes": [],
+   "params": {
+    "peers": [
+     1,
+     2,
+     4,
+     8
+    ],
+    "threads": 4,
+    "seconds": 2.0,
+    "modes": [
+     "blind",
+     "increment"
+    ],
+    "repeat": 3
+   },
+   "elapsed_s": 63.04476329799945,
+   "gil_before": true,
+   "gil_after": true
+  }
+ }
+}

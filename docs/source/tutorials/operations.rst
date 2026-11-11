@@ -125,13 +125,19 @@ a space directory is plain files:
    print(sorted(name if name.endswith((".lock", ".root")) else "<uuid>.seg" for name in os.listdir("library")))
    for name in sorted(os.listdir("library")):
        if name.endswith(".seg"):
-           print("segment:", scan_segment(os.path.join("library", name)))
+           path = os.path.join("library", name)
+           counts, size = scan_segment(path)
+           print("segment:", counts, "| every byte checked:", size == os.path.getsize(path))
 
 .. code-block:: text
    :caption: Output
 
    ['<uuid>.seg', 'space.lock', 'space.root']
-   segment: ({'ATOM': 37}, 4278)
+   segment: {'ATOM': 37} | every byte checked: True
+
+The byte count itself is not printed because it varies from run to run: each version records its
+``committed_at`` instant, and the microseconds field is a msgpack integer in its shortest encoding (one to
+five bytes), so the same three commits make a segment of a few bytes more or less.
 
 The layout is a ``space.root`` file (the published root, replaced atomically), one or more write-once
 ``<uuid>.seg`` segments, and a ``space.lock`` file that only carries the advisory lock. The byte-level

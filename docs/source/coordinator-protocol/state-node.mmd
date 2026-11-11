@@ -1,0 +1,34 @@
+%% What a member's votes and answers are worth (_refusal, _witness_state).
+stateDiagram-v2
+    [*] --> NoStorage: start(), new incarnation inc
+    NoStorage --> Rejoining: attach, log without rejoined marker
+    NoStorage --> Witness: attach, marked log loaded, promises restored
+    Rejoining --> Witness: rejoin completed (ballot round, R78a)
+    Witness --> NoStorage: detach (space closed)
+    Rejoining --> NoStorage: detach
+    Witness --> TierFailed: acceptor-log or record write failed (R57)
+    TierFailed --> NoStorage: detach, then reopen on a healthy disk
+    Witness --> Fenced: unexpected exception in a lane thread
+    NoStorage --> Fenced: unexpected exception
+    Rejoining --> Fenced: unexpected exception
+    Rejoining --> TierFailed: a rejoin write failed (R57)
+    NoStorage --> Learner: attach, not in the voter set (logs the marker at once)
+    Learner --> NoStorage: detach
+    Fenced --> [*]: stop
+    Witness --> [*]: stop
+    note right of NoStorage
+        refuses grants and acceptances (no_storage),
+        answers state=unknown, never counted
+    end note
+    note right of Rejoining
+        refuses (rejoining), answers state=empty,
+        counted only at a first start (R51)
+    end note
+    note right of Learner
+        answers state=learner, never counted,
+        needs no rejoin (D54)
+    end note
+    note right of Witness
+        grants (not during startup_grace, a liveness rule),
+        acknowledges, answers state=ok. A learner never votes (D54).
+    end note
