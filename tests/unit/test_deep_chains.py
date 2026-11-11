@@ -136,9 +136,9 @@ def test_a_wide_record_past_the_nesting_limit_is_encoded_in_linear_work(monkeypa
     values = [0]
     real = codec.encode_value
 
-    def counting(value, save_child):
+    def counting(value, save_child, *depth):
         values[0] += 1
-        return real(value, save_child)
+        return real(value, save_child, *depth)
     monkeypatch.setattr(codec, "encode_value", counting)
     width, depth = 4000, 60
     space = ObjectSpace(MemoryStorage())

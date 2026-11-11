@@ -11,7 +11,7 @@ ProtoDB 2.0 is a complete rebuild of the 0.1 code base under the design principl
 `docs/design-principles.md`: everything stored is immutable, a transaction is an explicit object, and
 every safety argument holds under arbitrary delay and loss. There are no 0.1 data or API to preserve.
 The design is `docs/superpowers/specs/2026-11-01-protodb-v2-design.md`; every decision is in
-`docs/decisions.md` (D1-D59).
+`docs/decisions.md` (D1-D60).
 
 ### Added
 - **One value model** with a total order across types (`1 == 1.0 == Decimal(1)`, `True != 1`), used by
@@ -108,6 +108,22 @@ The design is `docs/superpowers/specs/2026-11-01-protodb-v2-design.md`; every de
 - Saving a chain of unsaved versions built in one transaction (the `previous` pattern) no longer raises
   `RecursionError` past about 150 links; 10,000 versions save in one commit, and the verifier describes them
   (R128).
+- Nested values: ProtoBase no longer writes values it cannot read back (B12, D60). The codec, `canonical()`,
+  the map-key, order-key, hash and equality helpers and the verifier walked values by recursion, so a value
+  past about 330 nested lists could be written but raised a bare `RecursionError` when read in a fresh
+  process (`verify` exited 1), and the limit moved with the Python stack in use. They now go on with an
+  explicit stack past 12 levels, and the format has a normative limit, `MAX_VALUE_DEPTH` = 1022 MessagePack
+  containers per value (format spec, "Value nesting depth"): a writer refuses a deeper value with
+  `ProtoValidationError` naming the field, a reader refuses deeper data with `ProtoCorruptionError`, at the
+  same count. No format version change (no conforming writer could produce deeper data); the encoded bytes
+  are unchanged. ProtoBase now requires msgpack 1.2.0 or later, the first release whose packer nests the 1024
+  containers a record at the limit needs, and refuses to import with an older one. The limit binds collection
+  and index nodes too: a Set, CountedSet, HashDictionary or RepeatedKeysDictionary, and an index (whose member
+  keys nest an unorderable element about four times deeper: 254 nested lists, 169 nested maps), refuse an
+  element they cannot store when it is added, naming the collection or the index and the effective limit,
+  never later at commit. The query result cache, `explain()` and `to_arrow` work at any depth too.
+  **Readers must accept records 1024 containers deep**: an implementation that stops at 509 levels is not
+  conforming from rc2.
 
 Defects of the 0.1 code base found by the 2026-11-01 review, none of which survives the rebuild: integer
 values merged as `+1` and special cases for keys named `counter` and `k`; commits that were not durable;

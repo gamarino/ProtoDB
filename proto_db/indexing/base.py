@@ -13,7 +13,7 @@ from ..core.atom import RESERVED_NAMES, Atom, PersistenceContext
 from ..errors import ProtoCorruptionError, ProtoNotSupportedError, ProtoUserError, ProtoValidationError
 from ..query.plans import Estimate, QueryPlan
 from ..query.terms import EQ, IS_NONE, NOT_NONE, Term, is_orderable
-from ..values import MISSING, check_text, is_atom, order_key
+from ..values import MISSING, check_text, fold, is_atom, order_key
 from .keyspec import KeySpec
 
 __all__ = ["Index", "element_identity"]
@@ -23,18 +23,34 @@ def element_identity(element):
     """A hashable identity of an element, equal for equal elements; for comparing result multisets.
 
     Atoms are identified by oid; orderable values by :func:`order_key` (so
-    ``1`` and ``1.0`` are one element); lists, tuples and dicts recursively
-    (a list never equals a tuple); NaN equals NaN.
+    ``1`` and ``1.0`` are one element); lists, tuples and dicts item by item at any depth (an
+    explicit stack; a list never equals a tuple); NaN equals NaN.
     """
+    return fold(element, _identity_expand)
+
+
+def _identity_expand(element):
     if isinstance(element, list):
-        return ("list", tuple(element_identity(v) for v in element))
+        return element, _list_identity
     if isinstance(element, tuple):
-        return ("tuple", tuple(element_identity(v) for v in element))
+        return element, _tuple_identity
     if isinstance(element, dict):
-        return ("dict", frozenset((element_identity(k), element_identity(v)) for k, v in element.items()))
+        return [x for pair in element.items() for x in pair], _dict_identity
     if not is_atom(element) and element != element:
-        return ("nan",)
-    return order_key(element)
+        return None, ("nan",)
+    return None, order_key(element)
+
+
+def _list_identity(items: list) -> tuple:
+    return ("list", tuple(items))
+
+
+def _tuple_identity(items: list) -> tuple:
+    return ("tuple", tuple(items))
+
+
+def _dict_identity(items: list) -> tuple:
+    return ("dict", frozenset(zip(items[0::2], items[1::2])))
 
 
 class Index(Atom, metaclass=ABCMeta):

@@ -63,7 +63,7 @@ from decimal import Decimal
 from ..core.atom import Atom
 from ..errors import ProtoUserError, ProtoValidationError
 from ..storage.cache import BoundedCache
-from ..values import MISSING, FrozenDict, FrozenList, MutableObject, exact_token
+from ..values import MISSING, FrozenDict, FrozenList, MutableObject, exact_token, fold_hybrid
 from .expressions import And, Expression, Not, Or, PythonPredicate
 from .plans import (CollectionScanPlan, Count, Distinct, Filter, GroupBy, IndexPlan, Intersect, Join, Limit,
                     Project, PythonFilter, QueryPlan, Sort, Union, Unnest, ValuesScan, VectorSearch)
@@ -330,29 +330,36 @@ class _Thaw:
 
 def _freeze(value, size: list, refs: list):
     """The stored form of one result value; ``size[0]`` accumulates its estimated bytes and
-    ``refs[0]`` counts the atoms replaced by references."""
-    if value is None or value is MISSING:
-        return value
-    if isinstance(value, Atom):
-        ptr = value.atom_pointer
-        if ptr is None:
-            raise _Uncacheable(f"the result holds an unsaved atom {type(value).__name__}")
-        size[0] += _REF_SIZE
-        refs[0] += 1
-        return _AtomRef(ptr, type(value).__type_name__)
-    if isinstance(value, dict):
-        size[0] += sys.getsizeof(value)
-        return FrozenDict((_freeze(k, size, refs), _freeze(v, size, refs)) for k, v in value.items())
-    if isinstance(value, list):
-        size[0] += sys.getsizeof(value)
-        return FrozenList(_freeze(v, size, refs) for v in value)
-    if isinstance(value, tuple):
-        size[0] += sys.getsizeof(value)
-        return tuple(_freeze(v, size, refs) for v in value)
-    if isinstance(value, _SCALARS):
-        size[0] += sys.getsizeof(value)
-        return value
-    raise _Uncacheable(f"the result holds a value of type {type(value).__name__}, which is not a stored value")
+    ``refs[0]`` counts the atoms replaced by references.  Any depth: :func:`fold_hybrid`."""
+    def expand(item):
+        if item is None or item is MISSING:
+            return None, item
+        if isinstance(item, Atom):
+            ptr = item.atom_pointer
+            if ptr is None:
+                raise _Uncacheable(f"the result holds an unsaved atom {type(item).__name__}")
+            size[0] += _REF_SIZE
+            refs[0] += 1
+            return None, _AtomRef(ptr, type(item).__type_name__)
+        if isinstance(item, dict):
+            size[0] += sys.getsizeof(item)
+            return [x for pair in item.items() for x in pair], _frozen_dict
+        if isinstance(item, list):
+            size[0] += sys.getsizeof(item)
+            return item, FrozenList
+        if isinstance(item, tuple):
+            size[0] += sys.getsizeof(item)
+            return item, tuple
+        if isinstance(item, _SCALARS):
+            size[0] += sys.getsizeof(item)
+            return None, item
+        raise _Uncacheable(f"the result holds a value of type {type(item).__name__}, which is not a stored value")
+    return fold_hybrid(value, expand)
+
+
+def _frozen_dict(items: list) -> FrozenDict:
+    """The FrozenDict of the flat ``[key, value, key, value, ...]`` list ``items``."""
+    return FrozenDict(zip(items[0::2], items[1::2]))
 
 
 def _entry(value, size: list):
@@ -366,15 +373,19 @@ def _entry(value, size: list):
 
 
 def _thaw(value, load):
-    if type(value) is _AtomRef:
-        return load(value.ptr, value.type_name)
-    if isinstance(value, FrozenDict):
-        return FrozenDict((_thaw(k, load), _thaw(v, load)) for k, v in value.items())
-    if isinstance(value, FrozenList):
-        return FrozenList(_thaw(v, load) for v in value)
-    if type(value) is tuple:
-        return tuple(_thaw(v, load) for v in value)
-    return value
+    """The result value of the stored form ``value``: atom references loaded with ``load``.  Any
+    depth: :func:`fold_hybrid`."""
+    def expand(item):
+        if type(item) is _AtomRef:
+            return None, load(item.ptr, item.type_name)
+        if isinstance(item, FrozenDict):
+            return [x for pair in item.items() for x in pair], _frozen_dict
+        if isinstance(item, FrozenList):
+            return item, FrozenList
+        if type(item) is tuple:
+            return item, tuple
+        return None, item
+    return fold_hybrid(value, expand)
 
 
 class QueryResult(Sequence):

@@ -50,7 +50,7 @@ from typing import Any
 
 from ..errors import ProtoNotSupportedError, ProtoValidationError
 from ..indexing.keyspec import KeySpec
-from ..values import MISSING, canonical, is_atom, is_orderable, order_key
+from ..values import MISSING, canonical, fold_hybrid, is_atom, is_orderable, order_key
 
 __all__ = ["Term", "NearQuery", "is_orderable", "OPERATORS", "NEAR_METRICS", "EQ", "NE", "LT", "LE", "GT", "GE", "IN", "BETWEEN",
            "BETWEEN_EXCL_BOTH", "BETWEEN_EXCL_LOW", "BETWEEN_EXCL_HIGH", "IS_NONE", "NOT_NONE", "NEAR", "CONTAINS",
@@ -308,17 +308,26 @@ def display_value(value):
     lists; a :class:`NearQuery` becomes a mapping of its fields; a dict becomes
     ``{"@dict": [[key, value], ...]}`` (keys stay distinct: ``1`` vs ``"1"``); every other
     value (Decimal, datetime, bytes, UUID, NaN, atoms, handles, ...) becomes its
-    ``repr``, so distinct types stay distinguishable.
+    ``repr``, so distinct types stay distinguishable.  Any depth (:func:`fold_hybrid`).
     """
+    return fold_hybrid(value, _display_expand)
+
+
+def _display_expand(value):
     if value is None or isinstance(value, (bool, int, str)):
-        return value
+        return None, value
     if isinstance(value, float) and math.isfinite(value):
-        return value
+        return None, value
     if isinstance(value, (list, tuple)):
-        return [display_value(v) for v in value]
+        return value, list
     if isinstance(value, NearQuery):
-        return {"vector": list(value.vector), "k": value.k, "threshold": value.threshold, "metric": value.metric}
+        return None, {"vector": list(value.vector), "k": value.k, "threshold": value.threshold,
+                      "metric": value.metric}
     if isinstance(value, dict):
         # A JSON object would need str keys, and 1 and "1" would collide: keep pairs.
-        return {"@dict": [[display_value(k), display_value(v)] for k, v in value.items()]}
-    return repr(value)
+        return [x for pair in value.items() for x in pair], _display_dict
+    return None, repr(value)
+
+
+def _display_dict(items: list) -> dict:
+    return {"@dict": [list(pair) for pair in zip(items[0::2], items[1::2])]}
