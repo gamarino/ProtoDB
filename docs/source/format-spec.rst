@@ -118,7 +118,7 @@ version of every feature added later (none yet).
 **The pinned vectors.** ``tests/conformance/vectors.sha256`` lists the SHA-256 of every file
 under ``tests/conformance/vectors/`` (``<hex digest>  <path>``, one line per file, sorted by path
 in code point order, ``/`` as the separator), then the digest of ``manifest.json``. The SHA-256
-of that list file is ``392f2d0bd580d6b0afa1feaf305e36265b808f7dd381e9bfa1f44d37ce914af5``. ``test_conformance.py`` checks that the committed files
+of that list file is ``6e913bcb960dee1c71d955754a3519f573cdb435e66476561d8e873f602dfbf4``. ``test_conformance.py`` checks that the committed files
 match the list and that this page states the list's digest. Each vector file is governed by
 the number that covers what it holds: ``vectors/cluster/*.log`` by ``LOG_FORMAT_VERSION``,
 ``vectors/cluster/messages/`` by ``PROTOCOL_VERSION``, every other file by ``FORMAT_VERSION``.

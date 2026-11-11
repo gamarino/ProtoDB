@@ -6999,100 +6999,6 @@
             {
              "ref": {
               "segment": "5eed0000000040008000000000001004",
-              "offset": 9796,
-              "type": "proto_db.core.dbobject.DBObject"
-             }
-            }
-           ]
-          },
-          {
-           "bytes": "81a440726566c0"
-          }
-         ]
-        }
-       ]
-      }
-     ],
-     [
-      "value",
-      {
-       "tuple": [
-        {
-         "ref": {
-          "segment": "5eed0000000040008000000000001004",
-          "offset": 9796,
-          "type": "proto_db.core.dbobject.DBObject"
-         }
-        },
-        {
-         "int": "1"
-        },
-        {
-         "tuple": [
-          {
-           "float": "0x1.0000000000000p+0"
-          },
-          {
-           "float": "0x0.0p+0"
-          }
-         ]
-        }
-       ]
-      }
-     ],
-     [
-      "left",
-      {
-       "nil": null
-      }
-     ],
-     [
-      "right",
-      {
-       "nil": null
-      }
-     ],
-     [
-      "height",
-      {
-       "int": "1"
-      }
-     ],
-     [
-      "count",
-      {
-       "int": "1"
-      }
-     ]
-    ],
-    "canonical": true,
-    "rewritable": true
-   },
-   {
-    "offset": 10900,
-    "kind": 1,
-    "size": 205,
-    "tag": 0,
-    "type": "proto_db.avl.KeyNode",
-    "oid": "5eed0000000040008000000000001063",
-    "state": [
-     [
-      "key",
-      {
-       "tuple": [
-        {
-         "int": "1"
-        },
-        {
-         "tuple": [
-          {
-           "tuple": [
-            {
-             "int": "0"
-            },
-            {
-             "ref": {
-              "segment": "5eed0000000040008000000000001004",
               "offset": 9970,
               "type": "proto_db.core.dbobject.DBObject"
              }
@@ -7163,19 +7069,19 @@
     "rewritable": true
    },
    {
-    "offset": 11105,
+    "offset": 10900,
     "kind": 1,
     "size": 233,
     "tag": 0,
     "type": "proto_db.avl.KeyNode",
-    "oid": "5eed0000000040008000000000001064",
+    "oid": "5eed0000000040008000000000001063",
     "state": [
      [
       "key",
       {
        "tuple": [
         {
-         "int": "1"
+         "int": "0"
         },
         {
          "tuple": [
@@ -7239,7 +7145,7 @@
       {
        "ref": {
         "segment": "5eed0000000040008000000000001004",
-        "offset": 10900,
+        "offset": 10695,
         "type": "proto_db.avl.KeyNode"
        }
       }
@@ -7261,19 +7167,19 @@
     "rewritable": true
    },
    {
-    "offset": 11338,
+    "offset": 11133,
     "kind": 1,
-    "size": 261,
+    "size": 205,
     "tag": 0,
     "type": "proto_db.avl.KeyNode",
-    "oid": "5eed0000000040008000000000001065",
+    "oid": "5eed0000000040008000000000001064",
     "state": [
      [
       "key",
       {
        "tuple": [
         {
-         "int": "0"
+         "int": "1"
         },
         {
          "tuple": [
@@ -7329,9 +7235,103 @@
      [
       "left",
       {
+       "nil": null
+      }
+     ],
+     [
+      "right",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "height",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "count",
+      {
+       "int": "1"
+      }
+     ]
+    ],
+    "canonical": true,
+    "rewritable": true
+   },
+   {
+    "offset": 11338,
+    "kind": 1,
+    "size": 261,
+    "tag": 0,
+    "type": "proto_db.avl.KeyNode",
+    "oid": "5eed0000000040008000000000001065",
+    "state": [
+     [
+      "key",
+      {
+       "tuple": [
+        {
+         "int": "1"
+        },
+        {
+         "tuple": [
+          {
+           "tuple": [
+            {
+             "int": "0"
+            },
+            {
+             "ref": {
+              "segment": "5eed0000000040008000000000001004",
+              "offset": 9796,
+              "type": "proto_db.core.dbobject.DBObject"
+             }
+            }
+           ]
+          },
+          {
+           "bytes": "81a440726566c0"
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     [
+      "value",
+      {
+       "tuple": [
+        {
+         "ref": {
+          "segment": "5eed0000000040008000000000001004",
+          "offset": 9796,
+          "type": "proto_db.core.dbobject.DBObject"
+         }
+        },
+        {
+         "int": "1"
+        },
+        {
+         "tuple": [
+          {
+           "float": "0x1.0000000000000p+0"
+          },
+          {
+           "float": "0x0.0p+0"
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     [
+      "left",
+      {
        "ref": {
         "segment": "5eed0000000040008000000000001004",
-        "offset": 10695,
+        "offset": 10900,
         "type": "proto_db.avl.KeyNode"
        }
       }
@@ -7341,7 +7341,7 @@
       {
        "ref": {
         "segment": "5eed0000000040008000000000001004",
-        "offset": 11105,
+        "offset": 11133,
         "type": "proto_db.avl.KeyNode"
        }
       }
@@ -7587,20 +7587,20 @@
         {
          "tuple": [
           {
-           "float": "0x1.0000000000000p+0"
+           "float": "0x0.0p+0"
           },
           {
-           "float": "0x0.0p+0"
+           "float": "0x1.0000000000000p+0"
           }
          ]
         },
         {
          "tuple": [
           {
-           "float": "0x0.0p+0"
+           "float": "0x1.0000000000000p+0"
           },
           {
-           "float": "0x1.0000000000000p+0"
+           "float": "0x0.0p+0"
           }
          ]
         }
@@ -9927,18 +9927,18 @@
     "centroids": [
      [
       {
-       "float": "0x1.0000000000000p+0"
+       "float": "0x0.0p+0"
       },
       {
-       "float": "0x0.0p+0"
+       "float": "0x1.0000000000000p+0"
       }
      ],
      [
       {
-       "float": "0x0.0p+0"
+       "float": "0x1.0000000000000p+0"
       },
       {
-       "float": "0x1.0000000000000p+0"
+       "float": "0x0.0p+0"
       }
      ]
     ],
@@ -9948,10 +9948,10 @@
       0,
       [
        {
-        "float": "0x1.0000000000000p+0"
+        "float": "0x0.0p+0"
        },
        {
-        "float": "0x0.0p+0"
+        "float": "0x1.0000000000000p+0"
        }
       ]
      ],
@@ -9959,32 +9959,32 @@
       0,
       [
        {
-        "float": "0x1.ccccccccccccdp-1"
-       },
-       {
-        "float": "0x1.999999999999ap-4"
-       }
-      ]
-     ],
-     [
-      1,
-      [
-       {
-        "float": "0x0.0p+0"
-       },
-       {
-        "float": "0x1.0000000000000p+0"
-       }
-      ]
-     ],
-     [
-      1,
-      [
-       {
         "float": "0x1.999999999999ap-4"
        },
        {
         "float": "0x1.999999999999ap-1"
+       }
+      ]
+     ],
+     [
+      1,
+      [
+       {
+        "float": "0x1.0000000000000p+0"
+       },
+       {
+        "float": "0x0.0p+0"
+       }
+      ]
+     ],
+     [
+      1,
+      [
+       {
+        "float": "0x1.ccccccccccccdp-1"
+       },
+       {
+        "float": "0x1.999999999999ap-4"
        }
       ]
      ]
