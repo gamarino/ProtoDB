@@ -44,6 +44,8 @@ import threading
 import time
 from typing import NamedTuple
 
+from tests.support import stress
+
 #: The root holding the tokens (a ``Dictionary`` mapping each token to ``True``).
 TOKENS_ROOT = "commit-tokens"
 
@@ -175,7 +177,7 @@ def commit_once(db, fn, *, attempts: int = 10, root: str = STEP_ROOT, **run_kw) 
     is retried the same way."""
     from proto_db.errors import ProtoOutcomeUnknownError, ProtoTimeoutError
     tried, unknown = [], 0
-    for _ in range(attempts):
+    for _ in range(stress.attempts(attempts)):
         token = f"step-{next(_STEPS)}"
 
         def step(tr, token=token, earlier=tuple(tried)):
@@ -210,7 +212,7 @@ def new_database_once(space, name: str = "db", *, attempts: int = 10):
     from proto_db.errors import (ProtoConflictError, ProtoOutcomeUnknownError, ProtoTimeoutError,
                                  ProtoValidationError)
     unknown = 0
-    for _ in range(attempts):
+    for _ in range(stress.attempts(attempts)):
         try:
             return space.new_database(name)
         except (ProtoConflictError, ProtoTimeoutError):
@@ -276,8 +278,9 @@ def assert_outcomes_resolved(readers: dict, tokens: CommitTokens, timeout: float
     """Wait until every member (``readers``: member -> callable returning its :class:`Snapshot`
     or token set) sees the same tokens, including every acknowledged one, then assert the rules
     of the module docstring.  Return the tokens present and each member's value."""
-    assert len(tokens.acked_tokens) >= min_acked, \
-        f"only {len(tokens.acked_tokens)} acknowledged commits (at least {min_acked} needed): the run proves nothing"
+    stress.floor(len(tokens.acked_tokens) >= min_acked,      # progress (liveness; R142 under stress)
+                 f"only {len(tokens.acked_tokens)} acknowledged commits (at least {min_acked} needed): "
+                 f"the run proves nothing")
     assert readers, "no member to read"
     deadline = time.monotonic() + timeout
     while True:

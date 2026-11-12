@@ -17,6 +17,15 @@ with ``--junitxml``, stops the hogs, and classifies every failed or errored test
 - **unclassified**: anything else.  The task fails, and the failure is classified by hand,
   with its evidence (ruling R117): a product defect, a test defect, or load-induced liveness.
 
+The tests run in stress mode (``PROTO_STRESS=1``, ruling R142, ``tests/support/stress.py``):
+their liveness floors -- progress counts, ``commits > 0``, timing and silence bounds, the
+confirmation and recovery timing checks -- are recorded in a per-run log instead of asserted,
+waits get a larger budget, and a scenario step whose outcome is unknown is retried until it takes
+effect once, so each test goes on to its safety asserts, which stay unconditional.  The evidence
+is, per test, how many executions reached their safety asserts: those that passed (every
+assert evaluated and held) and those that failed one of them.  An execution ended by a
+liveness exception before them did not reach them, and is reported as such.
+
 The task reports the work it did (tests run and passed per run and mode, the load average at
 each run's start and end) and checks it: a run that executed no test fails the task.
 """
@@ -81,20 +90,44 @@ def classify(text: str) -> str:
 def _parse(junit: str) -> dict:
     tests = passed = skipped = 0
     failures = []
+    outcomes = {}                 # test id -> "passed", "skipped" or the failure's class
     for case in ET.parse(junit).getroot().iter("testcase"):
         tests += 1
         bad = case.find("failure")
         if bad is None:
             bad = case.find("error")
+        test = f"{case.get('classname')}::{case.get('name')}"
         if case.find("skipped") is not None:
             skipped += 1
+            outcomes[test] = "skipped"
         elif bad is None:
             passed += 1
+            outcomes[test] = "passed"
         else:
             text = (bad.get("message") or "") + "\n" + (bad.text or "")
-            failures.append({"test": f"{case.get('classname')}::{case.get('name')}",
-                             "class": classify(text), "message": (bad.get("message") or "")[:300]})
-    return {"tests": tests, "passed": passed, "skipped": skipped, "failures": failures}
+            failures.append({"test": test, "class": classify(text), "message": (bad.get("message") or "")[:300]})
+            outcomes[test] = failures[-1]["class"]
+    return {"tests": tests, "passed": passed, "skipped": skipped, "failures": failures, "outcomes": outcomes}
+
+
+def _test_key(nodeid: str) -> str:
+    """``tests/x/test_y.py::test_z[p]`` and junit's ``tests.x.test_y::test_z[p]`` as one key."""
+    path, _, name = nodeid.partition("::")
+    return path.removesuffix(".py").replace("/", ".") + "::" + name
+
+
+def _liveness_events(path: str) -> dict:
+    """Test key -> the liveness events the tests recorded in stress mode (tests/support/stress.py)."""
+    events = {}
+    if os.path.exists(path):
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                try:
+                    event = json.loads(line)
+                except ValueError:
+                    continue
+                events.setdefault(_test_key(event["test"]), []).append(event["what"])
+    return events
 
 
 def main(argv=None) -> int:
@@ -116,6 +149,10 @@ def main(argv=None) -> int:
         for gil in (0, 1):
             junit = os.path.join(args.workdir, f"run{i}-gil{gil}.xml")
             log = os.path.join(args.workdir, f"run{i}-gil{gil}.log")
+            events_log = os.path.join(args.workdir, f"run{i}-gil{gil}.liveness.jsonl")
+            if os.path.exists(events_log):
+                os.remove(events_log)
+            env = dict(os.environ, PROTO_STRESS="1", PROTO_STRESS_LOG=events_log)
             hogs = _hogs(args.hogs)
             load0 = os.getloadavg()[0]
             t0 = time.monotonic()
@@ -124,11 +161,14 @@ def main(argv=None) -> int:
                     proc = subprocess.run(
                         [sys.executable, "-X", f"gil={gil}", "-m", "pytest", "-q", "-p", "no:cacheprovider",
                          f"--basetemp={os.path.join(args.workdir, f'bt{i}-{gil}')}", f"--junitxml={junit}",
-                         *args.tests], stdout=out, stderr=subprocess.STDOUT, timeout=args.timeout)
+                         *args.tests], stdout=out, stderr=subprocess.STDOUT, timeout=args.timeout, env=env)
                 load1 = os.getloadavg()[0]
             finally:
                 _stop(hogs)
             result = _parse(junit)
+            events = _liveness_events(events_log)
+            result["liveness_events"] = {t: len(v) for t, v in sorted(events.items())}
+            result["liveness_events_log"] = events_log
             result.update({"run": i, "gil": gil, "rc": proc.returncode, "seconds": round(time.monotonic() - t0, 1),
                            "load_start": round(load0, 2), "load_end": round(load1, 2), "log": log})
             runs.append(result)
@@ -143,6 +183,33 @@ def main(argv=None) -> int:
         for f in r["failures"]:
             if f["class"] != "liveness":
                 problems.append(f"run {r['run']} gil{r['gil']}: {f['class']} failure in {f['test']}")
+    # The evidence (R142): per test, the executions that reached their safety asserts -- passed
+    # (every assert evaluated and held) or failed one of them -- against those a liveness
+    # exception ended first.
+    per_test = {}
+    for r in runs:
+        for test, outcome in r["outcomes"].items():
+            t = per_test.setdefault(test, {"executions": 0, "reached_safety": 0, "passed": 0,
+                                           "ended_by_liveness": 0, "safety_failures": 0, "unclassified": 0,
+                                           "skipped": 0, "liveness_events": 0})
+            t["executions"] += 1
+            t["liveness_events"] += r["liveness_events"].get(_test_key(test), 0)
+            if outcome == "passed":
+                t["passed"] += 1
+                t["reached_safety"] += 1
+            elif outcome == "safety":
+                t["safety_failures"] += 1
+                t["reached_safety"] += 1
+            elif outcome == "liveness":
+                t["ended_by_liveness"] += 1
+            elif outcome == "skipped":
+                t["skipped"] += 1
+            else:
+                t["unclassified"] += 1
+    for test, t in sorted(per_test.items()):
+        print(f"{test}: reached its safety asserts in {t['reached_safety']} of {t['executions']} executions "
+              f"({t['ended_by_liveness']} ended by a liveness exception, {t['liveness_events']} liveness "
+              f"events recorded)", flush=True)
     liveness = {}
     for r in runs:
         for f in r["failures"]:
@@ -156,6 +223,10 @@ def main(argv=None) -> int:
         "hogs": args.hogs, "cpus": os.cpu_count(), "tests": args.tests,
         "runs": runs,
         "test_executions": sum(r["tests"] for r in runs),
+        "stress_mode": "PROTO_STRESS=1 (ruling R142)",
+        "per_test": per_test,
+        "reached_safety": sum(t["reached_safety"] for t in per_test.values()),
+        "liveness_events": sum(t["liveness_events"] for t in per_test.values()),
         "liveness_failures": sum(liveness.values()), "liveness_by_kind": liveness,
         "problems": problems,
         "verdict": "safety held" if not problems else "needs classification",

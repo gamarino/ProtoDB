@@ -21,12 +21,13 @@ import pytest
 
 from proto_db.storage.tiered import TieredStorage
 from proto_db.transactions import ObjectSpace
+from tests.support import stress
 from tests.support.dir_object_store import DirObjectStore
 
 PEER_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "crash_peer.py")
 IDS = ["n0", "n1", "n2"]
 
-pytestmark = [pytest.mark.timeout(240), pytest.mark.skipif(sys.platform == "win32", reason="SIGKILL")]
+pytestmark = [pytest.mark.timeout(stress.budget(240)), pytest.mark.skipif(sys.platform == "win32", reason="SIGKILL")]
 
 
 class Peer:
@@ -58,7 +59,7 @@ class Peer:
         self.proc.stdin.flush()
 
     def wait_for(self, key, timeout=60.0):
-        deadline = time.monotonic() + timeout
+        deadline = time.monotonic() + stress.budget(timeout)
         with self.cond:
             while True:
                 for msg in self.lines:
@@ -135,10 +136,13 @@ def _total_acked(peers):
 
 
 def _wait_acked(peers, count, timeout=60.0):
+    """A progress floor (liveness): asserted in quiet mode; under stress (R142) recorded, and
+    the test goes on to the safety checks of ``_verify`` with what was acknowledged."""
     deadline = time.monotonic() + timeout
     while _total_acked(peers) < count:
         if time.monotonic() > deadline:
-            raise AssertionError(f"only {_total_acked(peers)} commits acknowledged")
+            stress.floor(False, f"only {_total_acked(peers)} commits acknowledged")
+            return
         time.sleep(0.02)
 
 
@@ -209,7 +213,7 @@ def _verify(tmp_path, acked, traced):
     flight at the kill, built on that read root -- and commit it (D46: an unknown outcome may
     take effect later).  Its ids are traced and never acknowledged (Task 8.3n fix round 3:
     with recovery rounds ending at a majority, this order was seen in 6 of about 240 runs)."""
-    assert len(acked) >= 60
+    stress.floor(len(acked) >= 60, f"only {len(acked)} commits acknowledged in all")   # progress (liveness)
     peers = _start(tmp_path, "verify")
     try:
         result = peers[0].wait_for("ids")
@@ -218,7 +222,7 @@ def _verify(tmp_path, acked, traced):
         for p in peers:
             p.send({"stop": True})
         for p in peers:
-            assert p.proc.wait(30) == 0
+            assert p.proc.wait(stress.budget(30)) == 0
     finally:
         for p in peers:
             p.close()

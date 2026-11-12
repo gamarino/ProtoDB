@@ -38,9 +38,10 @@ from proto_db.errors import ProtoConflictError, ProtoOutcomeUnknownError, ProtoT
 from proto_db.storage.memory import MemoryStorage
 from proto_db.transactions import ObjectSpace
 from tests.support.outcomes import CommitTokens, assert_outcomes_resolved, blind_snapshot_of
+from tests.support import stress
 from tests.support.cluster import Cluster, DriftClock
 
-pytestmark = [pytest.mark.freethreaded, pytest.mark.timeout(240)]
+pytestmark = [pytest.mark.freethreaded, pytest.mark.timeout(stress.budget(240))]
 
 LEASE = 0.9
 MARGIN = 0.6                # the minimum, ruling R78b: 2 * RHO * LEASE / (1 + RHO) = MARGIN
@@ -267,7 +268,7 @@ def _run_schedule(schedule):
             else:
                 freezer.freezes[node_id] = LEASE * 1.5
         for t in threads:
-            t.join(30)
+            t.join(stress.budget(30))
         assert not any(t.is_alive() for t in threads), "a worker hung"
         assert not unexpected, unexpected
         # The faults stop; one more commit on the newest lineage, then its state is final.
@@ -287,6 +288,7 @@ def _run_schedule(schedule):
             for node_id in alive:
                 space_of(node_id)
             final = space_of(alive[0])
+            final_done = True
             for attempt in itertools.count():
                 try:
                     final.open_database("db").run(lambda tr: tr.set_root_object("final", True), retries=50,
@@ -297,22 +299,32 @@ def _run_schedule(schedule):
                         FINAL_RETRIES.append((schedule["seed"], attempt, type(e).__name__, str(e)))
                     print(f"final commit retry {attempt + 1} (seed {schedule['seed']}): "
                           f"{type(e).__name__}: {e}")
-                    if attempt == 10:
-                        raise
+                    if attempt == stress.attempts(10):
+                        # Liveness (R142): under stress the run goes on to the invariants that
+                        # need no final state (1, 2 against the storage, 3); quiet: raised.
+                        if not stress.ACTIVE:
+                            raise
+                        stress.record(f"final commit not acknowledged in {attempt + 1} attempts: "
+                                      f"{type(e).__name__}")
+                        final_done = False
+                        break
             # Review I7 (Task 8.3n fix round 1): every live member, not one.  Members do not
             # read the shared storage: each starts its transactions from the committed root its
             # coordinator knows, so an unknown id one member serves and another does not (a
             # split resolution, a forked lineage) is visible only by reading each of them.
-            tokens = CommitTokens()
-            for uid in committed:
-                tokens.acked(uid)
-            for uid in unknown:
-                tokens.unknown(uid)
-            res = assert_outcomes_resolved(
-                {n: (lambda n=n: blind_snapshot_of(space_of(n).open_database("db"), root="ids")) for n in alive},
-                tokens, min_acked=0)
-            in_cluster = {uid: 1 for uid in res.present}
-            final.sync(timeout=10)
+            if final_done:
+                tokens = CommitTokens()
+                for uid in committed:
+                    tokens.acked(uid)
+                for uid in unknown:
+                    tokens.unknown(uid)
+                res = assert_outcomes_resolved(
+                    {n: (lambda n=n: blind_snapshot_of(space_of(n).open_database("db"), root="ids")) for n in alive},
+                    tokens, timeout=stress.budget(10.0), min_acked=0)
+                in_cluster = {uid: 1 for uid in res.present}
+                final.sync(timeout=stress.budget(10))
+            else:
+                in_cluster = None
         else:
             in_cluster = None
 
@@ -368,7 +380,8 @@ def test_a_frozen_holder_overtaken_by_another_commit_is_fenced():
         "size": 3, "drop": 0.0, "duplicate": 0.0, "delay": 0.0, "rates": [1.0] * 5, "seed": 7,
         "events": [(0.2, "freeze", 0, 0)],
     })
-    assert commits > 0 and refused >= 1
+    stress.floor(commits > 0, "no commit acknowledged in the schedule")          # liveness
+    stress.floor(refused >= 1, "the frozen holder's replication was never refused")   # the scenario ran
 
 
 # -- deterministic cases for the two timing rules of the lease (review R39 item 3) -------------
@@ -388,8 +401,8 @@ def test_the_default_drift_margin_covers_timers_running_at_different_rates(ratio
     clocks = {"n0": DriftClock(slow), "n1": DriftClock(fast, 50.0), "n2": DriftClock(fast, 90.0)}
     with Cluster(3, tiers=True, clocks=clocks, lease_duration=lease, request_timeout=0.05,
                  startup_grace=0.0, backoff=(0.001, 0.005)) as cl:
-        held = cl["n0"].acquire(timeout=5)          # kept to expiry, never released
-        nxt = cl["n1"].acquire(timeout=5)
+        held = cl["n0"].acquire(timeout=stress.budget(5))          # kept to expiry, never released
+        nxt = cl["n1"].acquire(timeout=stress.budget(5))
         try:
             assert _belief_end(held, clocks["n0"]) <= clocks["n1"].to_real(nxt.acquired_at)
         finally:
@@ -404,8 +417,8 @@ def test_the_lease_window_is_measured_from_the_send_not_the_win():
                  backoff=(0.001, 0.005)) as cl:
         cl.net.set_link_delay("n1", "n0", 0.3)
         cl.net.set_link_delay("n2", "n0", 0.3)
-        held = cl["n0"].acquire(timeout=5)          # won about 0.3 s after sending; never released
-        nxt = cl["n1"].acquire(timeout=5)
+        held = cl["n0"].acquire(timeout=stress.budget(5))          # won about 0.3 s after sending; never released
+        nxt = cl["n1"].acquire(timeout=stress.budget(5))
         try:
             assert held.valid_until <= nxt.acquired_at   # one shared clock (time.monotonic)
         finally:

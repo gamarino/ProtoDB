@@ -32,6 +32,7 @@ from proto_db.errors import (ProtoConflictError, ProtoOutcomeUnknownError, Proto
                              ProtoValidationError)
 from proto_db.storage.tiered import TieredStorage  # noqa: E402
 from proto_db.transactions import ObjectSpace  # noqa: E402
+from tests.support import stress  # noqa: E402
 from tests.support.dir_object_store import DirObjectStore  # noqa: E402
 
 # No startup_grace: the default, lease_duration + drift_margin, is the shortest a restart may
@@ -72,7 +73,9 @@ def main():
         _say({"ready": True})
         _hear()
         storage = TieredStorage(local, DirObjectStore(store_dir), durability="fsync", ship_interval=0.1)
-        space = ObjectSpace(storage, coordinator=coordinator, lock_timeout=10.0)
+        # The verifying incarnation reads and syncs within the stress budget (R142; quiet: the same 10 s).
+        space = ObjectSpace(storage, coordinator=coordinator,
+                            lock_timeout=10.0 if mode == "load" else stress.budget(10.0))
         db = _open_db(space)
         if mode == "load":
             uid = int(node_id[1:]) * 1_000_000
@@ -96,7 +99,7 @@ def main():
         n, ids = tr.get_root_object("n"), tr.get_root_object("ids")
         tr.abort()
         _say({"n": n, "ids": sorted(ids.elements()) if ids is not None else []})
-        space.sync(timeout=60)
+        space.sync(timeout=stress.budget(60))
         _say({"synced": True})
         _hear()
         space.close()
