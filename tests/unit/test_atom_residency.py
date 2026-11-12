@@ -329,7 +329,9 @@ def test_cache_atoms_keep_the_inline_values_layout():
     """The mark lives in the value of ``_loaded``, never in an extra key: a key added after the
     class's usual ones materializes the instance dict, and every attribute read of that atom then
     takes the slower dict path (measured: query paths 15-35 % slower with a ``_cached`` key)."""
-    pytest.importorskip("_testinternalcapi")
+    internal = pytest.importorskip("_testinternalcapi")
+    if not hasattr(internal, "has_inline_values"):        # added in CPython 3.13
+        pytest.skip("_testinternalcapi.has_inline_values needs Python 3.13 or later")
     _in_a_fresh_interpreter("_check_inline_values_layout")
 
 
