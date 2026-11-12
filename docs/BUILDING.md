@@ -7,7 +7,7 @@ This repository ships with a Sphinx documentation project under `docs/`.
 The API pages use `autodoc`, which imports `proto_db`.  `proto_db` refuses to import with a
 msgpack older than 1.2.0 (the format needs a packer that nests 1024 containers; see
 `format-spec.rst`).  A Sphinx installed on the system Python therefore fails when that Python's
-msgpack is older, whatever the docs say.  Build the docs with the Python of the environment in
+msgpack is older, whatever the docs say.  Build the docs with the Python (3.12 or later) of the environment in
 which the package and its dependencies are installed, never with a system `sphinx-build`.
 
 `docs/requirements.txt` lists what the build needs on top of the package.

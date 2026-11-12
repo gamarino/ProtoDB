@@ -98,7 +98,7 @@ If you read only one thing before the code, read
 
 ## Installation
 
-Requirements: Python 3.11+.
+Requirements: Python 3.12+.
 
 ```bash
 pip install proto_db

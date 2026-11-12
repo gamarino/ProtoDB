@@ -13,7 +13,7 @@ jobs:
       fail-fast: false
       matrix:
         # 3.14t is the free-threaded build: the suite runs there with the GIL disabled (its default).
-        python-version: ["3.11", "3.12", "3.13", "3.14", "3.14t"]
+        python-version: ["3.12", "3.13", "3.14", "3.14t"]
     steps:
       - name: Checkout source
         uses: actions/checkout@v4

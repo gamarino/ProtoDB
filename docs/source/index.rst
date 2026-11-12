@@ -7,7 +7,8 @@ serves every query front end; a commit publishes a new version and every past ve
 several processes can write one space through a peer cluster that never lets the storage arbitrate between
 writers.
 
-This site documents the 2.0 release (``2.0.0``, unreleased). The code is the source of truth: every tutorial
+This site documents the 2.0 release (``2.0.0``, unreleased), which requires Python 3.12 or later and
+msgpack 1.2.0 or later (decision D61 says why not 3.11). The code is the source of truth: every tutorial
 page is executed by the test suite, and every figure comes from a block that ran or from a cited benchmark
 result.
 

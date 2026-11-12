@@ -8,7 +8,7 @@
 
 ## 1. Executive Summary
 
-ProtoDB is an **embedded, transactional, object-oriented database** for Python 3.11+, distributed as the **proto_db** package. It provides in-process storage with copy-on-write semantics, multiple backends (memory, file WAL, optional cluster/cloud), immutable collections (Dictionary, List, Set, CountedSet), secondary indexes, and an index-aware query planner plus a LINQ-like API and optional vector search.
+ProtoDB is an **embedded, transactional, object-oriented database** for Python 3.12+, distributed as the **proto_db** package. It provides in-process storage with copy-on-write semantics, multiple backends (memory, file WAL, optional cluster/cloud), immutable collections (Dictionary, List, Set, CountedSet), secondary indexes, and an index-aware query planner plus a LINQ-like API and optional vector search.
 
 **Strengths:** Clear layered architecture, rich documentation (Sphinx, concepts, cookbook), extensible storage and query layers, and a broad test suite including concurrency and property-based tests. The design is well thought out for near in-memory performance with background persistence and write-through caching.
 
@@ -25,7 +25,7 @@ ProtoDB is an **embedded, transactional, object-oriented database** for Python 3
 | **Name** | ProtoDB (package: `proto_db`) |
 | **Version** | 0.1.0 (pyproject.toml); README states 0.1 alpha (2025-09-16) |
 | **License** | MIT |
-| **Python** | ≥ 3.11 |
+| **Python** | ≥ 3.12 |
 | **Status** | Early preview; APIs may change before first stable release |
 
 **Purpose:** Provide ACID transactions, persistence, and querying over Python-native object graphs without a separate server, with optional scaling via cluster and cloud storage.

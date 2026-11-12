@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 `docs/design-principles.md`: everything stored is immutable, a transaction is an explicit object, and
 every safety argument holds under arbitrary delay and loss. There are no 0.1 data or API to preserve.
 The design is `docs/superpowers/specs/2026-11-01-protodb-v2-design.md`; every decision is in
-`docs/decisions.md` (D1-D60).
+`docs/decisions.md` (D1-D61).
 
 ### Added
 - **One value model** with a total order across types (`1 == 1.0 == Decimal(1)`, `True != 1`), used by
@@ -57,7 +57,8 @@ The design is `docs/superpowers/specs/2026-11-01-protodb-v2-design.md`; every de
 - A conflict raises `ProtoConflictError` and the caller retries; merging applies only to roots the transaction
   did not read and only by replaying recorded operations, never by inferring intent from value types (D9, D33).
 - Strings are stored inline; the global `Literal` catalog is gone (D7).
-- Python floor 3.11; CI targets 3.11-3.14 and 3.14t. `six` and `wrapt` are no longer dependencies (D14).
+- Python floor 3.12 (D61; was 3.11 under D14); CI targets 3.12-3.14 and 3.14t. `six` and `wrapt` are no longer
+  dependencies (D14).
 - The package is split into subpackages: `core`, `storage`, `collections`, `indexing`, `query`, `cluster`,
   `runtime`, `interop` (D15; the spec's `indexes` became `indexing`).
 

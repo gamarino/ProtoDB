@@ -26,7 +26,7 @@ term's first root", or the design guide's "The mistake: a recovery round that en
 answer, and do not read the git history of the repository's cluster code. A few comments and test docstrings in
 the copy may still hint at it; work from the code and the failing test.
 
-The test needs Python 3.11 or later and the test dependencies of the repository (`pytest`, `pytest-timeout`).
+The test needs Python 3.12 or later and the test dependencies of the repository (`pytest`, `pytest-timeout`).
 On the planted copy it runs in under a second. A fix that is safe but stalls the recovery round takes
 about 5 seconds, because the test waits a bounded time for replication to finish.
 
