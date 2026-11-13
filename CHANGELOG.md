@@ -5,6 +5,12 @@ All notable changes to `proto_db` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0rc4] - unreleased
+
+- `proto_db.__version__` reports the package version; in 2.0.0rc3 it still said `2.0.0.dev0`.
+- Tests: the two compaction checks of `test_owner_locks` held on ext4, where a freed inode number is
+  reused; they now keep the original file open and compare with `os.path.samestat`.
+
 ## [2.0.0rc3] - 2026-11-13
 
 The first release candidate published on PyPI.

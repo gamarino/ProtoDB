@@ -29,7 +29,7 @@ feature that needs them is first used.
 from importlib import import_module
 from typing import TYPE_CHECKING
 
-__version__ = "2.0.0.dev0"
+__version__ = "2.0.0rc4"
 
 #: Public name -> module (relative to this package) that defines it.
 _EXPORTS = {
