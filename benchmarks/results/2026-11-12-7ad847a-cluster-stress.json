@@ -1,0 +1,619 @@
+{
+ "schema": "proto_db.cluster_stress/1",
+ "commit": "7ad847a43e10866bb4d156d83095efea27998a8f",
+ "python": "3.14.6",
+ "hogs": 12,
+ "cpus": 12,
+ "tests": [
+  "tests/unit/test_cluster_transactions.py",
+  "tests/concurrency/test_cluster_safety.py",
+  "tests/concurrency/test_cluster_crash.py"
+ ],
+ "runs": [
+  {
+   "tests": 25,
+   "passed": 16,
+   "skipped": 0,
+   "failures": [
+    {
+     "test": "tests.unit.test_cluster_transactions::test_transactions_read_the_committed_root_not_the_storage",
+     "class": "liveness",
+     "message": "proto_db.errors.ProtoOutcomeUnknownError: Node n1: the lease ended before this node observed the outcome (2 acknowledgements, 2 needed, were counted only after the lease had ended); the root (epoch 7) may or may not take effect"
+    },
+    {
+     "test": "tests.unit.test_cluster_transactions::test_storage_root_reads_never_make_reads_go_backwards",
+     "class": "liveness",
+     "message": "proto_db.errors.ProtoOutcomeUnknownError: Node n0: the lease ended before this node observed the outcome (2 acknowledgements, 2 needed, were counted only after the lease had ended); the root (epoch 3) may or may not take effect"
+    },
+    {
+     "test": "tests.unit.test_cluster_transactions::test_sync_waits_for_the_persisted_epoch_and_exposes_both_epochs",
+     "class": "liveness",
+     "message": "proto_db.errors.ProtoOutcomeUnknownError: Node n0: the lease ended before this node observed the outcome (3 acknowledgements, 2 needed, were counted only after the lease had ended); the root (epoch 2) may or may not take effect"
+    },
+    {
+     "test": "tests.unit.test_cluster_transactions::test_a_space_opened_while_no_majority_has_a_space_gets_no_permission_until_one_does",
+     "class": "liveness",
+     "message": "proto_db.errors.ProtoOutcomeUnknownError: Node n1: the lease ended before this node observed the outcome (2 acknowledgements, 2 needed, were counted only after the lease had ended); the root (epoch 2) may or may not take effect"
+    },
+    {
+     "test": "tests.concurrency.test_cluster_safety::test_a_frozen_holder_overtaken_by_another_commit_is_fenced",
+     "class": "unclassified",
+     "message": "assert (0 > 0)",
+     "hand_class": "liveness",
+     "hand_reason": "frozen-holder fencing: no commit completed in the window (commits > 0): liveness; the fencing assert was not reached"
+    },
+    {
+     "test": "tests.concurrency.test_cluster_crash::test_sigkilled_peers_lose_no_acknowledged_commit[any]",
+     "class": "unclassified",
+     "message": "AssertionError: only 6 commits acknowledged",
+     "hand_class": "liveness",
+     "hand_reason": "progress floor of the crash tests (assert len(acked) >= 60): liveness; the safety asserts that follow it were not reached"
+    },
+    {
+     "test": "tests.concurrency.test_cluster_crash::test_sigkilled_peers_lose_no_acknowledged_commit[owner]",
+     "class": "unclassified",
+     "message": "AssertionError: only 6 commits acknowledged",
+     "hand_class": "liveness",
+     "hand_reason": "progress floor of the crash tests (assert len(acked) >= 60): liveness; the safety asserts that follow it were not reached"
+    },
+    {
+     "test": "tests.concurrency.test_cluster_crash::test_sigkilled_peers_lose_no_acknowledged_commit[holder]",
+     "class": "unclassified",
+     "message": "AssertionError: only 4 commits acknowledged",
+     "hand_class": "liveness",
+     "hand_reason": "progress floor of the crash tests (assert len(acked) >= 60): liveness; the safety asserts that follow it were not reached"
+    },
+    {
+     "test": "tests.concurrency.test_cluster_crash::test_an_owner_stopped_past_its_lease_loses_no_acknowledged_commit",
+     "class": "unclassified",
+     "message": "AssertionError: only 2 commits acknowledged",
+     "hand_class": "liveness",
+     "hand_reason": "progress floor of the crash tests (assert len(acked) >= 60): liveness; the safety asserts that follow it were not reached"
+    }
+   ],
+   "run": 1,
+   "gil": 0,
+   "rc": 1,
+   "seconds": 436.7,
+   "load_start": 2.07,
+   "load_end": 25.25,
+   "log": "/home/gamarino/Documentos/proyectos/scratch-8.3n/final/stress/run1-gil0.log"
+  },
+  {
+   "tests": 25,
+   "passed": 10,
+   "skipped": 0,
+   "failures": [
+    {
+     "test": "tests.unit.test_cluster_transactions::test_transactions_read_the_committed_root_not_the_storage",
+     "class": "liveness",
+     "message": "proto_db.errors.ProtoOutcomeUnknownError: Node n0: only 1 of the 2 acknowledgements needed arrived before the lease ended; the root (epoch 10) may or may not take effect"
+    },
+    {
+     "test": "tests.unit.test_cluster_transactions::test_storage_root_reads_never_make_reads_go_backwards",
+     "class": "liveness",
+     "message": "proto_db.errors.ProtoOutcomeUnknownError: Node n0: the lease ended before this node observed the outcome (2 acknowledgements, 2 needed, were counted only after the lease had ended); the root (epoch 6) may or may not take effect"
+    },
+    {
+     "test": "tests.unit.test_cluster_transactions::test_sync_promises_local_persistence_and_a_commit_on_the_reader_sees_every_acknowledged_commit",
+     "class": "liveness",
+     "message": "proto_db.errors.ProtoOutcomeUnknownError: Node n0: the lease ended before this node observed the outcome (2 acknowledgements, 2 needed, were counted only after the lease had ended); the root (epoch 3) may or may not take effect"
+    },
+    {
+     "test": "tests.unit.test_cluster_transactions::test_a_space_opened_while_no_majority_has_a_space_gets_no_permission_until_one_does",
+     "class": "unclassified",
+     "message": "AssertionError: WARNING  proto_db.transactions:transactions.py:1574 Confirming the committed root under the cluster lease failed: Node n1 could not obtain a write permission within 5.0 s\n  \nassert not [<LogRecord: proto_db.transactions, 30, /home/gamarino/Documentos/proyectos/scratch-8.3n/final/ex-7",
+     "hand_class": "liveness",
+     "hand_reason": "the test asserts no failed confirmation was logged; the logged failure is a permission timeout or an unknown outcome: liveness"
+    },
+    {
+     "test": "tests.unit.test_cluster_transactions::test_a_confirmation_in_progress_succeeds_once_a_majority_opens_its_spaces",
+     "class": "unclassified",
+     "message": "AssertionError: WARNING  proto_db.transactions:transactions.py:1574 Confirming the committed root under the cluster lease failed: Node n0 could not obtain a write permission within 10.0 s\n  \nassert not [<LogRecord: proto_db.transactions, 30, /home/gamarino/Documentos/proyectos/scratch-8.3n/final/ex-",
+     "hand_class": "liveness",
+     "hand_reason": "the test asserts no failed confirmation was logged; the logged failure is a permission timeout or an unknown outcome: liveness"
+    },
+    {
+     "test": "tests.unit.test_cluster_transactions::test_a_recovery_round_ends_once_a_majority_of_witnesses_answered",
+     "class": "unclassified",
+     "message": "AssertionError: the round took 0.567 s with a majority answering at once\nassert 0.5665273870108649 < 0.5",
+     "hand_class": "liveness",
+     "hand_reason": "timing bound of the recovery-round test: liveness"
+    },
+    {
+     "test": "tests.concurrency.test_cluster_safety::test_random_fault_schedules_keep_the_lease_and_the_data_safe",
+     "class": "unclassified",
+     "message": "ExceptionGroup: Hypothesis found 2 distinct failures. (2 sub-exceptions)",
+     "hand_class": "liveness",
+     "hand_reason": "random fault schedules: every sub-exception is a rejoin within 10 s, a ProtoTimeoutError or the 240 s pytest timeout: liveness"
+    },
+    {
+     "test": "tests.concurrency.test_cluster_safety::test_the_default_drift_margin_covers_timers_running_at_different_rates[1.5]",
+     "class": "liveness",
+     "message": "proto_db.errors.ProtoTimeoutError: Node n0 could not obtain the cluster write lease from a majority (2 of 3) within 5.0 s"
+    },
+    {
+     "test": "tests.concurrency.test_cluster_safety::test_the_default_drift_margin_covers_timers_running_at_different_rates[2.0]",
+     "class": "liveness",
+     "message": "proto_db.errors.ProtoTimeoutError: Node n0 could not obtain the cluster write lease from a majority (2 of 3) within 5.0 s"
+    },
+    {
+     "test": "tests.concurrency.test_cluster_safety::test_the_default_drift_margin_covers_timers_running_at_different_rates[2.9]",
+     "class": "liveness",
+     "message": "proto_db.errors.ProtoTimeoutError: Node n1 could not obtain the cluster write lease from a majority (2 of 3) within 5.0 s"
+    },
+    {
+     "test": "tests.concurrency.test_cluster_safety::test_the_lease_window_is_measured_from_the_send_not_the_win",
+     "class": "liveness",
+     "message": "proto_db.errors.ProtoTimeoutError: Node n0 could not obtain the cluster write lease from a majority (2 of 3) within 5.0 s"
+    },
+    {
+     "test": "tests.concurrency.test_cluster_crash::test_sigkilled_peers_lose_no_acknowledged_commit[any]",
+     "class": "unclassified",
+     "message": "AssertionError: only 0 commits acknowledged",
+     "hand_class": "liveness",
+     "hand_reason": "progress floor of the crash tests (assert len(acked) >= 60): liveness; the safety asserts that follow it were not reached"
+    },
+    {
+     "test": "tests.concurrency.test_cluster_crash::test_sigkilled_peers_lose_no_acknowledged_commit[owner]",
+     "class": "unclassified",
+     "message": "AssertionError: only 3 commits acknowledged",
+     "hand_class": "liveness",
+     "hand_reason": "progress floor of the crash tests (assert len(acked) >= 60): liveness; the safety asserts that follow it were not reached"
+    },
+    {
+     "test": "tests.concurrency.test_cluster_crash::test_sigkilled_peers_lose_no_acknowledged_commit[holder]",
+     "class": "unclassified",
+     "message": "AssertionError: only 1 commits acknowledged",
+     "hand_class": "liveness",
+     "hand_reason": "progress floor of the crash tests (assert len(acked) >= 60): liveness; the safety asserts that follow it were not reached"
+    },
+    {
+     "test": "tests.concurrency.test_cluster_crash::test_an_owner_stopped_past_its_lease_loses_no_acknowledged_commit",
+     "class": "unclassified",
+     "message": "AssertionError: only 15 commits acknowledged",
+     "hand_class": "liveness",
+     "hand_reason": "progress floor of the crash tests (assert len(acked) >= 60): liveness; the safety asserts that follow it were not reached"
+    }
+   ],
+   "run": 1,
+   "gil": 1,
+   "rc": 1,
+   "seconds": 868.8,
+   "load_start": 25.25,
+   "load_end": 26.4,
+   "log": "/home/gamarino/Documentos/proyectos/scratch-8.3n/final/stress/run1-gil1.log"
+  },
+  {
+   "tests": 25,
+   "passed": 13,
+   "skipped": 0,
+   "failures": [
+    {
+     "test": "tests.unit.test_cluster_transactions::test_records_reach_the_storage_before_the_replication_and_no_root_is_published_under_it",
+     "class": "unclassified",
+     "message": "proto_db.errors.ProtoConflictError: Node n0: the permission had 69 ms left, less than the 75 ms a replication needs (send_reserve); nothing was replicated",
+     "hand_class": "liveness",
+     "hand_reason": "a retryable conflict raised by the send reserve (H7): liveness"
+    },
+    {
+     "test": "tests.unit.test_cluster_transactions::test_transactions_read_the_committed_root_not_the_storage",
+     "class": "liveness",
+     "message": "proto_db.errors.ProtoOutcomeUnknownError: Node n0: the lease ended before this node observed the outcome (2 acknowledgements, 2 needed, were counted only after the lease had ended); the root (epoch 2) may or may not take effect"
+    },
+    {
+     "test": "tests.unit.test_cluster_transactions::test_a_late_replication_is_refused_by_peers_that_granted_a_newer_term",
+     "class": "liveness",
+     "message": "proto_db.errors.ProtoOutcomeUnknownError: Node n0: the lease ended before this node observed the outcome (3 acknowledgements, 2 needed, were counted only after the lease had ended); the root (epoch 5) may or may not take effect"
+    },
+    {
+     "test": "tests.unit.test_cluster_transactions::test_storage_root_reads_never_make_reads_go_backwards",
+     "class": "liveness",
+     "message": "proto_db.errors.ProtoOutcomeUnknownError: Node n0: the lease ended before this node observed the outcome (2 acknowledgements, 2 needed, were counted only after the lease had ended); the root (epoch 6) may or may not take effect"
+    },
+    {
+     "test": "tests.unit.test_cluster_transactions::test_sync_promises_local_persistence_and_a_commit_on_the_reader_sees_every_acknowledged_commit",
+     "class": "liveness",
+     "message": "proto_db.errors.ProtoOutcomeUnknownError: Node n0: the lease ended before this node observed the outcome (2 acknowledgements, 2 needed, were counted only after the lease had ended); the root (epoch 2) may or may not take effect"
+    },
+    {
+     "test": "tests.unit.test_cluster_transactions::test_a_space_opened_while_no_majority_has_a_space_gets_no_permission_until_one_does",
+     "class": "liveness",
+     "message": "proto_db.errors.ProtoOutcomeUnknownError: Node n1: the lease ended before this node observed the outcome (2 acknowledgements, 2 needed, were counted only after the lease had ended); the root (epoch 2) may or may not take effect"
+    },
+    {
+     "test": "tests.unit.test_cluster_transactions::test_a_confirmation_in_progress_succeeds_once_a_majority_opens_its_spaces",
+     "class": "liveness",
+     "message": "proto_db.errors.ProtoOutcomeUnknownError: Node n0: the lease ended before this node observed the outcome (2 acknowledgements, 2 needed, were counted only after the lease had ended); the root (epoch 3) may or may not take effect"
+    },
+    {
+     "test": "tests.unit.test_cluster_transactions::test_a_setup_new_database_whose_recovery_query_goes_unanswered_conflicts_and_is_retried",
+     "class": "liveness",
+     "message": "proto_db.errors.ProtoOutcomeUnknownError: Node n0: fewer than 1 other members stored the commit's records before the lease ended; the root (epoch 3) may or may not take effect"
+    },
+    {
+     "test": "tests.concurrency.test_cluster_crash::test_sigkilled_peers_lose_no_acknowledged_commit[any]",
+     "class": "unclassified",
+     "message": "AssertionError: only 7 commits acknowledged",
+     "hand_class": "liveness",
+     "hand_reason": "progress floor of the crash tests (assert len(acked) >= 60): liveness; the safety asserts that follow it were not reached"
+    },
+    {
+     "test": "tests.concurrency.test_cluster_crash::test_sigkilled_peers_lose_no_acknowledged_commit[owner]",
+     "class": "unclassified",
+     "message": "AssertionError: only 1 commits acknowledged",
+     "hand_class": "liveness",
+     "hand_reason": "progress floor of the crash tests (assert len(acked) >= 60): liveness; the safety asserts that follow it were not reached"
+    },
+    {
+     "test": "tests.concurrency.test_cluster_crash::test_sigkilled_peers_lose_no_acknowledged_commit[holder]",
+     "class": "unclassified",
+     "message": "AssertionError: only 8 commits acknowledged",
+     "hand_class": "liveness",
+     "hand_reason": "progress floor of the crash tests (assert len(acked) >= 60): liveness; the safety asserts that follow it were not reached"
+    },
+    {
+     "test": "tests.concurrency.test_cluster_crash::test_an_owner_stopped_past_its_lease_loses_no_acknowledged_commit",
+     "class": "unclassified",
+     "message": "AssertionError: only 0 commits acknowledged",
+     "hand_class": "liveness",
+     "hand_reason": "progress floor of the crash tests (assert len(acked) >= 60): liveness; the safety asserts that follow it were not reached"
+    }
+   ],
+   "run": 2,
+   "gil": 0,
+   "rc": 1,
+   "seconds": 428.3,
+   "load_start": 26.4,
+   "load_end": 25.52,
+   "log": "/home/gamarino/Documentos/proyectos/scratch-8.3n/final/stress/run2-gil0.log"
+  },
+  {
+   "tests": 25,
+   "passed": 12,
+   "skipped": 0,
+   "failures": [
+    {
+     "test": "tests.unit.test_cluster_transactions::test_a_late_replication_is_refused_by_peers_that_granted_a_newer_term",
+     "class": "unclassified",
+     "message": "AssertionError: assert [] == ['unknown']\n  \n  Right contains one more item: 'unknown'\n  Use -v to get more diff",
+     "hand_class": "liveness",
+     "hand_reason": "the scripted late commit did not end within its 10 s join (no outcome recorded): a scripted precondition not reached under load"
+    },
+    {
+     "test": "tests.unit.test_cluster_transactions::test_storage_root_reads_never_make_reads_go_backwards",
+     "class": "liveness",
+     "message": "proto_db.errors.ProtoOutcomeUnknownError: Node n0: only 1 of the 2 acknowledgements needed arrived before the lease ended; the root (epoch 6) may or may not take effect"
+    },
+    {
+     "test": "tests.unit.test_cluster_transactions::test_sync_waits_for_the_persisted_epoch_and_exposes_both_epochs",
+     "class": "liveness",
+     "message": "proto_db.errors.ProtoOutcomeUnknownError: Node n1: only 1 of the 2 acknowledgements needed arrived before the lease ended; the root (epoch 3) may or may not take effect"
+    },
+    {
+     "test": "tests.unit.test_cluster_transactions::test_sync_promises_local_persistence_and_a_commit_on_the_reader_sees_every_acknowledged_commit",
+     "class": "liveness",
+     "message": "proto_db.errors.ProtoOutcomeUnknownError: Node n0: fewer than 1 other members stored the commit's records before the lease ended; the root (epoch 2) may or may not take effect"
+    },
+    {
+     "test": "tests.unit.test_cluster_transactions::test_a_confirmation_in_progress_succeeds_once_a_majority_opens_its_spaces",
+     "class": "liveness",
+     "message": "proto_db.errors.ProtoOutcomeUnknownError: Node n0: the lease ended before this node observed the outcome (2 acknowledgements, 2 needed, were counted only after the lease had ended); the root (epoch 3) may or may not take effect"
+    },
+    {
+     "test": "tests.unit.test_cluster_transactions::test_a_setup_new_database_whose_recovery_query_goes_unanswered_conflicts_and_is_retried",
+     "class": "liveness",
+     "message": "proto_db.errors.ProtoTimeoutError: Node n0 could not obtain a write permission within 5.0 s"
+    },
+    {
+     "test": "tests.unit.test_cluster_transactions::test_a_recovery_round_ends_once_a_majority_of_witnesses_answered",
+     "class": "unclassified",
+     "message": "AssertionError: the round took 0.795 s with a majority answering at once\nassert 0.7953056199767161 < 0.5",
+     "hand_class": "liveness",
+     "hand_reason": "timing bound of the recovery-round test: liveness"
+    },
+    {
+     "test": "tests.concurrency.test_cluster_safety::test_random_fault_schedules_keep_the_lease_and_the_data_safe",
+     "class": "unclassified",
+     "message": "ExceptionGroup: Hypothesis found 2 distinct failures. (2 sub-exceptions)",
+     "hand_class": "liveness",
+     "hand_reason": "random fault schedules: every sub-exception is a rejoin within 10 s, a ProtoTimeoutError or the 240 s pytest timeout: liveness"
+    },
+    {
+     "test": "tests.concurrency.test_cluster_safety::test_a_frozen_holder_overtaken_by_another_commit_is_fenced",
+     "class": "unclassified",
+     "message": "assert (0 > 0)",
+     "hand_class": "liveness",
+     "hand_reason": "frozen-holder fencing: no commit completed in the window (commits > 0): liveness; the fencing assert was not reached"
+    },
+    {
+     "test": "tests.concurrency.test_cluster_crash::test_sigkilled_peers_lose_no_acknowledged_commit[any]",
+     "class": "unclassified",
+     "message": "AssertionError: only 9 commits acknowledged",
+     "hand_class": "liveness",
+     "hand_reason": "progress floor of the crash tests (assert len(acked) >= 60): liveness; the safety asserts that follow it were not reached"
+    },
+    {
+     "test": "tests.concurrency.test_cluster_crash::test_sigkilled_peers_lose_no_acknowledged_commit[owner]",
+     "class": "unclassified",
+     "message": "AssertionError: only 0 commits acknowledged",
+     "hand_class": "liveness",
+     "hand_reason": "progress floor of the crash tests (assert len(acked) >= 60): liveness; the safety asserts that follow it were not reached"
+    },
+    {
+     "test": "tests.concurrency.test_cluster_crash::test_sigkilled_peers_lose_no_acknowledged_commit[holder]",
+     "class": "unclassified",
+     "message": "AssertionError: only 0 commits acknowledged",
+     "hand_class": "liveness",
+     "hand_reason": "progress floor of the crash tests (assert len(acked) >= 60): liveness; the safety asserts that follow it were not reached"
+    },
+    {
+     "test": "tests.concurrency.test_cluster_crash::test_an_owner_stopped_past_its_lease_loses_no_acknowledged_commit",
+     "class": "unclassified",
+     "message": "AssertionError: only 6 commits acknowledged",
+     "hand_class": "liveness",
+     "hand_reason": "progress floor of the crash tests (assert len(acked) >= 60): liveness; the safety asserts that follow it were not reached"
+    }
+   ],
+   "run": 2,
+   "gil": 1,
+   "rc": 1,
+   "seconds": 844.0,
+   "load_start": 25.52,
+   "load_end": 26.78,
+   "log": "/home/gamarino/Documentos/proyectos/scratch-8.3n/final/stress/run2-gil1.log"
+  },
+  {
+   "tests": 25,
+   "passed": 14,
+   "skipped": 0,
+   "failures": [
+    {
+     "test": "tests.unit.test_cluster_transactions::test_transactions_read_the_committed_root_not_the_storage",
+     "class": "liveness",
+     "message": "proto_db.errors.ProtoOutcomeUnknownError: Node n0: the lease ended before this node observed the outcome (2 acknowledgements, 2 needed, were counted only after the lease had ended); the root (epoch 2) may or may not take effect"
+    },
+    {
+     "test": "tests.unit.test_cluster_transactions::test_a_late_replication_is_refused_by_peers_that_granted_a_newer_term",
+     "class": "liveness",
+     "message": "proto_db.errors.ProtoOutcomeUnknownError: Node n0: the lease ended before this node observed the outcome (3 acknowledgements, 2 needed, were counted only after the lease had ended); the root (epoch 5) may or may not take effect"
+    },
+    {
+     "test": "tests.unit.test_cluster_transactions::test_storage_root_reads_never_make_reads_go_backwards",
+     "class": "liveness",
+     "message": "proto_db.errors.ProtoOutcomeUnknownError: Node n0: only 1 of the 2 acknowledgements needed arrived before the lease ended; the root (epoch 2) may or may not take effect"
+    },
+    {
+     "test": "tests.unit.test_cluster_transactions::test_sync_waits_for_the_persisted_epoch_and_exposes_both_epochs",
+     "class": "liveness",
+     "message": "proto_db.errors.ProtoOutcomeUnknownError: Node n0: the lease ended before this node observed the outcome (3 acknowledgements, 2 needed, were counted only after the lease had ended); the root (epoch 6) may or may not take effect"
+    },
+    {
+     "test": "tests.unit.test_cluster_transactions::test_a_space_opened_while_no_majority_has_a_space_gets_no_permission_until_one_does",
+     "class": "liveness",
+     "message": "proto_db.errors.ProtoTimeoutError: Node n0 could not obtain a write permission within 0.5 s"
+    },
+    {
+     "test": "tests.unit.test_cluster_transactions::test_a_confirmation_in_progress_succeeds_once_a_majority_opens_its_spaces",
+     "class": "unclassified",
+     "message": "AssertionError: WARNING  proto_db.transactions:transactions.py:1574 Confirming the committed root under the cluster lease failed: Node n1: only 1 of the 2 witnesses needed answered the recovery query\n  \nassert not [<LogRecord: proto_db.transactions, 30, /home/gamarino/Documentos/proyectos/scratch-8.",
+     "hand_class": "liveness",
+     "hand_reason": "progress floor of the crash tests (assert len(acked) >= 60): liveness; the safety asserts that follow it were not reached"
+    },
+    {
+     "test": "tests.concurrency.test_cluster_safety::test_a_frozen_holder_overtaken_by_another_commit_is_fenced",
+     "class": "unclassified",
+     "message": "assert (0 > 0)",
+     "hand_class": "liveness",
+     "hand_reason": "frozen-holder fencing: no commit completed in the window (commits > 0): liveness; the fencing assert was not reached"
+    },
+    {
+     "test": "tests.concurrency.test_cluster_crash::test_sigkilled_peers_lose_no_acknowledged_commit[any]",
+     "class": "unclassified",
+     "message": "AssertionError: only 1 commits acknowledged",
+     "hand_class": "liveness",
+     "hand_reason": "progress floor of the crash tests (assert len(acked) >= 60): liveness; the safety asserts that follow it were not reached"
+    },
+    {
+     "test": "tests.concurrency.test_cluster_crash::test_sigkilled_peers_lose_no_acknowledged_commit[owner]",
+     "class": "unclassified",
+     "message": "AssertionError: only 1 commits acknowledged",
+     "hand_class": "liveness",
+     "hand_reason": "progress floor of the crash tests (assert len(acked) >= 60): liveness; the safety asserts that follow it were not reached"
+    },
+    {
+     "test": "tests.concurrency.test_cluster_crash::test_sigkilled_peers_lose_no_acknowledged_commit[holder]",
+     "class": "unclassified",
+     "message": "AssertionError: only 4 commits acknowledged",
+     "hand_class": "liveness",
+     "hand_reason": "progress floor of the crash tests (assert len(acked) >= 60): liveness; the safety asserts that follow it were not reached"
+    },
+    {
+     "test": "tests.concurrency.test_cluster_crash::test_an_owner_stopped_past_its_lease_loses_no_acknowledged_commit",
+     "class": "unclassified",
+     "message": "AssertionError: only 1 commits acknowledged",
+     "hand_class": "liveness",
+     "hand_reason": "progress floor of the crash tests (assert len(acked) >= 60): liveness; the safety asserts that follow it were not reached"
+    }
+   ],
+   "run": 3,
+   "gil": 0,
+   "rc": 1,
+   "seconds": 454.2,
+   "load_start": 26.78,
+   "load_end": 26.39,
+   "log": "/home/gamarino/Documentos/proyectos/scratch-8.3n/final/stress/run3-gil0.log"
+  },
+  {
+   "tests": 25,
+   "passed": 10,
+   "skipped": 0,
+   "failures": [
+    {
+     "test": "tests.unit.test_cluster_transactions::test_records_reach_the_storage_before_the_replication_and_no_root_is_published_under_it",
+     "class": "unclassified",
+     "message": "proto_db.errors.ProtoConflictError: Node n0: the permission had 74 ms left, less than the 75 ms a replication needs (send_reserve); nothing was replicated",
+     "hand_class": "liveness",
+     "hand_reason": "a retryable conflict raised by the send reserve (H7): liveness"
+    },
+    {
+     "test": "tests.unit.test_cluster_transactions::test_transactions_read_the_committed_root_not_the_storage",
+     "class": "liveness",
+     "message": "proto_db.errors.ProtoOutcomeUnknownError: Node n1: the lease ended before this node observed the outcome (2 acknowledgements, 2 needed, were counted only after the lease had ended); the root (epoch 3) may or may not take effect"
+    },
+    {
+     "test": "tests.unit.test_cluster_transactions::test_a_late_replication_is_refused_by_peers_that_granted_a_newer_term",
+     "class": "unclassified",
+     "message": "AssertionError: assert [] == ['unknown']\n  \n  Right contains one more item: 'unknown'\n  Use -v to get more diff",
+     "hand_class": "liveness",
+     "hand_reason": "the scripted late commit did not end within its 10 s join (no outcome recorded): a scripted precondition not reached under load"
+    },
+    {
+     "test": "tests.unit.test_cluster_transactions::test_sync_promises_local_persistence_and_a_commit_on_the_reader_sees_every_acknowledged_commit",
+     "class": "unclassified",
+     "message": "AssertionError: database 'db' not created in 10 attempts (2 unknown)",
+     "hand_class": "liveness",
+     "hand_reason": "setup retries exhausted by unknown outcomes: liveness"
+    },
+    {
+     "test": "tests.unit.test_cluster_transactions::test_a_space_opened_while_no_majority_has_a_space_gets_no_permission_until_one_does",
+     "class": "unclassified",
+     "message": "assert False\n +  where False = all(<generator object test_a_space_opened_while_no_majority_has_a_space_gets_no_permission_until_one_does.<locals>.<genexpr> at 0x587b381b8a0>)",
+     "hand_class": "liveness",
+     "hand_reason": "grants_refused_no_storage not yet counted: a scripted precondition not reached under load"
+    },
+    {
+     "test": "tests.unit.test_cluster_transactions::test_a_confirmation_in_progress_succeeds_once_a_majority_opens_its_spaces",
+     "class": "unclassified",
+     "message": "AssertionError: WARNING  proto_db.transactions:transactions.py:1574 Confirming the committed root under the cluster lease failed: Node n0 could not obtain a write permission within 10.0 s\n  WARNING  proto_db.transactions:transactions.py:1574 Confirming the committed root under the cluster lease fail",
+     "hand_class": "liveness",
+     "hand_reason": "the test asserts no failed confirmation was logged; the logged failure is a permission timeout or an unknown outcome: liveness"
+    },
+    {
+     "test": "tests.unit.test_cluster_transactions::test_a_setup_new_database_whose_recovery_query_goes_unanswered_conflicts_and_is_retried",
+     "class": "liveness",
+     "message": "proto_db.errors.ProtoTimeoutError: Node n0 could not obtain a write permission within 5.0 s"
+    },
+    {
+     "test": "tests.unit.test_cluster_transactions::test_a_recovery_round_ends_once_a_majority_of_witnesses_answered",
+     "class": "liveness",
+     "message": "proto_db.errors.ProtoOutcomeUnknownError: Node n0: fewer than 1 other members stored the commit's records before the lease ended; the root (epoch 3) may or may not take effect"
+    },
+    {
+     "test": "tests.concurrency.test_cluster_safety::test_random_fault_schedules_keep_the_lease_and_the_data_safe",
+     "class": "unclassified",
+     "message": "ExceptionGroup: Hypothesis found 2 distinct failures. (2 sub-exceptions)",
+     "hand_class": "liveness",
+     "hand_reason": "random fault schedules: every sub-exception is a rejoin within 10 s, a ProtoTimeoutError or the 240 s pytest timeout: liveness"
+    },
+    {
+     "test": "tests.concurrency.test_cluster_safety::test_a_frozen_holder_overtaken_by_another_commit_is_fenced",
+     "class": "unclassified",
+     "message": "assert (0 > 0)",
+     "hand_class": "liveness",
+     "hand_reason": "frozen-holder fencing: no commit completed in the window (commits > 0): liveness; the fencing assert was not reached"
+    },
+    {
+     "test": "tests.concurrency.test_cluster_safety::test_the_lease_window_is_measured_from_the_send_not_the_win",
+     "class": "liveness",
+     "message": "proto_db.errors.ProtoTimeoutError: Node n0 could not obtain the cluster write lease from a majority (2 of 3) within 5.0 s"
+    },
+    {
+     "test": "tests.concurrency.test_cluster_crash::test_sigkilled_peers_lose_no_acknowledged_commit[any]",
+     "class": "unclassified",
+     "message": "AssertionError: only 1 commits acknowledged",
+     "hand_class": "liveness",
+     "hand_reason": "progress floor of the crash tests (assert len(acked) >= 60): liveness; the safety asserts that follow it were not reached"
+    },
+    {
+     "test": "tests.concurrency.test_cluster_crash::test_sigkilled_peers_lose_no_acknowledged_commit[owner]",
+     "class": "unclassified",
+     "message": "AssertionError: only 5 commits acknowledged",
+     "hand_class": "liveness",
+     "hand_reason": "progress floor of the crash tests (assert len(acked) >= 60): liveness; the safety asserts that follow it were not reached"
+    },
+    {
+     "test": "tests.concurrency.test_cluster_crash::test_sigkilled_peers_lose_no_acknowledged_commit[holder]",
+     "class": "unclassified",
+     "message": "AssertionError: only 0 commits acknowledged",
+     "hand_class": "liveness",
+     "hand_reason": "progress floor of the crash tests (assert len(acked) >= 60): liveness; the safety asserts that follow it were not reached"
+    },
+    {
+     "test": "tests.concurrency.test_cluster_crash::test_an_owner_stopped_past_its_lease_loses_no_acknowledged_commit",
+     "class": "unclassified",
+     "message": "AssertionError: only 0 commits acknowledged",
+     "hand_class": "liveness",
+     "hand_reason": "progress floor of the crash tests (assert len(acked) >= 60): liveness; the safety asserts that follow it were not reached"
+    }
+   ],
+   "run": 3,
+   "gil": 1,
+   "rc": 1,
+   "seconds": 616.3,
+   "load_start": 26.39,
+   "load_end": 26.36,
+   "log": "/home/gamarino/Documentos/proyectos/scratch-8.3n/final/stress/run3-gil1.log"
+  }
+ ],
+ "test_executions": 150,
+ "liveness_failures": 32,
+ "liveness_by_kind": {
+  "ProtoOutcomeUnknownError": 24,
+  "ProtoTimeoutError": 8
+ },
+ "problems": [
+  "run 1 gil0: unclassified failure in tests.concurrency.test_cluster_safety::test_a_frozen_holder_overtaken_by_another_commit_is_fenced",
+  "run 1 gil0: unclassified failure in tests.concurrency.test_cluster_crash::test_sigkilled_peers_lose_no_acknowledged_commit[any]",
+  "run 1 gil0: unclassified failure in tests.concurrency.test_cluster_crash::test_sigkilled_peers_lose_no_acknowledged_commit[owner]",
+  "run 1 gil0: unclassified failure in tests.concurrency.test_cluster_crash::test_sigkilled_peers_lose_no_acknowledged_commit[holder]",
+  "run 1 gil0: unclassified failure in tests.concurrency.test_cluster_crash::test_an_owner_stopped_past_its_lease_loses_no_acknowledged_commit",
+  "run 1 gil1: unclassified failure in tests.unit.test_cluster_transactions::test_a_space_opened_while_no_majority_has_a_space_gets_no_permission_until_one_does",
+  "run 1 gil1: unclassified failure in tests.unit.test_cluster_transactions::test_a_confirmation_in_progress_succeeds_once_a_majority_opens_its_spaces",
+  "run 1 gil1: unclassified failure in tests.unit.test_cluster_transactions::test_a_recovery_round_ends_once_a_majority_of_witnesses_answered",
+  "run 1 gil1: unclassified failure in tests.concurrency.test_cluster_safety::test_random_fault_schedules_keep_the_lease_and_the_data_safe",
+  "run 1 gil1: unclassified failure in tests.concurrency.test_cluster_crash::test_sigkilled_peers_lose_no_acknowledged_commit[any]",
+  "run 1 gil1: unclassified failure in tests.concurrency.test_cluster_crash::test_sigkilled_peers_lose_no_acknowledged_commit[owner]",
+  "run 1 gil1: unclassified failure in tests.concurrency.test_cluster_crash::test_sigkilled_peers_lose_no_acknowledged_commit[holder]",
+  "run 1 gil1: unclassified failure in tests.concurrency.test_cluster_crash::test_an_owner_stopped_past_its_lease_loses_no_acknowledged_commit",
+  "run 2 gil0: unclassified failure in tests.unit.test_cluster_transactions::test_records_reach_the_storage_before_the_replication_and_no_root_is_published_under_it",
+  "run 2 gil0: unclassified failure in tests.concurrency.test_cluster_crash::test_sigkilled_peers_lose_no_acknowledged_commit[any]",
+  "run 2 gil0: unclassified failure in tests.concurrency.test_cluster_crash::test_sigkilled_peers_lose_no_acknowledged_commit[owner]",
+  "run 2 gil0: unclassified failure in tests.concurrency.test_cluster_crash::test_sigkilled_peers_lose_no_acknowledged_commit[holder]",
+  "run 2 gil0: unclassified failure in tests.concurrency.test_cluster_crash::test_an_owner_stopped_past_its_lease_loses_no_acknowledged_commit",
+  "run 2 gil1: unclassified failure in tests.unit.test_cluster_transactions::test_a_late_replication_is_refused_by_peers_that_granted_a_newer_term",
+  "run 2 gil1: unclassified failure in tests.unit.test_cluster_transactions::test_a_recovery_round_ends_once_a_majority_of_witnesses_answered",
+  "run 2 gil1: unclassified failure in tests.concurrency.test_cluster_safety::test_random_fault_schedules_keep_the_lease_and_the_data_safe",
+  "run 2 gil1: unclassified failure in tests.concurrency.test_cluster_safety::test_a_frozen_holder_overtaken_by_another_commit_is_fenced",
+  "run 2 gil1: unclassified failure in tests.concurrency.test_cluster_crash::test_sigkilled_peers_lose_no_acknowledged_commit[any]",
+  "run 2 gil1: unclassified failure in tests.concurrency.test_cluster_crash::test_sigkilled_peers_lose_no_acknowledged_commit[owner]",
+  "run 2 gil1: unclassified failure in tests.concurrency.test_cluster_crash::test_sigkilled_peers_lose_no_acknowledged_commit[holder]",
+  "run 2 gil1: unclassified failure in tests.concurrency.test_cluster_crash::test_an_owner_stopped_past_its_lease_loses_no_acknowledged_commit",
+  "run 3 gil0: unclassified failure in tests.unit.test_cluster_transactions::test_a_confirmation_in_progress_succeeds_once_a_majority_opens_its_spaces",
+  "run 3 gil0: unclassified failure in tests.concurrency.test_cluster_safety::test_a_frozen_holder_overtaken_by_another_commit_is_fenced",
+  "run 3 gil0: unclassified failure in tests.concurrency.test_cluster_crash::test_sigkilled_peers_lose_no_acknowledged_commit[any]",
+  "run 3 gil0: unclassified failure in tests.concurrency.test_cluster_crash::test_sigkilled_peers_lose_no_acknowledged_commit[owner]",
+  "run 3 gil0: unclassified failure in tests.concurrency.test_cluster_crash::test_sigkilled_peers_lose_no_acknowledged_commit[holder]",
+  "run 3 gil0: unclassified failure in tests.concurrency.test_cluster_crash::test_an_owner_stopped_past_its_lease_loses_no_acknowledged_commit",
+  "run 3 gil1: unclassified failure in tests.unit.test_cluster_transactions::test_records_reach_the_storage_before_the_replication_and_no_root_is_published_under_it",
+  "run 3 gil1: unclassified failure in tests.unit.test_cluster_transactions::test_a_late_replication_is_refused_by_peers_that_granted_a_newer_term",
+  "run 3 gil1: unclassified failure in tests.unit.test_cluster_transactions::test_sync_promises_local_persistence_and_a_commit_on_the_reader_sees_every_acknowledged_commit",
+  "run 3 gil1: unclassified failure in tests.unit.test_cluster_transactions::test_a_space_opened_while_no_majority_has_a_space_gets_no_permission_until_one_does",
+  "run 3 gil1: unclassified failure in tests.unit.test_cluster_transactions::test_a_confirmation_in_progress_succeeds_once_a_majority_opens_its_spaces",
+  "run 3 gil1: unclassified failure in tests.concurrency.test_cluster_safety::test_random_fault_schedules_keep_the_lease_and_the_data_safe",
+  "run 3 gil1: unclassified failure in tests.concurrency.test_cluster_safety::test_a_frozen_holder_overtaken_by_another_commit_is_fenced",
+  "run 3 gil1: unclassified failure in tests.concurrency.test_cluster_crash::test_sigkilled_peers_lose_no_acknowledged_commit[any]",
+  "run 3 gil1: unclassified failure in tests.concurrency.test_cluster_crash::test_sigkilled_peers_lose_no_acknowledged_commit[owner]",
+  "run 3 gil1: unclassified failure in tests.concurrency.test_cluster_crash::test_sigkilled_peers_lose_no_acknowledged_commit[holder]",
+  "run 3 gil1: unclassified failure in tests.concurrency.test_cluster_crash::test_an_owner_stopped_past_its_lease_loses_no_acknowledged_commit"
+ ],
+ "verdict": "needs classification",
+ "hand_classification": {
+  "by": "Task 11.1 (R117), from each failure's error lines in the run logs",
+  "classified_liveness": 43,
+  "unresolved": 0,
+  "safety_failures": 0,
+  "caveat": "A test that fails a liveness bound first never runs its later safety asserts: the 24 crash-test failures and the 4 fencing failures checked no safety property in those executions."
+ },
+ "verdict_after_classification": "safety held: no safety message in 150 test executions; every failure is liveness under 12 CPU hogs (load 25-27)"
+}
