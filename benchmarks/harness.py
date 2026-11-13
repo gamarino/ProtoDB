@@ -362,11 +362,13 @@ def _python_files(root: str) -> set:
     return found
 
 
-def source_revision(root: str = REPO) -> Optional[dict]:
+def source_revision(root: Optional[str] = None) -> Optional[dict]:
     """The provenance recorded by :mod:`benchmarks.export`, re-verified, or ``None`` without one.
+    ``root`` defaults to :data:`REPO` as it is at the call, not at import.
 
     ``clean`` is True only when every exported file still has its exported digest and no
     Python file was added to ``proto_db`` or ``benchmarks`` after the export."""
+    root = REPO if root is None else root
     path = os.path.join(root, SOURCE_FILE)
     if not os.path.exists(path):
         return None

@@ -96,7 +96,8 @@ def _requests_from(h, name):
         return [m for m in h.net.pending if m[0] == name and m[2]["type"] == "request"]
 
 
-def test_the_releaser_defers_to_the_member_it_named_until_that_member_has_been_served():
+def _releaser_defers_trial():
+    """One trial of the test below; ``None`` when it was inconclusive (see there), else True."""
     h = Harness()
     t = None
     try:
@@ -112,6 +113,11 @@ def test_the_releaser_defers_to_the_member_it_named_until_that_member_has_been_s
         # b takes its turn: a sees b's request (its grant reply is lost), c grants.
         lease_b = h.attempt("b", {"c"}, informed={"a"})
         assert isinstance(lease_b, Lease), lease_b
+        if h.nodes["a"].stats()["deferral_timeouts"]:
+            # b's request reached a after the silence bound (50 ms of real time from the
+            # release): a stopped deferring by design, so this trial says nothing about the
+            # deferral it tests.  Measured: a 60 ms pause of the test thread here reproduces it.
+            return None
         time.sleep(0.15)                         # well past the silence bound (50 ms)
         assert not _requests_from(h, "a"), "a asked during b's lease"
         msg_b = _released(h, "b", lease_b)
@@ -122,10 +128,21 @@ def test_the_releaser_defers_to_the_member_it_named_until_that_member_has_been_s
         assert _requests_from(h, "a"), "a never asked after b's turn"
         stats = h.nodes["a"].stats()
         assert stats["deferrals"] == 1 and stats["deferral_timeouts"] == 0, stats
+        return True
     finally:
         h.close()
         if t is not None:
             t.join(10)
+
+
+def test_the_releaser_defers_to_the_member_it_named_until_that_member_has_been_served():
+    """The schedule needs b's request to reach a within the real-time silence bound; a scheduler
+    pause longer than that ends a's deferral by design (a timing bound, never a safety rule).
+    Such a trial is inconclusive and repeated; one conclusive trial is required."""
+    for _ in range(5):
+        if _releaser_defers_trial():
+            return
+    pytest.fail("no conclusive trial in 5: b's request never reached a within the silence bound")
 
 
 def test_a_named_member_that_does_not_ask_costs_one_silence_and_is_not_named_again():

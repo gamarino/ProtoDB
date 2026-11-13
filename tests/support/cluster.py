@@ -31,6 +31,7 @@ from proto_db.cluster.persister import PlainTier
 from proto_db.errors import ProtoConflictError
 from proto_db.cluster.transport import InProcessNetwork
 from proto_db.storage.memory import MemoryStorage
+from tests.support import stress
 
 
 class MemoryTier(PlainTier):
@@ -107,11 +108,15 @@ class Cluster:
 
     def wait_rejoined(self, nodes=None, timeout: float = 10.0) -> None:
         """Wait until ``nodes`` (default all) have rejoined (no empty acceptor log learning)."""
-        deadline = time.monotonic() + timeout
+        start = time.monotonic()
+        late = False                  # under stress (R142): the quiet bound was missed and recorded
         for node_id in nodes or self.ids:
             while self.nodes[node_id].stats()["rejoining"]:
-                if time.monotonic() > deadline:
-                    raise AssertionError(f"{node_id} did not rejoin within {timeout} s")
+                elapsed = time.monotonic() - start
+                if elapsed > timeout and not late:
+                    late = not stress.floor(False, f"{node_id} did not rejoin within {timeout} s")
+                if elapsed > stress.budget(timeout):
+                    return            # stress only: the test goes on to its safety checks
                 time.sleep(0.002)
 
     def __getitem__(self, node_id: str) -> ClusterCoordinator:

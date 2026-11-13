@@ -1,56 +1,48 @@
 # Building the documentation (HTML)
 
 This repository ships with a Sphinx documentation project under `docs/`.
-It also includes prebuilt HTML under `docs/build/` so you can browse it right away.
 
-If you want to rebuild the HTML from sources, follow these steps.
+## Why the build needs the project's environment
 
-## Prerequisites
+The API pages use `autodoc`, which imports `proto_db`.  `proto_db` refuses to import with a
+msgpack older than 1.2.0 (the format needs a packer that nests 1024 containers; see
+`format-spec.rst`).  A Sphinx installed on the system Python therefore fails when that Python's
+msgpack is older, whatever the docs say.  Build the docs with the Python (3.12 or later) of the environment in
+which the package and its dependencies are installed, never with a system `sphinx-build`.
 
-- Python 3.11+
-- Virtual environment (recommended)
-- Sphinx and a few optional extensions
+`docs/requirements.txt` lists what the build needs on top of the package.
 
-Install dependencies:
+## Build
 
-```bash
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
-pip install -U pip
-pip install sphinx sphinx-rtd-theme myst-parser
-```
-
-Note: The Sphinx configuration mocks optional heavy dependencies (e.g. `pyarrow`,
-`numpy`, `boto3`) so they are not required to build the docs.
-
-## Build commands
-
-From the repository root:
+From the repository root, with the project's virtual environment (`.venv314t` on the
+maintainer's machine; any environment with `proto_db` and `docs/requirements.txt` installed
+works):
 
 ```bash
-# Build HTML into docs/build/html
-sphinx-build -b html docs/source docs/build/html
+# Once: install the documentation requirements into the project's environment.
+uv pip install --python .venv314t/bin/python -r docs/requirements.txt
+#   (or, inside an activated environment: python -m pip install -r docs/requirements.txt)
 
-# Or using the classic Makefile (if available on your system):
-# make -C docs html
+# Build HTML into docs/build/html; -W turns every warning into an error, as CI does.
+.venv314t/bin/python -m sphinx -W -b html docs/source docs/build/html
 ```
 
-After a successful build, open:
+A fresh environment needs the package itself as well:
 
+```bash
+python -m venv .venv-docs
+.venv-docs/bin/python -m pip install -e . -r docs/requirements.txt
+.venv-docs/bin/python -m sphinx -W -b html docs/source docs/build/html
 ```
-docs/build/html/index.html
-```
+
+`make -C docs html SPHINXBUILD=".venv314t/bin/python -m sphinx"` runs the same build through the
+Makefile.
+
+After a successful build, open `docs/build/html/index.html`.
 
 ## Troubleshooting
 
-- If your shell cannot find `sphinx-build`, ensure your virtual environment is
-  activated and that `pip show sphinx` lists the installation path.
-- If you modify the Python package and rely on `autodoc`, install the package in
-  editable mode so Sphinx can import it:
-
-```bash
-pip install -e .
-```
-
-- If optional integrations are missing on your machine, the docs will still
-  build thanks to `autodoc_mock_imports` configured in `docs/source/conf.py`.
+- `ProtoNotSupportedError: ... msgpack ...` during autodoc: the Sphinx in use runs on a Python
+  whose msgpack is older than 1.2.0.  Use the project's environment as above.
+- Optional integrations (`pyarrow`, `numpy`, `boto3`, `google-cloud-storage`, `hnswlib`) need not
+  be installed: `autodoc_mock_imports` in `docs/source/conf.py` mocks them.

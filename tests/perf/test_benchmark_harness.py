@@ -3,13 +3,15 @@
 Runs ``python -m benchmarks --quick`` (tiny parameter sets, one thread count) in a child
 interpreter with the same ``-X`` options and asserts that it exits 0 and that every
 workload's record is verified (``status == "ok"``, every check passed, checksum equal to
-the expected value).  The only accepted ``pending`` workload is the rqlite reference when
-no rqlited binary is configured.  This checks the harness's correctness, never speed.
+the expected value).  The only accepted ``pending`` workloads are the rqlite reference when
+no rqlited binary is configured and the hnswlib reference when hnswlib is not installed.
+This checks the harness's correctness, never speed.
 The other tests plant failures in the harness's own paths: a wrong first (or warm-up)
 repetition, a verification failure (keeps the work dict), a crashing isolated workload (the
 run continues, JSON is still written, exit 1), a workload that changes the GIL state, the
 tmpfs warning, ``--compare`` regressions with its noise guard and its environment check.
 """
+import importlib.util
 import json
 import os
 import subprocess
@@ -42,8 +44,11 @@ def test_quick_run_verifies_every_workload(tmp_path):
     doc = json.loads(out.read_text())
     assert set(doc["results"]) == set(harness.REGISTRY)
     assert doc["environment"]["gil_enabled"] == (sys._is_gil_enabled() if hasattr(sys, "_is_gil_enabled") else True)
+    # A workload whose external reference is absent reports pending, never a number: rqlite always
+    # here (its variable is removed), hnswlib when the optional "hnsw" extra is not installed.
+    pending = {"rqlite_reference"} | (set() if importlib.util.find_spec("hnswlib") else {"vector_knn_hnsw"})
     for name, record in doc["results"].items():
-        if name == "rqlite_reference":
+        if name in pending:
             assert record["status"] == "pending", record
             continue
         assert record["status"] == "ok", (name, record.get("error"))

@@ -4,7 +4,7 @@ This guide describes how to build, verify, and publish the proto_db package to P
 
 ## Prerequisites
 
-- Python 3.11+
+- Python 3.12+
 - A PyPI account and API token (and optionally a TestPyPI token)
 - Tools:
   ```bash

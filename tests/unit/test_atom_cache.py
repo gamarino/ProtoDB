@@ -279,8 +279,11 @@ def test_write_only_ingest_of_large_objects_keeps_the_cache_byte_bounded():
             "d", tr.get_root_object("d").set_at(i, tr.new_object(blob=blob + bytes([i])))))
     assert _cached_inline_bytes(space) <= 30 * 4096
     gc.collect()
+    # Only this space's records count: the scan sees the whole process, and records that other
+    # tests keep alive (process-wide registries, caches) are not this test's business.
     held = sum(len(o.blob) for o in gc.get_objects()
-               if type(o).__name__ == "DBObject" and o.__dict__.get("_loaded") and "blob" in o.__dict__)
+               if type(o).__name__ == "DBObject" and o.__dict__.get("_loaded") and "blob" in o.__dict__
+               and getattr(o.__dict__.get("context"), "storage", None) is space.storage)
     assert held <= 2_000_000, f"{held} bytes of written objects still loaded"   # the last live one
     with db.new_transaction() as tr:
         assert tr.get_root_object("d").get_at(7).blob[-1] == 7      # still readable, of course

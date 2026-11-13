@@ -6,7 +6,7 @@ This directory contains the documentation for the ProtoDB project.
 
 ### Prerequisites
 
-- Python 3.11 or higher
+- Python 3.12 or higher
 - Sphinx
 - sphinx_rtd_theme
 

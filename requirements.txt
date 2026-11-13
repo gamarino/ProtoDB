@@ -1,6 +1,6 @@
 # ProtoDB requirements
 #
-# The authoritative list is pyproject.toml. ProtoDB needs Python >= 3.11 and msgpack >= 1.2.0
+# The authoritative list is pyproject.toml. ProtoDB needs Python >= 3.12 and msgpack >= 1.2.0
 # (its packer nests 1024 containers, the depth the format needs; earlier releases stop at 511);
 # the packages below the first line are OPTIONAL and only needed for specific features.
 msgpack>=1.2.0

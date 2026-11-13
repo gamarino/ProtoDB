@@ -211,7 +211,7 @@ handles by ignoring everything after the published root.
 
    space = ObjectSpace(FileStorage("busy"))
    busy = space.new_database("d")
-   stop = threading.Event()
+   stop, first_commit = threading.Event(), threading.Event()
 
    def writer():
        i = 0
@@ -219,10 +219,12 @@ handles by ignoring everything after the published root.
            with busy.new_transaction() as tr:               # two roots that must always agree
                tr.set_root_object("n", i)
                tr.set_root_object("l", tr.new_list().append_last(i))
+           first_commit.set()
            i += 1
 
    thread = threading.Thread(target=writer)
    thread.start()
+   first_commit.wait()                                       # copy a space that has the two roots
    consistent = 0
    for k in range(5):
        time.sleep(0.05)

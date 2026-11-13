@@ -1,0 +1,8 @@
+# Packages needed to build the documentation (see docs/BUILDING.md).
+#
+# Autodoc imports proto_db, so the build must run in an environment where the package and its
+# runtime dependency (msgpack>=1.2.0, see pyproject.toml) are installed.  A system Sphinx on a
+# Python whose msgpack is older fails: proto_db refuses to import below msgpack 1.2.
+msgpack>=1.2.0
+sphinx>=8.0
+sphinx-rtd-theme>=3.0

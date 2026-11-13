@@ -87,7 +87,7 @@ Source: `docs/superpowers/specs/2026-11-01-protodb-v2-design.md` section 2.
 
 ## D14 - Python floor and dependencies
 - Context: wide compatibility wanted; some dependencies unused.
-- Decision: floor stays 3.11; CI matrix 3.11-3.14 plus 3.14t; drop `six` and `wrapt`.
+- Decision: floor stays 3.11; CI matrix 3.11-3.14 plus 3.14t; drop `six` and `wrapt`. (Floor superseded by D61: 3.12.)
 - Alternatives: raise the floor.
 - Consequences: no 3.12+ only syntax in the code base.
 
@@ -965,3 +965,10 @@ Source: `docs/superpowers/specs/2026-11-01-protodb-v2-design.md` section 2.
 - Vectors: `values_depth` holds six values at exactly 1022 (lists; tuples, maps, lists and an aware `@dt`; lists around an empty list, an empty tuple and an empty map; and a map whose tuple key carries the deepest path), and `invalid` seven must-reject inputs at 1023 written with a raw packer (the same shapes one container deeper, and lists whose only crossing container is a `@dt`'s time-zone array). The pinned digest changes in the same commit.
 - Principles: P7 (an explicit error naming the field or the cause, never a `RecursionError`); P1 (what one implementation writes, every conforming implementation reads).
 - Alternatives: 509 (rejected: it is an artifact of the packer of msgpack-python before 1.2.0; enforcing it would refuse, as corruption, values ProtoBase writes and reads with msgpack 1.2); a limit in levels rather than containers (rejected: a map level costs three containers and a tuple two, so a level limit that fits the MessagePack layer would be 340 and refuse lists ProtoBase wrote before, while counting containers is exact and costs readers nothing); iterative walks everywhere (rejected after measuring: 1.5x to 2x slower on small nested containers and about 25 % on a record write probe; the bounded recursion keeps the base speed and no depth limit); raising the recursion limit (rejected: it is per interpreter, unsafe for the C stack, and keeps the limit an accident of the stack in use).
+
+## D61 - Python floor 3.12 (final verification, Task 11.1 P1; ruling R141)
+- Context: the final verification ran the whole suite on CPython 3.11.10 for the first time. Three depth tests fail there and only there: `CountedSet.from_iterable([v, v])` with `v` at `MAX_VALUE_DEPTH - 4` (1018 nested tuples, the deepest element a CountedSet bucket accepts under D60) raises a bare `RecursionError: maximum recursion depth exceeded in comparison` from the bucket lookup, and so do the key, hash and equality walks and the query-result cache at the limit. 3.12.13 and 3.13.14 pass the same 114 tests, as 3.14t does in both GIL modes.
+- Cause: CPython 3.11 charges the C-level recursion of a nested-container comparison (`tuple.__eq__` and rich comparison through `dict.get`) to the Python recursion limit (1000 by default). Two 1018-deep tuples cannot be compared on 3.11 even from a shallow stack (900 deep can). From 3.12 C recursion has a budget of its own, separate from the Python frame limit, so the comparison succeeds at any depth D60 allows.
+- Decision: the minimum Python is 3.12 (`requires-python = ">=3.12"`, classifiers, CI matrix 3.12-3.14 plus 3.14t). This supersedes the floor of D14.
+- Alternatives: lower the depth limit on 3.11 (rejected: R139 made the limit a property of the format, not of the interpreter; a 3.11 writer would refuse values every other implementation writes and reads); convert the `RecursionError` into `ProtoValidationError` at the call (rejected: same reason, the value is valid); document 3.11 as limited and mark the tests xfail there (rejected: a supported interpreter that cannot handle valid values is not supported).
+- Consequences: 3.11 users stay on 0.1 or upgrade Python; 3.12+ syntax is now allowed in the code base (the D14 consequence no longer holds). Reproduction: `tests/unit/test_structure_depth.py` and `tests/unit/test_value_depth.py` on 3.11.10 (3 failed, 111 passed).

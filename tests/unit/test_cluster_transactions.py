@@ -8,11 +8,13 @@ from proto_db.errors import ProtoConflictError, ProtoOutcomeUnknownError, ProtoT
 from proto_db.storage.cloud import CloudStorage
 from proto_db.storage.memory import MemoryStorage
 from proto_db.transactions import ObjectSpace
+from tests.support import stress
 from tests.support.cluster import Cluster
 from tests.support.fake_object_store import FakeObjectStore
-from tests.support.outcomes import CommitTokens, assert_outcomes_resolved, new_database_once, snapshot_of, write_token
+from tests.support.outcomes import (CommitTokens, assert_outcomes_resolved, commit_once, new_database_once, snapshot_of,
+                                    write_token)
 
-pytestmark = pytest.mark.timeout(60)
+pytestmark = pytest.mark.timeout(stress.budget(60))
 
 FAST = dict(lease_duration=0.9, request_timeout=0.1, startup_grace=0.0,
             backoff=(0.001, 0.02))
@@ -72,13 +74,27 @@ class RecordingStorage:
 
 
 def _eventually(predicate, timeout=5.0):
-    """Poll ``predicate``: another node learns a commit when its release arrives."""
-    deadline = time.monotonic() + timeout
+    """Poll ``predicate``: another node learns a commit when its release arrives.  Under stress
+    (R142) a wait past ``timeout`` is recorded and goes on up to the stress budget."""
+    started = time.monotonic()
     while not predicate():
-        if time.monotonic() > deadline:
+        if time.monotonic() - started > stress.budget(timeout):
             return False
         time.sleep(0.01)
+    if time.monotonic() - started > timeout:
+        stress.record(f"a member learnt the commit after more than {timeout} s")
     return True
+
+
+def _run(db, fn, **kw):
+    """``db.run(fn, **kw)``.  Under stress (R142) a step of the scenario must take effect once
+    whatever its outcome: :func:`commit_once`, so an unknown outcome or a timeout under load is
+    counted and becomes another attempt instead of ending the test before its checks."""
+    if not stress.ACTIVE:
+        return db.run(fn, **kw)
+    unknown = commit_once(db, fn, attempts=10, **{**RUN_KW, **kw})
+    if unknown:
+        stress.record(f"{unknown} unknown outcomes before a scenario step took effect")
 
 
 def _record_replications(node, log):
@@ -127,7 +143,7 @@ def test_records_reach_the_storage_before_the_replication_and_no_root_is_publish
         db = space.new_database("db")
         _record_replications(cl["n0"], log)
         _value(space)                                  # the first snapshot confirms under a lease
-        space.sync(timeout=5)
+        space.sync(timeout=stress.budget(5))
         log.clear()
         storage.publishers.clear()
 
@@ -135,10 +151,10 @@ def test_records_reach_the_storage_before_the_replication_and_no_root_is_publish
             d = tr.new_dictionary().set_at("k", tr.new_object(x=1))
             tr.set_root_object("d", d)
 
-        db.run(write)
+        _run(db, write)
         before = log[:log.index("replicate")]
         assert "push" in before and before[-1] == "flush", log
-        space.sync(timeout=5)
+        space.sync(timeout=stress.budget(5))
         # The root reached the storage only through the persister thread, after the commit.
         assert storage.publishers and all(name.startswith("proto-persister-") for name in storage.publishers)
         assert space.persisted_epoch == space.committed_epoch == 2
@@ -159,7 +175,7 @@ def test_transactions_read_the_committed_root_not_the_storage():
         new_database_once(spaces[0])
         dbs = [s.open_database("db") for s in spaces]
         for i in range(10):
-            dbs[i % 2].run(_incr, **RUN_KW)
+            _run(dbs[i % 2], _incr, **RUN_KW)
         reads = sum(s.read_roots for s in storages)
         assert _value(spaces[1]) == 10
         # One read to learn the first root (the space was empty); never one per commit.
@@ -286,15 +302,18 @@ def test_a_late_replication_is_refused_by_peers_that_granted_a_newer_term():
                 outcome.append("committed")
             except ProtoOutcomeUnknownError:
                 outcome.append("unknown")
+            except ProtoTimeoutError:
+                outcome.append("timeout")              # no lease under load: nothing sent
 
         t = threading.Thread(target=first)
         t.start()
         time.sleep(FAST["lease_duration"] * 1.1)
-        s1.open_database("db").run(token_incr("n1-next"), **RUN_KW)
+        _run(s1.open_database("db"), token_incr("n1-next"), **RUN_KW)
         tokens.acked("n1-next")
-        t.join(10)
+        t.join(stress.budget(10))
         time.sleep(late)                                  # the delayed replicates arrive now
-        assert outcome == ["unknown"]
+        assert "committed" not in outcome, outcome         # a late replication never commits
+        stress.floor(outcome == ["unknown"], f"the late commit ended {outcome}, not unknown")
         tokens.unknown("n0-late")
         # n0's root may or may not have taken effect (n0 accepted it itself and may have
         # reported it when granting n1's lease).  A count of 1 alone could also be n1's
@@ -305,9 +324,10 @@ def test_a_late_replication_is_refused_by_peers_that_granted_a_newer_term():
              for n, s in (("n0", s0), ("n1", s1))}, tokens)
         after = len(res.present)
         assert set(res.values.values()) == {after}, res
-        assert sum(cl[n].stats()["refused"] for n in ("n1", "n2")) >= 1   # the late copies
+        stress.floor(sum(cl[n].stats()["refused"] for n in ("n1", "n2")) >= 1,   # the late copies
+                     "no peer refused a late copy")
         cl["n0"].replicate = original
-        s0.open_database("db").run(_incr, **RUN_KW)
+        _run(s0.open_database("db"), _incr, **RUN_KW)
         assert _value(s0) == after + 1
         assert _eventually(lambda: _value(s1) == after + 1)
 
@@ -320,19 +340,16 @@ def test_storage_root_reads_never_make_reads_go_backwards():
         ObjectSpace(shared, coordinator=cl["n2"])        # n2 grants and acknowledges with a tier only
         cl.wait_rejoined()      # every first start done before any fault (a late member waits, R51)
         db0 = new_database_once(s0)
-        db0.run(_incr, **RUN_KW)
-        assert _value(s1) == 1
+        _run(db0, _incr, **RUN_KW)
+        assert _eventually(lambda: _value(s1) == 1) if stress.ACTIVE else _value(s1) == 1
         cl.net.partition({"n0", "n2"}, {"n1"})          # n1 misses the next commits
         for _ in range(3):
-            db0.run(_incr, **RUN_KW)
+            _run(db0, _incr, **RUN_KW)
         assert _value(s1) == 1                           # stale but committed: never backwards
         cl.net.heal()
-        s0.sync(timeout=5)
-        db0.run(_incr, **RUN_KW)                         # its release reaches n1
-        deadline = time.monotonic() + 5
-        while _value(s1) != 5 and time.monotonic() < deadline:
-            time.sleep(0.01)
-        assert _value(s1) == 5
+        s0.sync(timeout=stress.budget(5))
+        _run(db0, _incr, **RUN_KW)                       # its release reaches n1
+        stress.wait(lambda: _value(s1) == 5, 5, lambda: f"n1 reads {_value(s1)}, not 5", poll=0.01)
         entries = s1.open_database("db").history()
         assert entries[0].version == 5
 
@@ -344,8 +361,8 @@ def test_sync_waits_for_the_persisted_epoch_and_exposes_both_epochs():
         cl.wait_rejoined()      # every first start done before any fault (a late member waits, R51)
         db = new_database_once(spaces[0])
         for i in range(5):
-            spaces[i % 3].open_database("db").run(_incr, **RUN_KW)
-        spaces[1].sync(timeout=5)                         # the last committer
+            _run(spaces[i % 3].open_database("db"), _incr, **RUN_KW)
+        spaces[1].sync(timeout=stress.budget(5))                         # the last committer
         assert spaces[1].persisted_epoch >= spaces[1].committed_epoch == 6
         plain = ObjectSpace(shared)                       # a reader without the cluster
         assert _value(plain) == 5
@@ -373,31 +390,28 @@ def test_sync_promises_local_persistence_and_a_commit_on_the_reader_sees_every_a
     from tests.support.tiered_cluster import TieredCluster, incr, RUN_KW as TRUN_KW
     with TieredCluster(tmp_path) as tc:
         tc.create_database("n0")
-        tc.db("n0").run(incr, **TRUN_KW)
+        _run(tc.db("n0"), incr, **TRUN_KW)
         # n2 learns the commit first, then every member syncs: n2's sync below the outage must
         # find what n2 knows already persisted.  (Task 8.3n fix round 3: the syncs ran first,
         # and under load n2 learnt epoch 2 only after its own sync returned at epoch 1, so the
         # sync under the outage waited for a persisted root it could no longer read.)
-        assert tc.eventually("n2", 1)
+        stress.wait(lambda: tc.value("n2") == 1, 5, "n2 did not learn the first commit", poll=0.01)
         for n in tc.ids:
-            tc.spaces[n].sync(timeout=10)
+            tc.spaces[n].sync(timeout=stress.budget(10))
         # n2 owns no term, so n0's second commit needs no permit from n2 and nothing n2 drops
         # changes its shape (review M2: stated, not assumed).  n0's term may have ended
         # meanwhile (no demand): its next commit then asks for a new term, and the request
         # carries nothing n2 does not know.  n2 may own a term only through its own first
         # snapshot's confirmation; a term without demand ends within its lease, so wait for it
         # (Task 8.3n fix round 3: under load n2's confirmation took the term, run 12).
-        deadline = time.monotonic() + 10
-        while tc["n2"]._ownership is not None:
-            assert time.monotonic() < deadline, "n2's term never ended"
-            time.sleep(0.01)
+        stress.wait(lambda: tc["n2"]._ownership is None, 10, "n2's term never ended", poll=0.01)
         reader = tc["n2"]
         route = reader._route
         reader._route = lambda msg: None if msg["type"] in _UNPROMPTED else route(msg)
         tc.store.set_outage(True)
         try:
-            tc.db("n0").run(incr, **TRUN_KW)                     # acknowledged by n0 and n1
-            tc.spaces["n2"].sync(timeout=5)                   # returns: n2's knowledge is persisted
+            _run(tc.db("n0"), incr, **TRUN_KW)                   # acknowledged by n0 and n1
+            tc.spaces["n2"].sync(timeout=stress.budget(5))                   # returns: n2's knowledge is persisted
             assert tc.value("n2") == 1, "precondition: n2 has not learnt the commit"
             # Review I2: a commit that writes nothing is no barrier (it returns at once).
             tc.db("n2").run(lambda tr: None, **TRUN_KW)
@@ -406,7 +420,7 @@ def test_sync_promises_local_persistence_and_a_commit_on_the_reader_sees_every_a
 
             def barrier(tr):
                 tr.set_root_object("barrier", (tr.get_root_object("barrier") or 0) + 1)
-            tc.db("n2").run(barrier, **TRUN_KW)
+            _run(tc.db("n2"), barrier, **TRUN_KW)
             assert tc.value("n2") == 2                         # every acknowledged commit is visible
         finally:
             reader._route = route
@@ -441,17 +455,19 @@ def test_a_space_opened_while_no_majority_has_a_space_gets_no_permission_until_o
         waited = time.monotonic() - started
         failed = [r for r in caplog.records if "Confirming the committed root" in r.getMessage()]
         assert failed and "could not obtain a write permission" in failed[0].getMessage(), caplog.text
-        assert waited < 10, f"the confirmation waited {waited:.1f} s, not its lock_timeout of 0.5 s"
-        assert all(cl[n].stats()["grants_given"] == 0 for n in cl.ids)
-        assert all(cl[n].stats()["grants_refused_no_storage"] >= 1 for n in ("n1", "n2"))
+        stress.floor(waited < 10, f"the confirmation waited {waited:.1f} s, not its lock_timeout of 0.5 s")
+        assert all(cl[n].stats()["grants_given"] == 0 for n in cl.ids)     # no permission without a majority
+        stress.floor(all(cl[n].stats()["grants_refused_no_storage"] >= 1 for n in ("n1", "n2")),
+                     "a member was never asked during the confirmation")
         with pytest.raises(ProtoTimeoutError):          # still no majority: nothing commits
             db0.run(_incr, retries=0)
         caplog.clear()
         with caplog.at_level("WARNING", logger="proto_db.transactions"):
             db1 = ObjectSpace(shared, coordinator=cl["n1"], lock_timeout=5.0).open_database("db")
-            db1.run(_incr, **RUN_KW)                    # n0 and n1: a majority with a space open
-            db0.run(_incr, **RUN_KW)
-        assert not [r for r in caplog.records if "Confirming the committed root" in r.getMessage()], caplog.text
+            _run(db1, _incr, **RUN_KW)                  # n0 and n1: a majority with a space open
+            _run(db0, _incr, **RUN_KW)
+        stress.floor(not [r for r in caplog.records if "Confirming the committed root" in r.getMessage()],
+                     caplog.text)                       # the confirmation succeeded in time (liveness)
         assert _value(lonely) == 2
 
 
@@ -480,20 +496,19 @@ def test_a_confirmation_in_progress_succeeds_once_a_majority_opens_its_spaces(ca
         with caplog.at_level("WARNING", logger="proto_db.transactions"):
             first = threading.Thread(target=open_first)
             first.start()
-            deadline = time.monotonic() + 5
             # n0's confirmation is in progress: its attempts were refused for want of storage.
-            while not all(cl[n].stats()["grants_refused_no_storage"] >= 1 for n in ("n1", "n2")):
-                assert time.monotonic() < deadline, "n0's confirmation never asked the others"
-                time.sleep(0.005)
+            stress.wait(lambda: all(cl[n].stats()["grants_refused_no_storage"] >= 1 for n in ("n1", "n2")),
+                        5, "n0's confirmation never asked the others")
             assert first.is_alive(), "n0's confirmation ended before any majority existed"
             formed = time.monotonic()
             db1 = ObjectSpace(shared, coordinator=cl["n1"], lock_timeout=10.0).open_database("db")
-            first.join(15)
+            first.join(stress.budget(15))
             assert not first.is_alive()
-        assert not [r for r in caplog.records if "Confirming the committed root" in r.getMessage()], caplog.text
-        assert out["done"] - formed < 5, f"n0 confirmed {out['done'] - formed:.2f} s after the majority formed"
-        db1.run(_incr, **RUN_KW)
-        out["db"].run(_incr, **RUN_KW)
+        stress.floor(not [r for r in caplog.records if "Confirming the committed root" in r.getMessage()],
+                     caplog.text)                       # the confirmation succeeded in time (liveness)
+        stress.floor(out["done"] - formed < 5, f"n0 confirmed {out['done'] - formed:.2f} s after the majority formed")
+        _run(db1, _incr, **RUN_KW)
+        _run(out["db"], _incr, **RUN_KW)
         assert _value(lonely) == 2
 
 
@@ -525,7 +540,7 @@ def test_a_setup_new_database_whose_recovery_query_goes_unanswered_conflicts_and
             tc.spaces["n0"].new_database("db")
         assert sorted(dropped) == ["n1", "n2"] and tc.spaces["n0"].list_databases() == []
         tc.create_database("n0")                           # the next queries are answered
-        tc.db("n0").run(incr, **TRUN_KW)
+        _run(tc.db("n0"), incr, **TRUN_KW)
         assert tc.spaces["n0"].list_databases() == ["db"] and tc.value("n0") == 1
 
 
@@ -544,7 +559,7 @@ def test_a_recovery_round_ends_once_a_majority_of_witnesses_answered(tmp_path):
     from tests.support.tiered_cluster import TieredCluster, incr, RUN_KW as TRUN_KW
     with TieredCluster(tmp_path, lease_duration=4.0, request_timeout=1.0) as tc:
         tc.create_database("n0")
-        tc.db("n0").run(incr, **TRUN_KW)
+        _run(tc.db("n0"), incr, **TRUN_KW)
         send = tc["n2"].transport.send
 
         def silent_to_n0(to, msg, _send=send):
@@ -553,15 +568,13 @@ def test_a_recovery_round_ends_once_a_majority_of_witnesses_answered(tmp_path):
         tc["n2"].transport.send = silent_to_n0
         committed = tc["n0"].committed_root()[:3]
         assert committed[0] and committed[1] is not None
-        deadline = time.monotonic() + 10            # the release reaches n1 and n2 (setup only)
-        while not all(tc[n].accepted_root()[:3] == committed for n in ("n0", "n1", "n2")):
-            assert time.monotonic() < deadline, [tc[n].accepted_root() for n in ("n0", "n1", "n2")]
-            time.sleep(0.005)
+        stress.wait(lambda: all(tc[n].accepted_root()[:3] == committed for n in ("n0", "n1", "n2")),
+                    10, lambda: [tc[n].accepted_root() for n in ("n0", "n1", "n2")])   # setup only
         started = time.monotonic()
         known, root, label = tc["n0"].recover_root()
         elapsed = time.monotonic() - started
         assert (known, root, label) == committed, ((known, root, label), committed)
-        assert elapsed < 0.5, f"the round took {elapsed:.3f} s with a majority answering at once"
+        stress.floor(elapsed < 0.5, f"the round took {elapsed:.3f} s with a majority answering at once")
         with pytest.raises(ProtoConflictError, match="witnesses needed answered the recovery query"):
             tc["n1"].transport.send = lambda to, msg: None     # n1 silent too: no majority
             tc["n0"].recover_root()

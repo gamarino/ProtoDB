@@ -366,9 +366,17 @@ def test_forced_replication_failures_surface_and_lose_nothing(tmp_path):
       ``Database.run`` retries in a later term until it is acknowledged.
 
     Each commit adds its token blind, as in the throughput workload.  The bound holds with
-    both kinds counted (``failures <= unknown + conflict``; the old ``failures <= unknown``
-    fails here), and every token resolves alike on every member: a lost acknowledged commit
-    still fails the test in this branch (plant ``forced_lost``)."""
+    both kinds counted (``failures <= unknown + conflict``), and every token resolves alike on
+    every member: a lost acknowledged commit still fails the test in this branch (plant
+    ``forced_lost``).
+
+    Since 276a256 (re-review 2 of 8.3n, M1) a refusal before anything a voter may accept left
+    the node -- n1's closed gate here -- is not a replication failure: it leaves no outcome n1
+    cannot know.  So n1 counts none, ``failures`` equals the unknown outcome, and the old bound
+    ``failures <= unknown`` no longer fails here (Task 11.1 found plant ``forced_old_bound``
+    undetected).  The test asserts that accounting instead (plant ``forced_gate_counted``), per call
+    of n1's replication: the call that closed n1's gate counts nothing, whatever n1's retries count
+    under load (Task 11.1: a retry that failed after sending was counted, rightly, in A1 run 40)."""
     from tests.support.cluster_load import (await_condition as _await, confirm_every_member as _confirmed,
                                             fsync_cluster as _pipelined_cluster)
     from tests.support.tiered_cluster import RUN_KW as TIERED_RUN_KW, incr
@@ -398,6 +406,20 @@ def test_forced_replication_failures_surface_and_lose_nothing(tmp_path):
             except ProtoOutcomeUnknownError:
                 tokens.unknown(token)
                 outcomes[node] = "unknown"
+        # M1 is checked per call of n1's replication: a call that closed n1's gate must count no
+        # failed replication.  n1's later retries are real rounds; under load one may fail after
+        # sending (a conflict counted rightly), so n1's total is not asserted.
+        replicate, gated = b.replicate, []
+
+        def recorded_replicate(*args, **kw):
+            before = b.stats()
+            try:
+                return replicate(*args, **kw)
+            finally:
+                after = b.stats()
+                if after["gate_closures"] > before["gate_closures"]:
+                    gated.append(after["replication_failures"] - before["replication_failures"])
+        b.replicate = recorded_replicate
         proposed = a.stats()["proposals"]
         ta = threading.Thread(target=run, args=("n0",))
         ta.start()
@@ -414,7 +436,10 @@ def test_forced_replication_failures_surface_and_lose_nothing(tmp_path):
         # The schedule ran: n0's round ended unknown, n1's gate closed and its retry committed.
         assert outcomes == {"n0": "unknown", "n1": "acked"}, outcomes
         assert b.stats()["gate_closures"] >= 1
+        b.replicate = replicate
         assert refused["unknown"] >= 1 and refused["conflict"] >= 1, refused
+        assert gated and all(counted == 0 for counted in gated), \
+            f"n1's closed gate, which sent nothing acceptable, counted as a failed replication (M1): {gated}"
         _assert_failures_surfaced(failures, refused, len(tokens.unknown_tokens))
         # n0's tier failed with its own sync: the space is reopened on a healthy disk (module
         # docstring of the coordinator, "Health"), then every member is read.

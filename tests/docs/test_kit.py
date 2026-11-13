@@ -70,6 +70,8 @@ def test_the_child_interpreter_runs_in_this_session_gil_mode():
 
 
 def test_make_exercise_refuses_a_destination_inside_the_repository():
+    if shutil.which("git") is None or not os.path.isdir(os.path.join(REPO, ".git")):
+        pytest.skip("make_exercise.py needs a git checkout before it looks at the destination")
     out = _run([os.path.join(EXERCISE, "make_exercise.py"), os.path.join(REPO, "exercise-scratch")], REPO, 60)
     assert out.returncode != 0 and "inside the repository" in out.stderr, out.stdout + out.stderr
     assert not os.path.exists(os.path.join(REPO, "exercise-scratch"))

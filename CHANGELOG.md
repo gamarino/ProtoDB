@@ -5,13 +5,25 @@ All notable changes to `proto_db` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0rc3] - 2026-11-13
+
+The first release candidate published on PyPI.
+- Python 3.12 is the minimum (D61): on 3.11, comparing deeply nested tuples counts against the recursion
+  limit, so a value near `MAX_VALUE_DEPTH` could raise a bare `RecursionError`. `pip` refuses to
+  install it on 3.11 (`requires-python >=3.12`).
+- Test suite: process-wide object counts replaced by per-test counts, a stress mode for the cluster tests
+  (`PROTO_STRESS`, safety asserts only), and fixes to tests that failed in a clean export or under load.
+- CI: a test matrix over 3.12, 3.13, 3.14 and 3.14t, and a `sphinx-build -W` documentation job.
+- Benchmarks: a 10^7-object inventory and the periodic cluster stress task, with result files under
+  `benchmarks/results/`.
+
 ## [2.0.0] - unreleased
 
 `proto_db` 2.0 is a complete rebuild of the 0.1 code base under the design principles of
 `docs/design-principles.md`: everything stored is immutable, a transaction is an explicit object, and
 every safety argument holds under arbitrary delay and loss. There are no 0.1 data or API to preserve.
 The design is `docs/superpowers/specs/2026-11-01-protodb-v2-design.md`; every decision is in
-`docs/decisions.md` (D1-D60).
+`docs/decisions.md` (D1-D61).
 
 ### Added
 - **One value model** with a total order across types (`1 == 1.0 == Decimal(1)`, `True != 1`), used by
@@ -57,7 +69,8 @@ The design is `docs/superpowers/specs/2026-11-01-protodb-v2-design.md`; every de
 - A conflict raises `ProtoConflictError` and the caller retries; merging applies only to roots the transaction
   did not read and only by replaying recorded operations, never by inferring intent from value types (D9, D33).
 - Strings are stored inline; the global `Literal` catalog is gone (D7).
-- Python floor 3.11; CI targets 3.11-3.14 and 3.14t. `six` and `wrapt` are no longer dependencies (D14).
+- Python floor 3.12 (D61; was 3.11 under D14); CI targets 3.12-3.14 and 3.14t. `six` and `wrapt` are no longer
+  dependencies (D14).
 - The package is split into subpackages: `core`, `storage`, `collections`, `indexing`, `query`, `cluster`,
   `runtime`, `interop` (D15; the spec's `indexes` became `indexing`).
 
