@@ -8,6 +8,7 @@ every cached result equal to a fresh execution on the same snapshot.
 """
 import random
 import threading
+import time
 
 from proto_db.indexing import RangeIndex
 from proto_db.query.linq import Agg, F, from_collection
@@ -17,6 +18,10 @@ from proto_db.transactions import ObjectSpace
 from proto_db.values import exact_token
 
 RUN_KW = dict(retries=500, backoff=(0.0005, 0.005))
+#: Commits after which the writers stop although a reader may still run (CI-314).  Every row the
+#: writers add makes each reader's next query longer, so on a slow runner unbounded writers grow
+#: the readers' work faster than the readers finish it.  A local run commits about 130 times.
+MAX_COMMITS = 1500
 
 
 def _plain(value):
@@ -44,7 +49,7 @@ def test_pagers_and_cached_queries_stay_on_their_snapshot_under_writers():
     def writer(seed):
         rnd = random.Random(seed)
         n = 0
-        while not stop.is_set():
+        while not stop.is_set() and commits[0] < MAX_COMMITS:
             n += 1
 
             def change(tx, n=n):
@@ -69,6 +74,8 @@ def test_pagers_and_cached_queries_stay_on_their_snapshot_under_writers():
     def pager_reader(where, order, page_size):
         try:
             for _ in range(4):
+                if stop.is_set():                       # the test ended (timeout): stop early
+                    return
                 with db.new_transaction() as tx:
                     items = tx.get_root_object("items")
                     query = from_collection(items)
@@ -94,6 +101,8 @@ def test_pagers_and_cached_queries_stay_on_their_snapshot_under_writers():
         rnd = random.Random(seed)
         try:
             for _ in range(30):
+                if stop.is_set():                       # the test ended (timeout): stop early
+                    return
                 with db.new_transaction() as tx:
                     items = tx.get_root_object("items")
                     lo = rnd.randrange(0, 4000, 500)
@@ -104,19 +113,25 @@ def test_pagers_and_cached_queries_stay_on_their_snapshot_under_writers():
         except Exception as e:
             errors.append(e)
 
-    writers = [threading.Thread(target=writer, args=(s,)) for s in range(3)]
-    readers = [threading.Thread(target=pager_reader, args=args) for args in (
+    # Daemon threads, all stopped in ``finally`` (CI-314): when pytest-timeout ends the test by
+    # raising in the main thread, threads left running would load every later test of the suite.
+    writers = [threading.Thread(target=writer, args=(s,), daemon=True) for s in range(3)]
+    readers = [threading.Thread(target=pager_reader, args=args, daemon=True) for args in (
         (None, ("k", False), 23),                       # ordered scan: by rank
         (Term("k", ">=", 1000), ("k", True), 17),       # range + order by the key: by rank
         (Term("v", "<", 300), ("k", False), 31),        # unindexed predicate: materialized
-    )] + [threading.Thread(target=cache_reader, args=(s,)) for s in range(3)]
-    for t in writers + readers:
-        t.start()
-    for t in readers:
-        t.join(timeout=300)
-    stop.set()
-    for t in writers:
-        t.join(timeout=60)
+    )] + [threading.Thread(target=cache_reader, args=(s,), daemon=True) for s in range(3)]
+    try:
+        for t in writers + readers:
+            t.start()
+        deadline = time.monotonic() + 240               # inside the 300 s pytest-timeout budget
+        for t in readers:
+            t.join(timeout=max(0.0, deadline - time.monotonic()))
+    finally:
+        stop.set()
+        deadline = time.monotonic() + 30                # the commit or query in flight
+        for t in writers + readers:
+            t.join(timeout=max(0.0, deadline - time.monotonic()))
     assert not any(t.is_alive() for t in writers + readers)
     if errors:
         raise errors[0]
