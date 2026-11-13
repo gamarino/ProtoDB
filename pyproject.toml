@@ -56,3 +56,6 @@ include = ["proto_db*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 timeout = 300
+# Stop the process on an overrun instead of raising in the main thread: on CPython 3.14 the raised exception
+# can leave a lock held, and test threads left running slowed every later test (CI-314).
+timeout_method = "thread"

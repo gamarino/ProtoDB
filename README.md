@@ -107,7 +107,8 @@ pip install --pre proto_db
 Until 2.0.0 is final, the published versions are release candidates, so `pip` needs `--pre` (or an
 explicit version such as `proto_db==2.0.0rc3`). Start with a single-node space: under heavy load the
 cluster reports outcomes as unknown, or times out, more often than it should (see the CHANGELOG's known
-limitations).
+limitations). On Python 3.14, end the process after a Ctrl-C that interrupted `proto_db` code: the
+interrupt can leave one of its locks held (see the concurrency model).
 
 Optional extras:
 

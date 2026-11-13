@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [2.0.0rc4] - unreleased
 
 - `proto_db.__version__` reports the package version; in 2.0.0rc3 it still said `2.0.0.dev0`.
+- Documented a Python 3.14 hazard (concurrency model, "Interrupts and signal handlers on Python 3.14"): an
+  exception from a signal handler, such as `KeyboardInterrupt`, can leave a `proto_db` lock held, so a
+  process interrupted inside `proto_db` code should end rather than keep using the space.
+- Tests: pytest-timeout ends a run that overruns by stopping the process (`timeout_method = "thread"`) rather
+  than raising in the main thread, which on 3.14 could leak a lock and left test threads running into the
+  next tests (CI-314); `test_pager_stability` stops its threads and bounds its writers.
 - Tests: the two compaction checks of `test_owner_locks` held on ext4, where a freed inode number is
   reused; they now keep the original file open and compare with `os.path.samestat`.
 
@@ -158,6 +164,9 @@ indexes lost on the first write; queries that silently returned empty or partial
   transactions, is not guaranteed (open defect D-LIVE-2).
 - A read-only linearizable read (`read_barrier`) is proposed in the D46 amendment but not implemented; the
   barrier commit is the supported path.
+- On Python 3.14 an exception from a signal handler (Ctrl-C) can leave a `proto_db` lock held, and the process
+  can then hang; end the process after such an interrupt. An interpreter property (CPython #74174); 3.12 and
+  3.13 are not affected. See the concurrency model.
 
 ## Before 2.0
 

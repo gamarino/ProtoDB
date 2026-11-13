@@ -103,3 +103,29 @@ transaction's own bookkeeping, and the space's root reference. ``ObjectSpace`` a
 freely between threads. A ``Transaction`` is meant for one thread at a time; an internal lock serialises
 its methods, so a misuse from several threads sees each call happen entirely before or after the others. The
 test suite runs on free-threaded CPython 3.14t and with the GIL.
+
+Interrupts and signal handlers on Python 3.14
+---------------------------------------------
+
+On CPython 3.14, including the free-threaded build, an exception raised by a signal handler, such as
+``KeyboardInterrupt`` from Ctrl-C, can arrive just after a ``with lock:`` statement has taken its lock and
+before its protected block starts. ``__exit__`` then never runs, and the lock stays held for good. Up to
+3.13 that window did not exist for a C-implemented lock (measured: no leak in 3,000 interrupts on 3.12 and
+3.13; more than half of 3,000 on 3.14). It is a property of the interpreter, not of ``proto_db``, and code
+in Python cannot close it.
+
+``proto_db`` takes such locks while it loads, caches and saves objects. If the interrupt lands inside one,
+the effect is a hang, not damage:
+
+* a lock held by the interrupted thread blocks every other thread that needs it, and a non-reentrant
+  lock blocks even that thread;
+* the stored data is not at risk, because a commit is published by one root write, so an interrupted
+  commit is either published whole or not at all.
+
+The rule on 3.14: after a ``KeyboardInterrupt``, or any exception from a signal handler, that may have
+interrupted ``proto_db`` code, do not keep using the ``ObjectSpace`` in that process; let the process end,
+and open the space again in a new one. A long-running service that must survive Ctrl-C should handle the
+signal by setting a flag that its threads check between transactions, rather than letting the exception
+unwind through them. Python 3.12 and 3.13 are not affected. The upstream issue is CPython #74174
+(bpo-29988); the 3.14 change is that ``with`` now calls ``__enter__`` as an ordinary call, so the pending
+signal check at the end of that call runs outside the protected range.
