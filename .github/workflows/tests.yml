@@ -32,7 +32,7 @@ jobs:
           python -c "import sys, msgpack; print(sys.version); print('msgpack', msgpack.version)"
 
       - name: Run the test suite
-        run: python -m pytest -q -rfEs
+        run: python -m pytest -q -rfEs --durations=25
 
   docs:
     name: Documentation (sphinx-build -W)
