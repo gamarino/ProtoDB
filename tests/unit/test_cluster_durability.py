@@ -17,7 +17,6 @@ import time
 import pytest
 
 from proto_db.cluster import protocol
-from proto_db.cluster.coordinator import REFOUND_TERM_STEP
 from proto_db.errors import ProtoUnexpectedError, ProtoValidationError
 from proto_db.storage.file import FileStorage
 from proto_db.transactions import ObjectSpace
@@ -90,6 +89,7 @@ def test_a_node_restarted_after_a_refound_never_reloads_the_dead_branch(tmp_path
         for i in range(5):
             tc.commit(("n0", "n1")[i % 2], incr)  # a branch of 9 never persisted
         assert tc.eventually("n1", 9)
+        _, dead_record, dead_label = tc["n1"].committed_root()[:3]   # the head of the branch to die
         tc.wipe("n0")
         tc.wipe("n2")                                       # a majority of the disks is lost
         tc.cluster.net.partition({"n0", "n2"}, {"n1"})      # the survivor misses the refound
@@ -104,13 +104,20 @@ def test_a_node_restarted_after_a_refound_never_reloads_the_dead_branch(tmp_path
         tc.cluster.net.heal()
         tc.commit("n2", incr)                     # its release teaches n1 the new lineage
         assert tc.eventually("n1", 6)
-        dead_epoch = 10
+        # The lineage is told by the label: the refound raised the term floor by
+        # REFOUND_TERM_STEP above the persisted root's label, so every root of the refounded
+        # lineage carries a label above the dead branch's head, which n1 (partitioned, its
+        # persister stopped) could not extend.  An epoch is no bound: a re-commit of a base adds
+        # one with the same data (``_commit_base``), so under load the new lineage passes the
+        # dead branch's epochs (Task 11.1, A3: epoch 15 at value 6; D46).  Nor is the label's
+        # REFOUND_TERM_STEP alone: the cluster's first start already refounded.
         n1 = "n1"
-        assert tc[n1].committed_root()[1].epoch < dead_epoch
+        _, record, label = tc[n1].committed_root()[:3]
+        assert label > dead_label and record != dead_record, (label, record, dead_label, dead_record)
         tc.kill(n1)
         tc.revive(n1)
         known, record, label = tc[n1].committed_root()[:3]   # loaded from its log, before any read
-        assert known and label > REFOUND_TERM_STEP and record.epoch < dead_epoch
+        assert known and label > dead_label and record != dead_record, (label, record, dead_label, dead_record)
         assert tc.value(n1) == 6
 
 
