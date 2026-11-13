@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "proto_db"
-version = "2.0.0.dev0"
-description = "ProtoDB is an embedded, transactional, object-oriented database for Python."
+version = "2.0.0rc3"
+description = "proto_db is an embedded, transactional, object-oriented database for Python."
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.12"
 authors = [
-    { name = "ProtoDB Team", email = "gamarino@numaes.com" }
+    { name = "Gustavo Marino", email = "gamarino@numaes.com" }
 ]
 keywords = ["database", "embedded", "transactional", "object-oriented", "ACID", "ORM-free", "NoSQL"]
 classifiers = [

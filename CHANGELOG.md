@@ -5,6 +5,18 @@ All notable changes to `proto_db` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0rc3] - 2026-11-13
+
+The first release candidate published on PyPI.
+- Python 3.12 is the minimum (D61): on 3.11, comparing deeply nested tuples counts against the recursion
+  limit, so a value near `MAX_VALUE_DEPTH` could raise a bare `RecursionError`. `pip` refuses to
+  install it on 3.11 (`requires-python >=3.12`).
+- Test suite: process-wide object counts replaced by per-test counts, a stress mode for the cluster tests
+  (`PROTO_STRESS`, safety asserts only), and fixes to tests that failed in a clean export or under load.
+- CI: a test matrix over 3.12, 3.13, 3.14 and 3.14t, and a `sphinx-build -W` documentation job.
+- Benchmarks: a 10^7-object inventory and the periodic cluster stress task, with result files under
+  `benchmarks/results/`.
+
 ## [2.0.0] - unreleased
 
 `proto_db` 2.0 is a complete rebuild of the 0.1 code base under the design principles of
