@@ -62,9 +62,9 @@ class SharedStorage(ABC):
 
         ``features`` names the format features the payload uses (keys of
         :data:`~proto_db.storage.format.FEATURE_VERSIONS`); the version the record needs is
-        :func:`~proto_db.storage.format.atom_version` of the two, which also counts a feature the
-        payload uses but does not declare and refuses a declared feature it does not use
-        (``ProtoValidationError``).  The record is appended only to a segment whose header
+        :func:`~proto_db.storage.format.atom_version` of the two.  The declared features must
+        match the payload exactly: a feature the payload uses but does not declare, or a
+        declared feature it does not use, raises ``ProtoValidationError``.  The record is appended only to a segment whose header
         version is at least that version; otherwise the storage first rolls to a new segment
         written at it (ruling R151).  A space that never uses a feature writes version-4
         segments only.
