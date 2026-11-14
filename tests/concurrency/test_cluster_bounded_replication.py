@@ -10,6 +10,7 @@ the bytes it ships.
 
 Every case runs tiered storages over one shared object store (in-process network).
 """
+import contextlib
 import os
 import threading
 import time
@@ -20,6 +21,7 @@ from proto_db.cluster.protocol import encode_ranges, encode_root, make_message
 from proto_db.core.atom import AtomPointer
 from proto_db.errors import ProtoConflictError, ProtoOutcomeUnknownError, ProtoTimeoutError
 from proto_db.storage.format import FORMAT_VERSION, RootRecord
+from tests.support import stress
 from tests.support.tiered_cluster import RUN_KW, TieredCluster, incr
 
 pytestmark = [pytest.mark.timeout(240)]
@@ -237,10 +239,20 @@ def test_two_lost_committers_with_different_replicas_are_both_persisted(tmp_path
 _SPLIT_STORAGE = dict(durability="fsync", ship_interval=3600.0)
 
 
-def _split_segment(tc) -> None:
+#: Clusters a split-segment test may build before it gives up on the setup (liveness, R142).
+SPLIT_ATTEMPTS = 5
+
+
+def _split_segment(tc):
     """Task 8.3g review I1's setup: nine commits of n0 in ONE own segment, the middle three hedged
     to n2 while n1 is partitioned away, so n1's copy lacks the middle and n2's the start.  The
-    split is asserted, not assumed."""
+    split is checked, not assumed: returns ``None`` when this cluster has it, otherwise why not.
+
+    Whether the split forms depends on timing, never on a rule: n0 hedges a commit's records to
+    n2 whenever n1 has not stored them ``request_timeout`` (0.1 s) after n0's own append, so on a
+    starved machine one of the first three commits (n1 reachable) may reach n2 too, and n2's copy
+    then has the start (Task CI-FLAKES: a CI runner, Python 3.13).  The caller then builds a fresh
+    cluster (:func:`_split_cluster`)."""
     net = tc.cluster.net
     tc.create_database("n0")
     tc.store.set_outage(True)
@@ -251,6 +263,7 @@ def _split_segment(tc) -> None:
         roots.append(tc["n0"].committed_root()[1])
     for _ in range(3):
         commit()                                    # n0's records -> n0 + n1
+    early_hedges = tc["n0"].stats()["replica_hedges"]
     net.partition({"n0", "n2"}, {"n1"})
     for _ in range(3):
         commit()                                    # hedged: n0 + n2
@@ -262,8 +275,34 @@ def _split_segment(tc) -> None:
     assert tc["n0"].stats()["replica_hedges"] >= 1
     assert len({r.segment for r in roots}) == 1, "n0's commits are not in one segment"
     ptr = [AtomPointer(r.segment, r.offset) for r in roots]
-    assert tc.storages["n2"]._local_record(ptr[0]) is None, "n2's copy has the start"
-    assert any(tc.storages["n1"]._local_record(p) is None for p in ptr[3:6]), "n1's copy has the middle"
+    if tc.storages["n2"]._local_record(ptr[0]) is not None:
+        return f"n2's copy has the start ({early_hedges} hedges in the first three commits)"
+    if all(tc.storages["n1"]._local_record(p) is not None for p in ptr[3:6]):
+        return "n1's copy has the middle"
+    return None
+
+
+@contextlib.contextmanager
+def _split_cluster(tmp_path):
+    """A 3-member cluster whose n0 segment is split (:func:`_split_segment`), built again, in a
+    fresh directory, when a cluster did not form the split; every miss is printed (and recorded
+    in stress mode).  After :data:`SPLIT_ATTEMPTS` misses (``stress.attempts`` of it) the test
+    fails: a split that never forms is a liveness failure of the setup, not a pass."""
+    misses = []
+    for attempt in range(stress.attempts(SPLIT_ATTEMPTS)):
+        path = tmp_path / f"attempt-{attempt}"
+        path.mkdir()
+        with TieredCluster(path, 3, storage_kw=_SPLIT_STORAGE, **LEASE) as tc:
+            miss = _split_segment(tc)
+            if miss is None:
+                if misses:
+                    print(f"\nsplit-segment setup repeated: {misses}")
+                yield tc
+                return
+        misses.append(miss)
+        if stress.ACTIVE:
+            stress.record(f"split-segment setup missed: {miss}")
+    raise AssertionError(f"the split never formed in {len(misses)} clusters: {misses}")
 
 
 def test_a_segment_split_by_a_hedge_is_persisted_after_its_committers_disk_is_lost(tmp_path):
@@ -272,8 +311,7 @@ def test_a_segment_split_by_a_hedge_is_persisted_after_its_committers_disk_is_lo
     one disk loss (n0) neither copy is a prefix; the persister fills the holes from the peers,
     record by record, and uploads the segment's true prefix.  Before, persistence stalled at
     epoch 0 for good and the hedged commits stayed at ``f`` copies."""
-    with TieredCluster(tmp_path, 3, storage_kw=_SPLIT_STORAGE, **LEASE) as tc:
-        _split_segment(tc)
+    with _split_cluster(tmp_path) as tc:
         tc.wipe("n0")                                   # ONE disk lost
         tc.store.set_outage(False)
         for node in ("n1", "n2"):
@@ -312,8 +350,7 @@ def test_every_member_caches_each_commit_without_a_durable_copy(tmp_path):
 def test_filling_a_hole_from_peers_never_blocks_the_nodes_own_shipping(tmp_path):
     """Re-review N2: the persister fetches a split segment's holes outside ``_ship_lock`` (the
     bytes are immutable), so a slow or unanswered fill never holds up ``ship()``."""
-    with TieredCluster(tmp_path, 3, storage_kw=_SPLIT_STORAGE, **LEASE) as tc:
-        _split_segment(tc)
+    with _split_cluster(tmp_path) as tc:
         tc.wipe("n0")
         # n1's persister waits until the measurement is over: otherwise it may upload the whole
         # segment first (filling its own middle hole), and n2, finding the store covered, never
