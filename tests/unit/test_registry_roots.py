@@ -532,6 +532,34 @@ def test_install_module_refuses_a_module_this_thread_is_still_importing(db, driv
     tr.abort()
 
 
+def test_an_install_that_adds_nothing_ignores_another_threads_import(db, monkeypatch, driver):
+    """Re-review NB-1 (the reviewer's probe): the still-being-imported refusal covers only the modules
+    this call imports or adds, and only this thread's imports.  An idempotent install while another
+    thread is inside the first import of an installed module must succeed."""
+    db.run(lambda tr: (tr.install_module("reg7_y"), tr.install_module("reg7_peekcommit")))
+    monkeypatch.delitem(sys.modules, MAPPING["reg7_peekcommit"])   # as in a fresh process
+
+    class Reader:
+        def installed_modules(self):
+            return ()
+
+    driver.committing = Reader()
+    errors = []
+    importer = threading.Thread(
+        target=_guarded(lambda: importlib.import_module(MAPPING["reg7_peekcommit"]), errors), daemon=True)
+    importer.start()
+    tr = db.new_transaction()
+    try:
+        assert driver.importing.wait(10)            # the other thread is inside the import
+        tr.install_module("reg7_y")                 # already installed: adds nothing
+        assert tr.installed_modules() == ("reg7_y", "reg7_peekcommit")
+    finally:
+        driver.go.set()
+        importer.join(30)
+        tr.abort()
+    assert not importer.is_alive() and errors == [] and driver.seen == [()]
+
+
 def _importing(monkeypatch, module_name):
     """Mark the imported module ``module_name`` as still being imported (as this thread would see a
     module whose import it is inside)."""

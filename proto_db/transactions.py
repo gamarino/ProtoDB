@@ -190,6 +190,10 @@ class _released:
     """Release an ``RLock`` held by this thread (at any depth) for the body, then hold it again
     as before; the same operation ``threading.Condition.wait`` uses."""
 
+    # ``_release_save`` / ``_acquire_restore`` are private to ``RLock``, but ``threading.Condition``
+    # binds exactly these two methods of the lock it wraps (``Condition.__init__``) and calls them
+    # around every ``wait``: a de facto stable contract, present on the C ``_thread.RLock`` and on
+    # ``threading._PyRLock`` (checked on 3.12 to 3.14t, both GIL modes; Task 7 re-review 2).
     __slots__ = ("lock", "saved")
 
     def __init__(self, lock):
@@ -2346,12 +2350,16 @@ class Transaction:
                 installed = self._installed_names()
             additions, introduced = _registry.install_plan(name, installed, mapping, allowed)
             candidate = installed + tuple(module for module, _ in additions)
+            imported = (name,) + tuple(module for module, _ in additions)
             if additions:
                 _registry.Registry.build(candidate, mapping=mapping, allowed=allowed)
-            unfinished = _registry.being_imported((name,) + candidate, mapping)
+                imported += candidate
+            # Only the modules this call imported (review NB-1): import_module waited for any other
+            # thread's import of them, so one still being imported is this thread's own, whose
+            # declarations so far are not the module's.  A module this call did not import may be
+            # inside another thread's import; that is not this call's concern.
+            unfinished = _registry.being_imported(imported, mapping)
             if unfinished:
-                # Only this thread can be inside such an import here (another thread's import is
-                # waited for by import_module): its declarations so far are not the module's.
                 raise ProtoUserError(
                     f"Module(s) {', '.join(map(repr, unfinished))} are still being imported by this thread: "
                     f"a module's import-time code cannot install itself or a module that needs it (review N-3)")
