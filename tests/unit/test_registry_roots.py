@@ -13,8 +13,16 @@ and a cluster commit that does not merge against the committed root.
 """
 from __future__ import annotations
 
+import importlib
+import os
+import subprocess
+import sys
+import threading
+import time
+
 import pytest
 
+from proto_db.collections.dictionaries import Dictionary
 from proto_db.core.atom import type_tag
 from proto_db.core.dbobject import DBObject
 from proto_db.errors import ProtoConflictError, ProtoCorruptionError, ProtoNotSupportedError, ProtoValidationError
@@ -28,7 +36,7 @@ pytestmark = [pytest.mark.timeout(120)]
 
 _PACKAGE = "tests.unit.registry_modules"
 _FIXTURES = ("reg7_base", "reg7_contacts", "reg7_crm", "reg7_a", "reg7_b", "reg7_c", "reg7_d",
-             "reg7_cyc_x", "reg7_cyc_y")
+             "reg7_cyc_x", "reg7_cyc_y", "reg7_y", "reg7_importcommit", "reg7_peek")
 MAPPING = {name: f"{_PACKAGE}.{name}" for name in _FIXTURES}
 
 
@@ -390,3 +398,204 @@ def test_concurrent_installs_on_two_cluster_nodes_both_land():
         first.commit()
         second.commit()                     # built on the committed root, merged: no conflict
         assert _installed(dbs[1]) == ("reg7_a", "reg7_b")
+
+
+# -- fix round 1 (review of Task 7) -----------------------------------------------------------------
+
+def test_an_import_whose_code_commits_never_deadlocks_a_commit_that_needs_the_module(tmp_path):
+    """Review I-1: the commit that finds a module of the merged list not yet imported must import it
+    outside the root lock.  Thread A imports ``reg7_importcommit``, whose import-time code commits;
+    meanwhile another process installs that module, and thread B commits an install it validated
+    before.  Under the lock B's merged list names a module still being imported by A: importing it
+    there waited for A's import lock while A waited for the root lock, forever."""
+    from tests.unit.registry_modules import reg7_driver
+    path = str(tmp_path / "space")
+    space = _space(FileStorage(path))
+    try:
+        db = space.new_database("db")
+        reg7_driver.db = db
+        late = db.new_transaction()
+        late.install_module("reg7_y")                  # validated against an empty list
+        subprocess.run([sys.executable, "-m", "tests.unit.registry_modules.reg7_installer", path,
+                        "reg7_importcommit"], check=True, timeout=60,
+                       cwd=os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+        errors = []
+
+        def guarded(fn):
+            def body():
+                try:
+                    fn()
+                except BaseException as e:      # reported below
+                    errors.append(e)
+            return body
+
+        importer = threading.Thread(
+            target=guarded(lambda: importlib.import_module(MAPPING["reg7_importcommit"])), daemon=True)
+        importer.start()
+        assert reg7_driver.importing.wait(10)
+        committer = threading.Thread(target=guarded(late.commit), daemon=True)
+        committer.start()
+        time.sleep(0.5)                             # let the commit take the root lock (scenario only)
+        reg7_driver.go.set()
+        committer.join(30)
+        importer.join(30)
+        assert not committer.is_alive() and not importer.is_alive(), "deadlock: commit and import still blocked"
+        assert errors == []
+        tr = db.new_transaction()
+        try:
+            assert tr.installed_modules() == ("reg7_importcommit", "reg7_y")
+            assert tr.get_root_object("from_import") == 1
+        finally:
+            tr.abort()
+    finally:
+        reg7_driver.db = None
+        space.close()
+
+
+def test_install_module_imports_outside_the_transaction_lock(db):
+    """Review M-5: another thread may use the installing transaction while the module is imported."""
+    from tests.unit.registry_modules import reg7_driver
+    tr = db.new_transaction()
+    reg7_driver.tr = tr
+    try:
+        tr.install_module("reg7_peek")
+    finally:
+        reg7_driver.tr = None
+    assert reg7_driver.peeked == [()]           # read while the import ran: nothing pending yet
+    assert tr.installed_modules() == ("reg7_peek",)
+    tr.abort()
+
+
+def test_installs_from_two_file_storage_instances_over_one_directory_both_land(tmp_path):
+    """Review M-2: two processes over one directory (the file lock is global): raw commits, no retry."""
+    path = str(tmp_path / "space")
+    first_space = _space(FileStorage(path))
+    first_space.new_database("db")
+    second_space = _space(FileStorage(path))
+    try:
+        first, second = (s.open_database("db").new_transaction() for s in (first_space, second_space))
+        first.install_module("reg7_a")
+        second.install_module("reg7_b")
+        first.commit()
+        second.commit()
+        assert _installed(first_space.open_database("db")) == ("reg7_a", "reg7_b")
+        assert _installed(second_space.open_database("db")) == ("reg7_a", "reg7_b")
+    finally:
+        first_space.close()
+        second_space.close()
+
+
+def test_installing_transaction_sees_its_pending_list_through_both_reads(db):
+    """Review M-6: get_root_object of a registry root and the registry reads agree in an installing
+    transaction: both show the list (and catalog) with the pending installs."""
+    db.run(lambda tr: tr.install_module("reg7_base"))
+    tr = db.new_transaction()
+    tr.install_module("reg7_crm")
+    assert tr.get_root_object(MODULES_ROOT).names() == tr.installed_modules() == (
+        "reg7_base", "reg7_contacts", "reg7_crm")
+    assert tr.get_root_object(CATALOG_ROOT).names() == ("reg7.Contact", "reg7.Lead", "reg7.Partner")
+    tr.abort()
+    tr = db.new_transaction()
+    assert tr.get_root_object(MODULES_ROOT).names() == ("reg7_base",)     # nothing pending: the snapshot's
+    tr.abort()
+
+
+class _CatalogSubclass(DBObject):
+    __type_name__ = "tests.registry_roots.CatalogSubclass"
+
+    @property
+    def parents(self):                          # an overridable public member, never read by the registry
+        return ("reg7.Partner",)
+
+
+def test_a_catalog_entry_must_be_a_plain_dbobject_with_persisted_parents(db):
+    """Review M-1: exact type, and the persisted parents rather than the overridable ``parents``."""
+    for entry in (_CatalogSubclass(), DBObject(parents=("reg7.Other",))):
+        tr = db.new_transaction()
+        tr._writes[CATALOG_ROOT] = Catalog(entries=Dictionary().set_at("reg7.Partner", entry), context=tr)
+        tr.commit()
+        tr = db.new_transaction()
+        with pytest.raises(ProtoCorruptionError, match="__catalog"):
+            tr.catalog_object("reg7.Partner")
+        tr.abort()
+
+
+# -- catalog updates (review I-2, ruling R189) --------------------------------------------------------
+
+def _catalog(db, name):
+    tr = db.new_transaction()
+    try:
+        return tr.catalog_object(name)
+    finally:
+        tr.abort()
+
+
+def test_a_catalog_object_update_lands(db):
+    db.run(lambda tr: tr.install_module("reg7_base"))
+    original = _catalog(db, "reg7.Partner")
+    tr = db.new_transaction()
+    tr.set_catalog_object("reg7.Partner", tr.catalog_object("reg7.Partner").with_(note="v2"))
+    assert tr.catalog_object("reg7.Partner").note == "v2"      # the transaction sees its own update
+    tr.commit()
+    updated = _catalog(db, "reg7.Partner")
+    # A version is a new atom (D18): the entry, not the oid, carries the continuity (R190).
+    assert updated.note == "v2" and updated.oid != original.oid and updated.parents == ("reg7.Partner",)
+
+
+def test_a_catalog_update_of_an_object_created_in_the_same_transaction(db):
+    tr = db.new_transaction()
+    tr.install_module("reg7_base")
+    tr.set_catalog_object("reg7.Partner", tr.catalog_object("reg7.Partner").with_(note="first"))
+    tr.commit()
+    assert _catalog(db, "reg7.Partner").note == "first"
+
+
+def test_concurrent_updates_of_one_catalog_entry_conflict_once(db):
+    db.run(lambda tr: tr.install_module("reg7_base"))
+    first, second = db.new_transaction(), db.new_transaction()
+    for tr, note in ((first, "first"), (second, "second")):
+        tr.set_catalog_object("reg7.Partner", tr.catalog_object("reg7.Partner").with_(note=note))
+    first.commit()
+    with pytest.raises(ProtoConflictError, match="reg7.Partner"):
+        second.commit()
+    assert _catalog(db, "reg7.Partner").note == "first"
+    # Database.run retries from the committed version: the second update then lands.
+    db.run(lambda tr: tr.set_catalog_object("reg7.Partner", tr.catalog_object("reg7.Partner").with_(note="second")))
+    assert _catalog(db, "reg7.Partner").note == "second"
+
+
+def test_a_catalog_update_and_a_concurrent_install_of_another_name_both_land(db):
+    db.run(lambda tr: tr.install_module("reg7_base"))
+    updater, installer = db.new_transaction(), db.new_transaction()
+    updater.set_catalog_object("reg7.Partner", updater.catalog_object("reg7.Partner").with_(note="v2"))
+    installer.install_module("reg7_a")
+    installer.commit()
+    updater.commit()
+    assert _catalog(db, "reg7.Partner").note == "v2"
+    assert _catalog(db, "reg7.Only_a") is not None
+    # And the other order: an install that commits after an update keeps the update.
+    updater, installer = db.new_transaction(), db.new_transaction()
+    updater.set_catalog_object("reg7.Partner", updater.catalog_object("reg7.Partner").with_(note="v3"))
+    installer.install_module("reg7_b")
+    updater.commit()
+    installer.commit()
+    assert _catalog(db, "reg7.Partner").note == "v3" and _catalog(db, "reg7.Only_b") is not None
+
+
+def test_a_catalog_update_must_be_a_version_of_the_entry(db):
+    db.run(lambda tr: tr.install_module("reg7_base"))
+    tr = db.new_transaction()
+    current = tr.catalog_object("reg7.Partner")
+    refused = [
+        ("reg7.Partner", current.with_parents("reg7.Other")),             # its name dropped from its parents
+        ("reg7.Partner", current.with_(note=1).with_parents()),           # no parents at all
+        ("reg7.Unknown", current),                                        # no entry to update
+        ("reg7.Partner", "not an object"),
+    ]
+    for name, obj in refused:
+        with pytest.raises(ProtoValidationError):
+            tr.set_catalog_object(name, obj)
+    with pytest.raises(ProtoValidationError):
+        tr.set_catalog_object("reg7.Partner", _CatalogSubclass())
+    tr.commit()                                 # nothing was written
+    assert len(db.history()) == 2

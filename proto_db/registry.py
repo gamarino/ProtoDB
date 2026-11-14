@@ -79,9 +79,13 @@ Persisted state (spec section 3)
     - :data:`CATALOG_ROOT` (``__catalog``) holds a :class:`Catalog`: registry name to its
       **catalog object** (spec Q1, 14 item 3).  The catalog object of the registry name ``N`` is
       a plain ``DBObject`` whose parents are exactly ``(N,)``, created once, by the install that
-      first introduces ``N`` (a name some extension of the module ``extends``), and never
-      replaced by the registry.  An object that lists it as a parent therefore finds it before
-      ``N`` in its linearization, and the catalog object's own data before the registry's.
+      first introduces ``N`` (a name some extension of the module ``extends``).  An object that
+      lists it as a parent therefore finds it before ``N`` in its linearization, and the catalog
+      object's own data before the registry's.  Its data is ordinary application data (ruling
+      R189): ``Transaction.set_catalog_object(N, obj)`` replaces the entry with ``obj``, a new
+      version (a plain ``DBObject``, ``N`` still among its persisted parents; a version has a new
+      ``oid``, D18, ruling R190), under normal conflict rules (a concurrent update of the same
+      entry conflicts; the first updater wins).  An entry is never removed.
 
     Both are records of built-in types that use the format feature ``registry`` (version 5).
 
@@ -92,8 +96,19 @@ Installing and the commit (spec section 7, 14 items 3 and 4)
     to refuse a list that could never be loaded.  Nothing of a refused install stays pending.
     At commit both roots merge **add-if-absent against the root current at commit time**
     (:func:`merged_module_list`, :func:`merged_catalog`): never through the read set, never last
-    writer wins.  Two concurrent installs of different modules both land, without a conflict,
-    and the list's order is the commit order.  Reading the registry roots for resolution
+    writer wins.  Two concurrent installs of different modules both land, and the list's order
+    is the commit order: the merge never makes installs conflict with each other, nor with
+    updates of other catalog entries.  (A commit can still lose the compare-and-swap of a storage
+    whose root lock is not global, ``CloudStorage`` across processes, like any commit; it then
+    raises ``ProtoConflictError`` and ``Database.run`` retries it, merging onto the winner.)
+
+    No module is imported under the root lock (review I-1 of Task 7): the import-time code of a
+    module may itself commit, and would wait for the lock its importer holds.  When the merged
+    list names a module this process has not fully imported, the commit's build publishes
+    nothing; the commit then builds that list's registry outside the lock, importing what it
+    lacks, and runs its lock step again (:meth:`Registry.build` with ``imports=False`` is the
+    check made under the lock).  Every retry has strictly more of the list imported, so they are
+    bounded by the modules installed concurrently.  Reading the registry roots for resolution
     (``installed_modules``, ``catalog_object``) never enters the read set: installs are additive,
     so a transaction that resolved with the older list committed a state that list described.
 
@@ -440,8 +455,12 @@ class Registry:
 
     @classmethod
     def build(cls, module_names: tuple, *, mapping: Mapping | None = None,
-              allowed: Container | None = None) -> "Registry":
-        """Import the modules ``module_names`` (in installation order) and build their registry."""
+              allowed: Container | None = None, imports: bool = True) -> "Registry":
+        """Import the modules ``module_names`` (in installation order) and build their registry.
+
+        With ``imports=False`` nothing is imported: a module that is not already fully imported
+        raises :class:`ModulesNotImported` (internal, not a ``ProtoDBError``), naming the modules
+        to import first.  The commit uses it under the root lock, where an import may deadlock."""
         if not isinstance(module_names, tuple):
             raise ProtoValidationError(
                 f"module_names must be a tuple of module names, not {type(module_names).__name__}")
@@ -450,7 +469,13 @@ class Registry:
             if allowed is not None and name not in allowed:
                 raise ProtoValidationError(f"Module {name!r} is not allowed by this runtime's configuration")
         mapping = {} if mapping is None else mapping
-        sources = {name: _import(name, mapping.get(name, name)) for name in names}
+        if imports:
+            sources = {name: _import(name, mapping.get(name, name)) for name in names}
+        else:
+            sources = {name: _imported(mapping.get(name, name)) for name in names}
+            missing = tuple(name for name in names if sources[name] is None)
+            if missing:
+                raise ModulesNotImported(missing)
         with _LOCK:
             handles = {name: _DECLARATIONS.get(name) for name in names}
             declared = {name: tuple(handle._declared) for name, handle in handles.items()
@@ -479,6 +504,30 @@ def _import(name: str, path) -> str:
     except Exception as e:
         raise ProtoNotSupportedError(f"Module {name!r} cannot be imported from {path!r}: {e}") from e
     return imported.__name__
+
+
+class ModulesNotImported(Exception):
+    """Internal signal of :meth:`Registry.build` with ``imports=False``: ``names`` are modules this
+    process has not fully imported.  The commit catches it under the root lock and imports them
+    outside it; it never reaches an application."""
+
+    def __init__(self, names: tuple):
+        super().__init__(f"Modules not imported yet: {', '.join(names)}")
+        self.names = names
+
+
+def _imported(path) -> str | None:
+    """The ``__name__`` of the module imported as ``path``, or ``None`` when it is not imported or
+    its import is still running (in any thread): its declarations may be incomplete."""
+    found = sys.modules.get(path)
+    if found is None or getattr(getattr(found, "__spec__", None), "_initializing", False):
+        return None
+    return found.__name__
+
+
+def fully_imported(names: tuple, mapping: Mapping) -> bool:
+    """Whether every module of ``names`` is imported, its import finished."""
+    return all(_imported(mapping.get(name, name)) is not None for name in names)
 
 
 def _load_order(names: tuple, depends: dict) -> tuple:
@@ -661,13 +710,14 @@ class Catalog(_Immutable, Atom):
         return entries
 
     def get(self, registry_name: str):
-        """The catalog object of ``registry_name``, or ``None``.  An entry that is not a
-        ``DBObject`` whose parents include its name is ``ProtoCorruptionError``."""
+        """The catalog object of ``registry_name``, or ``None``.  An entry that is not a plain
+        ``DBObject`` (exactly that type) whose persisted parents include its name is
+        ``ProtoCorruptionError``."""
         from .core.dbobject import DBObject
         found = self._entries().get_at(registry_name, None)
         if found is None:
             return None
-        if not isinstance(found, DBObject) or registry_name not in found.parents:
+        if type(found) is not DBObject or registry_name not in found._persisted_parents():
             raise _corrupt(CATALOG_ROOT, f"the entry of {registry_name!r} is not a DBObject with that registry "
                                          f"name among its parents")
         return found
@@ -699,15 +749,27 @@ def merged_module_list(current: ModuleList | None, additions: Mapping, context) 
     return ModuleList(modules=entries + added, context=context)
 
 
-def merged_catalog(current: Catalog | None, additions: Mapping, handed_out, context) -> Catalog | None:
+def merged_catalog(current: Catalog | None, additions: Mapping, handed_out, context,
+                   updates: Mapping | None = None) -> Catalog | None:
     """The catalog for ``current`` (the catalog current at commit, or ``None``) with each
-    ``registry name -> catalog object`` of ``additions`` whose name it lacks (add-if-absent), or
-    ``None`` when it lacks none.  A name it already has keeps its object; when that object is
-    not the one in ``additions`` and the name is in ``handed_out`` (the transaction gave its own
-    object to the application, which may reference it), ``ProtoConflictError``: keeping either
-    silently would leave the other unreachable from the catalog."""
+    ``registry name -> catalog object`` of ``additions`` whose name it lacks (add-if-absent) and
+    each update of ``updates``, or ``None`` when nothing changes.
+
+    A name it already has keeps its object; when that object is not the one in ``additions``
+    and the name is in ``handed_out`` (the transaction gave its own object to the application,
+    which may reference it), ``ProtoConflictError``: keeping either silently would leave the
+    other unreachable from the catalog.  ``updates`` maps a registry name to ``(pointer, obj)``:
+    the entry is replaced by ``obj`` when it is still the record at ``pointer`` (the version the
+    transaction's snapshot held), otherwise ``ProtoConflictError`` (normal conflict rules: the
+    first updater wins, ruling R189).  Additions never conflict with updates of other names."""
     entries = current._entries() if current is not None else None
     changed = False
+    for name, (pointer, obj) in (updates or {}).items():
+        existing = current.get(name) if current is not None else None
+        if existing is None or existing.atom_pointer != pointer:
+            raise ProtoConflictError(f"The catalog object of {name!r} was changed by a concurrent commit")
+        entries = entries.set_at(name, obj)
+        changed = True
     for name, obj in additions.items():
         existing = current.get(name) if current is not None else None
         if existing is not None:

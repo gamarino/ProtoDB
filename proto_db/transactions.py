@@ -44,8 +44,13 @@ The registry roots (runtime registry)
     ``install_module`` never writes a root directly: at commit, under the root lock, its
     modules and catalog objects are merged add-if-absent into ``__currentModules`` and
     ``__catalog`` as they are in the root current then (:mod:`proto_db.registry`), whatever
-    the snapshot held and without entering the read set, so concurrent installs never
-    conflict.  Every commit path builds its root here (:meth:`Transaction._build_root`): a
+    the snapshot held and without entering the read set, so the merge never makes concurrent
+    installs conflict with each other.  (A raw ``commit()`` on a storage whose root lock is not
+    global, ``CloudStorage`` across processes, can still lose the root's compare-and-swap like
+    any commit, ``ProtoConflictError``; ``Database.run`` retries it.)  No module is imported
+    under the root lock: a build that needs one publishes nothing, the commit imports outside
+    the lock and runs the lock step again.  A catalog update (``set_catalog_object``) replaces
+    one entry under normal conflict rules.  Every commit path builds its root here (:meth:`Transaction._build_root`): a
     commit alone, a group-commit round (each build on the root the previous one produced) and
     a round under the cluster lease (each build on the committed base).  Applications cannot
     write nor remove a ``__`` root.
@@ -170,6 +175,15 @@ _ACTIVE, _COMMITTING, _COMMITTED, _ABORTED = "active", "committing", "committed"
 
 def _utc_now() -> datetime.datetime:
     return datetime.datetime.now(datetime.timezone.utc)
+
+
+#: The registry's roots (:mod:`proto_db.registry`).
+_REGISTRY_ROOTS = frozenset({_registry.MODULES_ROOT, _registry.CATALOG_ROOT})
+
+#: Lock steps a commit runs at most when each one finds modules to import first (review I-1).  Each
+#: retry has strictly more of the merged list imported, so only installs committed concurrently
+#: without end reach the bound.
+_IMPORT_ROUNDS = 64
 
 
 def _check_not_reserved(name: str) -> None:
@@ -2054,7 +2068,9 @@ class Transaction:
         self._installs: dict = {}
         self._catalog_new: dict = {}
         self._catalog_given: set = set()
+        self._catalog_updates: dict = {}    # registry name -> (snapshot entry's pointer, new version)
         self._validated_modules: Optional[tuple] = None
+        self._import_needed: Optional[tuple] = None     # set by a build that needs imports (I-1)
         record = database.space._snapshot_record()
         self._epoch = record.epoch if record is not None else 0
         self._snapshot_pointer = record.pointer if record is not None else None
@@ -2124,6 +2140,8 @@ class Transaction:
             value = self._objects.get_at(name, _ABSENT)
             if name not in self._reads:
                 self._reads[name] = _token(value)
+            if name in _REGISTRY_ROOTS and self._registry_pending():
+                return self._registry_view(name)
             return None if value is _ABSENT else value
 
     @property
@@ -2293,34 +2311,44 @@ class Transaction:
         build a registry (:meth:`proto_db.registry.Registry.build`).  A module outside the
         runtime's ``modules_allowed`` or a dependency cycle raises ``ProtoValidationError``, a
         module that cannot be imported ``ProtoNotSupportedError``; nothing of a refused install
-        stays pending.  Installing an installed module adds only what it lacks (idempotent).  At
-        commit the list and the catalog merge add-if-absent against the current root (see
-        :mod:`proto_db.registry`): a concurrent install is never a conflict.  Installing is
-        permanent; there is no uninstall.
+        stays pending.  Installing an installed module adds only what it lacks (idempotent).
+
+        The imports run without the transaction's lock held (review M-5): a module's import-time
+        code may use this transaction from another thread.  At commit the list and the catalog
+        merge add-if-absent against the current root (see :mod:`proto_db.registry`): the merge
+        never makes installs conflict with each other.  Installing is permanent; there is no
+        uninstall.
         """
-        with self._lock:
-            self._check_active()
-            space = self._database.space
-            mapping, allowed = space.modules_mapping, space.modules_allowed
-            installed = self._installed_names()
+        space = self._database.space
+        mapping, allowed = space.modules_mapping, space.modules_allowed
+        while True:
+            with self._lock:
+                self._check_active()
+                installed = self._installed_names()
             additions, introduced = _registry.install_plan(name, installed, mapping, allowed)
             candidate = installed + tuple(module for module, _ in additions)
             if additions:
                 _registry.Registry.build(candidate, mapping=mapping, allowed=allowed)
-            catalog = _registry.registry_root(self._objects, _registry.CATALOG_ROOT, _registry.Catalog)
-            missing = [rn for rn in introduced
-                       if rn not in self._catalog_new and (catalog is None or catalog.get(rn) is None)]
-            # Validated: from here nothing raises, so a refused install leaves nothing pending.
-            for module, depends in additions:
-                self._installs[module] = depends
-            for rn in missing:
-                self._catalog_new[rn] = DBObject(context=self, parents=(rn,))
-            if additions:
-                self._validated_modules = candidate
+            with self._lock:
+                self._check_active()
+                if self._installed_names() != installed:
+                    continue            # another install of this transaction landed meanwhile: plan again
+                catalog = _registry.registry_root(self._objects, _registry.CATALOG_ROOT, _registry.Catalog)
+                missing = [rn for rn in introduced
+                           if rn not in self._catalog_new and (catalog is None or catalog.get(rn) is None)]
+                # Validated: from here nothing raises, so a refused install leaves nothing pending.
+                for module, depends in additions:
+                    self._installs[module] = depends
+                for rn in missing:
+                    self._catalog_new[rn] = DBObject(context=self, parents=(rn,))
+                if additions:
+                    self._validated_modules = candidate
+                return
 
     def installed_modules(self) -> tuple:
         """The installed module names, in installation order, as this transaction sees them (its
-        own installs last).  Not recorded in the read set."""
+        own installs last).  Not recorded in the read set.  ``get_root_object("__currentModules")``
+        shows the same list (review M-6), as a :class:`~proto_db.registry.ModuleList`."""
         with self._lock:
             self._check_active()
             return self._installed_names()
@@ -2330,11 +2358,12 @@ class Transaction:
         return (listed.names() if listed is not None else ()) + tuple(self._installs)
 
     def catalog_object(self, registry_name: str) -> Optional[DBObject]:
-        """The catalog object of ``registry_name`` as this transaction sees it, or ``None``.  Not
-        recorded in the read set: a catalog entry, once committed, is never replaced.  A catalog
-        object this transaction's own install created is handed out here; if a concurrent
-        install commits another one for the same name first, this commit then conflicts
-        instead of leaving the object handed out unreachable from the catalog."""
+        """The catalog object of ``registry_name`` as this transaction sees it (its own update or
+        new object included), or ``None``.  Not recorded in the read set: an entry is never
+        removed, and is replaced only by a version of itself (ruling R189).  A catalog object
+        this transaction's own install created is handed out here; if a concurrent install
+        commits another one for the same name first, this commit then conflicts instead of
+        leaving the object handed out unreachable from the catalog."""
         _registry._check_name("A registry name", registry_name)
         with self._lock:
             self._check_active()
@@ -2342,28 +2371,100 @@ class Transaction:
             if pending is not None:
                 self._catalog_given.add(registry_name)
                 return pending
+            update = self._catalog_updates.get(registry_name)
+            if update is not None:
+                return update[1]
             catalog = _registry.registry_root(self._objects, _registry.CATALOG_ROOT, _registry.Catalog)
             return None if catalog is None else catalog.get(registry_name)
 
-    def _merged_registry(self, objects: Dictionary, current_objects: Dictionary) -> Dictionary:
+    def set_catalog_object(self, registry_name: str, obj: DBObject) -> None:
+        """Replace the catalog object of ``registry_name`` with ``obj`` at commit (ruling R189).
+
+        ``obj`` must be a plain ``DBObject`` with ``registry_name`` still among its persisted
+        parents, typically ``tr.catalog_object(name).with_(...)``; otherwise
+        ``ProtoValidationError``, and so is a name without a catalog object.  A new version is a
+        new atom with a new ``oid`` (D18), so the oid cannot tie versions together (ruling R190):
+        the entry's continuity is the root, not the object.  As for any parent, objects that
+        already list the previous version as a parent keep it (they reference that record).  Normal conflict rules: when the entry was changed by a
+        concurrent commit since this transaction's snapshot, the commit raises
+        ``ProtoConflictError`` (the first updater wins).  Installs that add other names never
+        conflict with it.
+        """
+        _registry._check_name("A registry name", registry_name)
+        if type(obj) is not DBObject:
+            raise ProtoValidationError(
+                f"The catalog object of {registry_name!r} must be a DBObject, not {type(obj).__name__}")
+        if registry_name not in obj._persisted_parents():
+            raise ProtoValidationError(
+                f"The catalog object of {registry_name!r} must keep {registry_name!r} among its parents")
+        with self._lock:
+            self._check_active()
+            if registry_name in self._catalog_new:
+                self._catalog_new[registry_name] = obj
+                return
+            catalog = _registry.registry_root(self._objects, _registry.CATALOG_ROOT, _registry.Catalog)
+            existing = None if catalog is None else catalog.get(registry_name)
+            if existing is None:
+                raise ProtoValidationError(f"{registry_name!r} has no catalog object; install a module that "
+                                           f"extends it")
+            self._catalog_updates[registry_name] = (existing.atom_pointer, obj)
+
+    def _registry_pending(self) -> bool:
+        return bool(self._installs or self._catalog_new or self._catalog_updates)
+
+    def _registry_view(self, name: str):
+        """The registry root ``name`` as this transaction sees it: the snapshot's with this
+        transaction's pending changes (review M-6).  Unsaved; never the value written at commit."""
+        if name == _registry.MODULES_ROOT:
+            listed = _registry.registry_root(self._objects, name, _registry.ModuleList)
+            merged = _registry.merged_module_list(listed, self._installs, self)
+            return merged if merged is not None else listed
+        catalog = _registry.registry_root(self._objects, name, _registry.Catalog)
+        merged = _registry.merged_catalog(catalog, self._catalog_new, (), self, self._catalog_updates)
+        return merged if merged is not None else catalog
+
+    def _merged_registry(self, objects: Dictionary, current_objects: Dictionary) -> Optional[Dictionary]:
         """Under the root lock: ``objects`` with this transaction's installs merged add-if-absent
         into the registry roots of ``current_objects``, the roots current at commit (never the
-        snapshot's, never through the read set).  A merged list that differs from the one the
-        installs were validated against (a concurrent install committed first) is built again,
-        so a union that cannot be loaded is refused here, explicitly, instead of committed."""
+        snapshot's, never through the read set), and its catalog updates applied when their
+        entries are unchanged.  A merged list that differs from the one the installs were
+        validated against (a concurrent install committed first) is built again, so a union
+        that cannot be loaded is refused here, explicitly, instead of committed; that build
+        never imports (review I-1).  ``None`` when it needs modules this process has not fully
+        imported: they are named in ``_import_needed`` and the commit imports them outside the
+        lock, then runs its lock step again."""
         listed = _registry.registry_root(current_objects, _registry.MODULES_ROOT, _registry.ModuleList)
         merged = _registry.merged_module_list(listed, self._installs, self)
         if merged is not None:
             names = merged.names()
             if names != self._validated_modules:
                 space = self._database.space
-                _registry.Registry.build(names, mapping=space.modules_mapping, allowed=space.modules_allowed)
+                try:
+                    _registry.Registry.build(names, mapping=space.modules_mapping, allowed=space.modules_allowed,
+                                             imports=False)
+                except _registry.ModulesNotImported:
+                    self._import_needed = names
+                    return None
+                self._validated_modules = names
             objects = objects.set_at(_registry.MODULES_ROOT, merged)
         catalog = _registry.registry_root(current_objects, _registry.CATALOG_ROOT, _registry.Catalog)
-        merged_catalog = _registry.merged_catalog(catalog, self._catalog_new, self._catalog_given, self)
+        merged_catalog = _registry.merged_catalog(catalog, self._catalog_new, self._catalog_given, self,
+                                                  self._catalog_updates)
         if merged_catalog is not None:
             objects = objects.set_at(_registry.CATALOG_ROOT, merged_catalog)
         return objects
+
+    def _import_for_commit(self, names: tuple) -> None:
+        """Outside the root lock: build the registry of ``names``, importing what this process
+        lacks (errors are explicit and end the commit).  A module still being imported by this
+        very thread cannot finish first: ``ProtoUserError``."""
+        space = self._database.space
+        _registry.Registry.build(names, mapping=space.modules_mapping, allowed=space.modules_allowed)
+        if not _registry.fully_imported(names, space.modules_mapping):
+            raise ProtoUserError(
+                f"The modules {names} include one this thread is still importing: a module's import-time "
+                f"code cannot commit an install whose list needs that module")
+        self._validated_modules = names
 
     # -- factories --------------------------------------------------------------------------
 
@@ -2426,16 +2527,29 @@ class Transaction:
                 self._state = _COMMITTED if committed else _ABORTED
 
     def _commit(self) -> None:
-        if not self._writes and not self._mwrites and not self._installs and not self._catalog_new:
+        if not self._writes and not self._mwrites and not self._registry_pending():
             return
-        written = list(self._writes.values()) + list(self._mwrites.values()) + list(self._catalog_new.values())
+        written = (list(self._writes.values()) + list(self._mwrites.values()) + list(self._catalog_new.values())
+                   + [obj for _, obj in self._catalog_updates.values()])
         for value in written:
             if isinstance(value, Atom):
                 self.save(value)
         space = self._database.space
         # In cluster mode the round's replication makes every record of the round durable with
         # one local sync (D50); no flush per transaction.
-        if _commit_root(self.storage, space.lock_timeout, self._build_root, space.coordinator):
+        for _ in range(_IMPORT_ROUNDS):
+            self._import_needed = None
+            published = _commit_root(self.storage, space.lock_timeout, self._build_root, space.coordinator)
+            if self._import_needed is None:
+                break
+            # The build published nothing: it needs modules this process has not fully imported,
+            # which are never imported under the root lock (review I-1).  Import them, then run the
+            # lock step again (on the root current then).
+            self._import_for_commit(self._import_needed)
+        else:
+            raise ProtoConflictError(
+                f"Modules were installed concurrently through {_IMPORT_ROUNDS} attempts of this commit; retry it")
+        if published:
             # Post-publish, cannot fail: a committed value's log was consumed by this
             # commit, so a later transaction reusing it must not replay it again (D33).
             for value in written:
@@ -2477,10 +2591,12 @@ class Transaction:
                 value = self._merged(value, current_objects.get_at(name, _ABSENT))
                 replay += clock() - merge_started
             objects = objects.set_at(name, value)
-        if self._installs or self._catalog_new:
+        if self._registry_pending():
             merge_started = clock()
             objects = self._merged_registry(objects, current_objects)
             replay += clock() - merge_started
+            if objects is None:
+                return None             # modules to import first, outside the lock (_commit)
         mutables = db_root.mutables
         for name, value in self._mwrites.items():
             if value is not _REMOVED:

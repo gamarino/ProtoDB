@@ -168,7 +168,10 @@ The per-database class registry
     version. ``__currentSymbols`` is reserved for symbols. Data written before the reservation
     may hold a root named like a registry root: a reader identifies the registry's roots by name
     **and** by the type of their value, and refuses a ``__`` root whose value is not of the
-    registry's type (``ProtoCorruptionError``) rather than reading it as registry state.
+    registry's type (``ProtoCorruptionError``) rather than reading it as registry state. Such
+    a database is corrupt for the registry: the application API cannot repair it (it neither
+    writes nor removes ``__`` roots), so a repair is the job of tooling that rewrites the root,
+    not of the API.
 
 Conventions
 -----------
@@ -1494,11 +1497,15 @@ version 5, so it lands in a segment of version 5 or later. Both types carry no p
     registry name (``proto_db`` writes exactly the one-name tuple). An entry of another type, or
     whose parents lack its name, is ``ProtoCorruptionError``.
 
-A writer changes these roots only by **adding**: a module is appended to ``modules`` and a
-registry name added to ``entries`` when absent, and an existing entry is never changed nor
-removed. ``proto_db`` merges both against the root current at commit (add-if-absent), so
-concurrent installs of different modules all land, in commit order; that rule is behaviour,
-specified by the runtime registry, and leaves no trace in the bytes.
+A writer changes ``modules`` only by **appending** a module that is absent, and never changes
+nor removes a listed one. An install changes ``entries`` only by adding a registry name that is
+absent. An existing entry is **never removed**, and it is replaced only by a new version of that
+catalog object: a record of the same type whose parents still include the name (the catalog
+object's data is application data; a version is a new record, with a new ``oid``).
+``proto_db`` merges installs against the root current at commit (add-if-absent), so concurrent
+installs of different modules all land, in commit order, and replaces an entry only when it is
+still the record the replacing transaction read (a concurrent replacement conflicts). Those
+rules are behaviour, specified by the runtime registry, and leave no trace in the bytes.
 
 To read a database: decode ``space.root``, load its SpaceRoot, look the database's name up in
 ``databases``, then read ``objects`` and ``mutables`` of that DatabaseRoot. History is the chain
