@@ -1,0 +1,349 @@
+"""The runtime registry and its modules, in memory (spec sections 6 and 7, Task 5).
+
+Catches: a load order that depends on anything but the dependencies and the installation order;
+a dependency cycle, or a cycle of registry-name parents, accepted; a chain in the wrong order; a
+registry name's parents lost, reordered or repeated; a definition of a refused kind (a property,
+a staticmethod, a classmethod, a callable instance, a lambda, a nested class, a private, reserved
+or API name) accepted; one function object or one code object behind two definitions (which
+``_super`` could not place); an unimportable module, a module outside the allowed set or a
+dependency that is not installed going unnamed; a mutable default shared by reference; a
+reload duplicating extensions; one registry module name declared by two Python modules.
+"""
+from __future__ import annotations
+
+import importlib
+import threading
+
+import pytest
+
+from proto_db.core.atom import RESERVED_NAMES
+from proto_db.errors import ProtoNotSupportedError, ProtoValidationError
+from proto_db.registry import Extension, Registry, module
+from proto_db.values import FrozenDict, FrozenList
+
+pytestmark = [pytest.mark.timeout(120)]
+
+_PACKAGE = "tests.unit.registry_modules"
+_FIXTURES = ("reg_base", "reg_contacts", "reg_notes", "reg_crm", "reg_cycle_a", "reg_cycle_b",
+             "reg_bad_property", "reg_reuse_a", "reg_reuse_b", "reg_wrong_name", "reg_name_cycle",
+             "reg_raises")
+MAPPING = {name: f"{_PACKAGE}.{name}" for name in _FIXTURES}
+
+
+def build(*names, **kwargs):
+    kwargs.setdefault("mapping", MAPPING)
+    return Registry.build(names, **kwargs)
+
+
+def modules_of(chain):
+    return tuple(extension.module for extension in chain)
+
+
+# -- load order ---------------------------------------------------------------------------------
+
+def test_topological_order_with_install_order_ties():
+    # Dependencies first, whatever the installation order.
+    assert build("reg_crm", "reg_contacts", "reg_base").key == ("reg_base", "reg_contacts", "reg_crm")
+    # reg_contacts and reg_notes both depend on reg_base only: the installation order decides.
+    assert build("reg_notes", "reg_contacts", "reg_base").key == ("reg_base", "reg_notes", "reg_contacts")
+    assert build("reg_contacts", "reg_notes", "reg_base").key == ("reg_base", "reg_contacts", "reg_notes")
+    # A later-installed module with no dependency still comes after an earlier one that is ready.
+    assert build("reg_base", "reg_crm", "reg_contacts", "reg_notes").key == (
+        "reg_base", "reg_contacts", "reg_crm", "reg_notes")
+
+
+def test_cycle_is_refused():
+    with pytest.raises(ProtoValidationError, match=r"cycle") as info:
+        build("reg_cycle_a", "reg_cycle_b")
+    assert "reg_cycle_a" in str(info.value) and "reg_cycle_b" in str(info.value)
+
+
+def test_registry_name_parent_cycle_is_refused():
+    with pytest.raises(ProtoValidationError, match=r"cycle") as info:
+        build("reg_name_cycle")
+    assert "cyc.A" in str(info.value) and "cyc.B" in str(info.value)
+
+
+def test_dependency_not_installed_is_named():
+    # The code's depends wins (spec 14 item 8): reg_contacts needs reg_base, which is not listed.
+    with pytest.raises(ProtoNotSupportedError, match=r"reg_contacts.*reg_base.*not installed"):
+        build("reg_contacts")
+
+
+def test_module_list_is_validated():
+    with pytest.raises(ProtoValidationError, match=r"more than once"):
+        build("reg_base", "reg_base")
+    for bad in ("", 3):
+        with pytest.raises(ProtoValidationError):
+            build(bad)
+    with pytest.raises(ProtoValidationError):
+        Registry.build("reg_base", mapping=MAPPING)       # a str, not a tuple of names
+
+
+def test_empty_registry():
+    registry = Registry.build(())
+    assert registry.key == ()
+    assert registry.chain("reg.Partner") == ()
+    assert registry.parents_of("reg.Partner") == ()
+
+
+# -- chains, parents and the code index -----------------------------------------------------------
+
+def test_chain_is_newest_first():
+    registry = build("reg_crm", "reg_contacts", "reg_base")
+    chain = registry.chain("reg.Partner")
+    assert modules_of(chain) == ("reg_crm", "reg_contacts", "reg_base")
+    assert tuple(extension.position for extension in chain) == (0, 1, 2)
+    assert all(extension.registry_name == "reg.Partner" for extension in chain)
+    assert chain[0].definitions["label"][0] == "method"
+    assert chain[0].definitions["label"][1](None) == "crm"
+    assert chain[2].definitions["kind"] == ("data", "partner")
+    assert registry.chain("reg.Unknown") == ()
+    assert modules_of(registry.chain("mail.Thread")) == ("reg_base",)
+
+
+def test_extension_is_immutable():
+    extension = build("reg_base").chain("reg.Partner")[0]
+    assert isinstance(extension, Extension)
+    with pytest.raises(TypeError):
+        extension.definitions["new"] = ("data", 1)
+    with pytest.raises(AttributeError):
+        extension.position = 5
+    registry = build("reg_base")
+    with pytest.raises(AttributeError):
+        registry.key = ()
+
+
+def test_registry_name_parents_union():
+    registry = build("reg_notes", "reg_contacts", "reg_base")
+    # Load order reg_base, reg_notes, reg_contacts: notes' parents first, then the new one of contacts.
+    assert registry.parents_of("reg.Partner") == ("mail.Activity", "mail.Thread")
+    registry = build("reg_contacts", "reg_notes", "reg_base")
+    assert registry.parents_of("reg.Partner") == ("mail.Thread", "mail.Activity")
+    assert registry.parents_of("reg.Contact") == ("reg.Partner",)
+    assert registry.parents_of("mail.Thread") == ()
+    assert registry.parents_of("reg.Unknown") == ()
+
+
+def test_extension_of_code():
+    registry = build("reg_base", "reg_contacts", "reg_crm")
+    for extension in registry.chain("reg.Partner"):
+        function = extension.definitions["label"][1]
+        assert registry.extension_of_code(function.__code__) is extension
+    assert registry.extension_of_code(test_extension_of_code.__code__) is None
+    # Every extension, in load order: by module, then by declaration within a module.
+    assert [(e.module, e.registry_name) for e in registry.extensions] == [
+        ("reg_base", "reg.Partner"), ("reg_base", "mail.Thread"), ("reg_contacts", "reg.Partner"),
+        ("reg_contacts", "reg.Contact"), ("reg_crm", "reg.Partner")]
+
+
+# -- definitions --------------------------------------------------------------------------------
+
+_handle = module("test_registry_modules.refusals")
+
+
+class _CallableInstance:
+    def __call__(self, *args):
+        return None
+
+
+def _refuse(body, *, match):
+    with pytest.raises(ProtoValidationError, match=match) as info:
+        _handle.extends("reg.Refused")(type("Refused", (), body))
+    message = str(info.value)
+    assert "test_registry_modules.refusals" in message and "reg.Refused" in message
+    return message
+
+
+@pytest.mark.parametrize("kind, value", [
+    ("property", property(lambda self: 1)),
+    ("staticmethod", staticmethod(lambda: 1)),
+    ("classmethod", classmethod(lambda cls: 1)),
+    ("callable", _CallableInstance()),
+    ("callable", len),
+    ("lambda", lambda self: 1),
+    ("class", type("Nested", (), {})),
+])
+def test_refused_definitions(kind, value):
+    message = _refuse({"thing": value}, match=r"'thing'")
+    assert kind in message
+
+
+@pytest.mark.parametrize("name", ["_private", "__init__", *sorted(RESERVED_NAMES),
+                                  "with_", "with_parents", "parents", "has_defined_attr"])
+def test_refused_names(name):
+    def method(self):
+        return None
+    _refuse({name: method}, match=repr(name))
+    _refuse({name: 1}, match=repr(name))
+
+
+def test_api_names_are_computed_from_the_class():
+    from proto_db.core.dbobject import DBObject
+    for name in (n for n in dir(DBObject) if not n.startswith("_")):
+        _refuse({name: 1}, match=repr(name))
+
+
+def test_refused_property_in_a_module_names_it():
+    with pytest.raises(ProtoValidationError, match=r"reg_bad_property.*reg\.Bad.*'size'.*property"):
+        build("reg_bad_property")
+
+
+def test_refused_container_shapes():
+    class Base:
+        pass
+    with pytest.raises(ProtoValidationError, match=r"base class"):
+        _handle.extends("reg.Refused")(type("Refused", (Base,), {}))
+    with pytest.raises(ProtoValidationError, match=r"class"):
+        _handle.extends("reg.Refused")(lambda: None)
+    for name in ("", 7):
+        with pytest.raises(ProtoValidationError):
+            _handle.extends(name)
+    with pytest.raises(ProtoValidationError, match=r"more than once"):
+        _handle.extends("reg.Refused", parents=("a.B", "a.B"))
+    with pytest.raises(ProtoValidationError, match=r"its own parent"):
+        _handle.extends("reg.Refused", parents=("reg.Refused",))
+    with pytest.raises(ProtoValidationError):
+        _handle.extends("reg.Refused", parents=("",))
+    with pytest.raises(ProtoValidationError):
+        _handle.extends("reg.Refused", parents="a.B")
+
+
+def test_reused_function_is_refused():
+    with pytest.raises(ProtoValidationError, match=r"'shared'.*'again'|'again'.*'shared'") as info:
+        build("reg_reuse_a", "reg_reuse_b")
+    assert "reg_reuse_a" in str(info.value) and "reg_reuse_b" in str(info.value)
+
+
+def test_shared_code_object_is_refused():
+    # Two closures of one factory are two function objects with one code object: _super could not
+    # tell which extension is running, so the registry refuses them.
+    handle = module("test_registry_modules.shared_code")
+
+    def factory():
+        def method(self):
+            return None
+        return method
+
+    handle.extends("reg.SharedOne")(type("One", (), {"run": factory()}))
+    handle.extends("reg.SharedTwo")(type("Two", (), {"run": factory()}))
+    with pytest.raises(ProtoValidationError, match=r"code object"):
+        Registry.build(("test_registry_modules.shared_code",),
+                       mapping={"test_registry_modules.shared_code": __name__})
+
+
+def test_data_defaults_are_canonical():
+    extension = build("reg_base").chain("reg.Partner")[0]
+    kind, tags = extension.definitions["tags"]
+    assert kind == "data" and isinstance(tags, FrozenList) and isinstance(tags[1], FrozenList)
+    assert tags == ["a", ["b"]]
+    kind, settings = extension.definitions["settings"]
+    assert kind == "data" and isinstance(settings, FrozenDict)
+    with pytest.raises(ProtoValidationError):
+        tags.append("c")
+    # A default canonical() refuses is refused naming the definition.
+    _refuse({"blob": object()}, match=r"'blob'")
+
+
+# -- import, mapping and the allowed set -------------------------------------------------------------
+
+def test_unimportable_module_names_it():
+    with pytest.raises(ProtoNotSupportedError, match=r"reg_ghost") as info:
+        Registry.build(("reg_ghost",))
+    assert isinstance(info.value.__cause__, ImportError)
+    with pytest.raises(ProtoNotSupportedError, match=r"reg_ghost.*tests\.unit\.registry_modules\.nothing"):
+        Registry.build(("reg_ghost",), mapping={"reg_ghost": f"{_PACKAGE}.nothing"})
+    with pytest.raises(ProtoNotSupportedError, match=r"reg_raises") as info:
+        build("reg_raises")
+    assert isinstance(info.value.__cause__, RuntimeError)
+
+
+def test_module_that_declares_another_name_is_refused():
+    with pytest.raises(ProtoNotSupportedError, match=r"reg_wrong_name.*declares no registry module"):
+        build("reg_wrong_name")
+    # reg_base is declared, but by another Python module than the one the mapping imports.
+    importlib.import_module(f"{_PACKAGE}.reg_base")
+    with pytest.raises(ProtoNotSupportedError, match=r"reg_notes.*declares no registry module.*reg_base"):
+        Registry.build(("reg_base",), mapping={"reg_base": f"{_PACKAGE}.reg_notes"})
+
+
+def test_module_outside_allowed_is_refused():
+    allowed = {"reg_base", "reg_contacts"}
+    assert build("reg_base", "reg_contacts", allowed=allowed).key == ("reg_base", "reg_contacts")
+    with pytest.raises(ProtoValidationError, match=r"reg_crm.*not allowed"):
+        build("reg_base", "reg_contacts", "reg_crm", allowed=allowed)
+
+
+def test_one_name_declared_by_two_python_modules_is_refused():
+    importlib.import_module(f"{_PACKAGE}.reg_base")
+    with pytest.raises(ProtoValidationError, match=r"reg_base.*tests\.unit\.registry_modules\.reg_base"):
+        module("reg_base")
+
+
+def test_extends_only_from_the_declaring_module():
+    from tests.unit.registry_modules import reg_base
+    with pytest.raises(ProtoValidationError, match=r"reg_base"):
+        reg_base.base.extends("reg.Partner")(type("Late", (), {"late": 1}))
+
+
+def test_module_declaration_is_validated():
+    for name in ("", 5):
+        with pytest.raises(ProtoValidationError):
+            module(name)
+    with pytest.raises(ProtoValidationError, match=r"itself"):
+        module("test_registry_modules.self_dependent", depends=("test_registry_modules.self_dependent",))
+    with pytest.raises(ProtoValidationError, match=r"more than once"):
+        module("test_registry_modules.twice", depends=("reg_base", "reg_base"))
+    with pytest.raises(ProtoValidationError):
+        module("test_registry_modules.str_depends", depends="reg_base")
+
+
+def test_reload_does_not_duplicate_extensions():
+    before = build("reg_base", "reg_contacts", "reg_crm")
+    old_label = before.chain("reg.Partner")[0].definitions["label"][1]
+    importlib.reload(importlib.import_module(f"{_PACKAGE}.reg_crm"))
+    after = build("reg_base", "reg_contacts", "reg_crm")
+    assert modules_of(after.chain("reg.Partner")) == ("reg_crm", "reg_contacts", "reg_base")
+    new_label = after.chain("reg.Partner")[0].definitions["label"][1]
+    assert new_label is not old_label
+    # A registry built before the reload keeps the definitions it was built with.
+    assert before.chain("reg.Partner")[0].definitions["label"][1] is old_label
+    assert before.extension_of_code(old_label.__code__) is before.chain("reg.Partner")[0]
+
+
+def test_concurrent_reads_of_a_built_registry():
+    registry = build("reg_base", "reg_contacts", "reg_notes", "reg_crm")
+    expected = (registry.chain("reg.Partner"), registry.parents_of("reg.Partner"))
+    errors = []
+
+    def read():
+        try:
+            for _ in range(2000):
+                assert (registry.chain("reg.Partner"), registry.parents_of("reg.Partner")) == expected
+        except BaseException as e:      # reported to the main thread
+            errors.append(e)
+
+    threads = [threading.Thread(target=read) for _ in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert errors == []
+
+
+def test_concurrent_builds_agree():
+    keys, errors = [], []
+
+    def run():
+        try:
+            keys.append(build("reg_crm", "reg_notes", "reg_contacts", "reg_base").key)
+        except BaseException as e:
+            errors.append(e)
+
+    threads = [threading.Thread(target=run) for _ in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert errors == []
+    assert set(keys) == {("reg_base", "reg_notes", "reg_contacts", "reg_crm")}
