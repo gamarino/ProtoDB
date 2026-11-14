@@ -22,18 +22,27 @@ Extensions
     item 10).  Refused at declaration, with ``ProtoValidationError`` naming the module, the
     registry name and the definition (spec Q4): a ``property``, a ``staticmethod``, a
     ``classmethod``, a callable instance (or any callable that is not a plain function), a
-    lambda, a nested class, a name starting with ``_``, one of
+    lambda (recognized by its ``__name__``: a guard against the common mistake, not a security
+    boundary), a nested class, a data default holding an atom at any depth (ruling R166: a default
+    is shared by every object that inherits it), a name starting with ``_``, one of
     :data:`~proto_db.core.atom.RESERVED_NAMES` and a name of the ``DBObject`` API (computed from
     the class).  The names Python's class machinery puts in every class body (``__module__``,
     ``__doc__``, ``__firstlineno__``, ...) are not definitions.  ``extends`` may only be called
     from the Python module that declared the module.
 
 Declarations
-    ``module(name)`` records the declaration under ``name`` in the process.  The same name
-    declared again by the same Python module (a re-import or ``importlib.reload``) replaces the
-    earlier declaration, with no extensions, so a reload never duplicates them; a registry built
-    earlier keeps what it was built from.  The same name declared by another Python module is
-    ``ProtoValidationError``.
+    ``module(name)`` records the declaration under ``name`` in the process, with its call site
+    (the Python module, the calling code object and the line).  The same site run again (a
+    re-import or ``importlib.reload``, or a loop), or a new execution of the same module scope
+    (a reload after an edit moved the call), replaces the earlier declaration, with no
+    extensions, so a reload never duplicates them; a registry built earlier keeps what it was
+    built from.  A second call from another line of the same execution, from another scope or
+    from another Python module is ``ProtoValidationError`` naming both sites: it would silently
+    drop the first declaration's extensions.
+
+    Declarations are process-global by module name (ruling R167): one process maps one registry
+    module name to one Python module.  Two runtimes in one process whose ``mapping`` points the
+    same registry module name at different Python modules are not supported.
 
 The registry
     :meth:`Registry.build` imports each module (``importlib.import_module(mapping.get(name,
@@ -64,9 +73,9 @@ import threading
 import types
 from collections.abc import Container, Mapping
 
-from .core.atom import RESERVED_NAMES
+from .core.atom import RESERVED_NAMES, Atom
 from .errors import ProtoDBError, ProtoNotSupportedError, ProtoValidationError
-from .values import canonical, check_text
+from .values import canonical, check_text, is_atom
 
 __all__ = ["module", "ModuleHandle", "Extension", "Registry", "METHOD", "DATA"]
 
@@ -94,7 +103,7 @@ def _api_names() -> frozenset:
     classes (on first use, as ``proto_db.core.dbobject`` imports the resolution layer that will
     import this module), so the list never drifts from the API."""
     global _API_NAMES
-    if _API_NAMES is None:
+    if _API_NAMES is None:              # an unlocked race computes the same value twice: benign
         from .core.dbobject import DBObject
         _API_NAMES = frozenset(
             name for cls in DBObject.__mro__ if cls is not object for name in vars(cls)
@@ -135,18 +144,46 @@ def module(name: str, depends: tuple = ()) -> "ModuleHandle":
     _check_name("A module name", name)
     depends = _check_names(f"The dependencies of module {name!r}", depends, exclude=name,
                            itself=f"Module {name!r} cannot depend on itself")
-    source = _caller_module()
-    handle = ModuleHandle(name, depends, source)
+    frame = sys._getframe(1)
+    source = frame.f_globals.get("__name__")
+    site = _Site(source, frame.f_code, frame.f_lineno)
+    handle = ModuleHandle(name, depends, source, site)
     with _LOCK:
         earlier = _DECLARATIONS.get(name)
-        if earlier is not None and earlier.source != source:
+        if earlier is not None and not earlier.site.replaced_by(site):
             raise ProtoValidationError(
-                f"Module {name!r} is already declared by the Python module {earlier.source!r}; "
-                f"{source!r} cannot declare it too")
+                f"Module {name!r} is already declared at {earlier.site}; it cannot be declared again "
+                f"at {site} (one registry module name has one declaration in a process)")
         if earlier is not None:
             earlier._superseded = True
         _DECLARATIONS[name] = handle
     return handle
+
+
+class _Site:
+    """Where :func:`module` was called: the Python module, the calling code object and the line."""
+
+    __slots__ = ("source", "code", "line")
+
+    def __init__(self, source, code, line):
+        self.source = source
+        self.code = code
+        self.line = line
+
+    def __str__(self) -> str:
+        return f"{self.code.co_filename}:{self.line} (Python module {self.source!r})"
+
+    def replaced_by(self, later: "_Site") -> bool:
+        """Whether a declaration made here may be replaced by one made at ``later``: a call of
+        the same scope (file and qualified name) of the same Python module, either at the same
+        line (the same statement run again: a loop, or a reload of an unchanged file) or from a
+        new code object (a new execution of the module: a reload, even after an edit moved the
+        call).  A second call from another line of the same execution is a duplicate, which
+        would drop the first declaration's extensions."""
+        if (later.source != self.source or later.code.co_filename != self.code.co_filename
+                or later.code.co_qualname != self.code.co_qualname):
+            return False
+        return later.line == self.line or later.code is not self.code
 
 
 class _Declared:
@@ -164,11 +201,14 @@ class _Declared:
 class ModuleHandle:
     """The declaration of one registry module (returned by :func:`module`)."""
 
-    def __init__(self, name: str, depends: tuple, source: str | None):
+    def __init__(self, name: str, depends: tuple, source: str | None, site: "_Site"):
         self.name = name
         self.depends = depends
         #: The Python module that declared it.
         self.source = source
+        #: Where :func:`module` was called (it keeps the calling code object alive, so a new code
+        #: object is never mistaken for it).
+        self.site = site
         self._declared: list[_Declared] = []
         self._superseded = False
 
@@ -225,6 +265,8 @@ class ModuleHandle:
 def _definition(here: str, value) -> tuple:
     """``(kind, value)`` for one definition; ``ProtoValidationError`` for a refused kind."""
     if type(value) is types.FunctionType:
+        # A guard against the common mistake (``x = lambda self: ...``), not a security boundary: a
+        # lambda renamed through ``__name__`` passes, and then behaves as any method.
         if value.__name__ == "<lambda>":
             raise ProtoValidationError(f"{here}: a lambda is refused; define a named function")
         return METHOD, value
@@ -237,11 +279,33 @@ def _definition(here: str, value) -> tuple:
         raise ProtoValidationError(
             f"{here}: a callable that is not a plain function ({type(value).__name__}) is refused")
     try:
-        return DATA, canonical(value)
+        value = canonical(value)
     except ProtoValidationError as e:
         if type(e) is not ProtoValidationError:
             raise
         raise ProtoValidationError(f"{here}: {e}") from e
+    found = _atom_in(value)
+    if found is not None:
+        raise ProtoValidationError(
+            f"{here}: a data default may not hold an atom (found {type(found).__name__}); a default is "
+            f"shared by every object that inherits it (R166)")
+    return DATA, value
+
+
+def _atom_in(value):
+    """The first atom in the canonical value ``value`` (itself, or inside its tuples, lists and
+    maps, keys included, at any depth), or ``None``; iterative."""
+    stack = [value]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, Atom) or is_atom(item):
+            return item
+        if isinstance(item, (tuple, list)):
+            stack.extend(item)
+        elif isinstance(item, dict):
+            for pair in item.items():
+                stack.extend(pair)
+    return None
 
 
 class Extension:
@@ -397,11 +461,13 @@ def _assemble(order: tuple, declared: dict) -> Registry:
     for name in order:
         for item in declared.get(name, ()):
             by_name.setdefault(item.registry_name, []).append((name, item))
-    chains, parents, codes, seen = {}, {}, {}, {}
+    chains, parents, codes, seen, placed = {}, {}, {}, {}, {}
     for registry_name, items in by_name.items():
         chain = tuple(Extension(registry_name, module_name, position, item.definitions, item.qualname)
                       for position, (module_name, item) in enumerate(reversed(items)))
         chains[registry_name] = chain
+        for (_, item), extension in zip(reversed(items), chain):
+            placed[id(item)] = extension
         union = {}
         for _, item in items:
             union.update(dict.fromkeys(item.parents))
@@ -409,8 +475,7 @@ def _assemble(order: tuple, declared: dict) -> Registry:
     extensions = []
     for name in order:
         for item in declared.get(name, ()):
-            chain = chains[item.registry_name]
-            extension = next(e for e in chain if e.definitions is item.definitions)
+            extension = placed[id(item)]
             extensions.append(extension)
             for definition, (kind, value) in item.definitions.items():
                 if kind is not METHOD:

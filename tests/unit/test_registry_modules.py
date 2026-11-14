@@ -12,11 +12,16 @@ reload duplicating extensions; one registry module name declared by two Python m
 from __future__ import annotations
 
 import importlib
+import os
+import subprocess
+import sys
+import textwrap
 import threading
 
 import pytest
 
 from proto_db.core.atom import RESERVED_NAMES
+from proto_db.core.dbobject import DBObject
 from proto_db.errors import ProtoNotSupportedError, ProtoValidationError
 from proto_db.registry import Extension, Registry, module
 from proto_db.values import FrozenDict, FrozenList
@@ -26,7 +31,7 @@ pytestmark = [pytest.mark.timeout(120)]
 _PACKAGE = "tests.unit.registry_modules"
 _FIXTURES = ("reg_base", "reg_contacts", "reg_notes", "reg_crm", "reg_cycle_a", "reg_cycle_b",
              "reg_bad_property", "reg_reuse_a", "reg_reuse_b", "reg_wrong_name", "reg_name_cycle",
-             "reg_raises")
+             "reg_raises", "reg_twice")
 MAPPING = {name: f"{_PACKAGE}.{name}" for name in _FIXTURES}
 
 
@@ -245,6 +250,20 @@ def test_data_defaults_are_canonical():
     _refuse({"blob": object()}, match=r"'blob'")
 
 
+@pytest.mark.parametrize("make", [
+    lambda: DBObject(),                                  # the default itself
+    lambda: [1, DBObject()],                             # in a list
+    lambda: {"a": (1, DBObject())},                      # in a tuple inside a dict
+    lambda: {"a": {"b": [(DBObject(),)]}},               # deeper: dict, dict, list, tuple
+    lambda: ((("x", DBObject()),),),                     # nested tuples
+], ids=["direct", "list", "dict-tuple", "deep", "tuples"])
+def test_atoms_in_defaults_are_refused(make):
+    # R166: a default is shared by every object that inherits it; an atom there would be one
+    # object (saved or not) shared by them all, so none is allowed at any depth.
+    message = _refuse({"holder": make()}, match=r"'holder'")
+    assert "atom" in message
+
+
 # -- import, mapping and the allowed set -------------------------------------------------------------
 
 def test_unimportable_module_names_it():
@@ -278,6 +297,93 @@ def test_one_name_declared_by_two_python_modules_is_refused():
     importlib.import_module(f"{_PACKAGE}.reg_base")
     with pytest.raises(ProtoValidationError, match=r"reg_base.*tests\.unit\.registry_modules\.reg_base"):
         module("reg_base")
+
+
+def test_two_declarations_in_one_file_are_refused():
+    with pytest.raises(ProtoValidationError, match=r"reg_twice.*reg_twice\.py:4.*reg_twice\.py:5"):
+        build("reg_twice")
+
+
+def test_two_declarations_from_two_lines_are_refused():
+    first = module("test_registry_modules.two_lines")
+    assert first.name == "test_registry_modules.two_lines"
+    with pytest.raises(ProtoValidationError, match=r"test_registry_modules\.py:\d+.*test_registry_modules\.py:\d+"):
+        module("test_registry_modules.two_lines")
+
+
+def _execute(source: str, namespace: dict) -> None:
+    exec(compile(textwrap.dedent(source), "<registry-fixture>", "exec"), namespace)
+
+
+def test_new_execution_of_a_module_replaces_even_from_another_line():
+    # A reload after an edit runs a new code object of the same module scope: it replaces the
+    # declaration, even though the call moved to another line.
+    namespace = {"__name__": "test_registry_modules.executed"}
+    _execute("""
+        from proto_db.registry import module
+        handle = module("test_registry_modules.executed")
+    """, namespace)
+    first = namespace["handle"]
+    _execute("""
+        from proto_db.registry import module
+
+
+        handle = module("test_registry_modules.executed")
+    """, namespace)
+    assert namespace["handle"] is not first
+    namespace["first"] = first      # the stale handle, used from its own Python module
+    with pytest.raises(ProtoValidationError, match=r"replaced"):
+        _execute("first.extends('reg.Executed')", namespace)
+    # Within one execution, a second call from another line is a duplicate.
+    with pytest.raises(ProtoValidationError, match=r"<registry-fixture>:3.*<registry-fixture>:4"):
+        _execute("""
+            from proto_db.registry import module
+            one = module("test_registry_modules.executed_twice")
+            two = module("test_registry_modules.executed_twice")
+        """, {"__name__": "test_registry_modules.executed_twice"})
+
+
+def test_declaration_from_another_scope_is_refused():
+    # A function of the module is another scope (another code object), not a new execution of it.
+    with pytest.raises(ProtoValidationError, match=r"<registry-fixture>:3.*<registry-fixture>:5"):
+        _execute("""
+            from proto_db.registry import module
+            one = module("test_registry_modules.other_scope")
+            def declare():
+                return module("test_registry_modules.other_scope")
+            declare()
+        """, {"__name__": "test_registry_modules.other_scope"})
+
+
+def test_same_site_executed_again_replaces():
+    # A call in a loop (or a reload of an unchanged file) is one site: it replaces.
+    handles = [module("test_registry_modules.loop") for _ in range(3)]
+    assert len({id(h) for h in handles}) == 3
+
+
+def _xoptions() -> list:
+    """This interpreter's ``-X`` options (``gil=0`` or ``gil=1``), for a child interpreter."""
+    return [arg for k, v in sys._xoptions.items() for arg in ("-X", k if v is True else f"{k}={v}")]
+
+
+def test_registry_imported_before_dbobject():
+    # Importing the registry as the process's first proto_db import (before proto_db.core.dbobject
+    # is imported by anything else) must work and build a registry: no import cycle.
+    code = textwrap.dedent(f"""
+        import sys
+        assert not any(name.startswith("proto_db") for name in sys.modules)
+        import proto_db.registry as registry           # the first proto_db import of the process
+        built = registry.Registry.build(("reg_base",), mapping={{"reg_base": "{_PACKAGE}.reg_base"}})
+        assert built.key == ("reg_base",)
+        assert [e.module for e in built.chain("reg.Partner")] == ["reg_base"]
+        print("ok")
+    """)
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    env = dict(os.environ, PYTHONPATH=root + os.pathsep + os.environ.get("PYTHONPATH", ""))
+    result = subprocess.run([sys.executable, *_xoptions(), "-c", code], cwd=root, env=env,
+                            capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "ok"
 
 
 def test_extends_only_from_the_declaring_module():
