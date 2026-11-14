@@ -297,6 +297,25 @@ def blind_snapshot_of'''),),
         # Without stores the pipeline also degrades: either assertion of the test may fire first.
         ("tests/concurrency/test_cluster_pipelined_permits.py::test_permits_overlap_the_predecessors_durability",),
         ("overlapped their data stage", "of the permits were issued on a proposal"), "product: a pipelined permit's data stage no longer overlaps (review I5)"),
+    "renewal_term_cut": Plant((
+        ("proto_db/cluster/coordinator.py", "class Peer(NamedTuple):",
+         "_PLANT_FIRED = False   # PLANT\n\n\nclass Peer(NamedTuple):"),
+        ("proto_db/cluster/coordinator.py", "                    self._note_request(sender)\n",
+         "                    self._note_request(sender)\n"
+         "                    _own = self._ownership   # PLANT: remember a refused higher request\n"
+         "                    if _own is not None and sender != self._node and msg[\"term\"] > _own.term:\n"
+         "                        _own._plant_refused = True\n"),
+        ("proto_db/cluster/coordinator.py", '                    self._stats["terms_released_idle_local"] += 1\n',
+         '                    self._stats["terms_released_idle_local"] += 1\n'
+         "                global _PLANT_FIRED\n"
+         "                if end is None and getattr(own, \"_plant_refused\", False) and not _PLANT_FIRED \\\n"
+         "                        and own.lease.remaining() < self._belief / 2:\n"
+         "                    _PLANT_FIRED = True   # PLANT: the term ends once, at a renewal, while in use\n"
+         "                    end = \"planted\"\n")),
+        ("tests/unit/test_cluster_renewal.py::test_a_refused_higher_request_does_not_end_the_owners_term",),
+        "the owner's term ended while in use",
+        "product: a refused higher request ends the owner's term once while in use (fix round 1 of "
+        "Task CI-FLAKES, review I2: the plant passed the test that read own.last_demand)"),
     "shiplock": Plant((
         ("proto_db/storage/tiered.py", "            data = self._copy_prefix(segment, end)",
          "            with self._ship_lock:   # PLANT: the hole is filled under the ship lock\n"

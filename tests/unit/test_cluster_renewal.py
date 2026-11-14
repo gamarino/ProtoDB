@@ -30,8 +30,9 @@ def test_a_refused_higher_request_does_not_end_the_owners_term(tmp_path):
     between two commits of this one thread (a garbage collection, the scheduler) ended the
     term in 1 run of the fix round 2 proof (Task 8.3n, ownerships 3 == 2 with no renewal
     failure; reproduced by a 0.25 s pause between commits).  The owner counts that time from
-    its last permission *request* (``last_demand``), so the gap measured here runs from the
-    owner's last request to the end of the next commit: the time between two commit ends
+    its last permission *request* (``last_demand``), so the gap measured here runs from n0's
+    last request (timed by the test at the entry of n0's request path, never read from the
+    term's state) to the end of the next commit: the time between two commit ends
     misses the part of a slow commit that follows its request (Task CI-FLAKES: a CI runner
     ended the term with commit ends at most 0.218 s apart; reproduced by a 0.12 s stall after
     one commit returned and another before the next one's request: commit ends at most 0.166 s
@@ -70,8 +71,18 @@ def test_a_refused_higher_request_does_not_end_the_owners_term(tmp_path):
                 raise
             tokens.acked(token)
 
-        setup_commit()
         n0, n1 = tc["n0"], tc["n1"]
+        # n0's permission requests, timed at the entry of its request path, independently of any
+        # ownership object (fix round 1, review I2: ``own.last_demand`` stops moving when the
+        # term ends, so a term that ended early looked like an idle gap and was retried).
+        requests = [time.monotonic()]
+        ask = n0._permission_from_owner
+
+        def timed_ask(deadline):
+            requests.append(time.monotonic())
+            return ask(deadline)
+        n0._permission_from_owner = timed_ask
+        setup_commit()
         idle = n0._duration / 4
         refused = []                    # renewals of n0 refused under an active grant to n0
 
@@ -103,11 +114,12 @@ def test_a_refused_higher_request_does_not_end_the_owners_term(tmp_path):
             n0._on_request("n1", make_message("request", "n1", term=higher, rid=rid, inc=n1._inc, vs=0))
             deadline = time.monotonic() + n0._duration * 2.5      # several renewals are due
             widest, unknowns = 0.0, []
-            # Every gap is measured from the owner's own clock of demand (the time.monotonic()
-            # of its last permission request, ``own.last_demand``): an idle end needs more than
-            # ``idle`` from one request to the next, and the next request comes before the end
-            # of the commit that makes it.
-            demand = own.last_demand
+            # Every gap is measured from n0's last permission request (``requests``, timed at
+            # entry, so no later than the owner's ``last_demand`` of the same request) to the end
+            # of the next commit: an idle end needs more than ``idle`` from one request to the
+            # next, and the next request comes before the end of the commit that makes it.  The
+            # term's own state never enters this measure: a term that ends early is not idle.
+            demand = requests[-1]
             while time.monotonic() < deadline:
                 started = time.monotonic()
                 try:
@@ -120,7 +132,7 @@ def test_a_refused_higher_request_does_not_end_the_owners_term(tmp_path):
                     assert took >= n0._belief / 4, f"an unknown outcome after only {took:.3f} s: {e}"
                     unknowns.append((round(took, 3), str(e)))
                 widest = max(widest, time.monotonic() - demand)
-                demand = own.last_demand
+                demand = requests[-1]
             stats = n0.stats()
             assert not refused, f"a renewal of the owner's term was refused under an active grant: {refused}"
             failed = stats["renewal_failures"] - before["renewal_failures"]
