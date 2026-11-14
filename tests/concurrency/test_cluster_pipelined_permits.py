@@ -234,7 +234,7 @@ def _rounds_per_second(tmp_path, monkeypatch, depth, seconds=3.0):
                 "pipelined_permits": pipelined, "stores_sent": sum(s["stores_sent"] for s in stats),
                 "gate_open_at_send": sum(s["gate_open_at_send"] for s in stats),
                 "abandoned": sum(s["terms_abandoned"] for s in stats), "abandoned_timing": len(timing),
-                "abandon_reasons": other, "unknown": len(tokens.unknown_tokens),
+                "abandoned_other": len(other), "abandon_reasons": other, "unknown": len(tokens.unknown_tokens),
                 "rounds": rounds, "acked": len(tokens.acked_tokens)}
 
 
@@ -264,11 +264,13 @@ def test_permits_overlap_the_predecessors_durability(tmp_path, monkeypatch):
     # and send no store at all.
     assert piped["stores_sent"] >= piped["pipelined_permits"] // 2, \
         f"only {piped['stores_sent']} of {piped['pipelined_permits']} pipelined permits overlapped their data stage"
-    # The first term may be abandoned at start-up (base behaviour); a later one only with an
-    # unknown outcome (P5: a conservative end, resolved by the tokens above), or for a reason
-    # timing explains (R82: an owner timer, or rule O5 after a reserve refusal of that very
-    # permission; Task ABANDON, CI run 43585824975 failed here with one such O5).
-    assert piped["abandoned"] - piped["abandoned_timing"] <= 1 + piped["unknown"], \
+    # The first term may be abandoned at start-up (base behaviour: the refound of a cluster on
+    # empty local tiers, D46); a later one only with an unknown outcome (P5: a conservative
+    # end, resolved by the tokens above), or for a reason timing explains (R82: an owner timer,
+    # or rule O5 after a reserve refusal of that very permission; Task ABANDON, CI run
+    # 43585824975 failed here with one such O5).  Counted from the log, which also holds an
+    # abandonment the owner decides after the stats above were read.
+    assert piped["abandoned_other"] <= 1 + piped["unknown"], \
         f"terms abandoned for no timing reason: {piped['abandon_reasons']}; {piped}"
 
 
@@ -633,6 +635,9 @@ def test_p5_a_proposal_base_is_never_re_proposed(tmp_path, monkeypatch, planted)
             for t in threads:
                 t.join()
             after = {n: tc[n].stats() for n in tc.ids}
+            # The owner may abandon on a done it handles after the last commit returned: wait
+            # for it inside the log's context (the reads below waited so already).
+            time.sleep(0.2)
 
         def delta(key):
             return sum(after[n][key] - before[n][key] for n in tc.ids)
@@ -649,7 +654,6 @@ def test_p5_a_proposal_base_is_never_re_proposed(tmp_path, monkeypatch, planted)
         assert not other and proposals >= 0.8 * replications, \
             f"the pipeline collapsed: {proposals} proposals in {replications} replications, {abandoned} terms " \
             f"abandoned, {len(timing)} for a timing reason; terms abandoned for no timing reason: {other}"
-        time.sleep(0.2)
         for node in tc.ids:
             values = _read_keys(tc, node, list(acked))
             assert all((values[k] or 0) >= v for k, v in acked.items()), (node, values, acked)
