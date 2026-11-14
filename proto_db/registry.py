@@ -64,9 +64,20 @@ Errors (all explicit)
       ``ProtoNotSupportedError`` naming the module;
     - a ``ProtoDBError`` raised while a module is imported (a refused definition) propagates
       unchanged, with a note naming the module.
+
+The current registry
+    Resolution reads the registry of the running code from :func:`current_registry` when none is
+    passed to it.  Until the registry is attached to transactions (Task 8), it is set by
+    :func:`using`, a context manager meant for tests.  It is a :mod:`contextvars` variable, not a
+    thread-local (ruling R169): it follows the code across ``asyncio`` tasks and is restored on
+    exit even when ``using`` blocks nest.  A new thread starts from an empty context, unless the
+    interpreter copies the starting thread's context into it (``sys.flags.thread_inherit_context``,
+    on by default on free-threaded builds of Python 3.14), in which case it sees the registry that
+    was current when the thread started.
 """
 from __future__ import annotations
 
+import contextlib
 import importlib
 import sys
 import threading
@@ -75,9 +86,11 @@ from collections.abc import Container, Mapping
 
 from .core.atom import RESERVED_NAMES, Atom
 from .errors import ProtoDBError, ProtoNotSupportedError, ProtoValidationError
+from .resolution import _CURRENT_REGISTRY
 from .values import canonical, check_text, is_atom
 
-__all__ = ["module", "ModuleHandle", "Extension", "Registry", "METHOD", "DATA"]
+__all__ = ["module", "ModuleHandle", "Extension", "Registry", "METHOD", "DATA", "using",
+           "current_registry"]
 
 #: The kinds of a definition.
 METHOD = "method"
@@ -499,3 +512,22 @@ def _check_parent_cycles(parents: dict) -> None:
     cycle = _cycle(tuple(parents), parents)
     if cycle is not None:
         raise ProtoValidationError(f"Registry-name parent cycle: {' -> '.join(cycle)}")
+
+
+def current_registry() -> "Registry | None":
+    """The registry resolution uses when none is passed to it (``None`` outside :func:`using`)."""
+    return _CURRENT_REGISTRY.get()
+
+
+@contextlib.contextmanager
+def using(registry: "Registry | None"):
+    """Make ``registry`` the current registry for the body of the ``with`` block (``None`` makes
+    no registry current); the previous one is restored on exit.  Meant for tests until the
+    registry is attached to transactions (Task 8)."""
+    if registry is not None and not isinstance(registry, Registry):
+        raise ProtoValidationError(f"using() takes a Registry or None, not {type(registry).__name__}")
+    token = _CURRENT_REGISTRY.set(registry)
+    try:
+        yield registry
+    finally:
+        _CURRENT_REGISTRY.reset(token)

@@ -17,8 +17,10 @@ names.
 
 Resolution (spec section 5, :mod:`proto_db.resolution`): a name Python does not find -- not a
 member of the class, so a subclass's methods and properties come first, and not an own
-attribute -- is looked up along the C3 linearization of the parents; a miss is still ``None``
-(R150).  ``o[name]`` reads what ``o.name`` reads, for a name computed at run time; ``name in o``
+attribute -- is looked up along the C3 linearization of the parents, registry names included
+(their extension chains, newest first, through the current registry); a method found there is
+bound to the object, and :meth:`DBObject._super` continues from the running method; a miss is
+still ``None`` (R150).  ``o[name]`` reads what ``o.name`` reads, for a name computed at run time; ``name in o``
 tells a definition (even ``None``) anywhere along the linearization from a miss;
 :attr:`DBObject._own` holds the own attributes only, and :meth:`DBObject.has_defined_attr` and
 index paths keep reading own attributes only.  Writes never reach a parent: ``with_`` sets own
@@ -34,6 +36,8 @@ gives versions of a record a shared entity identity (D18).  The class is defined
 :mod:`proto_db.values` (it is part of the value model) and re-exported here.
 """
 from __future__ import annotations
+
+import sys
 
 from .. import resolution
 from ..errors import ProtoUserError, ProtoValidationError
@@ -235,6 +239,18 @@ class DBObject(Atom):
         """``(value, position)`` of ``name`` along :meth:`_linearization` (``(None, None)`` on a
         miss); see :func:`proto_db.resolution.resolve`."""
         return resolution.resolve(self, name)
+
+    def _super(self) -> "resolution.SuperProxy":
+        """The next definitions after the running registry method (spec section 6): a transient
+        proxy that resolves a name from the position after the running extension in this object's
+        linearization and binds a method it finds to this object (``self is o``).
+
+        Called directly in the body of a registry method.  The running extension is found from
+        the caller's code object (``sys._getframe(1).f_code``, read here, never through a
+        wrapper); a call from anything else -- outside a method, from a closure, a helper, a
+        generator expression or a generator method -- or on an object whose linearization does
+        not contain the running extension's registry name raises ``ProtoUserError``."""
+        return resolution.super_proxy(self, sys._getframe(1).f_code)
 
     def _linearization(self) -> tuple:
         """This object, then the C3 order of its parents' nodes; see
