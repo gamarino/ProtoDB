@@ -488,7 +488,10 @@ The commit path
 **Held retries (D50 amendment, D-LIVE-2).** When a transaction of a round conflicts and ``Database.run`` will
 retry it, the round keeps the permission (up to ``_PERMIT_RETRIES`` extra rounds while it is valid) and waits up
 to ``_RETRY_HOLD`` for the retry, which starts from the root the round just committed; the conflict is marked
-``permit_held`` and retried at once. Safety is unchanged: a kept permission is the same permission.
+``permit_held`` and retried at once. Safety is unchanged: a kept permission is the same permission. While a kept
+permission is being ended (its hold expired, or ``Database.run`` did not retry), the node's commit group holds an
+*ending* marker until ``finish`` returns, and the next runner waits for it, within its permit timeout, before it
+asks for a new permission (R148).
 
 The owner's rules, O1 to O8
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
