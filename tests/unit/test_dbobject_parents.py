@@ -514,3 +514,19 @@ def test_a_record_with_duplicate_parents_is_corrupt(dup):
     ptr = storage.push_atom({"t": _T, "oid": _OID, "s": {}, "p": {"@tup": items}}, features={"parents"})
     with pytest.raises(ProtoCorruptionError, match="more than once"):
         context.load(ptr, DBOBJECT).n
+
+
+def test_with_does_not_load_saved_parents():
+    """with_ carries the persisted parents as they are: no re-validation, so no parent stub loads."""
+    storage = MemoryStorage()
+    context = DirectContext(storage)
+    child_ptr = context.save(DBObject(parents=(DBObject(kind="base"), "x.Y"), n=1))
+    child = context.load(child_ptr, DBOBJECT)
+    assert child.n == 1
+    stub = child.parents[0]
+    assert not stub._loaded
+    newer = child.with_(n=3)
+    assert not stub._loaded, "with_ loaded a parent"
+    assert newer.parents[0] is stub and newer.n == 3
+    newer2 = newer.with_parents(*newer.parents)     # user-supplied: validated, may load
+    assert newer2.parents[1] == "x.Y"

@@ -185,7 +185,13 @@ class DBObject(Atom):
         state = self._state()
         legacy = self._take_legacy(state)
         state.update(changes)
-        return type(self)._from_state(state, self.context, self._persisted_parents())._carry(legacy)
+        new = type(self)._from_state(state, self.context)._carry(legacy)
+        parents = self._persisted_parents()
+        if parents:
+            # Already validated (by the constructor, with_parents or the record's decoding): kept as
+            # they are, so a parent stub is not loaded to read its oid again (re-review 1).
+            _osa(new, "_parents", parents)
+        return new
 
     def with_parents(self, *parents) -> "DBObject":
         """Return a new version with the same attributes and ``parents`` instead of this one's
