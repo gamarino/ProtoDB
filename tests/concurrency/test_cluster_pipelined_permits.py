@@ -31,8 +31,9 @@ import pytest
 
 from proto_db.cluster import coordinator as coordinator_module
 from proto_db.cluster.coordinator import ClusterCoordinator, _siblings
+from proto_db.cluster.protocol import decode_labeled_root
 from proto_db.cluster.rootlog import compare_roots
-from proto_db.errors import ProtoConflictError, ProtoDBError, ProtoOutcomeUnknownError
+from proto_db.errors import ProtoConflictError, ProtoDBError, ProtoOutcomeUnknownError, ProtoUnexpectedError
 from proto_db import transactions
 from tests.support import stress
 from tests.support.cluster_load import (Load, await_condition as _await, check_after_faults as _check,
@@ -276,6 +277,56 @@ def test_permits_overlap_the_predecessors_durability(tmp_path, monkeypatch):
 
 # -- P1, P1v and V2 as written: the voters carry safety ------------------------------------------
 
+#: How long the P1 schedules retry a read that gave up (Task P1-READ), from the first read after
+#: the power returns.
+READ_DEADLINE = 15.0
+
+
+def _until_available(fn, deadline):
+    """``fn()``, retried while it fails with ``ProtoUnexpectedError`` until ``deadline``.
+
+    That error is a read that gave up: the record was in no local tier of the reader, no peer
+    answered with it within ``fetch_timeout`` (75 ms with this file's lease), and the object
+    store, which the P1 schedules keep in outage, could not be asked.  Under CPU load a peer's
+    read lane answers later than that while it holds the record durably (Task P1-READ: n1 and
+    n2 held the record in their local files, the fetch timed out with no answer, and the same
+    read succeeded at once when retried), so the error alone is no evidence of lost history
+    (R82: timing decides liveness only).  A record that no member holds keeps failing the same
+    way, so a true loss still fails after the deadline (plant ``p1_catch_up``).  Only that exact
+    type is retried: its subclasses (``ProtoOutcomeUnknownError`` among them) and every other
+    error are raised at once, to the caller's own handling."""
+    while True:
+        try:
+            return fn()
+        except ProtoUnexpectedError as e:
+            if type(e) is not ProtoUnexpectedError or time.monotonic() >= deadline:
+                raise
+            time.sleep(0.05)
+
+
+class P1ReadCheckFailed(AssertionError):
+    """A P1 read check failed: a member cannot read the history, lost an acknowledged commit, or
+    reads fewer versions than were committed.  The planted P1 cases expect exactly this
+    (``xfail(raises=...)``), so a setup that never formed cannot satisfy them."""
+
+
+class P1SetupFailed(RuntimeError):
+    """The P1 schedule could not be set up (it never formed, or a setup wait timed out): an
+    error of the run, never the result the planted cases expect."""
+
+
+def _p1_await(predicate, **kw):
+    """:func:`_await` for the P1 setup: a timeout is :class:`P1SetupFailed`."""
+    try:
+        _await(predicate, **kw)
+    except AssertionError as e:
+        raise P1SetupFailed(str(e)) from e
+
+
+#: Clusters a P1 schedule may build before it gives up on its setup (liveness, R142).
+P1_ATTEMPTS = 5
+
+
 def _p1_schedule(tmp_path, monkeypatch, *, first_of_term: bool, rule: str):
     """Holder A (n0) builds root k and proposes it; its data message to its replica B (n1) is
     lost before B's acceptor lane makes it durable (B cached the records on receipt, so it
@@ -283,28 +334,101 @@ def _p1_schedule(tmp_path, monkeypatch, *, first_of_term: bool, rule: str):
     pipelined permit; the gate is removed (P1), so B sends its root stage right after its data
     stage.  Then the whole cluster loses power.  ``rule``: ``"V2'"`` (the code), ``"V2"`` (D55
     revision 1 as written) or ``"P1v"`` (the voter catch-up restored).  Returns whether B's
-    commit was acknowledged, and what every member reads afterwards."""
+    commit was acknowledged, what every member reads afterwards, and the setup misses.
+
+    When k is not the first root of its term, every voter holds the term's first root before A
+    builds k, and k must carry that root's term.  Otherwise the voters hold an older term's
+    root when k+1 arrives: V2 as written exempts every root of a newer term, so they accept
+    k+1 although they do not hold k (the gap the ``True-V2`` case shows), while V2' exempts
+    only the first root of a term.  Under CPU load the ``False-V2`` schedule was acknowledged
+    with k's records on no member and not in the store (Task P1-READ, acceptance trace: A's
+    term ended after its first root, k opened the next term, and all three voters accepted
+    k+1 over the older term's root).  Such a run is a setup miss; the product's V2' refused
+    k+1 there.
+
+    The schedule needs both rounds to send.  On a starved machine a permission can run out
+    first (Task P1-READ, measured under 6 CPU burners: A's permission or B's had 44-74 ms
+    left of the 75 ms ``send_reserve``, or B's lease expired before its root stage): the
+    holder sends nothing a voter may accept and gets a truthful conflict (R121).  That run is
+    a setup miss, not a result, and the schedule is built again in a fresh cluster, as the
+    late-acks scenario does.  A miss is recognised by what the holder did, never by the
+    conflict alone: B's conflict counts as a miss only when B sent no ``replicate`` and made
+    no own acceptance, so a conflict after a root stage (H7 broken) still fails.  Likewise B's
+    acknowledgement is a miss only when no ``replicate`` B sent carried k as its base: B's
+    permission on k ran out and B committed on the committed root under a term of its own
+    (Task P1-READ, acceptance trace).  Every run,
+    a miss included, goes through the power cut and the reads, and :func:`_check_p1_reads`
+    applies to each."""
     fs = _FrozenPowerLoss(monkeypatch)
     monkeypatch.setattr(ClusterCoordinator, "_await_gate", lambda self, lease, base, tier: True)   # P1
     if rule != "V2'":
         monkeypatch.setattr(ClusterCoordinator, "_may_accept", _old_may_accept(rule == "P1v"))
+    misses = []
+    for attempt in range(stress.attempts(P1_ATTEMPTS)):
+        path = tmp_path / f"attempt-{attempt}"
+        path.mkdir()
+        outcome, reads, miss = _p1_attempt(path, fs, first_of_term)
+        _check_p1_reads(outcome, reads)
+        if miss is None:
+            return outcome, reads, misses
+        misses.append(miss)
+        if stress.ACTIVE:
+            stress.record(f"P1 schedule missed: {miss}")
+    raise P1SetupFailed(f"the P1 schedule never formed in {len(misses)} clusters: {misses}")
+
+
+def _check_p1_reads(outcome, reads):
+    """What every run of the P1 schedule that reached the power cut must show, a setup miss
+    included (:class:`P1ReadCheckFailed`)."""
+    assert outcome.get("a") != "acked"          # A lost power inside its round
+    for node, read in reads.items():
+        if not isinstance(read, dict):
+            raise P1ReadCheckFailed(f"{node} cannot read the history: {read} (outcomes {outcome})")
+        if outcome.get("b") == "acked" and read["b"] != 1:
+            raise P1ReadCheckFailed(f"{node} lost B's acknowledged commit: {read}")
+        if read["versions"] < read["min_versions"]:
+            raise P1ReadCheckFailed(f"{node} lost versions of the history: {read} (outcomes {outcome})")
+
+
+def _p1_attempt(tmp_path, fs, first_of_term):
+    """One run of the P1 schedule: ``(outcome, reads, miss)``, ``miss`` ``None`` when both
+    rounds sent (see :func:`_p1_schedule`)."""
     with _cluster(tmp_path) as tc:
         fs.writeback(str(tmp_path))
+        # The versions before the schedule; every acknowledged commit below adds at least one
+        # (an unknown outcome may add one more), so they bound what the history must show.
+        committed = len(tc.db("n0").history())
         tc.store.set_outage(True)       # the object store never holds root k's records
         for node in tc.ids:             # every member has confirmed its committed root
             tc.commit(node, _setter("w"))
+            committed += 1
         _no_owner(tc)                   # A's next commit opens a term
+        a, b = tc["n0"], tc["n1"]
         if not first_of_term:
             tc.commit("n0", _setter("w"))    # the term's first root; k is the next one
-        assert tc["n0"]._ownership is not None or first_of_term
-        a, b = tc["n0"], tc["n1"]
+            committed += 1
+
+            def holds_first():
+                with a._lock:
+                    first = a._accepted
+                return all(tc[n]._accepted == first for n in ("n1", "n2"))
+            _p1_await(holds_first, what="every voter holding the term's first root", tc=tc)
+            with a._lock:
+                first_label = a._accepted[2]
+                owning = a._ownership is not None
+            if not owning:
+                # A's term ended after its first root: k would open a new term.
+                return {}, {}, "A's term ended after the term's first root"
         if a.persister is not None:
             a.persister.stop()
         lost = threading.Event()
+        k_terms, k_roots = [], []
         apply_b = b._apply_replicate
 
         def b_lane(msg):
             if msg["from"] == "n0" and msg["records"]:
+                k_terms.append(msg["term"])
+                k_roots.append(decode_labeled_root(msg["root"])[1:])
                 with b._lock:
                     b._note_owner(msg["term"])          # B learns the owner, not the records
                 lost.set()
@@ -317,6 +441,21 @@ def _p1_schedule(tmp_path, monkeypatch, *, first_of_term: bool, rule: str):
             power.wait(30)
             raise OSError("power lost before the holder's own sync")
         a._self_accept_with_records = a_own_append
+        # What B did that a voter may accept: a ``replicate`` sent, an own acceptance.
+        b_acceptable, b_bases = [], []
+        send_b = b.transport.send
+
+        def b_send(to, msg):
+            if msg["type"] == "replicate":
+                b_acceptable.append(f"replicate to {to}")
+                b_bases.append(decode_labeled_root(msg["pred"])[1:])
+            return send_b(to, msg)
+        b.transport.send = b_send
+        for name in ("_self_accept_with_records", "_self_accept_root"):
+            def own(*args, _orig=getattr(b, name), _name=name, **kw):
+                b_acceptable.append(_name)
+                return _orig(*args, **kw)
+            setattr(b, name, own)
         outcome = {}
 
         def commit(node, key):
@@ -327,14 +466,37 @@ def _p1_schedule(tmp_path, monkeypatch, *, first_of_term: bool, rule: str):
                 outcome[key] = "unknown"
             except ProtoDBError as e:
                 outcome[key] = type(e).__name__
+                outcome[f"{key} error"] = str(e)[:160]
         proposed = a.stats()["proposals"]
         ta = threading.Thread(target=commit, args=("n0", "a"))
         ta.start()
-        _await(lambda: lost.is_set() and a.stats()["proposals"] > proposed, what="A's proposal")
+        _p1_await(lambda: (lost.is_set() and a.stats()["proposals"] > proposed) or not ta.is_alive(),
+                  what="A's proposal")
+        if not (lost.is_set() and a.stats()["proposals"] > proposed):
+            # A's round ended before its proposal: nothing of k left A; no schedule to cut.
+            power.set()
+            return outcome, {}, f"A's round ended before it proposed: {outcome}"
+        if not first_of_term and k_terms[0] != first_label:
+            # A's term ended between the wait above and k: k is the first root of a new term and
+            # the voters hold an older term's root -- the ``True`` schedule, not this one.  B
+            # does not build on k.
+            power.set()
+            ta.join(30)
+            return outcome, {}, f"k opened a new term after the voters held the first root: {outcome}"
         tb = threading.Thread(target=commit, args=("n1", "b"))
         tb.start()
         tb.join(30)
-        assert b.stats()["pipelined_permits"] == 0 and a.stats()["pipelined_permits"] >= 1
+        assert b.stats()["pipelined_permits"] == 0
+        miss = None
+        if a.stats()["pipelined_permits"] == 0:
+            # A's term ended before B's request reached it: B's permission is not on k.
+            miss = f"B's permission was not issued on A's proposal: {outcome}"
+        elif outcome.get("b") == "ProtoConflictError" and not b_acceptable:
+            miss = f"B's round sent nothing a voter may accept: {outcome}"
+        elif outcome.get("b") == "acked" and k_roots[0] not in b_bases:
+            # B's permission on k ran out and B committed on another base (the committed root,
+            # under a term of its own): an honest acknowledgement, not built on k.
+            miss = f"B committed on a base other than k: {outcome}"
         # The whole cluster loses power.
         for node in list(tc.ids):
             path = os.path.realpath(os.path.join(str(tmp_path), node))
@@ -347,40 +509,43 @@ def _p1_schedule(tmp_path, monkeypatch, *, first_of_term: bool, rule: str):
         for node in tc.ids:
             tc.revive(node)
         reads = {}
+        deadline = time.monotonic() + stress.budget(READ_DEADLINE)
+        committed += outcome.get("b") == "acked"
         for node in tc.ids:
             try:
                 for _ in range(10):
                     try:
-                        tc.db(node).run(_setter("after"), **RUN_KW)
+                        _until_available(lambda: tc.db(node).run(_setter("after"), **RUN_KW), deadline)
+                        committed += 1
                         break
                     except ProtoOutcomeUnknownError:
                         continue
-                reads[node] = _read_keys(tc, node, ("a", "b", "w"))
-                # History is never lost (P1): every version stays readable, root k's included.
-                reads[node]["versions"] = len(tc.db(node).history())
+                reads[node] = _until_available(lambda: _read_keys(tc, node, ("a", "b", "w")), deadline)
+                # History is never lost (P1): every version stays readable, root k's included, and
+                # none is missing (the node reads after its own commit: it sees every one counted).
+                reads[node]["versions"] = _until_available(lambda: len(tc.db(node).history()), deadline)
+                reads[node]["min_versions"] = committed
             except Exception as e:      # reported by the assertion below
                 reads[node] = f"{type(e).__name__}: {e}"
-        return outcome, reads
+        return outcome, reads, miss
 
 
 @pytest.mark.parametrize("first_of_term,rule", [
     (True, "V2'"),
     (False, "V2'"),
-    (False, "V2"),       # V2 as written refuses here (no catch-up) ...
-    pytest.param(True, "V2", marks=pytest.mark.xfail(strict=True, reason="... but not when k is the first root of "
-                                                                           "its term: the probe's gap (V2')")),
-    pytest.param(False, "P1v", marks=pytest.mark.xfail(strict=True, reason="P1v: the voter catch-up loses it")),
-    pytest.param(True, "P1v", marks=pytest.mark.xfail(strict=True, reason="P1v: the voter catch-up loses it")),
+    (False, "V2"),       # V2 as written refuses here (no catch-up; every voter holds k's predecessor) ...
+    pytest.param(True, "V2", marks=pytest.mark.xfail(strict=True, raises=P1ReadCheckFailed,
+                                                     reason="... but not when k is the first root of its term: "
+                                                            "the probe's gap (V2')")),
+    pytest.param(False, "P1v", marks=pytest.mark.xfail(strict=True, raises=P1ReadCheckFailed,
+                                                       reason="P1v: the voter catch-up loses it")),
+    pytest.param(True, "P1v", marks=pytest.mark.xfail(strict=True, raises=P1ReadCheckFailed,
+                                                      reason="P1v: the voter catch-up loses it")),
 ])
 def test_p1_without_the_gate_the_voters_alone_keep_every_acknowledged_commit(tmp_path, monkeypatch,
                                                                             first_of_term, rule):
-    outcome, reads = _p1_schedule(tmp_path, monkeypatch, first_of_term=first_of_term, rule=rule)
-    assert outcome.get("a") != "acked"          # A lost power inside its round
-    for node, read in reads.items():
-        assert isinstance(read, dict), f"{node} cannot read the history: {read} (outcomes {outcome})"
-        if outcome.get("b") == "acked":
-            assert read["b"] == 1, f"{node} lost B's acknowledged commit: {read}"
-    print(f"\n{first_of_term=} {rule=}: outcomes {outcome}, reads {reads}")
+    outcome, reads, misses = _p1_schedule(tmp_path, monkeypatch, first_of_term=first_of_term, rule=rule)
+    print(f"\n{first_of_term=} {rule=}: outcomes {outcome}, reads {reads}, setup misses {misses}")
     if rule == "V2'":
         assert outcome.get("b") == "unknown", outcome     # a root stage left: never a conflict (H7)
 
@@ -725,6 +890,10 @@ def test_a_lost_done_to_the_successor_is_answered_by_the_fallback_query(tmp_path
                what="every member reading both commits")
 
 
+#: Clusters the records-nowhere scenario may build before it gives up on its setup (liveness, R142).
+NOWHERE_ATTEMPTS = 5
+
+
 @pytest.mark.parametrize("outage", [True, False])
 def test_a_successor_whose_base_records_are_nowhere_gets_a_retryable_conflict(tmp_path, outage):
     """Review 8.3k, I1.  The owner is n2 (it owns the term, and A's proposal reaches it before
@@ -735,14 +904,48 @@ def test_a_successor_whose_base_records_are_nowhere_gets_a_retryable_conflict(tm
     a failed predecessor.  B waits for its gate: it closes (k never committed), and B's
     commit gets a truthful, retryable ``ProtoConflictError`` -- nothing was sent (Lemma N)
     -- never ``ProtoCorruptionError`` nor ``ProtoUnexpectedError`` (7b2a7c4 gave the latter in
-    both cases)."""
-    with _cluster(tmp_path) as tc:
+    both cases).
+
+    The scenario needs n2's term to outlast A's request and B's delayed permit (Task P1-READ,
+    measured under 6 CPU burners).  When n2's term ended right after its commit or before A's
+    proposal reached it, A's round never proposes there; when B's wait for the delayed permit
+    ended first, B committed under a later permission that was not issued on k (it became the
+    owner of a new term on the committed root), which is a correct acknowledgement and no
+    result of this scenario.  Such a run is a setup miss: the members are checked for what
+    it acknowledged (b applied once, k never), and the scenario is built again in a fresh
+    cluster.  A commit acknowledged under the permission issued on k is never a miss."""
+    misses = []
+    for attempt in range(stress.attempts(NOWHERE_ATTEMPTS)):
+        path = tmp_path / f"attempt-{attempt}"
+        path.mkdir()
+        miss = _records_nowhere(path, outage)
+        if miss is None:
+            if misses:
+                print(f"\nrecords-nowhere scenario repeated: {misses}")
+            return
+        misses.append(miss)
+        if stress.ACTIVE:
+            stress.record(f"records-nowhere scenario missed: {miss}")
+    raise AssertionError(f"the records-nowhere scenario never formed in {len(misses)} clusters: {misses}")
+
+
+def _records_nowhere(tmp_path, outage):
+    """One run of the scenario above: ``None`` when it formed (every assertion held), otherwise
+    why it did not form.
+
+    The lease is 1.8 s, not the file's 0.9 s (as for the lost-done scenario): n2's term must
+    outlast A's request, A's proposal and B's permit, which the owner delays by 0.3 s, and B's
+    permission must still be valid when it arrives.  At 0.9 s, with CPU burners beside the test
+    on a machine at load average 17-21, B received a permission issued on k in 4 of 32 runs
+    (Task P1-READ, every one of them ended ``none``); the rules and assertions are unchanged."""
+    with _cluster(tmp_path, lease_duration=1.8) as tc:
         _confirmed(tc)
         _no_owner(tc)
         tc.store.set_outage(outage)
         a, b, o = tc["n0"], tc["n1"], tc["n2"]
         tc.commit("n2", _setter("o"))          # n2 owns the term
-        assert o._ownership is not None
+        if o._ownership is None:
+            return "n2's term ended right after its commit"
         send_a = a.transport.send
         a.transport.send = lambda to, msg: None if msg["type"] in ("warm", "records", "store") or (
             msg["type"] == "replicate" and msg["records"]) else send_a(to, msg)
@@ -756,6 +959,14 @@ def test_a_successor_whose_base_records_are_nowhere_gets_a_retryable_conflict(tm
                 return None
             return send_o(to, msg)
         o.transport.send = owner_send
+        b_permits = []
+        permit_b = b.permit
+
+        def recording_permit(*args, **kw):
+            permission = permit_b(*args, **kw)
+            b_permits.append(permission)
+            return permission
+        b.permit = recording_permit
         hold = threading.Event()
 
         def stuck_own(*args, **kw):
@@ -785,23 +996,40 @@ def test_a_successor_whose_base_records_are_nowhere_gets_a_retryable_conflict(tm
             with o._cond:
                 own = o._ownership
                 return own is not None and any(e.node == "n0" and e.proposal is not None for e in own.pipeline)
-        _await(proposed_to_owner, what="A's proposal at the owner")
+
+        def term_ended():
+            with o._cond:
+                return o._ownership is None
+        _await(lambda: proposed_to_owner() or not ta.is_alive() or term_ended(), what="A's proposal at the owner")
+        if not proposed_to_owner():
+            # n2's term ended, or A's round ended, before A's proposal reached n2.
+            hold.set()
+            ta.join(30)
+            return f"A's proposal never reached n2 (n2's term ended: {term_ended()}; {results})"
         tb.start()
         _await(permit_out.is_set, what="B's permit on root k")
         tc.cluster.crash("n0")
         hold.set()
         tb.join(30)
         ta.join(30)
-        assert results.get("b") == "conflict", results
-        if outage:          # with the store up, A's persister may have uploaded root k's segment:
-            assert b.stats()["gate_closures"] >= 1, b.stats()     # B then builds, and its gate closes
-        # The conflict is truthful: in the next term, b was never applied.
+        on_k = [p for p in b_permits if p.after is not None]
+        miss = None
+        if results.get("b") == "acked" and not any(p.outcome == "committed" for p in on_k):
+            miss = (f"B committed under a later permission, not the one issued on k ({results}; "
+                    f"B's permissions on k: {[p.outcome for p in on_k]})")
+        else:
+            assert results.get("b") == "conflict", results
+            if outage:          # with the store up, A's persister may have uploaded root k's segment:
+                assert b.stats()["gate_closures"] >= 1, b.stats()     # B then builds, and its gate closes
+        # The outcome is truthful: in the next term, b is applied exactly when it was acknowledged.
         tc.store.set_outage(False)
         _no_owner(tc, timeout=10)
         tc.commit("n2", _setter("c"))
+        expected = 1 if results.get("b") == "acked" else None
         for node in ("n1", "n2"):
             _await(lambda: _read_keys(tc, node, ("c",))["c"] == 1, what=f"the next term at {node}")
-            assert _read_keys(tc, node, ("b",))["b"] is None, node
+            assert _read_keys(tc, node, ("a", "b")) == {"a": None, "b": expected}, (node, results)
+    return miss
 
 
 #: Clusters the late-acks scenario may build before it gives up on its setup (liveness, R142).

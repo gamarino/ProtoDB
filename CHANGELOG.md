@@ -36,6 +36,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   longer count an abandonment that timing explains: an owner timer (R82), or rule O5 after a send-reserve
   refusal (R121) of that very permission, which a permit that waited in the owner's queue gets under CPU load.
   Every other abandonment still fails them; plant `o5_none_unrefused` checks it.
+- Tests: the P1 power-loss schedules of `test_cluster_pipelined_permits` no longer report an unavailable read
+  as lost history. Under CPU load a read after the power cut failed with `ProtoUnexpectedError` ("store
+  unreachable") while two members held the record in their local files: the peer fetch timed out
+  (`fetch_timeout`, 75 ms there) and the schedule keeps the object store in outage. Reads failing with exactly
+  that type are now retried for up to 15 s (scaled in stress mode); a record that no member holds still fails
+  them (plant `p1_catch_up`). Every read check also compares the length of `history()` with the commits
+  acknowledged before it (plant `history_truncated`). A schedule that did not form is rebuilt in a fresh
+  cluster: A's round ended before it proposed; A's term ended after the term's first root, or k opened a new
+  term (`False` cases: the voters then hold an older term's root, the `True` schedule, which the planted V2 rule
+  loses; the product's V2' refuses k+1 there); B's permission was not issued on A's proposal; B's round sent
+  nothing a voter may accept; or B, whose permission on k had run out, was acknowledged on another base. The
+  records-nowhere scenario is rebuilt when n2's term ended right after its commit, when A's proposal never
+  reached n2, or when B committed under a later permission, and it now runs with a 1.8 s lease, so that the
+  owner's delayed permit still arrives valid. Every run that reaches the power cut still goes through the reads
+  and their checks, a rebuilt one included (plants `p1_catch_up_missed`, `p1_conflict_after_root_stage`,
+  `nowhere_false_ack`). A schedule that never forms raises a setup error, which the strict xfails of the planted
+  cases no longer accept: they expect the read check's failure only (plant `p1_setup_never_forms`). The `False`
+  cases wait until every voter holds the term's first root, the premise of their claim. No product change.
 - Tests: the two compaction checks of `test_owner_locks` held on ext4, where a freed inode number is
   reused; they now keep the original file open and compare with `os.path.samestat`.
 
