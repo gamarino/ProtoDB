@@ -897,7 +897,20 @@ class _Group:
         # A permission kept for the immediate retry of the runner's own conflicting commit
         # (D50 Amendment "held retries"): ``(permission, tier, rounds run, keeper thread,
         # coordinator, deadline, expiry timer)``; kept for at most _RETRY_HOLD (review I2).
+        # While a kept permission is being ended, an :class:`_Ending` marker (R148): set in the
+        # critical section that takes the permission out, cleared once ``finish`` returned.
         self.kept = None
+
+
+class _Ending:
+    """The value of ``_Group.kept`` while a kept permission is being ended (Task KEPT-PERMIT,
+    ruling R148): it was taken out of the group, and ``coordinator.finish`` has not returned
+    yet, so the node's permission slot may still be taken.  A runner that finds it waits until
+    it is cleared (:func:`_take_kept`) and then asks for a new permission: asking at once got
+    ``permit()``'s misuse error, ``ProtoUserError("... already holds a write permission")``,
+    which ``Database.run`` does not retry, for a commit that sent nothing."""
+
+    __slots__ = ()
 
 
 _GROUPS = weakref.WeakKeyDictionary()
@@ -920,20 +933,46 @@ def _requeue(group: _Group, entries: list) -> None:
         group.cond.notify_all()
 
 
-def _take_kept(group: _Group, coordinator, tier):
-    """``(permission, rounds run)`` kept by a previous runner of ``group`` for the retry of its
-    own commit, or ``None``.  A kept permission that is no longer usable is ended here."""
+def _take_kept(group: _Group, coordinator, tier, timeout: Optional[float]):
+    """``(permission, rounds run, timeout)``: the permission kept by a previous runner of
+    ``group`` for the retry of its own commit, or ``(None, 0, timeout)`` when there is none to
+    use and the runner must ask for one, with ``timeout`` what is left of its permit timeout.
+
+    A kept permission that is no longer usable is ended here.  A kept permission being ended
+    (an :class:`_Ending` marker, R148) is waited for: its ``finish`` frees the node's
+    permission slot.  The wait is part of obtaining a permission, so it counts against the
+    permit timeout (``timeout``, ``None``: the coordinator's ``acquire_timeout``) and ends, as
+    :meth:`~proto_db.cluster.coordinator.ClusterCoordinator.permit` does, with
+    ``ProtoTimeoutError``: a ``finish`` that hangs never hangs the node's runners (R82)."""
     with group.cond:
-        kept, group.kept = group.kept, None
-    if kept is None:
-        return None
-    kept[6].cancel()
-    permission, kept_tier, rounds, deadline = kept[0], kept[1], kept[2], kept[5]
-    if kept_tier is tier and time.monotonic() < deadline and permission.is_valid() \
-            and permission.outcome != "unknown" and not getattr(permission, "gate_closed", False):
-        return permission, rounds
-    _end_permission(kept[4], permission)
-    return None
+        if isinstance(group.kept, _Ending):
+            bound = coordinator.acquire_timeout if timeout is None else timeout
+            deadline = time.monotonic() + bound
+            while True:
+                remaining = deadline - time.monotonic()
+                ending = isinstance(group.kept, _Ending)
+                if remaining <= 0:
+                    # Never ``permit(0.0)``: its "within 0.0 s" would hide the configured bound.
+                    raise ProtoTimeoutError(
+                        f"Node {coordinator.node_id} could not obtain a write permission within {bound} s: "
+                        + ("its kept permission is still being ended" if ending else
+                           "waiting for its kept permission to be ended used the whole timeout"))
+                if not ending:
+                    break
+                group.cond.wait(timeout=remaining)
+            timeout = remaining
+        kept = group.kept
+        if kept is None:
+            return None, 0, timeout
+        permission, kept_tier, rounds = kept[0], kept[1], kept[2]
+        if kept_tier is tier and time.monotonic() < kept[5] and permission.is_valid() \
+                and permission.outcome != "unknown" and not getattr(permission, "gate_closed", False):
+            group.kept = None
+            kept[6].cancel()
+            return permission, rounds, timeout
+        group.kept = marker = _Ending()
+    _end_kept(group, kept, marker)
+    return None, 0, timeout
 
 
 def _keep(group: _Group, permission, tier, rounds: int, coordinator) -> None:
@@ -941,13 +980,17 @@ def _keep(group: _Group, permission, tier, rounds: int, coordinator) -> None:
     most :data:`_RETRY_HOLD` (review I2).  A timer ends it if no commit took it by then, so a
     retry whose ``fn`` works longer never stalls the other members of the cluster behind the
     owner's single outstanding permission.  Liveness only: ending a permission is always
-    allowed, and the timer never decides an acceptance or an acknowledgement."""
+    allowed, and the timer never decides an acceptance or an acknowledgement.
+
+    Whoever ends a kept permission (this timer, :func:`_drop_kept`, :func:`_take_kept`) leaves
+    an :class:`_Ending` marker in ``group.kept`` until ``coordinator.finish`` returned (R148):
+    a kept permission is always either kept or finished for the node's next runner."""
     def expire():
         with group.cond:
             if group.kept is not kept:
                 return              # taken (or dropped) meanwhile
-            group.kept = None
-        _end_permission(coordinator, permission)
+            group.kept = marker = _Ending()
+        _end_kept(group, kept, marker)
 
     timer = threading.Timer(_RETRY_HOLD, expire)
     timer.daemon = True
@@ -966,6 +1009,20 @@ def _end_permission(coordinator, permission) -> None:
         logger.error("Ending the cluster write permission failed: %s", e)
 
 
+def _end_kept(group: _Group, kept: tuple, marker: _Ending) -> None:
+    """End the kept permission ``kept``, which the caller replaced by ``marker`` in
+    ``group.kept`` in the critical section that took it out (R148); clear the marker and wake
+    the runners waiting for it once ``coordinator.finish`` returned or raised."""
+    try:
+        kept[6].cancel()
+        _end_permission(kept[4], kept[0])
+    finally:
+        with group.cond:
+            if group.kept is marker:
+                group.kept = None
+            group.cond.notify_all()
+
+
 def _drop_kept() -> None:
     """End the permission this thread's last commit kept for a retry that is not coming
     (:meth:`Database.run` returned or raised instead of retrying)."""
@@ -975,11 +1032,10 @@ def _drop_kept() -> None:
     _RUN.kept_group = None
     with group.cond:
         kept = group.kept
-        if kept is None or kept[3] != threading.get_ident():
+        if kept is None or isinstance(kept, _Ending) or kept[3] != threading.get_ident():
             return
-        group.kept = None
-    kept[6].cancel()
-    _end_permission(kept[4], kept[0])
+        group.kept = marker = _Ending()
+    _end_kept(group, kept, marker)
 
 
 def _run_round(coordinator, lock_timeout, batch: list, group: _Group) -> bool:
@@ -1005,20 +1061,25 @@ def _run_round(coordinator, lock_timeout, batch: list, group: _Group) -> bool:
         return True
     tier = attached
     me = threading.get_ident()
-    kept = _take_kept(group, coordinator, tier)
-    if kept is not None:
-        permission, rounds = kept
-    else:
-        rounds = 0
-        try:
-            permission = coordinator.permit(lock_timeout)
-        except BaseException as e:
-            for entry in live:
-                entry.finish(error=e, shared=True)
-            raise_now = not isinstance(e, ProtoDBError)
-            if raise_now:
-                raise
-            return True
+    try:
+        permission, rounds, timeout = _take_kept(group, coordinator, tier, lock_timeout)
+        if permission is None:
+            try:
+                permission = coordinator.permit(timeout)
+            except ProtoTimeoutError as e:
+                if timeout is lock_timeout:
+                    raise               # no wait for an ending kept permission: permit()'s own message
+                bound = coordinator.acquire_timeout if lock_timeout is None else lock_timeout
+                raise ProtoTimeoutError(
+                    f"Node {coordinator.node_id} could not obtain a write permission within {bound} s, "
+                    f"{bound - timeout:.3f} s of it spent waiting for its kept permission to be ended") from e
+    except BaseException as e:
+        for entry in live:
+            entry.finish(error=e, shared=True)
+        raise_now = not isinstance(e, ProtoDBError)
+        if raise_now:
+            raise
+        return True
     fresh = True
     keep = False
     try:
