@@ -353,7 +353,8 @@ class Extension:
 
 
 class Registry:
-    """The registry of a module list, in memory (immutable once built; see the module docstring)."""
+    """The registry of a module list, in memory: its definitions are immutable once built (see the
+    module docstring); it carries only an internal, idempotent memo of checks already passed."""
 
     __slots__ = ("key", "extensions", "_chains", "_parents", "_codes", "_checked")
 

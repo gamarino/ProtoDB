@@ -250,14 +250,20 @@ def _check_python_members(cls, entry, registry) -> None:
     """``ProtoValidationError`` if a registry name of ``entry`` defines a name that ``cls`` (a
     ``DBObject`` subclass) defines in Python: Python finds the member first, so the registry
     definition could never be reached (spec section 4).  Memoized per (class, registry name) on
-    the registry, so it runs once per pair whether or not the entry is cached."""
+    the registry, so it runs once per pair whether or not the entry is cached.  The memo holds
+    its classes strongly for the registry's life (dynamically created subclasses stay alive
+    while it lives); it is bounded by classes times extended registry names."""
     if registry is None or not entry.names or cls is _dbobject_class():
         return
     checked = registry._checked
     for node in entry.names:
         if (cls, node) in checked:
             continue
-        for extension in registry.chain(node):
+        chain = registry.chain(node)
+        if not chain:
+            continue                # an empty node defines nothing; never memoized, so names
+                                    # from stored parents cannot grow the memo without bound
+        for extension in chain:
             for name in extension.definitions:
                 if class_defines(cls, name):
                     raise ProtoValidationError(
