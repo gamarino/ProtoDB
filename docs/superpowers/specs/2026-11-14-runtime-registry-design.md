@@ -328,10 +328,10 @@ Rules:
   reference. Two encodings of one string are therefore one value, and a lookup never misses because one copy was
   stored inline and the other by reference. D58 is amended to say that its "canonical bytes" are those of the
   expanded value.
-- **The writer chooses; the reader always expands.** Writing a string inline is always valid. The reference form
-  is an optimization a writer applies by policy. The proposed policy: attribute names (state-map keys) and
-  registry names, plus any string value that is already interned and whose inline encoding is longer than the
-  reference.
+- **Optional, decided per write (maintainer, 2026-11-14).** Using a symbol is never required. The writer uses the
+  reference only where it pays: the string is already interned in the database, and its reference is shorter than
+  its inline encoding. Otherwise the writer writes the string again. The reader always expands, and it accepts
+  either form anywhere a string may appear. Nothing about a value depends on which form was written.
 - **Expansion is cached** per process, id to `str`. Entries are immutable and never invalidated.
 
 The reference must be **smaller than the string**, or nothing is saved:
