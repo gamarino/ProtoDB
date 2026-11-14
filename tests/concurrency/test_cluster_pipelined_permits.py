@@ -292,15 +292,35 @@ def _until_available(fn, deadline):
     n2 held the record in their local files, the fetch timed out with no answer, and the same
     read succeeded at once when retried), so the error alone is no evidence of lost history
     (R82: timing decides liveness only).  A record that no member holds keeps failing the same
-    way, so a true loss still fails after the deadline (plant ``p1_catch_up``); every other
-    error is raised at once."""
+    way, so a true loss still fails after the deadline (plant ``p1_catch_up``).  Only that exact
+    type is retried: its subclasses (``ProtoOutcomeUnknownError`` among them) and every other
+    error are raised at once, to the caller's own handling."""
     while True:
         try:
             return fn()
-        except ProtoUnexpectedError:
-            if time.monotonic() >= deadline:
+        except ProtoUnexpectedError as e:
+            if type(e) is not ProtoUnexpectedError or time.monotonic() >= deadline:
                 raise
             time.sleep(0.05)
+
+
+class P1ReadCheckFailed(AssertionError):
+    """A P1 read check failed: a member cannot read the history, lost an acknowledged commit, or
+    reads fewer versions than were committed.  The planted P1 cases expect exactly this
+    (``xfail(raises=...)``), so a setup that never formed cannot satisfy them."""
+
+
+class P1SetupFailed(RuntimeError):
+    """The P1 schedule could not be set up (it never formed, or a setup wait timed out): an
+    error of the run, never the result the planted cases expect."""
+
+
+def _p1_await(predicate, **kw):
+    """:func:`_await` for the P1 setup: a timeout is :class:`P1SetupFailed`."""
+    try:
+        _await(predicate, **kw)
+    except AssertionError as e:
+        raise P1SetupFailed(str(e)) from e
 
 
 #: Clusters a P1 schedule may build before it gives up on its setup (liveness, R142).
@@ -354,16 +374,20 @@ def _p1_schedule(tmp_path, monkeypatch, *, first_of_term: bool, rule: str):
         misses.append(miss)
         if stress.ACTIVE:
             stress.record(f"P1 schedule missed: {miss}")
-    raise AssertionError(f"the P1 schedule never formed in {len(misses)} clusters: {misses}")
+    raise P1SetupFailed(f"the P1 schedule never formed in {len(misses)} clusters: {misses}")
 
 
 def _check_p1_reads(outcome, reads):
-    """What every run of the P1 schedule must show, a setup miss included."""
+    """What every run of the P1 schedule that reached the power cut must show, a setup miss
+    included (:class:`P1ReadCheckFailed`)."""
     assert outcome.get("a") != "acked"          # A lost power inside its round
     for node, read in reads.items():
-        assert isinstance(read, dict), f"{node} cannot read the history: {read} (outcomes {outcome})"
-        if outcome.get("b") == "acked":
-            assert read["b"] == 1, f"{node} lost B's acknowledged commit: {read}"
+        if not isinstance(read, dict):
+            raise P1ReadCheckFailed(f"{node} cannot read the history: {read} (outcomes {outcome})")
+        if outcome.get("b") == "acked" and read["b"] != 1:
+            raise P1ReadCheckFailed(f"{node} lost B's acknowledged commit: {read}")
+        if read["versions"] < read["min_versions"]:
+            raise P1ReadCheckFailed(f"{node} lost versions of the history: {read} (outcomes {outcome})")
 
 
 def _p1_attempt(tmp_path, fs, first_of_term):
@@ -371,19 +395,24 @@ def _p1_attempt(tmp_path, fs, first_of_term):
     rounds sent (see :func:`_p1_schedule`)."""
     with _cluster(tmp_path) as tc:
         fs.writeback(str(tmp_path))
+        # The versions before the schedule; every acknowledged commit below adds at least one
+        # (an unknown outcome may add one more), so they bound what the history must show.
+        committed = len(tc.db("n0").history())
         tc.store.set_outage(True)       # the object store never holds root k's records
         for node in tc.ids:             # every member has confirmed its committed root
             tc.commit(node, _setter("w"))
+            committed += 1
         _no_owner(tc)                   # A's next commit opens a term
         a, b = tc["n0"], tc["n1"]
         if not first_of_term:
             tc.commit("n0", _setter("w"))    # the term's first root; k is the next one
+            committed += 1
 
             def holds_first():
                 with a._lock:
                     first = a._accepted
                 return all(tc[n]._accepted == first for n in ("n1", "n2"))
-            _await(holds_first, what="every voter holding the term's first root", tc=tc)
+            _p1_await(holds_first, what="every voter holding the term's first root", tc=tc)
             with a._lock:
                 first_label = a._accepted[2]
                 owning = a._ownership is not None
@@ -441,8 +470,8 @@ def _p1_attempt(tmp_path, fs, first_of_term):
         proposed = a.stats()["proposals"]
         ta = threading.Thread(target=commit, args=("n0", "a"))
         ta.start()
-        _await(lambda: (lost.is_set() and a.stats()["proposals"] > proposed) or not ta.is_alive(),
-               what="A's proposal")
+        _p1_await(lambda: (lost.is_set() and a.stats()["proposals"] > proposed) or not ta.is_alive(),
+                  what="A's proposal")
         if not (lost.is_set() and a.stats()["proposals"] > proposed):
             # A's round ended before its proposal: nothing of k left A; no schedule to cut.
             power.set()
@@ -481,17 +510,21 @@ def _p1_attempt(tmp_path, fs, first_of_term):
             tc.revive(node)
         reads = {}
         deadline = time.monotonic() + stress.budget(READ_DEADLINE)
+        committed += outcome.get("b") == "acked"
         for node in tc.ids:
             try:
                 for _ in range(10):
                     try:
                         _until_available(lambda: tc.db(node).run(_setter("after"), **RUN_KW), deadline)
+                        committed += 1
                         break
                     except ProtoOutcomeUnknownError:
                         continue
                 reads[node] = _until_available(lambda: _read_keys(tc, node, ("a", "b", "w")), deadline)
-                # History is never lost (P1): every version stays readable, root k's included.
+                # History is never lost (P1): every version stays readable, root k's included, and
+                # none is missing (the node reads after its own commit: it sees every one counted).
                 reads[node]["versions"] = _until_available(lambda: len(tc.db(node).history()), deadline)
+                reads[node]["min_versions"] = committed
             except Exception as e:      # reported by the assertion below
                 reads[node] = f"{type(e).__name__}: {e}"
         return outcome, reads, miss
@@ -501,10 +534,13 @@ def _p1_attempt(tmp_path, fs, first_of_term):
     (True, "V2'"),
     (False, "V2'"),
     (False, "V2"),       # V2 as written refuses here (no catch-up; every voter holds k's predecessor) ...
-    pytest.param(True, "V2", marks=pytest.mark.xfail(strict=True, reason="... but not when k is the first root of "
-                                                                           "its term: the probe's gap (V2')")),
-    pytest.param(False, "P1v", marks=pytest.mark.xfail(strict=True, reason="P1v: the voter catch-up loses it")),
-    pytest.param(True, "P1v", marks=pytest.mark.xfail(strict=True, reason="P1v: the voter catch-up loses it")),
+    pytest.param(True, "V2", marks=pytest.mark.xfail(strict=True, raises=P1ReadCheckFailed,
+                                                     reason="... but not when k is the first root of its term: "
+                                                            "the probe's gap (V2')")),
+    pytest.param(False, "P1v", marks=pytest.mark.xfail(strict=True, raises=P1ReadCheckFailed,
+                                                       reason="P1v: the voter catch-up loses it")),
+    pytest.param(True, "P1v", marks=pytest.mark.xfail(strict=True, raises=P1ReadCheckFailed,
+                                                      reason="P1v: the voter catch-up loses it")),
 ])
 def test_p1_without_the_gate_the_voters_alone_keep_every_acknowledged_commit(tmp_path, monkeypatch,
                                                                             first_of_term, rule):

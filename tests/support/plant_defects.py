@@ -360,6 +360,41 @@ def blind_snapshot_of'''),),
         ("cannot read the history", "lost B's acknowledged commit"),
         "product: a voter accepts a root extending one it does not hold (P1v); the history is lost after a "
         "power cut, and the P1 reads, retried until their deadline, still fail (Task P1-READ)"),
+    "p1_catch_up_missed": Plant((
+        ("proto_db/cluster/coordinator.py",
+         "        return compare_roots(pred[2], pred[1], accepted_label, accepted) == 0\n",
+         "        return compare_roots(pred[2], pred[1], accepted_label, accepted) >= 0   # PLANT: voter catch-up\n"),
+        ("tests/concurrency/test_cluster_pipelined_permits.py",
+         "        # The whole cluster loses power.\n",
+         "        miss = miss or \"a miss forced by the plant\"   # PLANT: every run is a setup miss\n"
+         "        # The whole cluster loses power.\n"),),
+        ("tests/concurrency/test_cluster_pipelined_permits.py::"
+         "test_p1_without_the_gate_the_voters_alone_keep_every_acknowledged_commit[False-V2']",),
+        ("cannot read the history", "lost B's acknowledged commit"),
+        "product and tests: the voter catch-up of p1_catch_up, with every run of the schedule taken for a setup "
+        "miss; the loss still fails the read check of the run it happened in, never as a schedule that never "
+        "formed (Task P1-READ review, F2)"),
+    "history_truncated": Plant((
+        ("proto_db/transactions.py",
+         "        while root is not None:\n            entries.append(HistoryEntry(root, self._name))\n",
+         "        while root is not None and len(entries) < 5:   # PLANT: the history is truncated\n"
+         "            entries.append(HistoryEntry(root, self._name))\n"),),
+        ("tests/concurrency/test_cluster_pipelined_permits.py::"
+         "test_p1_without_the_gate_the_voters_alone_keep_every_acknowledged_commit[True-V2']",
+         "tests/concurrency/test_cluster_pipelined_permits.py::"
+         "test_p1_without_the_gate_the_voters_alone_keep_every_acknowledged_commit[False-V2']"),
+        "lost versions of the history",
+        "product: ``history()`` stops after five versions without an error; the P1 reads compare the history's "
+        "length with the commits acknowledged before them (Task P1-READ review, F6)"),
+    "p1_setup_never_forms": Plant((
+        ("tests/concurrency/test_cluster_pipelined_permits.py",
+         "        outcome, reads, miss = _p1_attempt(path, fs, first_of_term)\n",
+         "        outcome, reads, miss = {}, {}, \"a miss forced by the plant\"   # PLANT: no run ever forms\n"),),
+        ("tests/concurrency/test_cluster_pipelined_permits.py::"
+         "test_p1_without_the_gate_the_voters_alone_keep_every_acknowledged_commit[True-V2]",),
+        "the P1 schedule never formed",
+        "tests: the P1 schedule never forms; the strict xfail of a planted case must not take that for the loss "
+        "it expects (Task P1-READ review, F1)"),
     "p1_conflict_after_root_stage": Plant((
         ("tests/concurrency/test_cluster_pipelined_permits.py",
          "            except ProtoOutcomeUnknownError:\n                outcome[key] = \"unknown\"\n"
