@@ -22,7 +22,7 @@ Starting three nodes
    import threading
    import time
 
-   from proto_db import ClusterCoordinator, ObjectSpace, Peer, TieredStorage
+   from proto_db import ClusterCoordinator, ObjectSpace, Peer, ProtoOutcomeUnknownError, TieredStorage
    from proto_db.cluster.transport import InProcessNetwork
    from proto_db.storage.cloud import ObjectNotFoundError, PreconditionFailedError
 
@@ -101,15 +101,35 @@ acknowledged to its writer once a majority has it; ``n1`` learns of it when the 
 arrives, asynchronously. So a read on ``n1`` made right after ``n0``'s ``run`` returned can still see the
 previous state: a consistent snapshot, slightly old.
 
+A cluster commit has a third outcome besides "committed" and "conflict" (retried by ``run``):
+``ProtoOutcomeUnknownError``, *the commit may or may not take effect*. It is rare on an idle machine and
+more frequent when the nodes' threads are starved of CPU (see :doc:`../design-guide/unknown-outcomes`).
+``run`` never retries it, because a retry could apply the work twice. The writes below store a value
+that no other commit writes, so the value is its own token: a later read that finds it shows that an
+unknown commit took effect. The loops count only acknowledged commits, because a read can only "miss" a
+commit that was acknowledged.
+
 .. code-block:: python
 
-   stale = 0
-   for k in range(1, 21):
-       writer.run(lambda tr: tr.set_root_object("orders", k), retries=200)       # acknowledged on n0
+   def write_orders(k):
+       """Set ``orders`` to ``k`` on n0: True if acknowledged, False if the outcome is unknown."""
+       try:
+           writer.run(lambda tr: tr.set_root_object("orders", k), retries=200)
+           return True
+       except ProtoOutcomeUnknownError:
+           return False             # may or may not take effect; never retried blindly
+
+   stale = acknowledged = 0
+   k = 0
+   while acknowledged < 20:
+       k += 1
+       if not write_orders(k):                                                 # acknowledged on n0?
+           continue
+       acknowledged += 1
        tr = reader.new_transaction()
        stale += tr.get_root_object("orders") != k                              # read on n1 right away
        tr.abort()
-   print(f"local reads that missed the commit acknowledged just before: {stale} of 20")
+   print(f"local reads that missed the commit acknowledged just before: {stale} of {acknowledged}")
 
 .. code-block:: text
    :caption: Sample output (the count varies from run to run, from 0 to most of them)
@@ -148,18 +168,29 @@ start the read after it returns:
 
 .. code-block:: python
 
-   def linearizable(database):
+   def linearizable(database, attempts=10):
        """A transaction that sees every commit acknowledged before this call started."""
-       database.run(lambda tr: tr.set_root_object("_read_barrier", True), retries=200)
-       return database.new_transaction()
+       for attempt in range(attempts):
+           try:
+               database.run(lambda tr: tr.set_root_object("_read_barrier", True), retries=200)
+               return database.new_transaction()
+           except ProtoOutcomeUnknownError:
+               if attempt == attempts - 1:
+                   raise            # the barrier never held: give up
+               # The barrier did not hold. Every attempt writes the same value, so if the first
+               # one took effect after all, the retry only adds one more barrier version.
 
-   missed = 0
-   for k in range(21, 41):
-       writer.run(lambda tr: tr.set_root_object("orders", k), retries=200)
+   missed = acknowledged = 0
+   k = 20
+   while acknowledged < 20:
+       k += 1
+       if not write_orders(k):
+           continue
+       acknowledged += 1
        tr = linearizable(reader)
        missed += tr.get_root_object("orders") != k
        tr.abort()
-   print(f"linearizable reads that missed the commit acknowledged just before: {missed} of 20")
+   print(f"linearizable reads that missed the commit acknowledged just before: {missed} of {acknowledged}")
 
 .. code-block:: text
    :caption: Output
@@ -173,7 +204,9 @@ protocol forbids). That is why the barrier works, and why it has two conditions:
 * It must **write at least one root or mutable**. A transaction that writes nothing returns at once, asks for
   no permission and teaches the node nothing: ``db.run(lambda tr: None)`` is not a barrier.
 * It must **return normally**. A ``ProtoOutcomeUnknownError``, a conflict after all retries or a timeout
-  raise, so you know the barrier did not hold; retry it or give up.
+  raise, so you know the barrier did not hold; retry it or give up. ``linearizable`` above retries an
+  unknown barrier a few times: the barrier is the one write here that may be repeated, because every attempt
+  writes the same value, and a repeated barrier only adds a version like any other barrier.
 
 The cost is a commit: a round trip to a majority and a write of the barrier root, instead of a memory
 read. It is also a **permanent** cost, because nothing is ever deleted: every barrier adds a version to
