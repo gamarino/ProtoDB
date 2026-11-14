@@ -1184,3 +1184,14 @@ def test_adapters_satisfy_the_protocol(monkeypatch):
     fake_gcs(monkeypatch)
     for store in (S3ObjectStore("b"), GCSObjectStore("b"), FakeObjectStore()):
         CloudStorage(store, **FAST).close()
+
+
+def test_the_repository_object_stores_declare_definitive_refusals():
+    """The benchmark and directory stores never re-send a request, so they declare it (R147a).
+    Without the flag, a refused root write whose epoch the history no longer reaches is an
+    unknown outcome, which ``Database.run`` does not retry: the cluster_cas_baseline workload
+    failed that way in CI (afab4a2, Python 3.14)."""
+    from benchmarks.support import MemoryObjectStore
+    from tests.support.dir_object_store import DirObjectStore
+    assert MemoryObjectStore.refusals_are_definitive is True
+    assert DirObjectStore.refusals_are_definitive is True

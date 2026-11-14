@@ -38,6 +38,9 @@ def records(n: int, seed: int = 1) -> List[dict]:
 class MemoryObjectStore:
     """Thread-safe in-memory object store with conditional writes and latency (module docstring)."""
 
+    #: A refused write was never applied: nothing here re-sends a request (ruling R147a, D43).
+    refusals_are_definitive = True
+
     def __init__(self, latency: float = 0.0):
         self.latency = latency
         self._lock = threading.Lock()
