@@ -11,7 +11,8 @@ Nodes
     ``_probe``, which skips a name its stand-in class defines, so a field named like an
     ``OpaqueAtom`` class member would not be seen through it; ``OpaqueAtom`` and ``Atom`` define
     no public member today, so no field is hidden, but a public member added to either later
-    would hide the fields of that name in opaque parents), or a registry name (a ``str``).  Nodes are identified by ``oid`` (D10, ruling R159): two parent objects that are
+    would hide the fields of that name in opaque parents), or a registry name (a ``str``).
+    Nodes are identified by ``oid`` (D10, ruling R159): two parent objects that are
     different stubs or records of one oid are one node, and the object used is the one met first
     in a left-to-right, depth-first walk of the parents; the other one's fields and parents are
     never read.
