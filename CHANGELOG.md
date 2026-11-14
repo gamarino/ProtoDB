@@ -9,10 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `proto_db.__version__` reports the package version; in 2.0.0rc3 it still said `2.0.0.dev0`.
 - `CloudStorage.publish_root` reports a write refused by its precondition as `ProtoConflictError`, which
-  `Database.run` retries, as D43 states. It reported `ProtoOutcomeUnknownError` when another instance had
-  published more than `root_history` roots before the read-back, although nothing of ours could have been
-  applied (seen as an intermittent CI failure of two instances sharing a counter). The read-back still
-  runs first, so a write that did land is reported as applied.
+  `Database.run` retries, when the object store declares that its refusals are definitive
+  (`refusals_are_definitive`: nothing below it re-sends a conditional write). The bundled `S3ObjectStore` and
+  `GCSObjectStore` declare it with the clients they build; an S3 client passed in declares it only when it is
+  configured for one attempt in total. Before, such a refusal was reported as `ProtoOutcomeUnknownError` when
+  another instance had published more than `root_history` roots before the read-back, although nothing of
+  ours could have been applied (seen as an intermittent CI failure of two instances sharing a counter). Other
+  stores keep the unknown outcome, and the read-back still runs first, so a write that did land is reported as
+  applied (D43 amendment, ruling R147a).
+- `S3ObjectStore` builds its client with one attempt in total (`retries={"total_max_attempts": 1}`). botocore
+  reads the former `max_attempts=1` as one retry, so a conditional `PutObject` could be sent twice.
 - Documented a Python 3.14 hazard (concurrency model, "Interrupts and signal handlers on Python 3.14"): an
   exception from a signal handler, such as `KeyboardInterrupt`, can leave a `proto_db` lock held, so a
   process interrupted inside `proto_db` code should end rather than keep using the space.
