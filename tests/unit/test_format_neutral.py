@@ -287,9 +287,9 @@ def test_optional_fields_may_be_absent():
 
 # -- format 4, and indexes written with format-3 tokens -------------------------------------------
 
-def test_the_format_number_is_4_and_formats_2_to_4_read():
-    assert fmt.FORMAT_VERSION == 4
-    assert fmt.READABLE_FORMAT_VERSIONS == frozenset({2, 3, 4})
+def test_the_format_number_is_5_formats_2_to_5_read_and_4_is_written_without_features():
+    assert fmt.FORMAT_VERSION == 5 and fmt.WRITE_FORMAT_VERSION == 4
+    assert fmt.READABLE_FORMAT_VERSIONS == frozenset({2, 3, 4, 5})
 
 
 def _legacy(index):

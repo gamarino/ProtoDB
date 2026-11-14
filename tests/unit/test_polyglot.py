@@ -210,15 +210,11 @@ def test_a_field_named_like_a_metaclass_attribute_is_readable(field):
 # -- pre-tag review I-3: writers write the lowest sufficient format version -----------------------
 
 def test_a_writer_that_reads_a_newer_version_still_writes_the_lowest_sufficient_one(tmp_path, monkeypatch):
-    # Simulate the revision that adds format 5: it reads 5, but data using no format-5 feature
-    # is written as version 4, so readers of this revision keep opening it.
+    # This revision adds format 5 (the feature ``parents``): it reads 5, but data using no
+    # format-5 feature is written as version 4, so readers of the previous revision keep opening it.
     import struct
-    import sys as _sys
     from proto_db.storage import format as fmt
-    for module in list(_sys.modules.values()):
-        if getattr(module, "__name__", "").startswith("proto_db") and hasattr(module, "FORMAT_VERSION"):
-            monkeypatch.setattr(module, "FORMAT_VERSION", 5)
-    monkeypatch.setattr(fmt, "READABLE_FORMAT_VERSIONS", frozenset({2, 3, 4, 5}))
+    assert fmt.FORMAT_VERSION == 5 and 5 in fmt.READABLE_FORMAT_VERSIONS
     path = tmp_path / "db"
     space = ObjectSpace(FileStorage(str(path)))
     with space.new_database("d").new_transaction() as tr:
@@ -228,4 +224,4 @@ def test_a_writer_that_reads_a_newer_version_still_writes_the_lowest_sufficient_
     assert root["version"] == 4
     for segment in path.glob("*.seg"):
         assert struct.unpack_from("<8sH", segment.read_bytes())[1] == 4
-    assert fmt.WRITE_FORMAT_VERSION == 4 and not fmt.FEATURE_VERSIONS
+    assert fmt.WRITE_FORMAT_VERSION == 4 and fmt.FEATURE_VERSIONS == {"parents": 5}

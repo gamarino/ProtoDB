@@ -411,16 +411,17 @@ def gen_invalid(manifest):
          None),
         ("record-bad-kind", "record", _reframe_kind(record, 3), "kind 3 is not defined", "corruption", None),
     ]
-    root = fmt.encode_root(fmt.RootRecord(fmt.FORMAT_VERSION, PTR_SEGMENT, 26, 1))
+    root = fmt.encode_root(fmt.RootRecord(fmt.WRITE_FORMAT_VERSION, PTR_SEGMENT, 26, 1))
+    unknown = fmt.FORMAT_VERSION + 1           # the first version this revision does not read
     bad_root = bytearray(root)
     bad_root[-1] ^= 0x01
     out += [
         ("root-crc", "root", bytes(bad_root), "root CRC mismatch", "corruption", None),
-        ("root-version-5", "root", fmt.encode_root(fmt.RootRecord(5, PTR_SEGMENT, 26, 1)),
+        (f"root-version-{unknown}", "root", fmt.encode_root(fmt.RootRecord(unknown, PTR_SEGMENT, 26, 1)),
          "a root record of an unknown version", "not_supported", None),
         ("segment-bad-magic", "segment", b"PDB2SEX\0" + (4).to_bytes(2, "little") + seg, "another magic",
          "corruption", None),
-        ("segment-version-5", "segment", fmt.SEGMENT_MAGIC + (5).to_bytes(2, "little") + seg,
+        (f"segment-version-{unknown}", "segment", fmt.SEGMENT_MAGIC + unknown.to_bytes(2, "little") + seg,
          "a segment of an unknown version", "not_supported", None),
     ]
     oid = uuid.UUID(int=1).bytes
@@ -446,7 +447,7 @@ def gen_invalid(manifest):
     ]
     out += [(i, "atom", _pack(payload), note, "corruption", {"type": t}) for i, payload, t, note in atoms]
     header = logfile.encode_header(rootlog.LOG_KIND)
-    entry = rootlog._payload(1, 7, fmt.RootRecord(fmt.FORMAT_VERSION, PTR_SEGMENT, 26, 3))
+    entry = rootlog._payload(1, 7, fmt.RootRecord(fmt.WRITE_FORMAT_VERSION, PTR_SEGMENT, 26, 3))
     out += [
         ("log-version-3", "log", fmt_log_header(3, rootlog.LOG_KIND) + logfile.encode_frame(entry),
          "a log of another format version", "not_supported", {"kind": "ROOT"}),
@@ -456,7 +457,7 @@ def gen_invalid(manifest):
          "a damaged frame followed by a valid one: mid-log corruption, never a torn tail", "corruption",
          {"kind": "ROOT"}),
     ]
-    other = fmt.RootRecord(fmt.FORMAT_VERSION, PTR_SEGMENT, 90, 3)
+    other = fmt.RootRecord(fmt.WRITE_FORMAT_VERSION, PTR_SEGMENT, 90, 3)
     replica = rootlog.encode_replica_entry(7, other, 1, None, [], [], accepted=True)
     bad_flags = bytearray(replica)
     bad_flags[1] |= 0x02
@@ -895,7 +896,6 @@ def gen_legacy_database(manifest):
     3 allowed (zone datetimes, NaNs twice), and an application record and reference spelled by
     an alias."""
     from proto_db.core import atom as atom_module
-    from proto_db.storage import file as file_module
     import proto_db.transactions as tx_module
     from proto_db.transactions import DatabaseRoot
     real_tag = atom_module.type_tag
@@ -919,7 +919,7 @@ def gen_legacy_database(manifest):
                mock.patch.object(codec, "check_map_keys", any_keys),
                mock.patch.object(values_module, "check_map_keys", any_keys),
                mock.patch.object(DatabaseRoot, "__init__", no_origin)]
-    patches += [mock.patch.object(m, "WRITE_FORMAT_VERSION", 3) for m in (fmt, file_module, tx_module)]
+    patches += [mock.patch.object(m, "WRITE_FORMAT_VERSION", 3) for m in (fmt, tx_module)]
     with _Deterministic(0x3000):
         for p in patches:
             p.start()
@@ -972,7 +972,7 @@ def describe_database(tx) -> dict:
 def gen_framing(manifest):
     atom = _pack({"t": 19, "oid": uuid.UUID("00112233445566778899aabbccddeeff").bytes, "s": {"a": 1}})
     blob = b"opaque bytes"
-    root = fmt.RootRecord(fmt.FORMAT_VERSION, PTR_SEGMENT, 26, 7)
+    root = fmt.RootRecord(fmt.WRITE_FORMAT_VERSION, PTR_SEGMENT, 26, 7)
     root_v2 = msgpack.packb({"version": 2, "segment": PTR_SEGMENT.bytes, "offset": 26, "epoch": 7},
                             use_bin_type=True)
     root_v3 = msgpack.packb({"version": 3, "segment": PTR_SEGMENT.bytes, "offset": 26, "epoch": 7},
@@ -980,7 +980,7 @@ def gen_framing(manifest):
     import zlib
     manifest["framing"] = {
         "segment_header": {"file": _write("framing/segment-header.bin", fmt.encode_segment_header(PTR_SEGMENT)),
-                           "segment": PTR_SEGMENT.hex, "version": fmt.FORMAT_VERSION},
+                           "segment": PTR_SEGMENT.hex, "version": fmt.WRITE_FORMAT_VERSION},
         "segment_header_v3": {"file": _write("framing/segment-header-v3.bin", fmt.SEGMENT_MAGIC
                                              + (3).to_bytes(2, "little") + PTR_SEGMENT.bytes),
                               "segment": PTR_SEGMENT.hex, "version": 3, "note": "format 3: still read"},
@@ -992,7 +992,7 @@ def gen_framing(manifest):
         "blob_record": {"file": _write("framing/blob.record", fmt.encode_record(fmt.RecordKind.BLOB, blob)),
                         "kind": 2, "payload_hex": blob.hex()},
         "root": {"file": _write("framing/space.root", fmt.encode_root(root)),
-                 "fields": {"version": fmt.FORMAT_VERSION, "segment": PTR_SEGMENT.hex, "offset": 26, "epoch": 7}},
+                 "fields": {"version": fmt.WRITE_FORMAT_VERSION, "segment": PTR_SEGMENT.hex, "offset": 26, "epoch": 7}},
         "root_v2": {"file": _write("framing/space-v2.root", zlib.crc32(root_v2).to_bytes(4, "little") + root_v2),
                     "fields": {"version": 2, "segment": PTR_SEGMENT.hex, "offset": 26, "epoch": 7},
                     "note": "a format-2 root record is read as a current one"},
@@ -1001,10 +1001,10 @@ def gen_framing(manifest):
                     "note": "a format-3 root record is read as a current one"},
         "cloud_root": {"file": _write("framing/cloud-space.root", cloud._encode_root_object(
                            root, [(PTR_SEGMENT, 10, 6), (PTR_SEGMENT, 0, 5)])),
-                       "fields": {"version": fmt.FORMAT_VERSION, "segment": PTR_SEGMENT.hex, "offset": 26, "epoch": 7},
+                       "fields": {"version": fmt.WRITE_FORMAT_VERSION, "segment": PTR_SEGMENT.hex, "offset": 26, "epoch": 7},
                        "recent": [[PTR_SEGMENT.hex, 10, 6], [PTR_SEGMENT.hex, 0, 5]]},
         "tiered_root": {"file": _write("framing/tiered-space.root", tiered._encode_root_object(root, 9)),
-                        "fields": {"version": fmt.FORMAT_VERSION, "segment": PTR_SEGMENT.hex, "offset": 26, "epoch": 7},
+                        "fields": {"version": fmt.WRITE_FORMAT_VERSION, "segment": PTR_SEGMENT.hex, "offset": 26, "epoch": 7},
                         "term": 9},
     }
 
@@ -1037,7 +1037,7 @@ def _cluster_commit(directory: Path):
         size = fmt.record_size(data[pos:pos + fmt.RECORD_HEADER_SIZE])
         records.append([ptr.segment.bytes, pos, data[pos:pos + size]])
         pos += size
-    return base, fmt.RootRecord(fmt.FORMAT_VERSION, ptr.segment, ptr.offset, base.epoch + 1), records, data
+    return base, fmt.RootRecord(fmt.WRITE_FORMAT_VERSION, ptr.segment, ptr.offset, base.epoch + 1), records, data
 
 
 def gen_cluster(manifest):

@@ -36,13 +36,14 @@ The key words MUST, MUST NOT, SHOULD and MAY are used as in RFC 2119. A section 
      - Value
      - Where it is written
    * - Storage format (``FORMAT_VERSION``)
-     - 4
-     - every segment header and every root record; versions 2, 3 and 4 are read
+     - 5
+     - every segment header and every root record; versions 2 to 5 are read, and 4 is written
+       unless the data uses a feature of 5 (`Format stability`_)
    * - Framed log format (``LOG_FORMAT_VERSION``)
      - 2
      - the header of every framed log file
    * - Cluster protocol (``PROTOCOL_VERSION``)
-     - 13
+     - 14
      - the ``v`` field of every cluster message; no other version is accepted
 
 There are three levels of conformance:
@@ -112,13 +113,24 @@ later root of the space is too (a root is shared by all the databases of a space
 that predates *n* refuses that segment or root with ``ProtoNotSupportedError``, never misreads
 it. A reader of version *n* reads every version up to *n*. Processes of different revisions may
 share a directory while only features all of them read are written; ``proto_db`` writes 4 in this
-revision (``proto_db.storage.format.WRITE_FORMAT_VERSION``), and ``FEATURE_VERSIONS`` lists the
-version of every feature added later (none yet).
+revision (``proto_db.storage.format.WRITE_FORMAT_VERSION``) for data that uses no later feature, and
+``FEATURE_VERSIONS`` lists the version of every feature added later: ``parents`` (an atom whose
+envelope has the key ``"p"``) is version 5.
+
+A segment header is written before the segment's records, so ``proto_db`` opens a new segment
+for a record that needs a later version than the open segment's, and a segment's version is the
+version of its **first** record (a segment of version 5 may hold later records of version 4; a
+record never lands in a segment of a lower version than it needs). Every feature is visible in
+the bytes of the records that use it. A node that writes replicated or recovered records into a
+segment file it did not create (a cluster copy, a redo from the acceptor log) writes the header
+version of the segment's first record, and the highest version it writes while it lacks that
+record. A root record's version is the highest of 4, the version of the root it replaces and the
+highest segment version its writer has written.
 
 **The pinned vectors.** ``tests/conformance/vectors.sha256`` lists the SHA-256 of every file
 under ``tests/conformance/vectors/`` (``<hex digest>  <path>``, one line per file, sorted by path
 in code point order, ``/`` as the separator), then the digest of ``manifest.json``. The SHA-256
-of that list file is ``6e913bcb960dee1c71d955754a3519f573cdb435e66476561d8e873f602dfbf4``. ``test_conformance.py`` checks that the committed files
+of that list file is ``bb9ab65f4334e7359d1e9afcad9c03500442aad357c8db14424998a81c11c5ef``. ``test_conformance.py`` checks that the committed files
 match the list and that this page states the list's digest. Each vector file is governed by
 the number that covers what it holds: ``vectors/cluster/*.log`` by ``LOG_FORMAT_VERSION``,
 ``vectors/cluster/messages/`` by ``PROTOCOL_VERSION``, every other file by ``FORMAT_VERSION``.
@@ -1657,7 +1669,7 @@ Values a member must compute like the others:
 
 The meaning of each message, and the rules that make the protocol safe, are those of
 :doc:`coordinator-protocol` and of decisions D44 to D55; the field list above is complete for
-protocol 13. The vectors hold one frame of every type.
+protocol 14. The vectors hold one frame of every type.
 
 
 A minimal external writer (file storage)

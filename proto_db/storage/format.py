@@ -23,7 +23,7 @@ import io
 import struct
 import uuid
 import zlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import msgpack
 
@@ -31,8 +31,10 @@ from ..core.atom import AtomPointer
 from ..errors import ProtoCorruptionError, ProtoNotSupportedError, ProtoValidationError
 from ..values import MAX_VALUE_DEPTH
 
-__all__ = ["SEGMENT_MAGIC", "FORMAT_VERSION", "WRITE_FORMAT_VERSION", "FEATURE_VERSIONS", "write_version", "READABLE_FORMAT_VERSIONS", "SEGMENT_HEADER_SIZE", "RECORD_HEADER_SIZE", "RECORD_MAGIC",
-           "RecordKind", "RootRecord", "encode_segment_header", "decode_segment_header", "encode_record",
+__all__ = ["SEGMENT_MAGIC", "FORMAT_VERSION", "WRITE_FORMAT_VERSION", "FEATURE_VERSIONS", "write_version",
+           "payload_features", "atom_version", "record_version", "framed_version", "READABLE_FORMAT_VERSIONS",
+           "SEGMENT_HEADER_SIZE", "RECORD_HEADER_SIZE", "RECORD_MAGIC", "RecordKind", "RootRecord",
+           "encode_segment_header", "decode_segment_header", "segment_header_version", "encode_record",
            "record_header", "record_size", "read_record", "encode_root", "decode_root", "undecodable_atom"]
 
 SEGMENT_MAGIC = b"PDB2SEG\0"
@@ -42,16 +44,18 @@ SEGMENT_MAGIC = b"PDB2SEG\0"
 #: large node values in atoms of their own (D51).  The root record's shape is unchanged.
 #: 4: exact tokens are canonical encodings and indexes persist ``member_tokens``, zone datetimes
 #: are written as their UTC instant, one spelling per value, the map-key rule (D58).
-FORMAT_VERSION = 4
+#: 5: the feature ``parents``, the atom envelope key ``"p"`` (runtime registry, ruling R151).  Data
+#: that does not use it is still written as version 4 (:data:`WRITE_FORMAT_VERSION`).
+FORMAT_VERSION = 5
 #: The version written in every segment header and root record: the lowest version sufficient
 #: for what this revision can write.  It differs from :data:`FORMAT_VERSION` (the highest
 #: version read) once a later revision adds a feature: data that does not use it keeps this
 #: version, so older readers keep opening it, and data that does is written with
 #: :func:`write_version` of its features ("Format stability" in format-spec.rst; pre-tag review I-3).
 WRITE_FORMAT_VERSION = 4
-#: The features added after the freeze, each with the format version that introduced it (none yet;
-#: ``@sym`` and the class registry will be the first, at 5).
-FEATURE_VERSIONS: dict = {}
+#: The features added after the freeze, each with the format version that introduced it.
+#: ``parents``: an atom whose envelope has the key ``"p"`` (its parents tuple, runtime registry).
+FEATURE_VERSIONS: dict = {"parents": 5}
 
 
 def write_version(features=()) -> int:
@@ -59,11 +63,59 @@ def write_version(features=()) -> int:
     return max([WRITE_FORMAT_VERSION] + [FEATURE_VERSIONS[f] for f in features])
 
 
+def payload_features(payload: dict) -> frozenset:
+    """The features an atom ``payload`` (its envelope map) uses, read from the payload itself.
+
+    Every feature is detectable from the bytes of the records that use it: a node that rebuilds a
+    segment header from replicated records derives the version from the segment's first record
+    (:func:`framed_version`), so the version of a record never depends on anything but its bytes."""
+    return frozenset({"parents"}) if "p" in payload else frozenset()
+
+
+def atom_version(payload: dict, features=frozenset()) -> int:
+    """The version an atom ``payload`` needs: :func:`write_version` of the features it uses.
+
+    ``features`` are the features its writer declares (``push_atom(..., features=...)``).  A name
+    that is not in :data:`FEATURE_VERSIONS`, or a declared feature the payload does not use, raises
+    ``ProtoValidationError``: the version of a record must follow from its bytes alone (see
+    :func:`payload_features`).  A feature the payload uses counts even when it is not declared."""
+    used = payload_features(payload)
+    declared = frozenset(features)
+    unknown = sorted(str(f) for f in declared if f not in FEATURE_VERSIONS)
+    if unknown:
+        raise ProtoValidationError(f"Unknown format features {unknown}; known: {sorted(FEATURE_VERSIONS)}")
+    if not declared <= used:
+        raise ProtoValidationError(
+            f"The atom declares the format features {sorted(declared - used)} but its payload does not use them")
+    return write_version(used)
+
+
+def record_version(kind: int, payload) -> int:
+    """The version a record of ``kind`` with ``payload`` bytes needs.  A blob needs
+    :data:`WRITE_FORMAT_VERSION`; an atom whose payload does not unpack to a map is answered
+    with :data:`FORMAT_VERSION`, the highest version this revision knows (conservative: a reader
+    of an earlier revision refuses rather than misreads)."""
+    if kind != RecordKind.ATOM:
+        return WRITE_FORMAT_VERSION
+    try:
+        decoded = msgpack.unpackb(bytes(payload), raw=False)
+    except Exception:                 # noqa: BLE001 - any undecodable payload: the conservative answer
+        return FORMAT_VERSION
+    return write_version(payload_features(decoded)) if isinstance(decoded, dict) else FORMAT_VERSION
+
+
+def framed_version(data, pos: int = 0) -> int:
+    """The version the framed record at ``pos`` of ``data`` needs (:func:`record_version`).
+    Raises :class:`ProtoCorruptionError` when no valid record is there."""
+    kind, payload = read_record(memoryview(data)[pos:], 0)
+    return record_version(kind, payload)
+
+
 #: Versions this code reads: a format-2 segment still decodes (its references are read by the
 #: codec's format-2 branch), a format-3 one too (its zone datetimes by the codec's wall-clock
 #: branch, its indexes rebuilt at their first change); a root record of any of them is read as
-#: the current version.
-READABLE_FORMAT_VERSIONS = frozenset({2, 3, 4})
+#: the current version.  A format-5 segment or root is read as such (its features are additive).
+READABLE_FORMAT_VERSIONS = frozenset({2, 3, 4, 5})
 _SEGMENT_HEADER = struct.Struct("<8sH16s")
 #: First two bytes of every record header.  ``0xC1`` is the one byte msgpack never emits as a
 #: type byte, so the magic is rare in msgpack payloads (it only marks candidates: the header
@@ -88,9 +140,13 @@ _KINDS = frozenset(int(k) for k in RecordKind)
 
 @dataclass(frozen=True)
 class RootRecord:
-    """The published root of a space: the pointer of the root atom and a CAS epoch."""
+    """The published root of a space: the pointer of the root atom and a CAS epoch.
 
-    version: int
+    ``version`` is the format version its bytes carry; it is not part of the root's identity
+    (equality and hash): a cluster root travels on the wire and in the acceptor log as its
+    pointer and epoch only, so the same root may be held with different versions."""
+
+    version: int = field(compare=False)
     segment: uuid.UUID
     offset: int
     epoch: int
@@ -101,13 +157,14 @@ class RootRecord:
         return AtomPointer(self.segment, self.offset)
 
 
-def encode_segment_header(segment: uuid.UUID) -> bytes:
-    """Return the header bytes that start a segment file."""
-    return _SEGMENT_HEADER.pack(SEGMENT_MAGIC, write_version(), segment.bytes)
+def encode_segment_header(segment: uuid.UUID, version: int = None) -> bytes:
+    """Return the header bytes that start a segment file of ``version`` (default
+    :func:`write_version` with no feature).  The header is written before the segment's records,
+    so its version is the version of the record that opens the segment (ruling R151)."""
+    return _SEGMENT_HEADER.pack(SEGMENT_MAGIC, write_version() if version is None else version, segment.bytes)
 
 
-def decode_segment_header(data: bytes) -> uuid.UUID:
-    """Validate a segment header (extra trailing bytes are ignored) and return its UUID."""
+def _decode_header(data) -> tuple:
     if len(data) < SEGMENT_HEADER_SIZE:
         raise ProtoCorruptionError("Truncated segment header")
     magic, version, raw = _SEGMENT_HEADER.unpack_from(data)
@@ -115,7 +172,17 @@ def decode_segment_header(data: bytes) -> uuid.UUID:
         raise ProtoCorruptionError("Bad segment magic")
     if version not in READABLE_FORMAT_VERSIONS:
         raise ProtoNotSupportedError(f"Unsupported segment format version {version}")
-    return uuid.UUID(bytes=raw)
+    return version, uuid.UUID(bytes=raw)
+
+
+def decode_segment_header(data: bytes) -> uuid.UUID:
+    """Validate a segment header (extra trailing bytes are ignored) and return its UUID."""
+    return _decode_header(data)[1]
+
+
+def segment_header_version(data: bytes) -> int:
+    """Validate a segment header like :func:`decode_segment_header` and return its version."""
+    return _decode_header(data)[0]
 
 
 def encode_record(kind: int, payload: bytes) -> bytes:
@@ -212,7 +279,9 @@ def decode_root(data: bytes) -> RootRecord:
         raise ProtoCorruptionError("Malformed root record")
     if version not in READABLE_FORMAT_VERSIONS:
         raise ProtoNotSupportedError(f"Unsupported root format version {version}")
-    return RootRecord(WRITE_FORMAT_VERSION, uuid.UUID(bytes=raw), offset, epoch)
+    # A root of an earlier version is read as the current base version; a later one keeps its
+    # version, so the root that replaces it is never written lower ("Format stability").
+    return RootRecord(max(version, WRITE_FORMAT_VERSION), uuid.UUID(bytes=raw), offset, epoch)
 
 
 def undecodable_atom(ptr, error: Exception) -> ProtoCorruptionError:

@@ -11,7 +11,7 @@ The verifier opens the space read-only (it never publishes a root), then:
    database root and every older version it links to, every collection with its tree nodes and
    indexes, every record. Each atom is decoded once (by pointer). An atom of a type this process
    has no class for is read as an opaque atom (D59) and listed under ``opaque_types``;
-3. checks that every record in a segment of the current write version is in its canonical
+3. checks that every record in a segment of the current write version or later is in its canonical
    encoding: re-encoding the decoded record (keeping the writer's attribute order, which is
    not normative) gives the stored bytes. A non-minimal integer, string, binary or container
    header, a ``float 32``, a non-canonical type tag or any other form the spec forbids writers to
@@ -184,7 +184,7 @@ def verify(directory: str) -> tuple[dict, list[str]]:
                 failures.append(f"FAILED decoding {_where(atom)}: {type(e).__name__}: {e}")
                 continue
             report["atoms"] += 1
-            if _segment_version(directory, ptr.segment, versions) == fmt.WRITE_FORMAT_VERSION:
+            if (_segment_version(directory, ptr.segment, versions) or 0) >= fmt.WRITE_FORMAT_VERSION:
                 try:
                     why = _non_canonical(space.storage, _SpaceContext(space.storage), ptr)
                 except Exception as e:             # noqa: BLE001

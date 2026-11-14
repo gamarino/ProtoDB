@@ -214,7 +214,7 @@ def test_root_records():
     for name in ("root_v3", "root_v2"):
         legacy = framing[name]
         record = fmt.decode_root(_bytes(legacy["file"]))
-        assert _root_fields(record) == dict(legacy["fields"], version=fmt.FORMAT_VERSION)   # read as current
+        assert _root_fields(record) == dict(legacy["fields"], version=fmt.WRITE_FORMAT_VERSION)   # read as current
 
     vector = framing["cloud_root"]
     record, recent = cloud._decode_root_object(_bytes(vector["file"]))
@@ -287,7 +287,7 @@ def test_database_root(name):
     db = MANIFEST[name]
     data = _bytes(f"{db['dir']}/space.root")
     record = fmt.decode_root(data)
-    assert _root_fields(record) == dict(db["root"], version=fmt.FORMAT_VERSION)
+    assert _root_fields(record) == dict(db["root"], version=fmt.WRITE_FORMAT_VERSION)
     assert msgpack.unpackb(data[4:])["version"] == db["root"]["version"]
     if name != "legacy_database":
         assert fmt.encode_root(record) == data
@@ -426,7 +426,7 @@ def test_a_format_3_index_is_rebuilt_at_its_first_change(tmp_path):
 
 def test_cluster_segment():
     _check_segment(MANIFEST["cluster"]["segment"]["file"], MANIFEST["cluster"]["segment"]["records"])
-    assert _bytes(MANIFEST["cluster"]["segment"]["file"])[8:10] == fmt.FORMAT_VERSION.to_bytes(2, "little")
+    assert _bytes(MANIFEST["cluster"]["segment"]["file"])[8:10] == fmt.WRITE_FORMAT_VERSION.to_bytes(2, "little")
 
 
 def _log(vector: dict, kind: bytes) -> list:
@@ -439,7 +439,7 @@ def _log(vector: dict, kind: bytes) -> list:
 
 
 def _root(desc):
-    return None if desc is None else fmt.RootRecord(fmt.FORMAT_VERSION, uuid.UUID(hex=desc["segment"]),
+    return None if desc is None else fmt.RootRecord(fmt.WRITE_FORMAT_VERSION, uuid.UUID(hex=desc["segment"]),
                                                     desc["offset"], desc["epoch"])
 
 

@@ -81,10 +81,10 @@ from ..errors import (ProtoClosedError, ProtoConflictError, ProtoCorruptionError
                       ProtoUnexpectedError, ProtoValidationError)
 from .base import SharedStorage, check_lock_timeout
 from .cache import BoundedCache
-from .format import (WRITE_FORMAT_VERSION, RECORD_HEADER_SIZE, SEGMENT_HEADER_SIZE, RecordKind,
-                     RootRecord, decode_root, decode_segment_header, encode_record,
+from .format import (RECORD_HEADER_SIZE, SEGMENT_HEADER_SIZE, RecordKind,
+                     RootRecord, atom_version, decode_root, decode_segment_header, encode_record,
                      encode_segment_header, read_record, record_size,
-                     undecodable_atom)
+                     undecodable_atom, write_version)
 
 __all__ = ["ObjectStore", "ObjectStoreError", "ObjectNotFoundError", "PreconditionFailedError",
            "TransientObjectStoreError", "OutcomeUnknownError", "CloudStorage", "S3ObjectStore",
@@ -189,13 +189,15 @@ def _decode_root_object(data: bytes) -> tuple:
 # --- storage ----------------------------------------------------------------------------------
 
 class _LocalSegment:
-    """A segment not yet uploaded: open (receiving appends) or sealed (waiting for upload)."""
+    """A segment not yet uploaded: open (receiving appends) or sealed (waiting for upload);
+    ``version`` is the format version of its header."""
 
-    __slots__ = ("uuid", "data", "sealed")
+    __slots__ = ("uuid", "version", "data", "sealed")
 
-    def __init__(self, segment_uuid: uuid.UUID):
+    def __init__(self, segment_uuid: uuid.UUID, version: int):
         self.uuid = segment_uuid
-        self.data = bytearray(encode_segment_header(segment_uuid))
+        self.version = version
+        self.data = bytearray(encode_segment_header(segment_uuid, version))
         self.sealed = False
 
 
@@ -266,6 +268,7 @@ class CloudStorage(SharedStorage):
         self._root_lock = threading.Lock()
         self._holder = None
         self._current = None      # open _LocalSegment receiving appends
+        self._written_version = write_version()  # highest header version this instance wrote
         self._local = {}          # UUID -> _LocalSegment not yet uploaded (open or sealed)
         self._sealed = []         # sealed segments in upload order
         self._sealed_bytes = 0
@@ -328,16 +331,20 @@ class CloudStorage(SharedStorage):
         self._sealed_bytes += len(seg.data)
         self._current = None
 
-    def _append(self, kind: RecordKind, payload: bytes) -> AtomPointer:
+    def _append(self, kind: RecordKind, payload: bytes, version: int = None) -> AtomPointer:
         record = encode_record(kind, payload)
+        version = write_version() if version is None else version
         with self._state_lock:
             self._check_open()
             seg = self._current
-            if seg is not None and len(seg.data) + len(record) > self._segment_max:
+            # A record needing a later version than the open segment's opens a new segment of
+            # that version (ruling R151), so a segment's version is its first record's.
+            if seg is not None and (seg.version < version or len(seg.data) + len(record) > self._segment_max):
                 self._seal_current()
                 seg = None
             if seg is None:
-                seg = _LocalSegment(uuid.uuid4())
+                seg = _LocalSegment(uuid.uuid4(), version)
+                self._written_version = max(self._written_version, version)
                 self._current = seg
                 self._local[seg.uuid] = seg
             offset = len(seg.data)
@@ -347,7 +354,7 @@ class CloudStorage(SharedStorage):
             self._upload(seal_current=False)
         return AtomPointer(seg.uuid, offset)
 
-    def push_atom(self, payload: dict) -> AtomPointer:
+    def push_atom(self, payload: dict, *, features=frozenset()) -> AtomPointer:
         """See :meth:`SharedStorage.push_atom`.
 
         When sealed segments exceed ``write_buffer_bytes`` this push uploads them and may
@@ -357,8 +364,9 @@ class CloudStorage(SharedStorage):
         """
         if not isinstance(payload, dict):
             raise ProtoValidationError("Atom payload must be a dict")
+        version = atom_version(payload, features)
         self._check_open()
-        return self._append(RecordKind.ATOM, msgpack.packb(payload, use_bin_type=True))
+        return self._append(RecordKind.ATOM, msgpack.packb(payload, use_bin_type=True), version)
 
     def push_blob(self, data: bytes) -> AtomPointer:
         """See :meth:`SharedStorage.push_blob`; may raise for a spill upload as :meth:`push_atom`."""
@@ -597,18 +605,20 @@ class CloudStorage(SharedStorage):
                         raise ProtoUnexpectedError(f"Segment {ptr.segment.hex} is not uploaded; refusing to publish")
                 current, etag, recent = self._read_root_object()
                 epoch = current.epoch if current is not None else 0
+                with self._state_lock:
+                    version = max(self._written_version, current.version if current is not None else 0)
                 if expected_epoch is not None and expected_epoch != epoch:
                     if uncertain:
                         # An earlier attempt of ours may be what moved the root.
                         verdict = self._verdict(current, recent, ptr.segment, ptr.offset, expected_epoch + 1)
                         if verdict is True:
-                            return RootRecord(WRITE_FORMAT_VERSION, ptr.segment, ptr.offset, expected_epoch + 1)
+                            return RootRecord(version, ptr.segment, ptr.offset, expected_epoch + 1)
                         if verdict is None:
                             raise ProtoOutcomeUnknownError(
                                 f"The root moved to epoch {epoch} after an attempt with an unknown outcome "
                                 f"and its history no longer reaches epoch {expected_epoch + 1}")
                     raise ProtoConflictError(f"Root epoch is {epoch}, expected {expected_epoch}")
-                mine = RootRecord(WRITE_FORMAT_VERSION, ptr.segment, ptr.offset, epoch + 1)
+                mine = RootRecord(version, ptr.segment, ptr.offset, epoch + 1)
                 history = ([(current.segment, current.offset, current.epoch)] + recent
                            if current is not None else [])
                 data = _encode_root_object(mine, history[:self._root_history])

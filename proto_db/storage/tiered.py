@@ -205,9 +205,11 @@ from .cloud import (ObjectNotFoundError, OutcomeUnknownError, PreconditionFailed
                     TransientObjectStoreError)
 from .crc import PrefixCrc
 from .file import DURABILITY_MODES, FileStorage
-from .format import (WRITE_FORMAT_VERSION, RECORD_HEADER_SIZE, RECORD_MAGIC, SEGMENT_HEADER_SIZE, RecordKind,
-                     RootRecord, decode_root, decode_segment_header, encode_record, encode_segment_header,
-                     read_record, record_header, undecodable_atom)
+from . import format as _format
+from .format import (FORMAT_VERSION, WRITE_FORMAT_VERSION, RECORD_HEADER_SIZE, RECORD_MAGIC, SEGMENT_HEADER_SIZE,
+                     SEGMENT_MAGIC, RecordKind, RootRecord, atom_version, decode_root, decode_segment_header,
+                     encode_record, encode_segment_header, framed_version, read_record, record_header,
+                     undecodable_atom)
 from .logfile import encode_frame, log_contents, open_log, prepare_replacement, read_fd, write_all
 from .ownerlock import OwnerLock
 
@@ -316,6 +318,40 @@ def _one_prefixes_the_other(a: bytes, b: bytes) -> bool:
         return False
     a, b = a[SEGMENT_HEADER_SIZE:], b[SEGMENT_HEADER_SIZE:]
     return a.startswith(b) or b.startswith(a)
+
+
+def _exact_header(segment: uuid.UUID, items) -> Optional[bytes]:
+    """The header of ``segment`` when ``items`` (``(offset, framed bytes)`` pairs of its records)
+    hold its first record, else ``None``.
+
+    A segment's header version is the version of its first record: a writer opens a new segment
+    for a record that needs a later version than the open one's (ruling R151).  A node that
+    writes replicated or recovered records into a segment file it did not create rebuilds the
+    header from them: exactly with the first record, otherwise at :func:`_unknown_header`."""
+    for offset, data in items:
+        if offset == SEGMENT_HEADER_SIZE and data is not None:
+            try:
+                return encode_segment_header(segment, framed_version(data))
+            except ProtoCorruptionError:
+                return None
+    return None
+
+
+def _exact_image(segment: uuid.UUID, data) -> bytes:
+    """The bytes of a segment image ``data`` (a header and the segment's records from its first
+    one) with the header of its first record's version, for an upload: a header rebuilt without
+    that record (:func:`_unknown_header`) never reaches the object store.  ``data`` is returned
+    unchanged when it holds no valid first record."""
+    data = bytes(data)
+    exact = _exact_header(segment, ((SEGMENT_HEADER_SIZE, memoryview(data)[SEGMENT_HEADER_SIZE:]),))
+    return data if exact is None or data.startswith(exact) else exact + data[SEGMENT_HEADER_SIZE:]
+
+
+def _unknown_header(segment: uuid.UUID) -> bytes:
+    """The header of a segment file rebuilt without its first record: the highest version this
+    revision writes, so a reader of an earlier revision refuses the file rather than misreads a
+    later record in it.  :func:`_exact_header` corrects it once the first record arrives."""
+    return encode_segment_header(segment, FORMAT_VERSION)
 
 
 def _pwrite_all(fd: int, data, offset: int) -> None:
@@ -782,7 +818,7 @@ class TieredStorage(SharedStorage):
                                 f"Segment {segment.hex} at {path} has {os.fstat(fd).st_nlink} hard links; a "
                                 f"local segment must have exactly one name because opening repairs it")
                         if os.fstat(fd).st_size < SEGMENT_HEADER_SIZE:
-                            _pwrite_all(fd, encode_segment_header(segment), 0)
+                            _pwrite_all(fd, _unknown_header(segment), 0)
                             self._dirty_dir = True
                         if own is not None:
                             if segment not in present:
@@ -794,6 +830,9 @@ class TieredStorage(SharedStorage):
                     elif own is None and (self._copies.get(segment) is None or order > self._copies[segment]):
                         self._copies[segment] = order
                     _pwrite_all(fd, data, offset)
+                    exact = _exact_header(segment, ((offset, data),))
+                    if exact is not None:
+                        _pwrite_all(fd, exact, 0)
                     self._stats["redo_records"] += 1
                     self._dirty_copies.add(segment)     # own or copy: synced by path at the checkpoint
                     written = True
@@ -860,7 +899,18 @@ class TieredStorage(SharedStorage):
             data = read_fd(fd)
             size = len(data)
             view = memoryview(data)
-            header = encode_segment_header(segment)
+            # The header's version is the segment's (ruling R151): read it when the magic and the
+            # version bytes are intact; a version this revision cannot read is refused, never
+            # repaired.  A header torn before its version is rewritten at the highest version
+            # (_unknown_header); the redo of its first record writes the exact one.
+            version = None
+            if size >= 10 and data[:8] == SEGMENT_MAGIC:
+                version = struct.unpack_from("<H", data, 8)[0]
+                if version not in _format.READABLE_FORMAT_VERSIONS:
+                    raise ProtoNotSupportedError(
+                        f"Own segment {segment.hex} at {path} has format version {version}, which this "
+                        f"version does not read")
+            header = encode_segment_header(segment, FORMAT_VERSION if version is None else version)
             if size >= SEGMENT_HEADER_SIZE and data[:SEGMENT_HEADER_SIZE] == header:
                 pos = SEGMENT_HEADER_SIZE
                 while pos < size:
@@ -882,7 +932,8 @@ class TieredStorage(SharedStorage):
                     ambiguous = False
             else:
                 keep = 0
-                while keep < min(size, SEGMENT_HEADER_SIZE) and data[keep] == header[keep]:
+                while keep < min(size, SEGMENT_HEADER_SIZE) and (
+                        data[keep] == header[keep] or (version is None and keep in (8, 9))):
                     keep += 1
                 if any(view[keep:]):
                     raise ProtoCorruptionError(
@@ -968,7 +1019,7 @@ class TieredStorage(SharedStorage):
 
     # -- writes ------------------------------------------------------------------------------
 
-    def _push(self, kind: RecordKind, payload: bytes) -> AtomPointer:
+    def _push(self, kind: RecordKind, payload: bytes, version: int = None) -> AtomPointer:
         self._check_open()
         limit = _protocol.MAX_RECORD_BYTES
         if len(payload) > limit:
@@ -976,17 +1027,17 @@ class TieredStorage(SharedStorage):
                 f"A record of {len(payload)} bytes exceeds the {limit} bytes a cluster node can replicate")
         framed = encode_record(kind, payload)
         with self._push_lock:
-            ptr, spill = self._push_locked(framed)
+            ptr, spill = self._push_locked(framed, version)
         self._cache.put((ptr.segment, ptr.offset), framed)
         if spill:
             self._local.spill()
         return ptr
 
-    def _push_locked(self, framed: bytes) -> tuple:
+    def _push_locked(self, framed: bytes, version: int = None) -> tuple:
         """The body of :meth:`_push`, under the push lock: the offset assignment and the
         append to ``_unshipped`` are one step, and nothing else is done under it (re-review
         1, N2).  Returns ``(pointer, spill)``."""
-        ptr, spill = self._local.reserve_framed(framed)
+        ptr, spill = self._local.reserve_framed(framed, version=version)
         with self._lock:
             own = self._own.get(ptr.segment)
             if own is not None:
@@ -1021,11 +1072,12 @@ class TieredStorage(SharedStorage):
             own.first = time.monotonic()
         self._unshipped.append([ptr.segment.bytes, ptr.offset, framed])
 
-    def push_atom(self, payload: dict) -> AtomPointer:
+    def push_atom(self, payload: dict, *, features=frozenset()) -> AtomPointer:
         """See :meth:`SharedStorage.push_atom`."""
         if not isinstance(payload, dict):
             raise ProtoValidationError("Atom payload must be a dict")
-        return self._push(RecordKind.ATOM, msgpack.packb(payload, use_bin_type=True))
+        version = atom_version(payload, features)
+        return self._push(RecordKind.ATOM, msgpack.packb(payload, use_bin_type=True), version)
 
     def push_blob(self, data: bytes) -> AtomPointer:
         """See :meth:`SharedStorage.push_blob`."""
@@ -1644,11 +1696,13 @@ class TieredStorage(SharedStorage):
                 with self._lock:
                     released = own.released
                 runs = _runs(items)
+                exact = _exact_header(segment, items)
+                header = exact if exact is not None else _unknown_header(segment)
                 path = os.path.join(self._path, segment.hex + SEGMENT_SUFFIX)
                 base = None                 # bytes to write first: the header or the store's prefix
                 if released and not os.path.exists(path):
                     if runs[0][0] <= SEGMENT_HEADER_SIZE:
-                        base = encode_segment_header(segment)
+                        base = header
                     elif segment in prefixes:
                         base = prefixes[segment]
                     else:
@@ -1660,7 +1714,7 @@ class TieredStorage(SharedStorage):
                     try:
                         size = max(os.path.getsize(path), SEGMENT_HEADER_SIZE)
                     except FileNotFoundError:
-                        base, size = encode_segment_header(segment), SEGMENT_HEADER_SIZE
+                        base, size = header, SEGMENT_HEADER_SIZE
                 end = size
                 for offset, data in runs:
                     if offset > end:
@@ -1668,9 +1722,9 @@ class TieredStorage(SharedStorage):
                             f"Records of own segment {segment.hex} carried back at offset {offset} would "
                             f"leave a hole after its end {end}; nothing was written")
                     end = max(end, offset + len(data))
-                plans.append((segment, own, items, runs, path, base, released, end))
+                plans.append((segment, own, items, runs, path, base, released, end, header, exact))
             created = restored = False
-            for segment, own, items, runs, path, base, released, end in plans:
+            for segment, own, items, runs, path, base, released, end, header, exact in plans:
                 # A prefix from the store is synced, with the directory, before the entry: the
                 # redo rebuilds a missing file from its header and the entry's records only.
                 restore = base is not None and len(base) > SEGMENT_HEADER_SIZE
@@ -1682,9 +1736,11 @@ class TieredStorage(SharedStorage):
                             created = True
                             restored = restored or restore
                         elif os.fstat(fd).st_size < SEGMENT_HEADER_SIZE:
-                            _pwrite_all(fd, encode_segment_header(segment), 0)
+                            _pwrite_all(fd, header, 0)
                         for offset, data in runs:
                             _pwrite_all(fd, data, offset)
+                        if exact is not None:
+                            _pwrite_all(fd, exact, 0)
                         if sync or restore:
                             os.fsync(fd)
                         else:
@@ -1743,9 +1799,12 @@ class TieredStorage(SharedStorage):
                 try:
                     fd = os.open(path, os.O_RDWR | os.O_CREAT | _O_BINARY | _O_CLOEXEC, 0o644)
                     try:
+                        exact = _exact_header(segment, items)
                         if os.fstat(fd).st_size < SEGMENT_HEADER_SIZE:
-                            _pwrite_all(fd, encode_segment_header(segment), 0)
+                            _pwrite_all(fd, exact if exact is not None else _unknown_header(segment), 0)
                             created = created or not known
+                        elif exact is not None:
+                            _pwrite_all(fd, exact, 0)
                         for offset, data in _runs(items):
                             _pwrite_all(fd, data, offset)
                         if sync:
@@ -1845,7 +1904,6 @@ class TieredStorage(SharedStorage):
         Returns True when written, False when the store already holds that root or a newer
         one.  Raises ``ProtoUnexpectedError`` when the store stays unreachable.
         """
-        data = _encode_root_object(record, label)
         with self._ship_lock:       # object-store writes: never once close() has started
             self._refuse_closed("persisting the root", local=False)
             for attempt in range(self._retries + 1):
@@ -1857,6 +1915,12 @@ class TieredStorage(SharedStorage):
                         etag, current_label, current_root = None, 0, None
                     if etag is not None and compare_roots(current_label, current_root, label, record) >= 0:
                         return False
+                    # Never lower than the root it replaces, nor than a segment this node wrote
+                    # (``SharedStorage.publish_root``).
+                    version = max(record.version, self._local.written_version,
+                                  current_root.version if current_root is not None else 0)
+                    data = _encode_root_object(RootRecord(version, record.segment, record.offset, record.epoch),
+                                               label)
                     if etag is None:
                         self._store.put_if_absent(self._root_key, data)
                     else:
@@ -1912,6 +1976,7 @@ class TieredStorage(SharedStorage):
                         f"Own segment {own.uuid.hex} is missing from {self._path} before its upload") from e
                 except OSError as e:
                     raise ProtoUnexpectedError(f"Reading segment {own.uuid.hex} for upload failed: {e}") from e
+                data = _exact_image(own.uuid, data)     # a rebuilt header never reaches the store
                 length = self._put_segment(own.uuid, data)
                 self._put_sealed_marker(own.uuid, length)
                 self._note_sealed(own.uuid, length)
@@ -2055,7 +2120,9 @@ class TieredStorage(SharedStorage):
         if filled:
             with self._lock:
                 self._stats["holes_filled"] += filled
-        return bytes(out)
+        # The copy's header may have been rebuilt without the first record (_unknown_header):
+        # the part carries the exact one, the version of the first record (ruling R151).
+        return _exact_image(segment, out)
 
     def _fill_record(self, segment: uuid.UUID, offset: int) -> Optional[bytes]:
         """The framed record at ``offset`` of ``segment`` from a peer, checked, or ``None``."""

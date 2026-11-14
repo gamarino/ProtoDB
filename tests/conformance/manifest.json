@@ -1,14 +1,15 @@
 {
  "about": "Conformance vectors of the ProtoDB storage format; see tests/conformance/README.md and docs/source/format-spec.rst.",
  "versions": {
-  "format": 4,
+  "format": 5,
   "readable_formats": [
    2,
    3,
-   4
+   4,
+   5
   ],
   "log_format": 2,
-  "protocol": 13
+  "protocol": 14
  },
  "builtin_type_aliases": [
   "proto_db.avl.KeyNode",
@@ -1439,10 +1440,10 @@
    "note": "root CRC mismatch"
   },
   {
-   "id": "root-version-5",
+   "id": "root-version-6",
    "layer": "root",
    "error": "not_supported",
-   "file": "invalid/root-version-5.bin",
+   "file": "invalid/root-version-6.bin",
    "note": "a root record of an unknown version"
   },
   {
@@ -1453,10 +1454,10 @@
    "note": "another magic"
   },
   {
-   "id": "segment-version-5",
+   "id": "segment-version-6",
    "layer": "segment",
    "error": "not_supported",
-   "file": "invalid/segment-version-5.bin",
+   "file": "invalid/segment-version-6.bin",
    "note": "a segment of an unknown version"
   },
   {
@@ -20956,7 +20957,7 @@
         "str": "v"
        },
        {
-        "int": "13"
+        "int": "14"
        }
       ],
       [
@@ -21021,7 +21022,7 @@
         "str": "v"
        },
        {
-        "int": "13"
+        "int": "14"
        }
       ],
       [
@@ -21128,7 +21129,7 @@
         "str": "v"
        },
        {
-        "int": "13"
+        "int": "14"
        }
       ],
       [
@@ -21238,7 +21239,7 @@
         "str": "v"
        },
        {
-        "int": "13"
+        "int": "14"
        }
       ],
       [
@@ -21361,7 +21362,7 @@
         "str": "v"
        },
        {
-        "int": "13"
+        "int": "14"
        }
       ],
       [
@@ -21394,7 +21395,7 @@
         "str": "v"
        },
        {
-        "int": "13"
+        "int": "14"
        }
       ],
       [
@@ -21481,7 +21482,7 @@
         "str": "v"
        },
        {
-        "int": "13"
+        "int": "14"
        }
       ],
       [
@@ -21683,7 +21684,7 @@
         "str": "v"
        },
        {
-        "int": "13"
+        "int": "14"
        }
       ],
       [
@@ -21833,7 +21834,7 @@
         "str": "v"
        },
        {
-        "int": "13"
+        "int": "14"
        }
       ],
       [
@@ -21932,7 +21933,7 @@
         "str": "v"
        },
        {
-        "int": "13"
+        "int": "14"
        }
       ],
       [
@@ -21997,7 +21998,7 @@
         "str": "v"
        },
        {
-        "int": "13"
+        "int": "14"
        }
       ],
       [
@@ -22054,7 +22055,7 @@
         "str": "v"
        },
        {
-        "int": "13"
+        "int": "14"
        }
       ],
       [
@@ -22171,7 +22172,7 @@
         "str": "v"
        },
        {
-        "int": "13"
+        "int": "14"
        }
       ],
       [
@@ -22236,7 +22237,7 @@
         "str": "v"
        },
        {
-        "int": "13"
+        "int": "14"
        }
       ],
       [
@@ -22359,7 +22360,7 @@
         "str": "v"
        },
        {
-        "int": "13"
+        "int": "14"
        }
       ],
       [
@@ -22453,7 +22454,7 @@
         "str": "v"
        },
        {
-        "int": "13"
+        "int": "14"
        }
       ],
       [
@@ -22518,7 +22519,7 @@
         "str": "v"
        },
        {
-        "int": "13"
+        "int": "14"
        }
       ],
       [
@@ -22641,7 +22642,7 @@
         "str": "v"
        },
        {
-        "int": "13"
+        "int": "14"
        }
       ],
       [
@@ -22706,7 +22707,7 @@
         "str": "v"
        },
        {
-        "int": "13"
+        "int": "14"
        }
       ],
       [
@@ -22779,7 +22780,7 @@
         "str": "v"
        },
        {
-        "int": "13"
+        "int": "14"
        }
       ],
       [
@@ -22842,7 +22843,7 @@
         "str": "v"
        },
        {
-        "int": "13"
+        "int": "14"
        }
       ],
       [
@@ -22912,7 +22913,7 @@
         "str": "v"
        },
        {
-        "int": "13"
+        "int": "14"
        }
       ],
       [
@@ -22991,7 +22992,7 @@
         "str": "v"
        },
        {
-        "int": "13"
+        "int": "14"
        }
       ],
       [

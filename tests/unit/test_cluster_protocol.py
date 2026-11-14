@@ -103,7 +103,7 @@ def test_replicate_no_longer_carries_pred_committed():
     """Protocol 13 (D55, V2'): the flag-driven catch-up is gone from the wire."""
     from proto_db.cluster.protocol import MESSAGE_TYPES
     assert "pred_committed" not in MESSAGE_TYPES["replicate"]
-    assert PROTOCOL_VERSION == 13
+    assert PROTOCOL_VERSION == 14
 
 
 def test_release_fairness_hints_are_typed():

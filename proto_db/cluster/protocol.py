@@ -166,7 +166,14 @@ __all__ = ["PROTOCOL_VERSION", "MAX_FRAME_BYTES", "CHUNK_BYTES", "MAX_RECORD_BYT
 #: 13: pipelined permissions (Task 8.3k, D55): the ``store`` and ``propose`` messages,
 #: ``permit.after``; ``replicate`` loses ``pred_committed`` (voters accept a same-term root only
 #: by extension of what they hold, rule V2').
-PROTOCOL_VERSION = 13
+#: 14: the records carried by ``replicate``, ``records``, ``store``, ``warm`` and ``fetched`` may
+#: be format-5 records (the feature ``parents``, ruling R151).  The message layout is unchanged;
+#: what changes is what a record may hold and what a receiver must do with it: a receiver that
+#: writes records into a segment file it did not create writes the header version of the
+#: segment's first record (the highest version when it lacks that record).  A protocol-13 node
+#: would write a version-4 header over format-5 records and read them as format 4, so the two
+#: versions must not exchange messages.
+PROTOCOL_VERSION = 14
 #: Largest accepted frame payload, in bytes (a replicate message carries a commit's records).
 MAX_FRAME_BYTES = 64 * 1024 * 1024
 #: Record bytes a replication puts in one frame at most (a single record may fill one alone).

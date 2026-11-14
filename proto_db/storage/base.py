@@ -54,11 +54,20 @@ class SharedStorage(ABC):
     root_lock_is_global = True
 
     @abstractmethod
-    def push_atom(self, payload: dict) -> AtomPointer:
+    def push_atom(self, payload: dict, *, features=frozenset()) -> AtomPointer:
         """Serialize ``payload`` (produced by core/atom) and buffer it; return its pointer.
 
         Synchronous: when it returns the atom is readable via :meth:`get_atom`, though not
         necessarily durable until :meth:`flush`.
+
+        ``features`` names the format features the payload uses (keys of
+        :data:`~proto_db.storage.format.FEATURE_VERSIONS`); the version the record needs is
+        :func:`~proto_db.storage.format.atom_version` of the two, which also counts a feature the
+        payload uses but does not declare and refuses a declared feature it does not use
+        (``ProtoValidationError``).  The record is appended only to a segment whose header
+        version is at least that version; otherwise the storage first rolls to a new segment
+        written at it (ruling R151).  A space that never uses a feature writes version-4
+        segments only.
         """
 
     @abstractmethod
@@ -91,6 +100,12 @@ class SharedStorage(ABC):
         Raises ``ProtoConflictError`` otherwise, leaving the root unchanged.
         ``expected_epoch=None`` publishes unconditionally and is meant for tooling only.
         Returns the new :class:`RootRecord`.
+
+        Its format version is the highest of :data:`~proto_db.storage.format.WRITE_FORMAT_VERSION`,
+        the version of the root it replaces and the highest segment version this instance has
+        written: a root is never lower than the root it replaces, and once a space holds data
+        of a later version every later root of it is of that version (``format-spec.rst``,
+        "Format stability").
         """
 
     def publish_outcome(self, ptr: AtomPointer, epoch: int) -> Optional[bool]:
