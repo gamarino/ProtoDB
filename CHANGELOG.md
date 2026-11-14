@@ -165,8 +165,8 @@ indexes lost on the first write; queries that silently returned empty or partial
 - A read-only linearizable read (`read_barrier`) is proposed in the D46 amendment but not implemented; the
   barrier commit is the supported path.
 - On Python 3.14 an exception from a signal handler (Ctrl-C) can leave a `proto_db` lock held, and the process
-  can then hang; end the process after such an interrupt. An interpreter property (CPython #74174); 3.12 and
-  3.13 are not affected. See the concurrency model.
+  can then hang; end the process after such an interrupt. An interpreter defect (CPython gh-148874, fixed in
+  3.15, not in 3.14); 3.12 and 3.13 are not affected. See the concurrency model.
 
 ## Before 2.0
 

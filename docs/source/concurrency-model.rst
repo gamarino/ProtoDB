@@ -126,6 +126,7 @@ The rule on 3.14: after a ``KeyboardInterrupt``, or any exception from a signal 
 interrupted ``proto_db`` code, do not keep using the ``ObjectSpace`` in that process; let the process end,
 and open the space again in a new one. A long-running service that must survive Ctrl-C should handle the
 signal by setting a flag that its threads check between transactions, rather than letting the exception
-unwind through them. Python 3.12 and 3.13 are not affected. The upstream issue is CPython #74174
-(bpo-29988); the 3.14 change is that ``with`` now calls ``__enter__`` as an ordinary call, so the pending
-signal check at the end of that call runs outside the protected range.
+unwind through them. Python 3.12 and 3.13 are not affected. The upstream issue is CPython gh-148874: in
+3.14 ``with`` calls ``__enter__`` as an ordinary call, so the pending signal check at the end of that call
+runs outside the protected range. The fix (gh-150911) is in 3.15; as of November 2026 it has not been
+backported to 3.14.
