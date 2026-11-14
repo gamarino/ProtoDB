@@ -274,11 +274,85 @@ def test_parents_is_a_reserved_attribute_name():
         assert not obj.has_defined_attr(name)
     with pytest.raises(ProtoValidationError):
         DBObject._from_state({"parents": ("x.Y",)}, None)
+    with pytest.raises(ProtoValidationError):
+        DBObject(**{"with_parents": 1})
+
+
+# -- legacy fields named like the new API (ruling R157) -------------------------------------------
+
+_LEGACY_STATE = {"name": "a", "parents": "old", "with_parents": {"@tup": [1, 2]}}
+
+
+def _legacy(storage):
+    """A format-4 DBObject record written before parents existed, with fields named ``parents``
+    and ``with_parents`` (both were valid field names then)."""
+    return storage.push_atom({"t": _T, "oid": uuid.UUID(int=0x1e9).bytes, "s": dict(_LEGACY_STATE)})
+
+
+def _assert_legacy(o, **extra):
+    assert o._own("parents") == "old" and o._own("with_parents") == (1, 2) and o.name == "a"
+    assert o.has_defined_attr("parents") and o.has_defined_attr("with_parents")
+    assert o._state() == {"name": "a", "parents": "old", "with_parents": (1, 2), **extra}
+    assert callable(o.with_parents)
+
+
+def test_a_format_4_record_with_parents_and_with_parents_fields_loads():
     storage = MemoryStorage()
-    ptr = storage.push_atom({"t": type_tag(DBOBJECT), "oid": uuid.uuid4().bytes,
-                             "s": {"parents": {"@tup": ["x.Y"]}}})
-    with pytest.raises(ProtoCorruptionError):
-        DirectContext(storage).load(ptr, DBOBJECT).n
+    ptr = _legacy(storage)
+    o = DirectContext(storage).load(ptr, DBOBJECT)
+    _assert_legacy(o)
+    assert o.parents == ()                          # the API property: the record has no "p"
+    assert storage._segment_versions[ptr.segment] == 4
+    assert o._own("missing") is None and DBObject(n=1)._own("n") == 1
+
+
+def test_with_keeps_legacy_fields_and_rewrites_them_unchanged():
+    storage = _Recording()
+    context = DirectContext(storage)
+    o = context.load(_legacy(storage), DBOBJECT)
+    newer = o.with_(x=1)
+    _assert_legacy(newer, x=1)
+    ptr = context.save(newer)
+    (_, payload, features), = [e for e in storage.pushed if e[0] == ptr]
+    assert list(payload) == ["t", "oid", "s"] and features == frozenset()
+    assert payload["s"] == dict(_LEGACY_STATE, x=1)
+    _assert_legacy(context.load(ptr, DBOBJECT), x=1)
+    based = o.with_parents("acme.Base")
+    _assert_legacy(based)
+    loaded = context.load(context.save(based), DBOBJECT)
+    _assert_legacy(loaded)
+    assert loaded.parents == ("acme.Base",)
+
+
+def test_legacy_fields_survive_the_cache_and_an_unload(tmp_path):
+    space = ObjectSpace(FileStorage(str(tmp_path / "db"), durability="none"))
+    db = space.new_database("db")
+
+    def fill(tx):
+        ptr = _legacy(tx.storage)
+        tx.set_root_object("old", tx.load(ptr, DBOBJECT))
+        tx.set_root_object("newer", tx.load(ptr, DBOBJECT).with_(x=1))
+    db.run(fill)
+
+    def check(tx):
+        _assert_legacy(tx.get_root_object("old"))
+        _assert_legacy(tx.get_root_object("newer"), x=1)
+    db.run(check)                                   # "newer" through its cache twin
+    space._atoms._unload_all()
+    db.run(check)
+    space.close()
+
+
+def test_a_new_object_cannot_create_legacy_fields():
+    storage = MemoryStorage()
+    o = DirectContext(storage).load(_legacy(storage), DBOBJECT)
+    for name in ("parents", "with_parents"):
+        with pytest.raises(ProtoValidationError):
+            DBObject(n=1).with_(**{name: 1})
+        with pytest.raises(ProtoValidationError):
+            o.with_(**{name: "changed"})            # carried over unchanged only, never written
+    with pytest.raises(ProtoValidationError):
+        DBObject(**{"with_parents": 1})
 
 
 def _raw(payload, features=frozenset()):

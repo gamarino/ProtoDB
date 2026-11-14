@@ -443,6 +443,9 @@ def _installed_names(cls, state: dict) -> tuple:
     """The keys :meth:`Atom._restore` installs for ``state``: its attributes, and ``_links`` for
     the history links among them."""
     links = cls._history_links
+    legacy = cls._legacy_fields
+    if legacy:
+        state = [legacy.get(name, name) for name in state]
     if not links:
         return tuple(state)
     names = tuple(name for name in state if name not in links)
@@ -588,9 +591,18 @@ class Atom:
     #: its subclasses, and opaque atoms (types of another implementation).  For any other type a
     #: record with ``"p"`` is ``ProtoCorruptionError``.
     _parented = False
+    #: Persisted field names that this class's API took over later (ruling R157): a record written
+    #: before still holds such a field, and it stays readable.  Maps the field name to the private
+    #: attribute it is held in, since the public name now reads the API member; ``_state()`` gives
+    #: it back under its field name, so a new version carries it over unchanged.  A class refuses
+    #: to create such a field (``DBObject._check_name``); loading and saving one are allowed.
+    _legacy_fields: dict = {}
+    #: The inverse of ``_legacy_fields`` (computed per class).
+    _legacy_attrs: dict = {}
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
+        cls._legacy_attrs = {attr: name for name, attr in cls._legacy_fields.items()}
         cls._custom_restore = cls._restore is not Atom._restore or cls._set_link is not Atom._set_link
         if cls.__dict__.get("_opaque_stand_in"):
             cls._type_name_declared = True      # an OpaqueAtom stand-in: never registered (D59)
@@ -946,10 +958,11 @@ class Atom:
         so it may transform the values of ``state`` in place; it must not depend on the
         identity of ``self``."""
         cls = type(self)
+        legacy = cls._legacy_fields
         for name in state:
             if name.startswith("_") or name in RESERVED_NAMES:
                 raise ProtoCorruptionError(f"Invalid persisted attribute name {name!r} for {cls.__type_name__}")
-            if class_defines(cls, name):
+            if class_defines(cls, name) and name not in legacy:
                 raise ProtoCorruptionError(
                     f"Invalid persisted attribute name {name!r} for {cls.__type_name__}: the Python class "
                     f"defines an attribute of that name, which would hide the field (in Python the field is "
@@ -960,7 +973,7 @@ class Atom:
             if name in links:
                 self._set_link(name, value)
             else:
-                osa(self, name, value)
+                osa(self, legacy.get(name, name) if legacy else name, value)
 
     # -- save -----------------------------------------------------------------------
 
@@ -971,7 +984,14 @@ class Atom:
         runtime keys concurrently (a lazily assigned ``oid``), and a cache may unload the atom.
         """
         d = self._snapshot()
-        state = {k: v for k, v in d.items() if not k.startswith("_") and k not in RESERVED_NAMES}
+        held = type(self)._legacy_attrs
+        if held:
+            # Legacy fields (R157) are held under private names: given back under their field
+            # names, in the order they were installed.
+            state = {held.get(k, k): v for k, v in d.items()
+                     if (not k.startswith("_") or k in held) and k not in RESERVED_NAMES}
+        else:
+            state = {k: v for k, v in d.items() if not k.startswith("_") and k not in RESERVED_NAMES}
         links = type(self)._history_links
         if links:
             for name in links:
@@ -1028,7 +1048,7 @@ class Atom:
         from . import codec
         state = self._state()
         for name in state:
-            if class_defines(cls, name):
+            if class_defines(cls, name) and name not in cls._legacy_fields:
                 raise ProtoValidationError(
                     f"Attribute {name!r} of {cls.__type_name__} shadows a class attribute and "
                     f"could not be loaded back lazily")

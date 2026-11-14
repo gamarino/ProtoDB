@@ -87,6 +87,9 @@ class DBObject(Atom):
 
     __type_name__ = "proto_db.core.dbobject.DBObject"
     _parented = True
+    #: Fields that format-4 records may hold under the names of the parents API (ruling R157):
+    #: they load and are carried over by ``with_``, but no new value is ever written under them.
+    _legacy_fields = {"parents": "_legacy_parents", "with_parents": "_legacy_with_parents"}
 
     def __init__(self, *, context: PersistenceContext | None = None, parents=(), **attributes):
         super().__init__(context=context)
@@ -141,9 +144,22 @@ class DBObject(Atom):
 
     def has_defined_attr(self, name: str) -> bool:
         """Return True if ``name`` is a persisted attribute of this record (even if ``None``)."""
+        return self._own_probe(name) is not _ABSENT
+
+    def _own(self, name: str):
+        """The persisted attribute ``name`` of this record, or ``None`` if it has none (R150).
+
+        Internal accessor (ruling R157): unlike ``getattr``, it also reads a legacy field that a
+        format-4 record holds under a name the API now uses (``parents``, ``with_parents``).
+        Task 4 replaces it with the public own-attribute access."""
+        found = self._own_probe(name)
+        return None if found is _ABSENT else found
+
+    def _own_probe(self, name):
         if not isinstance(name, str) or name.startswith("_") or name in RESERVED_NAMES:
-            return False
-        return self._probe(name) is not _ABSENT
+            return _ABSENT
+        held = type(self)._legacy_fields.get(name)
+        return self._probe(name if held is None else held)
 
     def with_(self, **changes) -> "DBObject":
         """Return a new version with ``changes`` applied: a new atom with a new ``oid`` (D18).
@@ -152,13 +168,30 @@ class DBObject(Atom):
         the same class and context and is not saved.
         """
         state = self._state()
+        legacy = self._take_legacy(state)
         state.update(changes)
-        return type(self)._from_state(state, self.context, self.parents)
+        return type(self)._from_state(state, self.context, self.parents)._carry(legacy)
 
     def with_parents(self, *parents) -> "DBObject":
         """Return a new version with the same attributes and ``parents`` instead of this one's
         (none when called without arguments): a new atom with a new ``oid``, not saved."""
-        return type(self)._from_state(self._state(), self.context, parents)
+        state = self._state()
+        legacy = self._take_legacy(state)
+        return type(self)._from_state(state, self.context, parents)._carry(legacy)
+
+    def _take_legacy(self, state: dict) -> dict:
+        """Remove from ``state`` (this record's ``_state()``) the legacy fields (R157) and return
+        them, so that a change can never write one and a new version carries them unchanged."""
+        legacy = type(self)._legacy_fields
+        return {name: state.pop(name) for name in legacy if name in state}
+
+    def _carry(self, legacy: dict) -> "DBObject":
+        """Install the legacy fields ``legacy`` (already canonical: read from a record) on this
+        new version, under their private names; return it."""
+        held = type(self)._legacy_fields
+        for name, value in legacy.items():
+            _osa(self, held[name], value)
+        return self
 
     def __setattr__(self, name, value):
         if name.startswith("_"):

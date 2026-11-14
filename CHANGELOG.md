@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [2.0.0rc4] - unreleased
 
+- `DBObject` gains parents (`DBObject(parents=(...))`, `o.parents`, `o.with_parents(...)`), persisted as the
+  atom envelope key `"p"`, the format-5 feature `parents`; an object without parents writes the format-4 record
+  byte for byte. `parents` and `with_parents` can no longer be created as field names (`ProtoValidationError`),
+  but a record written before that holds a field of either name still loads, keeps the field readable and
+  `with_` carries it over unchanged: it is never refused (ruling R157).
 - `proto_db.__version__` reports the package version; in 2.0.0rc3 it still said `2.0.0.dev0`.
 - `CloudStorage.publish_root` reports a write refused by its precondition as `ProtoConflictError`, which
   `Database.run` retries, when the object store declares that its refusals are definitive

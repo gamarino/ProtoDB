@@ -446,8 +446,12 @@ every implementation of it, and a type's *behaviour names* are reserved: a persi
 MUST NOT carry one.
 
 - ``proto_db.core.dbobject.DBObject`` reserves ``with_``, ``has_defined_attr``, ``parents`` and
-  ``with_parents`` (the last two from format version 5: an object's parents are the envelope
-  key ``p``, never an attribute).
+  ``with_parents``. The last two are reserved from format version 5 (an object's parents are
+  the envelope key ``p``, never an attribute) for **new** fields only: a record written before
+  may hold a field named ``parents`` or ``with_parents``, and a reader MUST still read it as an
+  ordinary field (``proto_db`` keeps it readable and never refuses it, ruling R157). A writer
+  MUST NOT create such a field, and keeps an existing one unchanged in a new version of the
+  record.
 - An application type reserves the names of the methods and properties its class defines in
   each implementation that defines it, **except accessors**. An accessor of an attribute is a
   method named like the attribute that only returns its stored value, or only stores a new
@@ -461,7 +465,8 @@ MUST NOT carry one.
   accessor, and any attribute of the Python class with the same name, a property written as an
   accessor included, would hide it. ``proto_db`` therefore refuses a field named like any attribute
   of its Python class, when writing (``ProtoValidationError``) and when reading
-  (``ProtoCorruptionError``), and both messages say so. A Python class for a shared type
+  (``ProtoCorruptionError``), and both messages say so. The one exception is the two ``DBObject`` field names above,
+  which a record written before format 5 may hold. A Python class for a shared type
   defines no accessors; it reads ``order.total`` directly.
 
 An implementation cannot know the behaviour names of the others, so an application that shares
