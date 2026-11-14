@@ -45,7 +45,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   successor committed under a later permission, are rebuilt in a fresh cluster, after their safety checks
   (plants `p1_conflict_after_root_stage`, `nowhere_false_ack`); the records-nowhere scenario runs with a 1.8 s
   lease, so that the owner's delayed permit still arrives valid. The `False-V2` case now waits until every voter
-  holds the term's first root, the premise of its claim. No product change.
+  holds the term's first root, the premise of its claim, and a run in which k opened a new term (A's term
+  ended after that root) is rebuilt before B builds on k: under the planted V2 rule such a run lost k's
+  records (the `True` schedule's gap), and the product's V2' refused k+1 there. No product change.
 - Tests: the two compaction checks of `test_owner_locks` held on ext4, where a freed inode number is
   reused; they now keep the original file open and compare with `os.path.samestat`.
 

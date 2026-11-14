@@ -316,13 +316,14 @@ def _p1_schedule(tmp_path, monkeypatch, *, first_of_term: bool, rule: str):
     commit was acknowledged, what every member reads afterwards, and the setup misses.
 
     When k is not the first root of its term, every voter holds the term's first root before A
-    builds k.  Without that wait, which root n2 held when k+1 arrived was timing: V2 as written
-    exempts every root of a newer term, so a voter still holding an older term's root accepts
-    k+1 although it does not hold k (the gap the ``True-V2`` case shows), while V2' exempts
+    builds k, and k must carry that root's term.  Otherwise the voters hold an older term's
+    root when k+1 arrives: V2 as written exempts every root of a newer term, so they accept
+    k+1 although they do not hold k (the gap the ``True-V2`` case shows), while V2' exempts
     only the first root of a term.  Under CPU load the ``False-V2`` schedule was acknowledged
-    once with k's records on no member and not in the store, and a read retried with the
-    burners stopped failed too (Task P1-READ); by V2's rules only n2 can have accepted k+1
-    there, so n2 held an older term's root.  The product's V2' refused k+1 in every such run.
+    with k's records on no member and not in the store (Task P1-READ, acceptance trace: A's
+    term ended after its first root, k opened the next term, and all three voters accepted
+    k+1 over the older term's root).  Such a run is a setup miss; the product's V2' refused
+    k+1 there.
 
     The schedule needs both rounds to send.  On a starved machine a permission can run out
     first (Task P1-READ, measured under 6 CPU burners: A's permission or B's had 44-74 ms
@@ -379,14 +380,21 @@ def _p1_attempt(tmp_path, fs, first_of_term):
                     first = a._accepted
                 return all(tc[n]._accepted == first for n in ("n1", "n2"))
             _await(holds_first, what="every voter holding the term's first root", tc=tc)
-        assert a._ownership is not None or first_of_term
+            with a._lock:
+                first_label = a._accepted[2]
+                owning = a._ownership is not None
+            if not owning:
+                # A's term ended after its first root: k would open a new term.
+                return {}, {}, "A's term ended after the term's first root"
         if a.persister is not None:
             a.persister.stop()
         lost = threading.Event()
+        k_terms = []
         apply_b = b._apply_replicate
 
         def b_lane(msg):
             if msg["from"] == "n0" and msg["records"]:
+                k_terms.append(msg["term"])
                 with b._lock:
                     b._note_owner(msg["term"])          # B learns the owner, not the records
                 lost.set()
@@ -433,6 +441,13 @@ def _p1_attempt(tmp_path, fs, first_of_term):
             # A's round ended before its proposal: nothing of k left A; no schedule to cut.
             power.set()
             return outcome, {}, f"A's round ended before it proposed: {outcome}"
+        if not first_of_term and k_terms[0] != first_label:
+            # A's term ended between the wait above and k: k is the first root of a new term and
+            # the voters hold an older term's root -- the ``True`` schedule, not this one.  B
+            # does not build on k.
+            power.set()
+            ta.join(30)
+            return outcome, {}, f"k opened a new term after the voters held the first root: {outcome}"
         tb = threading.Thread(target=commit, args=("n1", "b"))
         tb.start()
         tb.join(30)
