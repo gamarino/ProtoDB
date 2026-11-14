@@ -244,6 +244,20 @@ def test_a_holder_paused_past_its_lease_never_replicates():
             return original()
 
         cl["n0"].tier.outgoing = paused_outgoing
+        # Checked per call of n0's replication: the call paused past the lease must refuse before
+        # sending anything acceptable, so it counts no failed replication.  n0's retry is a real
+        # round; under load it may fail after sending (counted rightly), so n0's total is not
+        # asserted (Task 11.1, A4: the total counted such a retry).
+        replicate, paused_calls = cl["n0"].replicate, []
+
+        def recorded_replicate(*args, **kw):
+            pausing, before = armed[0], cl["n0"].stats()["replication_failures"]
+            try:
+                return replicate(*args, **kw)
+            finally:
+                if pausing and not armed[0]:
+                    paused_calls.append(cl["n0"].stats()["replication_failures"] - before)
+        cl["n0"].replicate = recorded_replicate
         errors = []
 
         def paused_commit():
@@ -261,7 +275,7 @@ def test_a_holder_paused_past_its_lease_never_replicates():
         t.join(10)
         assert not errors
         assert _eventually(lambda: _value(s1) == 2)     # n0 retried on the new root: nothing lost
-        assert cl["n0"].stats()["replication_failures"] == 0
+        assert paused_calls == [0], f"the paused holder replicated past its lease: {paused_calls}"
 
 
 def test_a_late_replication_is_refused_by_peers_that_granted_a_newer_term():
