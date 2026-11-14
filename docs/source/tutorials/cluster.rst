@@ -105,9 +105,11 @@ A cluster commit has a third outcome besides "committed" and "conflict" (retried
 ``ProtoOutcomeUnknownError``, *the commit may or may not take effect*. It is rare on an idle machine and
 more frequent when the nodes' threads are starved of CPU (see :doc:`../design-guide/unknown-outcomes`).
 ``run`` never retries it, because a retry could apply the work twice. The writes below store a value
-that no other commit writes, so the value is its own token: a later read that finds it shows that an
-unknown commit took effect. The loops count only acknowledged commits, because a read can only "miss" a
-commit that was acknowledged.
+that no other commit writes, so the value identifies its commit: an unknown commit is proven to have taken
+effect only when a later read finds that value, in the current state or in an older version
+(``history()``). Not finding it in the current value proves nothing, because a later commit may have
+overwritten it. The loops count only acknowledged commits, because a read can only "miss" a commit that was
+acknowledged, and they give up after a bounded number of attempts rather than spin on a starved machine.
 
 .. code-block:: python
 
@@ -122,6 +124,8 @@ commit that was acknowledged.
    stale = acknowledged = 0
    k = 0
    while acknowledged < 20:
+       if k == 200:
+           raise RuntimeError(f"only {acknowledged} of 200 commits were acknowledged")
        k += 1
        if not write_orders(k):                                                 # acknowledged on n0?
            continue
@@ -181,8 +185,10 @@ start the read after it returns:
                # one took effect after all, the retry only adds one more barrier version.
 
    missed = acknowledged = 0
-   k = 20
+   k = first = 1000                 # values the first loop never wrote
    while acknowledged < 20:
+       if k == first + 200:
+           raise RuntimeError(f"only {acknowledged} of 200 commits were acknowledged")
        k += 1
        if not write_orders(k):
            continue
