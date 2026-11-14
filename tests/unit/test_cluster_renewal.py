@@ -29,7 +29,13 @@ def test_a_refused_higher_request_does_not_end_the_owners_term(tmp_path):
     (D50, "idle", 0.225 s here), which is not the property under test: a pause that long
     between two commits of this one thread (a garbage collection, the scheduler) ended the
     term in 1 run of the fix round 2 proof (Task 8.3n, ownerships 3 == 2 with no renewal
-    failure; reproduced by a 0.25 s pause between commits).  A stall inside a commit, longer
+    failure; reproduced by a 0.25 s pause between commits).  The owner counts that time from
+    its last permission *request* (``last_demand``), so the gap measured here runs from the
+    owner's last request to the end of the next commit: the time between two commit ends
+    misses the part of a slow commit that follows its request (Task CI-FLAKES: a CI runner
+    ended the term with commit ends at most 0.218 s apart; reproduced by a 0.12 s stall after
+    one commit returned and another before the next one's request: commit ends at most 0.166 s
+    apart, those two requests at least 0.24 s apart).  A stall inside a commit, longer
     than what its permission had left, ends that commit unknown although a majority
     acknowledged it (the committing thread observed the acknowledgements after its
     permission ended: re-review 4 M2, P5), with every renewal granted: 1 run of the
@@ -88,7 +94,6 @@ def test_a_refused_higher_request_does_not_end_the_owners_term(tmp_path):
         rid = 10_000
         while True:
             setup_commit()                                      # n0 owns a term
-            last = time.monotonic()                             # every gap from here is measured
             own = n0._ownership
             assert own is not None, "n0 owns the term of its own commits"
             before = n0.stats()
@@ -98,6 +103,11 @@ def test_a_refused_higher_request_does_not_end_the_owners_term(tmp_path):
             n0._on_request("n1", make_message("request", "n1", term=higher, rid=rid, inc=n1._inc, vs=0))
             deadline = time.monotonic() + n0._duration * 2.5      # several renewals are due
             widest, unknowns = 0.0, []
+            # Every gap is measured from the owner's own clock of demand (the time.monotonic()
+            # of its last permission request, ``own.last_demand``): an idle end needs more than
+            # ``idle`` from one request to the next, and the next request comes before the end
+            # of the commit that makes it.
+            demand = own.last_demand
             while time.monotonic() < deadline:
                 started = time.monotonic()
                 try:
@@ -109,21 +119,22 @@ def test_a_refused_higher_request_does_not_end_the_owners_term(tmp_path):
                     # unknown sooner than that was no stall -- a possible product defect.
                     assert took >= n0._belief / 4, f"an unknown outcome after only {took:.3f} s: {e}"
                     unknowns.append((round(took, 3), str(e)))
-                now = time.monotonic()
-                widest, last = max(widest, now - last), now
+                widest = max(widest, time.monotonic() - demand)
+                demand = own.last_demand
             stats = n0.stats()
             assert not refused, f"a renewal of the owner's term was refused under an active grant: {refused}"
             failed = stats["renewal_failures"] - before["renewal_failures"]
             kept = stats["ownerships"] == before["ownerships"] and n0._ownership is own
             if widest <= idle and not unknowns and not failed:
                 assert stats["renewals"] - before["renewals"] >= 2, stats
-                assert kept, f"the owner's term ended while in use (commits at most {widest:.3f} s apart)"
+                assert kept, (f"the owner's term ended while in use (at most {widest:.3f} s from a "
+                              f"permission request to the end of the next commit)")
                 break
             inconclusive.append((round(widest, 3), kept, failed, unknowns))
             assert time.monotonic() < give_up, f"no trial with steady demand: {inconclusive}"
         if inconclusive:
-            print(f"\ntrials repeated (a pause over {idle:g} s between commits, a failed renewal or an unknown "
-                  f"outcome): "
+            print(f"\ntrials repeated (over {idle:g} s from a permission request to the end of the next commit, "
+                  f"a failed renewal or an unknown outcome): "
                   f"{inconclusive}")
         # Every outcome resolved on both members, the counter read in the same snapshot as the
         # tokens (re-review 1, N1): a lost acknowledged commit, an unknown one resolved
