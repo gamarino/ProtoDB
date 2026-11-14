@@ -122,6 +122,7 @@ from .core.dbobject import DBObject, MutableObject
 from .errors import (ProtoClosedError, ProtoConflictError, ProtoCorruptionError, ProtoDBError, ProtoOutcomeUnknownError,
                      ProtoReferenceError, ProtoTimeoutError, ProtoUnexpectedError, ProtoUserError,
                      ProtoValidationError)
+from .resolution import new_cache
 from .storage.base import check_lock_timeout
 from .storage.cache import BoundedCache
 from .query.cache import QUERY_CACHE_BYTES, QueryCache
@@ -437,6 +438,9 @@ class _AtomCache:
         self._ident: dict = {}
         self._forget = functools.partial(_forget_dead, self._ident)
         self._closed = False
+        # Linearizations of parents tuples of saved parents loaded through this cache, shared by
+        # every transaction of the space (proto_db.resolution).
+        self._linearizations = new_cache()
         self.hits = 0
         self.misses = 0
         self.unloads = 0
@@ -1989,6 +1993,17 @@ class Transaction:
         self._db_root = database._root_in(self, record)
         self._objects = self._db_root.objects
         self._mutables = self._db_root.mutables
+
+    @property
+    def _linearizations(self) -> BoundedCache:
+        """The linearizations of parents tuples for objects whose context is this transaction:
+        tuples holding an unsaved parent, and saved parents loaded through it when the space's
+        atom cache is off (:mod:`proto_db.resolution`).  Made on first use, so a transaction
+        that resolves nothing through its parents pays nothing for it."""
+        store = self.__dict__.get("_linearization_cache")
+        if store is None:
+            store = self.__dict__.setdefault("_linearization_cache", new_cache())
+        return store
 
     # -- PersistenceContext -----------------------------------------------------------------
 

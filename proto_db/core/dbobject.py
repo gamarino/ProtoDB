@@ -15,6 +15,15 @@ envelope key ``"p"`` (the format-5 feature ``parents``); a DBObject without pare
 format-4 record, byte for byte.  ``parents`` and ``with_parents`` are therefore not attribute
 names.
 
+Resolution (spec section 5, :mod:`proto_db.resolution`): a name Python does not find -- not a
+member of the class, so a subclass's methods and properties come first, and not an own
+attribute -- is looked up along the C3 linearization of the parents; a miss is still ``None``
+(R150).  ``o[name]`` reads what ``o.name`` reads, for a name computed at run time; ``name in o``
+tells a definition (even ``None``) anywhere along the linearization from a miss;
+:attr:`DBObject._own` holds the own attributes only, and :meth:`DBObject.has_defined_attr` and
+index paths keep reading own attributes only.  Writes never reach a parent: ``with_`` sets own
+attributes.
+
 ``list`` and ``dict`` values are stored as ``FrozenList`` and ``FrozenDict``
 (by :func:`proto_db.values.canonical`, D25): attempts to mutate them raise
 ``ProtoValidationError``; use ``.copy()`` to get a mutable copy.
@@ -26,8 +35,9 @@ gives versions of a record a shared entity identity (D18).  The class is defined
 """
 from __future__ import annotations
 
+from .. import resolution
 from ..errors import ProtoUserError, ProtoValidationError
-from ..values import MutableObject, canonical, check_text
+from ..values import FrozenDict, MutableObject, canonical, check_text
 from .atom import _ABSENT, RESERVED_NAMES, Atom, PersistenceContext, _check_context, class_defines
 
 __all__ = ["DBObject", "MutableObject"]
@@ -154,23 +164,93 @@ class DBObject(Atom):
         for name, value in values.items():
             osa(self, name, value)
 
+    # -- resolution (spec section 5) ------------------------------------------------------
+
+    #: Not iterable: ``__getitem__`` reads attributes by name, it is not a sequence protocol.
+    __iter__ = None
+
     def _absent_attribute(self, name: str):
-        return None
+        # Python found no member and no own attribute: resolution over the parents (a miss is
+        # None, R150; an object without parents answers None at once, as before parents existed).
+        if self._probe("_parents") is _ABSENT:
+            return None
+        return resolution._resolve_inherited(self, name)[0]
+
+    def __getitem__(self, name):
+        """``o[name]``: what ``o.name`` reads, for a name computed at run time (``None`` on a miss).
+
+        A legacy field named like the API (ruling R157: ``parents``, ``with_parents`` in a
+        format-4 record) is read here as the field, own or inherited, while ``o.parents`` stays
+        the property.  The other API names (``oid``, ``context``, ``atom_pointer``, ``with_``,
+        ``has_defined_attr``, ...) and names starting with ``_`` are not attribute names:
+        ``ProtoValidationError``.  A name that is not a ``str`` is ``TypeError``."""
+        kind = self._item_kind(name)
+        if kind is _DATA:
+            return resolution.resolve(self, name)[0]
+        return getattr(self, name)
+
+    def __contains__(self, name) -> bool:
+        """``name in o``: whether ``o.name`` (or ``o[name]``) finds a definition -- an own or
+        inherited attribute, even one whose value is ``None``, or a member of the Python class --
+        rather than missing.  False for anything that is not an attribute name."""
+        try:
+            kind = self._item_kind(name)
+        except (TypeError, ProtoValidationError):
+            return False
+        if kind is _MEMBER or (kind is _ATTRIBUTE and class_defines(type(self), name)):
+            return True
+        return resolution.resolve(self, name)[1] is not None
+
+    def _item_kind(self, name):
+        """How ``o[name]`` reads ``name``: ``_DATA`` (a legacy field name, R157), ``_MEMBER`` (an
+        API name a subclass redefines: its member) or ``_ATTRIBUTE`` (``getattr``)."""
+        if not isinstance(name, str):
+            raise TypeError(f"DBObject attribute names are str, not {type(name).__name__}")
+        if not name or name.startswith("_"):
+            raise ProtoValidationError(f"{name!r} is not an attribute name")
+        if name in _API_NAMES:
+            cls = type(self)
+            if name in cls._legacy_held:
+                return _DATA
+            owner = next(k for k in cls.__mro__ if name in k.__dict__ or k is DBObject)
+            if owner is DBObject or name in RESERVED_NAMES:
+                raise ProtoValidationError(
+                    f"{name!r} is part of the DBObject API, not an attribute name: read it as o.{name}")
+            return _MEMBER
+        return _ATTRIBUTE
+
+    def __setitem__(self, name, value):
+        raise ProtoUserError(f"DBObject is immutable; use with_({name}=...) to create a new version")
+
+    def __delitem__(self, name):
+        raise ProtoUserError("DBObject is immutable; attributes cannot be deleted")
+
+    @property
+    def _own(self) -> FrozenDict:
+        """This object's own attributes (never inherited ones), as a ``FrozenDict``; a legacy
+        field (R157) appears under its field name."""
+        return FrozenDict(self._state())
+
+    def _resolve(self, name) -> tuple:
+        """``(value, position)`` of ``name`` along :meth:`_linearization` (``(None, None)`` on a
+        miss); see :func:`proto_db.resolution.resolve`."""
+        return resolution.resolve(self, name)
+
+    def _linearization(self) -> tuple:
+        """This object, then the C3 order of its parents' nodes; see
+        :func:`proto_db.resolution.linearize`."""
+        return resolution.linearize(self)
 
     def has_defined_attr(self, name: str) -> bool:
-        """Return True if ``name`` is a persisted attribute of this record (even if ``None``)."""
+        """Return True if ``name`` is an own persisted attribute of this record (even if ``None``).
+
+        Own attributes only, as before parents existed: an inherited attribute is not defined
+        here (``name in o`` answers along the whole linearization)."""
         return self._own_probe(name) is not _ABSENT
 
-    def _own(self, name: str):
-        """The persisted attribute ``name`` of this record, or ``None`` if it has none (R150).
-
-        Internal accessor (ruling R157): unlike ``getattr``, it also reads a legacy field that a
-        format-4 record holds under a name the API now uses (``parents``, ``with_parents``).
-        Task 4 replaces it with the public own-attribute access."""
-        found = self._own_probe(name)
-        return None if found is _ABSENT else found
-
     def _own_probe(self, name):
+        """The own persisted attribute ``name`` of this record, or ``_ABSENT``.  Also reads a legacy
+        field held under a private name (R157); this is what index paths and resolution read."""
         if not isinstance(name, str) or name.startswith("_") or name in RESERVED_NAMES:
             return _ABSENT
         held = type(self)._legacy_held.get(name)
@@ -237,3 +317,11 @@ class DBObject(Atom):
             fields.insert(0, f"parents={parents!r}")
         return f"{type(self).__name__}({', '.join(fields)})"
 
+
+#: What :meth:`DBObject._item_kind` answers.
+_DATA, _MEMBER, _ATTRIBUTE = object(), object(), object()
+
+#: The names of the DBObject API (its members and Atom's, and the reserved names): never read as
+#: attribute names through ``o[name]``, except the legacy fields of R157.
+_API_NAMES = frozenset(
+    name for cls in (DBObject, Atom) for name in vars(cls) if not name.startswith("_")) | RESERVED_NAMES

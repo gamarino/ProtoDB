@@ -290,7 +290,8 @@ def _legacy(storage):
 
 
 def _assert_legacy(o, **extra):
-    assert o._own("parents") == "old" and o._own("with_parents") == (1, 2) and o.name == "a"
+    assert o["parents"] == "old" and o["with_parents"] == (1, 2) and o.name == "a"
+    assert o._own["parents"] == "old" and o._own["with_parents"] == (1, 2)
     assert o.has_defined_attr("parents") and o.has_defined_attr("with_parents")
     assert o._state() == {"name": "a", "parents": "old", "with_parents": (1, 2), **extra}
     assert callable(o.with_parents)
@@ -303,7 +304,7 @@ def test_a_format_4_record_with_parents_and_with_parents_fields_loads():
     _assert_legacy(o)
     assert o.parents == ()                          # the API property: the record has no "p"
     assert storage._segment_versions[ptr.segment] == 4
-    assert o._own("missing") is None and DBObject(n=1)._own("n") == 1
+    assert o["missing"] is None and DBObject(n=1)["n"] == 1
 
 
 def test_with_keeps_legacy_fields_and_rewrites_them_unchanged():

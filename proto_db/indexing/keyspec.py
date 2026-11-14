@@ -154,8 +154,9 @@ def _step(value, name: str):
         if name.startswith("_") or name in RESERVED_NAMES:
             return MISSING
         if isinstance(value, DBObject):
-            # _own also reads a legacy field named like the API (R157)
-            return value._own(name) if value.has_defined_attr(name) else MISSING
+            # Own attributes only, never inherited ones; a legacy field named like the API too (R157)
+            found = value._own_probe(name)
+            return MISSING if found is _ABSENT else found
         found = value._probe(name)          # safe across an unload by the atom cache (8.3m)
         return MISSING if found is _ABSENT else found
     return MISSING
