@@ -35,6 +35,10 @@ def _cluster(tmp_path, n, **kw):
     return tc
 
 
+#: Rounds of three commits the R89 test may run before it gives up on a hedge-free round.
+HEDGE_FREE_ATTEMPTS = 5
+
+
 def _root(tc, node):
     known, root, label = tc[node].committed_root()[:3]
     assert known and root is not None
@@ -333,19 +337,34 @@ def test_every_member_caches_each_commit_without_a_durable_copy(tmp_path):
         tc.commit("n5", incr)
         for node in tc.ids:
             tc[node].wait_idle(5)
-        before = {n: (tc[n].stats()["fetches_requested"], tc.storages[n].stats()["replicas_logged"])
-                  for n in tc.ids}
-        for _ in range(3):
-            tc.commit("n5", incr)
-        for node in tc.ids:
-            tc[node].wait_idle(5)
+        # A hedge (n6 slow to store, timing) legitimately adds durable copies on n7, n0, ...;
+        # the scenario under test is a round without one, so a hedged round is repeated.
+        hedged = []
+        for _attempt in range(stress.attempts(HEDGE_FREE_ATTEMPTS)):
+            before = {n: (tc[n].stats()["fetches_requested"], tc.storages[n].stats()["replicas_logged"])
+                      for n in tc.ids}
+            hedges = tc["n5"].stats()["replica_hedges"]
+            for _ in range(3):
+                tc.commit("n5", incr)
+            for node in tc.ids:
+                tc[node].wait_idle(5)
+            if tc["n5"].stats()["replica_hedges"] == hedges:
+                break
+            hedged.append(tc["n5"].stats()["replica_hedges"] - hedges)
+            if stress.ACTIVE:
+                stress.record(f"hedged round repeated: {hedged[-1]} hedge(s)")
+        else:
+            raise AssertionError(f"every round hedged ({hedged}): no hedge-free round to check")
+        if hedged:
+            print(f"\nhedged rounds repeated: {hedged}")
+        value = 1 + 3 * (len(hedged) + 1)          # incr: one initial commit, 3 per round
         root, _ = _root(tc, "n5")
         ptr = AtomPointer(root.segment, root.offset)
         assert _holders(tc, ptr) == {"n5", "n6"}                    # durable copies: f + 1
         for node in tc.ids:
             assert tc.storages[node].local_record(ptr) is not None, f"{node} did not cache the commit"
         for node in ("n1", "n3", "n7"):
-            assert tc.eventually(node, 4)
+            assert tc.eventually(node, value)
             assert tc[node].stats()["fetches_requested"] == before[node][0], f"{node} fetched"
             assert tc.storages[node].stats()["replicas_logged"] == before[node][1]
         assert tc["n7"].stats()["records_warmed"] > 0

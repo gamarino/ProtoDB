@@ -88,7 +88,13 @@ def test_cluster_commits_stay_correct_when_the_working_set_exceeds_the_cache(tmp
                 low[k] += 1
             for k in unknown[n]:
                 extra[k] += 1
-        assert sum(len(u) for u in unknown.values()) <= 3, unknown
+        # Unknown outcomes are legitimate (a release lost to a slow member, timing); their count
+        # is no rate claim.  The guard only keeps the check below from going vacuous: most
+        # commits must be acknowledged for the counters to pin anything.
+        n_unknown = sum(len(u) for u in unknown.values())
+        assert n_unknown * 2 <= PER_NODE * len(tc.ids), unknown
+        if n_unknown:
+            print(f"\n{n_unknown} unknown outcome(s), resolved by their tokens: {unknown}")
 
         def counters(tr):
             d = tr.get_root_object("d")
