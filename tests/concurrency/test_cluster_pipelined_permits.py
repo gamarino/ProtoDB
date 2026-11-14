@@ -33,6 +33,7 @@ from proto_db.cluster.coordinator import ClusterCoordinator, _siblings
 from proto_db.cluster.rootlog import compare_roots
 from proto_db.errors import ProtoConflictError, ProtoDBError, ProtoOutcomeUnknownError
 from proto_db import transactions
+from tests.support import stress
 from tests.support.cluster_load import (Load, await_condition as _await, check_after_faults as _check,
                                         confirm_every_member as _confirmed, fsync_cluster as _cluster,
                                         setter as _setter)
@@ -713,6 +714,10 @@ def test_a_successor_whose_base_records_are_nowhere_gets_a_retryable_conflict(tm
             assert _read_keys(tc, node, ("b",))["b"] is None, node
 
 
+#: Clusters the late-acks scenario may build before it gives up on its setup (liveness, R142).
+LATE_ACKS_ATTEMPTS = 5
+
+
 def test_acks_after_the_predecessors_validity_give_an_unknown_that_took_effect(tmp_path):
     """Review 8.3k, Priority 1 (the 50-row benchmark's failure signature).  Holder A (n0)
     proposes root k; the owner issues k+1 to B (n1) on root k; B stores its records and its
@@ -720,7 +725,34 @@ def test_acks_after_the_predecessors_validity_give_an_unknown_that_took_effect(t
     after A's validity: A reports unknown, nobody learns k committed, B's gate closes (on A's
     ``done`` saying unknown, or when its fallback query is answered without k) and B's
     conflict is retried; the owner abandons its term.  R86: b is applied exactly once; a (unknown) is applied at most once -- here it
-    took effect, an EXTRA outcome R86 allows."""
+    took effect, an EXTRA outcome R86 allows.
+
+    The scenario needs B's data stage under its pipelined permission, which is valid only for
+    what the owner's lease had left (0.075-0.3 s at this file's 0.9 s lease).  On a starved
+    machine B's permission can run out first: B refuses to send with less than
+    ``send_reserve`` left (R121, a truthful conflict), and since a proposal is issued on once
+    (O2), no later permission of B is pipelined on A's root: the scenario cannot form any more
+    (Task CI-FLAKES: a CI runner, 3.14t, ``sends_refused_reserve`` 1, "timed out waiting for B's
+    data stage").  That run is a setup miss, not a result: the scenario is built again in a
+    fresh cluster, and every assertion applies unchanged to the run that forms it."""
+    misses = []
+    for attempt in range(stress.attempts(LATE_ACKS_ATTEMPTS)):
+        path = tmp_path / f"attempt-{attempt}"
+        path.mkdir()
+        miss = _acks_after_the_predecessors_validity(path)
+        if miss is None:
+            if misses:
+                print(f"\nlate-acks scenario repeated: {misses}")
+            return
+        misses.append(miss)
+        if stress.ACTIVE:
+            stress.record(f"late-acks scenario missed: {miss}")
+    raise AssertionError(f"the late-acks scenario never formed in {len(misses)} clusters: {misses}")
+
+
+def _acks_after_the_predecessors_validity(tmp_path):
+    """One run of the scenario above: ``None`` when it formed (every assertion held), otherwise
+    why it did not form."""
     with _cluster(tmp_path) as tc:
         _confirmed(tc)
         _no_owner(tc)
@@ -775,10 +807,36 @@ def test_acks_after_the_predecessors_validity_give_an_unknown_that_took_effect(t
         # always processed the new term's ballot yet: refused, B took the unpipelined path and
         # never reached its data stage (6 of 40 GIL-on runs; review 8.3m, ruling R105).
         _await(lambda: b._owner_hint == (owner["term"], owner["node"]), what="B knowing the owner's term", tc=tc)
+        reserve_refusals = b.stats()["sends_refused_reserve"]
+
+        def data_stage():
+            return b.stats()["stores_sent"] >= 1 or b.stats()["gate_open_at_send"] >= 1
         tb = threading.Thread(target=run, args=("n1", "b", 200))
         tb.start()
-        _await(lambda: b.stats()["stores_sent"] >= 1 or b.stats()["gate_open_at_send"] >= 1,
+        _await(lambda: data_stage() or b.stats()["sends_refused_reserve"] > reserve_refusals,
                what="B's data stage", tc=tc)
+        if not data_stage():
+            # B's pipelined permission ran out before B could send (the setup miss of the
+            # docstring above): release A, let both commits end, and check what a miss run can
+            # still prove (review M5): the members converge, and every outcome is honest (R86:
+            # acknowledged exactly once, unknown at most once, a conflict never applied).
+            hold.set()
+            ta.join(30)
+            tb.join(60)
+            armed.clear()
+            assert not ta.is_alive() and not tb.is_alive(), f"a commit of the miss run never ended: {results}"
+            _no_owner(tc, timeout=10)
+            tc.commit("n2", _setter("c"))
+            _await(lambda: len({str(_read_keys(tc, m, ("a", "b", "c"))) for m in tc.ids}) == 1,
+                   what="convergence after a miss")
+            reads = _read_keys(tc, "n2", ("a", "b", "c"))
+            allowed = {"acked": (1,), "unknown": (None, 1), "conflict": (None,)}
+            for key in ("a", "b"):
+                assert results.get(key) in allowed, (key, results)
+                assert reads[key] in allowed[results[key]], (key, results, reads)
+            assert reads["c"] == 1, reads
+            return (f"B's permission ran out before its data stage ({results}; n1 refused "
+                    f"{b.stats()['sends_refused_reserve'] - reserve_refusals} sends for the reserve)")
         hold.set()
         ta.join(30)
         tb.join(60)
@@ -792,6 +850,7 @@ def test_acks_after_the_predecessors_validity_give_an_unknown_that_took_effect(t
         assert b.stats()["gate_closures"] >= 1
         assert a.stats()["replication_failures"] >= 1
         assert sum(tc[m].stats()["terms_abandoned"] - abandoned[m] for m in tc.ids) >= 1
+    return None
 
 
 def test_a_failing_predecessor_turns_its_successor_into_a_retried_conflict(tmp_path):

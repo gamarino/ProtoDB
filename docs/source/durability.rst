@@ -100,7 +100,11 @@ Cloud storage
 ``CloudStorage`` uploads sealed segment objects first (each exactly once), then writes the root object with a
 conditional write (S3 ``If-Match`` / ``If-None-Match``, GCS ``ifGenerationMatch``). A failed precondition raises
 ``ProtoConflictError``. The root object keeps a short history of recent roots, so a commit whose response was
-lost can be recognised on read-back. With no cluster coordinator the conditional write is the arbiter between
+lost can be recognised on read-back. A refused write whose epoch that history no longer reaches is a conflict only
+when the store declares that nothing below it re-sends a conditional write (``refusals_are_definitive``: the
+bundled S3 and GCS adapters with the clients they build, and an S3 client passed in that is configured for one
+attempt in total); otherwise it is reported as ``ProtoOutcomeUnknownError``, because a hidden SDK retry of a write
+that landed also comes back as a failed precondition (D43, ruling R147a). With no cluster coordinator the conditional write is the arbiter between
 writers; with one, it is only a fencing safety net (D44).
 
 Cluster durability

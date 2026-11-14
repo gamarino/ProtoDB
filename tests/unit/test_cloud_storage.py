@@ -250,6 +250,144 @@ def test_not_applied_and_superseded_is_a_conflict():
         mine.publish_root(p2, r1.epoch)
 
 
+def _refused_beyond_history(definitive: bool):
+    """Our first conditional root write is refused by a real precondition (the other instance
+    publishes epochs 2 to 5 just before it), over a store whose ``refusals_are_definitive`` is
+    ``definitive``; returns ``(store, mine, theirs, publish)``."""
+    store = FakeObjectStore()
+    store.refusals_are_definitive = definitive
+    mine, other = make(store, root_history=2), make(store, root_history=2)
+    r1 = mine.publish_root(mine.push_atom(atom_payload(1)), 0)
+    p2 = mine.push_atom(atom_payload(2))
+    theirs = [other.push_atom(atom_payload(10 + i)) for i in range(4)]
+    other.flush()
+    raced = []
+
+    def before_write(op, key):
+        if op == "put_if_match" and key == mine.root_key and not raced:
+            raced.append(True)
+            for epoch, p in enumerate(theirs, start=r1.epoch):
+                other.publish_root(p, epoch)
+
+    store.before_write = before_write
+    return store, mine, theirs, lambda: mine.publish_root(p2, r1.epoch)
+
+
+def test_a_refusal_from_a_store_without_definitive_refusals_beyond_the_history_is_unknown():
+    """Ruling R147a: a store that does not declare ``refusals_are_definitive`` may have re-sent
+    the write below the adapter (a hidden SDK retry), so a refusal proves nothing about our own
+    first send; beyond the history the outcome stays unknown, exactly as at 263e0d4."""
+    store, mine, theirs, publish = _refused_beyond_history(False)
+    with pytest.raises(ProtoOutcomeUnknownError):
+        publish()
+    assert store.failed_preconditions[mine.root_key] == 1
+
+
+def test_a_refused_root_write_with_no_earlier_uncertain_attempt_is_a_conflict():
+    """A real failed precondition (another instance published between our read and our write),
+    on the first attempt, over a store that declares ``refusals_are_definitive`` (ruling R147a):
+    nothing of ours was applied, so the outcome is a conflict, which ``Database.run`` retries
+    (D43 and its R147a amendment).
+
+    It stays a conflict when, before the read-back, the other instance has published more roots
+    than ``root_history`` keeps: the read-back cannot find our epoch, but no attempt of ours is
+    in doubt.  Two instances over one store reached exactly this under CPU starvation on a CI
+    runner (``root_history`` 64; ``test_plain_int_counter_across_instances[reliable]``)."""
+    store, mine, theirs, publish = _refused_beyond_history(True)
+    with pytest.raises(ProtoConflictError):
+        publish()
+    assert store.failed_preconditions[mine.root_key] == 1     # a real refusal, nothing injected
+    assert mine.read_root().pointer == theirs[-1]              # ours was never applied
+
+
+def test_a_refusal_after_a_hidden_retry_that_applied_our_write_is_still_resolved_as_applied():
+    """A client passed in with the SDK's own retries left on (against the S3ObjectStore advice) can
+    apply our write, then re-send it and get a failed precondition.  The read-back still finds
+    our epoch, so ``publish_root`` reports success, never a conflict: a conflict would make
+    ``Database.run`` apply the transaction a second time."""
+    store = FakeObjectStore()
+    store.refusals_are_definitive = False      # it emulates a hidden SDK retry (see the fake)
+    s = make(store)
+    r1 = s.publish_root(s.push_atom(atom_payload(1)), 0)
+    p2 = s.push_atom(atom_payload(2))
+    real = store.put_if_match
+
+    def hidden_retry(key, data, etag):
+        if key == s.root_key:
+            store.put_if_match = real
+            real(key, data, etag)                 # the first send lands ...
+            return real(key, data, etag)          # ... and the SDK's re-send is refused
+        return real(key, data, etag)
+
+    store.put_if_match = hidden_retry
+    r2 = s.publish_root(p2, r1.epoch)
+    assert r2.epoch == r1.epoch + 1 and s.read_root().pointer == p2
+    assert store.failed_preconditions[s.root_key] == 1
+
+
+def test_a_hidden_retry_that_landed_then_beyond_the_history_is_never_a_conflict():
+    """Fix round 1 of Task CI-FLAKES (review C1, the reviewer's probe): a client with hidden
+    retries left on applies our write, more than ``root_history`` roots follow, and the SDK's
+    re-send is refused.  The read-back cannot find our epoch any more; a conflict here would make
+    ``Database.run`` apply the transaction a second time.  Such a store does not declare
+    ``refusals_are_definitive`` (R147a), so the outcome must be unknown, never a conflict."""
+    store = FakeObjectStore()
+    store.refusals_are_definitive = False
+    mine, other = make(store, root_history=2), make(store, root_history=2)
+    r1 = mine.publish_root(mine.push_atom(atom_payload(1)), 0)
+    p2 = mine.push_atom(atom_payload(2))
+    theirs = [other.push_atom(atom_payload(10 + i)) for i in range(4)]
+    other.flush()
+    real = store.put_if_match
+
+    def hidden_retry(key, data, etag):
+        if key == mine.root_key:
+            store.put_if_match = real
+            real(key, data, etag)                       # the first send lands: epoch 2 is ours
+            for epoch, p in enumerate(theirs, start=r1.epoch + 1):
+                other.publish_root(p, epoch)            # epochs 3 to 6, beyond root_history
+            return real(key, data, etag)                # the SDK's re-send is refused
+        return real(key, data, etag)
+
+    store.put_if_match = hidden_retry
+    with pytest.raises(ProtoOutcomeUnknownError):
+        mine.publish_root(p2, r1.epoch)
+
+
+def test_the_stores_declare_whether_their_refusals_are_definitive(monkeypatch):
+    """R147a: the fake store and both adapters with the clients they build declare definitive
+    refusals; CloudStorage reads the flag with ``getattr(store, ..., False)``."""
+    fake_botocore(monkeypatch)
+    fake_gcs(monkeypatch)
+    assert FakeObjectStore().refusals_are_definitive is True
+    assert S3ObjectStore("b").refusals_are_definitive is True
+    assert GCSObjectStore("b").refusals_are_definitive is True
+    assert getattr(object(), "refusals_are_definitive", False) is False
+
+
+class _Retries:
+    """A stub boto3 client exposing only ``meta.config.retries``."""
+
+    def __init__(self, retries, with_meta=True):
+        if with_meta:
+            self.meta = types.SimpleNamespace(config=types.SimpleNamespace(retries=retries))
+
+
+@pytest.mark.parametrize("client, definitive", [
+    (_Retries({"total_max_attempts": 1, "mode": "standard"}), True),
+    (_Retries({"total_max_attempts": 2, "mode": "standard"}), False),   # botocore's view of max_attempts=1
+    (_Retries({"mode": "legacy"}), False),                              # no retries configured: 5 attempts
+    (_Retries(None), False),
+    (_Retries(None, with_meta=False), False),
+], ids=["one-attempt", "one-retry", "legacy-default", "retries-unset", "no-meta"])
+def test_an_s3_client_passed_in_has_definitive_refusals_only_with_one_attempt(monkeypatch, client, definitive):
+    """R147a: a client passed in declares definitive refusals only when its configuration shows
+    exactly one attempt in total; any other client is accepted and gets the conservative unknown
+    outcome beyond the history."""
+    fake_botocore(monkeypatch)
+    assert S3ObjectStore("b", client=client).refusals_are_definitive is definitive
+
+
 def test_unknown_outcome_is_resolvable_by_read_root():
     """The read-back itself fails: publish_root reports an unknown outcome, read_root resolves it."""
     store = FakeObjectStore()
@@ -748,7 +886,10 @@ def test_s3_adapter_round_trip_and_conditions(monkeypatch):
     s3 = S3ObjectStore("bkt", region_name="eu")
     (service, kw), = created
     assert service == "s3" and kw["region_name"] == "eu"
-    assert kw["config"].kw["retries"]["max_attempts"] == 1  # SDK retries off: CloudStorage retries
+    # SDK retries off: CloudStorage retries.  botocore reads ``max_attempts`` as RETRIES (it sends
+    # max_attempts + 1 requests, measured: 2 PutObject requests for max_attempts=1), so the one
+    # attempt in total is ``total_max_attempts`` (fix round 1 of Task CI-FLAKES, R147a).
+    assert kw["config"].kw["retries"] == {"total_max_attempts": 1, "mode": "standard"}
     e1 = s3.put_if_absent("k", b"one")
     assert s3.get("k") == (b"one", e1)
     with pytest.raises(PreconditionFailedError):
