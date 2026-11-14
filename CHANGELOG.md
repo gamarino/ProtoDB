@@ -36,6 +36,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   longer count an abandonment that timing explains: an owner timer (R82), or rule O5 after a send-reserve
   refusal (R121) of that very permission, which a permit that waited in the owner's queue gets under CPU load.
   Every other abandonment still fails them; plant `o5_none_unrefused` checks it.
+- Tests: the P1 power-loss schedules of `test_cluster_pipelined_permits` no longer report an unavailable read
+  as lost history. Under CPU load a read after the power cut failed with `ProtoUnexpectedError` ("store
+  unreachable") while two members held the record in their local files: the peer fetch timed out
+  (`fetch_timeout`, 75 ms there) and the schedule keeps the object store in outage. The reads are now retried
+  for up to 15 s; a record that no member holds still fails them (plant `p1_catch_up`). A schedule whose
+  permission ran out before it sent anything (a send-reserve refusal, R121), and a records-nowhere run whose
+  successor committed under a later permission, are rebuilt in a fresh cluster, after their safety checks
+  (plants `p1_conflict_after_root_stage`, `nowhere_false_ack`). The `False-V2` case now waits until every voter
+  holds the term's first root, the premise of its claim. No product change.
 - Tests: the two compaction checks of `test_owner_locks` held on ext4, where a freed inode number is
   reused; they now keep the original file open and compare with `os.path.samestat`.
 

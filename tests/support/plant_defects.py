@@ -348,6 +348,52 @@ def blind_snapshot_of'''),),
         "the owner's term ended while in use",
         "product: a refused higher request ends the owner's term once while in use (fix round 1 of "
         "Task CI-FLAKES, review I2: the plant passed the test that read own.last_demand)"),
+    # Task P1-READ: the P1 schedules retry a read that gave up (a peer fetch timed out, the store
+    # in outage) and rebuild a schedule whose rounds sent nothing.  A true loss must still fail
+    # them, and so must a conflict reported after a root stage.
+    "p1_catch_up": Plant((
+        ("proto_db/cluster/coordinator.py",
+         "        return compare_roots(pred[2], pred[1], accepted_label, accepted) == 0\n",
+         "        return compare_roots(pred[2], pred[1], accepted_label, accepted) >= 0   # PLANT: voter catch-up\n"),),
+        ("tests/concurrency/test_cluster_pipelined_permits.py::"
+         "test_p1_without_the_gate_the_voters_alone_keep_every_acknowledged_commit[False-V2']",),
+        ("cannot read the history", "lost B's acknowledged commit"),
+        "product: a voter accepts a root extending one it does not hold (P1v); the history is lost after a "
+        "power cut, and the P1 reads, retried until their deadline, still fail (Task P1-READ)"),
+    "p1_conflict_after_root_stage": Plant((
+        ("tests/concurrency/test_cluster_pipelined_permits.py",
+         "            except ProtoOutcomeUnknownError:\n                outcome[key] = \"unknown\"\n"
+         "            except ProtoDBError as e:\n                outcome[key] = type(e).__name__\n"
+         "                outcome[f\"{key} error\"] = str(e)[:160]\n",
+         "            except ProtoOutcomeUnknownError:     # PLANT: H7 broken, B's unknown reported as a conflict\n"
+         "                outcome[key] = \"ProtoConflictError\" if key == \"b\" else \"unknown\"\n"
+         "            except ProtoDBError as e:\n                outcome[key] = type(e).__name__\n"
+         "                outcome[f\"{key} error\"] = str(e)[:160]\n"),),
+        ("tests/concurrency/test_cluster_pipelined_permits.py::"
+         "test_p1_without_the_gate_the_voters_alone_keep_every_acknowledged_commit[True-V2']",
+         "tests/concurrency/test_cluster_pipelined_permits.py::"
+         "test_p1_without_the_gate_the_voters_alone_keep_every_acknowledged_commit[False-V2']"),
+        "assert 'ProtoConflictError' == 'unknown'",
+        "tests: B's round reports a conflict after its root stage; the P1 setup-miss rule must not take it for "
+        "a miss (Task P1-READ)"),
+    "nowhere_false_ack": Plant((
+        ("tests/concurrency/test_cluster_pipelined_permits.py",
+         "            except ProtoConflictError:\n                results[key] = \"conflict\"\n"
+         "            except ProtoDBError as e:\n                results[key] = f\"{type(e).__name__}: {str(e)[:160]}\"\n"
+         "        ta = threading.Thread(target=run, args=(\"n0\", \"a\"))\n"
+         "        tb = threading.Thread(target=run, args=(\"n1\", \"b\"))\n        ta.start()\n\n"
+         "        def proposed_to_owner():\n",
+         "            except ProtoConflictError:     # PLANT: B's conflict reported as an acknowledgement\n"
+         "                results[key] = \"acked\" if key == \"b\" else \"conflict\"\n"
+         "            except ProtoDBError as e:\n                results[key] = f\"{type(e).__name__}: {str(e)[:160]}\"\n"
+         "        ta = threading.Thread(target=run, args=(\"n0\", \"a\"))\n"
+         "        tb = threading.Thread(target=run, args=(\"n1\", \"b\"))\n        ta.start()\n\n"
+         "        def proposed_to_owner():\n"),),
+        ("tests/concurrency/test_cluster_pipelined_permits.py::"
+         "test_a_successor_whose_base_records_are_nowhere_gets_a_retryable_conflict[True]",),
+        "assert {'a': None, 'b': None} == {'a': None, 'b': 1}",
+        "tests: an acknowledgement of a commit that never took effect, which the records-nowhere setup-miss rule "
+        "takes for a miss, still fails its check of the next term (Task P1-READ)"),
     "shiplock": Plant((
         ("proto_db/storage/tiered.py", "            data = self._copy_prefix(segment, end)",
          "            with self._ship_lock:   # PLANT: the hole is filled under the ship lock\n"
