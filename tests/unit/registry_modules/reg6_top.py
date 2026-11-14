@@ -35,3 +35,8 @@ class Opp:
 
     def store_super(self):
         return self.with_(kept=self._super())
+
+    async def async_win(self, trace):
+        # A coroutine method is a method: _super() works in it (ruling R176).
+        trace.append("async top")
+        return self._super().win(trace)

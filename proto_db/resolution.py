@@ -26,23 +26,28 @@ Registry names
     takes it from the transaction).  A name node's parents are ``Registry.parents_of(N)``:
     registry names (spec Q6), never objects, so every node placed before the first name node is
     placed exactly as it would be with the registry: a hit before that node is the true result.
-    A lookup that reaches a name node raises ``ProtoNotSupportedError`` without a registry
-    ("registry name X needs a registry") and when no module of the registry extends ``N``
-    (ruling R171; spec section 5: a name no loaded module defines raises when it is resolved);
-    loading an object and an own or earlier hit never do.
+    A lookup that reaches a name node without a registry raises ``ProtoNotSupportedError``
+    ("registry name X needs a registry"); loading an object and an own or earlier hit never do.
+    A name no module of the registry extends is an **empty node** (controller ruling, replacing
+    R171): it contributes no definition, has no parents, and the lookup goes on past it, so a
+    miss stays ``None`` (R150).  A misspelt name is therefore silent here; the mitigation is
+    :meth:`proto_db.registry.Registry.unknown_names`, which tooling and tests use to flag names
+    no module extends.
 
     Python members first (spec section 4): Python finds a ``DBObject`` subclass's members before
     resolution runs, so a registry definition of the same name could never be reached.  The first
     resolution of an object of such a class through a linearization with registry names raises
     ``ProtoValidationError`` naming the class, the name, the module and the registry name
-    (checked once per class and cached entry; on every lookup when the entry is not cached).
+    (memoized per class and registry name on the registry, so it runs once per pair even when
+    the object's context caches no linearization).
 
 Positions
     Where a definition was found, as :func:`resolve` returns it: ``0`` for an own attribute; an
     ``int`` ``k >= 1`` for the object node at index ``k`` of :func:`linearize`; a pair ``(k, j)``
     for the extension at index ``j`` of the chain of the registry name at index ``k`` (``j`` is
     :attr:`~proto_db.registry.Extension.position`, ``0`` for the newest).  Positions are walked in
-    the order ``0, 1, ..., (k, 0), (k, 1), ..., k + 1, ...``.
+    the order ``0, 1, ..., (k, 0), (k, 1), ..., k + 1, ...``.  Positions are compared for equality
+    only; they are not ordered values (``1 < (1, 0)`` raises ``TypeError``; ruling R175).
 
 ``_super`` (spec section 6, Q3)
     ``o._super()`` reads its caller's code object, which the registry indexes to the extension
@@ -50,10 +55,15 @@ Positions
     ``k`` the index of ``E``'s registry name in ``o``'s linearization, the proxy resolves from
     the position ``(k, E.position + 1)``: the older extensions of the same name first, then the
     following nodes, binding methods to ``o``.  A miss through it is ``None`` (R150, ruling
-    R170).  ``ProtoUserError`` (naming the caller) when no registry is current, when the code is
-    not a registry method's (outside a method, a closure, a helper, a generator expression),
-    when it is a generator's or a coroutine's (ruling R172: such a frame may run after the call
-    returned), and when ``o``'s linearization does not contain ``E``'s registry name.
+    R170), so the end of a chain is tested with the idiom ``if self._super().f:
+    self._super().f(x)`` (calling ``self._super().f(x)`` past the end raises ``TypeError``, as
+    calling ``None`` does).  ``ProtoUserError`` (naming the caller) when no registry is current,
+    when the code is not a registry method's (outside a method, a closure, a helper, a generator
+    expression), when it is a method of a module the current registry does not contain (a method
+    bound under another registry), when it is a generator's or an async generator's (ruling
+    R172: such a frame may run after the call returned), and when ``o``'s linearization does not
+    contain ``E``'s registry name.  A coroutine method (``async def``) is a method: its frame's
+    code is the function's, and ``_super()`` works in it (ruling R176).
 
 Errors
     An inconsistent hierarchy (no C3 order exists) raises ``ProtoValidationError`` naming the
@@ -71,7 +81,7 @@ Cache (spec section 9)
       pointer, and a saved parent's own parents are saved and fixed, so an entry never goes
       stale; instances decoded from different records share it.  The cache lives as long as
       that context, so it never keeps a closed space's storage alive; each cache is bounded
-      (:data:`CACHE_NODES` nodes, least recently used first out);
+      (:data:`CACHE_NODES` nodes and per-name positions, below; least recently used first out);
     - when a parent is unsaved, only on the transaction that is the object's context, for the
       life of that transaction, keyed by that tuple object (``with_`` keeps it, so the versions
       of one object share the entry).  With any other context -- none, a plain test context, or
@@ -84,7 +94,9 @@ Cache (spec section 9)
     object's own attributes to its position, or to a miss (at most :data:`NAMES_PER_ENTRY`
     names; later names are walked each time).  The entry's nodes are immutable (records by
     version, unsaved objects by construction) and its registry is immutable and part of the key,
-    so a position never goes stale and lives exactly as long as its entry.  A repeated lookup
+    so a position never goes stale and lives exactly as long as its entry.  An entry is charged
+    its worst case when it is stored -- its nodes plus :data:`NAMES_PER_ENTRY` -- so
+    :data:`CACHE_NODES` bounds the nodes and the cached positions together.  A repeated lookup
     walks no frame: a miss reads nothing, a hit reads the one definition at its position.  A
     lookup that raises (a registry name it cannot resolve) caches nothing.  ``_super`` walks from
     its start position without this cache.
@@ -102,10 +114,10 @@ from .errors import ProtoCorruptionError, ProtoNotSupportedError, ProtoUserError
 from .storage.cache import BoundedCache
 
 __all__ = ["linearize", "resolve", "new_cache", "super_proxy", "SuperProxy", "CACHE_NODES",
-           "NAMES_PER_ENTRY"]
+           "NAMES_PER_ENTRY", "current_registry", "set_current_registry", "reset_current_registry"]
 
-#: Capacity of each linearization cache, counted in nodes (a configuration bound, not a measured
-#: figure).
+#: Capacity of each linearization cache, counted in nodes and per-name positions: an entry is
+#: charged ``len(tail) + NAMES_PER_ENTRY`` (a configuration bound, not a measured figure).
 CACHE_NODES = 100_000
 
 #: How many names one linearization entry remembers positions for (a configuration bound, not a
@@ -122,9 +134,26 @@ _MISS = object()
 #: The registry resolution uses when none is passed (``proto_db.registry.using``, ruling R169).
 _CURRENT_REGISTRY: contextvars.ContextVar = contextvars.ContextVar("proto_db_registry", default=None)
 
-#: The code flags of a frame that may run after its call returned (R172).
-_SUSPENDABLE = (inspect.CO_GENERATOR | inspect.CO_COROUTINE | inspect.CO_ASYNC_GENERATOR
-                | inspect.CO_ITERABLE_COROUTINE)
+#: The code flags of a frame that may run after its call returned (R172): a generator (also set
+#: on a generator-based coroutine) or an async generator.  A coroutine method is allowed (R176).
+_SUSPENDABLE = inspect.CO_GENERATOR | inspect.CO_ASYNC_GENERATOR
+
+
+def current_registry():
+    """The current registry (``None`` when none is): what resolution uses when none is passed."""
+    return _CURRENT_REGISTRY.get()
+
+
+def set_current_registry(registry) -> contextvars.Token:
+    """Make ``registry`` current in this context; return the token that
+    :func:`reset_current_registry` takes (``proto_db.registry.using`` pairs them)."""
+    return _CURRENT_REGISTRY.set(registry)
+
+
+def reset_current_registry(token: contextvars.Token) -> None:
+    """Restore the registry that was current before :func:`set_current_registry` returned
+    ``token``."""
+    _CURRENT_REGISTRY.reset(token)
 
 
 def _effective(registry):
@@ -210,26 +239,24 @@ def _bound(definition, receiver):
 
 
 def _chain(name: str, registry) -> tuple:
-    """The extensions of the registry name ``name`` that a lookup reached, newest first."""
+    """The extensions of the registry name ``name`` that a lookup reached, newest first (``()``
+    for a name no module extends: an empty node)."""
     if registry is None:
         raise ProtoNotSupportedError(f"registry name {name!r} needs a registry")
-    chain = registry.chain(name)
-    if not chain:
-        raise ProtoNotSupportedError(
-            f"registry name {name!r} is extended by no module of the registry {registry.key!r}")
-    return chain
+    return registry.chain(name)
 
 
 def _check_python_members(cls, entry, registry) -> None:
     """``ProtoValidationError`` if a registry name of ``entry`` defines a name that ``cls`` (a
     ``DBObject`` subclass) defines in Python: Python finds the member first, so the registry
-    definition could never be reached (spec section 4).  Checked once per class and entry."""
+    definition could never be reached (spec section 4).  Memoized per (class, registry name) on
+    the registry, so it runs once per pair whether or not the entry is cached."""
     if registry is None or not entry.names or cls is _dbobject_class():
         return
-    checked = entry.checked
-    if checked is not None and cls in checked:
-        return
+    checked = registry._checked
     for node in entry.names:
+        if (cls, node) in checked:
+            continue
         for extension in registry.chain(node):
             for name in extension.definitions:
                 if class_defines(cls, name):
@@ -237,8 +264,7 @@ def _check_python_members(cls, entry, registry) -> None:
                         f"{cls.__qualname__} defines {name!r} in Python, and module "
                         f"{extension.module!r} defines it in registry name {node!r} "
                         f"({extension.qualname}): the registry definition could never be reached")
-    if checked is not None:
-        checked[cls] = True
+        checked[(cls, node)] = True
 
 
 def _dbobject_class() -> type:
@@ -292,6 +318,12 @@ def super_proxy(obj, code, registry=None) -> "SuperProxy":
             f"method returned; call _super() in the method and pass the result to the generator")
     extension = registry.extension_of_code(code)
     if extension is None:
+        from .registry import _declared_method_of_code
+        declared = _declared_method_of_code(code)
+        if declared is not None:
+            raise ProtoUserError(
+                f"_super() called from {where}, the {declared}, bound under another registry: the "
+                f"current registry {registry.key!r} does not contain it")
         raise ProtoUserError(
             f"_super() must be called directly in the body of a registry method; it was called "
             f"from {where}, which is not one (a closure, a helper or a generator expression is not)")
@@ -368,25 +400,24 @@ def new_cache() -> BoundedCache:
 
 
 def _entry_nodes(entry) -> int:
-    return len(entry.tail)
+    """What an entry is charged, once, when stored: its nodes plus the most positions it may hold."""
+    return len(entry.tail) + NAMES_PER_ENTRY
 
 
 class _Linearization:
     """The linearization of one parents tuple under one registry: ``tail`` (the nodes, the object
     itself excluded), ``names`` (its registry-name nodes), and, for a cached entry only,
-    ``positions`` (name -> position or a miss, at most :data:`NAMES_PER_ENTRY` names) and
-    ``checked`` (the classes :func:`_check_python_members` accepted).  ``held`` is what the entry
-    holds to stay valid (the parents tuple of an unsaved-parent entry).  The dicts are only ever
+    ``positions`` (name -> position or a miss, at most :data:`NAMES_PER_ENTRY` names).  ``held`` is what the entry
+    holds to stay valid (the parents tuple of an unsaved-parent entry).  The map is only ever
     added to, one item at a time; two threads that race compute and store the same value."""
 
-    __slots__ = ("held", "tail", "names", "positions", "checked")
+    __slots__ = ("held", "tail", "names", "positions")
 
     def __init__(self, held, tail: tuple, cached: bool):
         self.held = held
         self.tail = tail
         self.names = tuple(node for node in tail if type(node) is str)
         self.positions = {} if cached else None
-        self.checked = {} if cached else None
 
 
 #: The linearizations of parents tuples made of registry names only (no storage involved).

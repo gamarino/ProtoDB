@@ -13,6 +13,7 @@ repeated hit or miss.
 """
 from __future__ import annotations
 
+import asyncio
 import threading
 import types
 
@@ -28,7 +29,7 @@ from proto_db.transactions import ObjectSpace
 pytestmark = [pytest.mark.timeout(120)]
 
 _PACKAGE = "tests.unit.registry_modules"
-_FIXTURES = ("reg6_base", "reg6_mid", "reg6_top", "reg6_shadow")
+_FIXTURES = ("reg6_base", "reg6_mid", "reg6_top", "reg6_shadow", "reg6_other")
 MAPPING = {name: f"{_PACKAGE}.{name}" for name in _FIXTURES}
 
 
@@ -163,9 +164,23 @@ def test_super_from_generator_raises(active):
     with pytest.raises(ProtoUserError, match=r"genexpr"):
         o.from_genexpr()
     # A generator method is a registry method, but its frame may run after the call returned (on
-    # another thread, or after the registry changed): refused too (R172).
+    # another thread, or after the registry changed): refused too (R172; coroutines are allowed, R176).
     with pytest.raises(ProtoUserError, match=r"generator"):
         next(o.generator_method())
+
+
+def test_super_in_a_coroutine_method_works(active):
+    o = DBObject(parents=("reg6.Opp",))
+    assert asyncio.run(o.async_win([])) == ["async top", "mid", "base", "thread"]
+
+
+def test_super_from_a_method_bound_under_another_registry_is_named(active):
+    with using(build("reg6_base", "reg6_mid", "reg6_other")):
+        o = DBObject(parents=("reg6.Opp",))
+        method = o.other_super
+        assert method() == "mid-default"
+    with pytest.raises(ProtoUserError, match=r"module 'reg6_other'.*bound under another registry"):
+        method()
 
 
 def test_super_on_foreign_object_raises(active):
@@ -209,14 +224,42 @@ def test_registry_cannot_shadow_a_python_member():
         assert DBObject(parents=("reg6.Shadowed",)).label() == "registry label"
 
 
+def test_python_member_check_runs_once_per_class_and_registry(monkeypatch):
+    """Without a cached entry (no context) the check is still memoized per (class, registry,
+    registry name), so a repeated lookup does not scan the chains again."""
+    calls = []
+    real = resolution.class_defines
+    monkeypatch.setattr(resolution, "class_defines", lambda cls, name: calls.append(name) or real(cls, name))
+    with using(build("reg6_shadow")):
+        unsaved = DBObject()                    # an unsaved parent and no transaction: no cached entry
+        o = _Plain(parents=(unsaved, "reg6.Shadowed"))
+        assert o.note == "registry" and calls
+        calls.clear()
+        again = _Plain(parents=(unsaved, "reg6.Shadowed"))
+        assert o.note == "registry" and again.label() == "registry label"
+        assert calls == []
+    with using(build("reg6_shadow")):          # another registry: checked again
+        assert o.note == "registry" and calls
+
+
 # -- registry names ---------------------------------------------------------------------------------
 
-def test_a_registry_name_no_module_extends_raises_when_reached(active):
-    early = DBObject(early="hit")
-    o = DBObject(parents=(early, "reg6.Nobody"))
-    assert o.early == "hit"                                     # before the name: no error
-    with pytest.raises(ProtoNotSupportedError, match=r"reg6\.Nobody.*no module"):
-        o.late
+def test_a_registry_name_no_module_extends_is_an_empty_node(active):
+    """A registry name no module extends contributes nothing and has no parents: the lookup goes
+    on past it, and a miss is None (controller ruling overturning R171)."""
+    o = DBObject(parents=("reg6.Nobody", "reg6.Opp"))
+    assert o._linearization() == (o, "reg6.Nobody", "reg6.Opp", "reg6.Thread")
+    assert o.stage == "mid-default" and o._resolve("stage") == ("mid-default", (2, 1))
+    assert o.win([]) == ["top", "mid", "base", "thread"]
+    lone = DBObject(parents=("reg6.Nobody",))
+    assert lone.late is None and lone["late"] is None and "late" not in lone
+    assert lone._linearization() == (lone, "reg6.Nobody")
+
+
+def test_unknown_names_flags_names_no_module_extends(active):
+    assert active.unknown_names(("reg6.Opp", "reg6.Nobdy", "reg6.Thread", "reg6.Opq")) == (
+        "reg6.Nobdy", "reg6.Opq")
+    assert active.unknown_names(()) == ()
 
 
 def test_explicit_registry_and_the_current_one(registry):
@@ -273,6 +316,10 @@ def test_repeated_hit_and_miss_walk_no_frames(registry, monkeypatch):
             assert other.stage == "mid-default" and other.absent is None and counter.walked == []
             assert other.promote("y").stage == "y->won" and counter.walked == []
             assert other.promote.__self__ is other
+            # The entry is charged its worst case when stored: its nodes plus the position map's cap.
+            entry = tx._linearizations.get((id(o.parents), registry))
+            assert entry is not None and len(entry.positions) <= resolution.NAMES_PER_ENTRY
+            assert tx._linearizations.size_bytes == len(entry.tail) + resolution.NAMES_PER_ENTRY
     finally:
         tx.abort()
         space.close()

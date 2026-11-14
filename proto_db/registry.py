@@ -54,7 +54,9 @@ The registry
     the **parents** of the name: the union of the ``parents=`` its extensions declare, in load
     order, each name once (spec Q6).  It indexes each method's code object to its extension
     (for ``_super``, spec section 6), so one function object, or one code object, behind two
-    definitions anywhere in the registry is refused.
+    definitions anywhere in the registry is refused.  A registry name no module extends is an
+    empty node for resolution (no definitions, no parents), so a misspelt parent name is not an
+    error there; :meth:`Registry.unknown_names` lists such names, for tooling to flag typos.
 
 Errors (all explicit)
     - a module outside ``allowed``, a repeated or invalid name, a dependency cycle, a cycle of
@@ -86,7 +88,7 @@ from collections.abc import Container, Mapping
 
 from .core.atom import RESERVED_NAMES, Atom
 from .errors import ProtoDBError, ProtoNotSupportedError, ProtoValidationError
-from .resolution import _CURRENT_REGISTRY
+from . import resolution as _resolution
 from .values import canonical, check_text, is_atom
 
 __all__ = ["module", "ModuleHandle", "Extension", "Registry", "METHOD", "DATA", "using",
@@ -353,7 +355,7 @@ class Extension:
 class Registry:
     """The registry of a module list, in memory (immutable once built; see the module docstring)."""
 
-    __slots__ = ("key", "extensions", "_chains", "_parents", "_codes")
+    __slots__ = ("key", "extensions", "_chains", "_parents", "_codes", "_checked")
 
     def __init__(self, key, extensions, chains, parents, codes):
         osa = object.__setattr__
@@ -364,6 +366,9 @@ class Registry:
         osa(self, "_chains", chains)
         osa(self, "_parents", parents)
         osa(self, "_codes", codes)
+        #: Resolution's memo of the (class, registry name) pairs whose Python members it checked
+        #: (internal; only ever added to, so the registry's answers never change).
+        osa(self, "_checked", {})
 
     def __setattr__(self, name, value):
         raise AttributeError(f"Registry is immutable; cannot set {name!r}")
@@ -382,6 +387,13 @@ class Registry:
         """The registry-name parents of ``registry_name``: the union of its extensions'
         ``parents=``, in load order, each once."""
         return self._parents.get(registry_name, ())
+
+    def unknown_names(self, names) -> tuple:
+        """The names among ``names`` (registry names, in the order given, each once) that no module
+        of this registry extends.  Resolution treats such a name as an empty node (it contributes
+        nothing and has no parents), so a misspelt parent name is silent there; tooling and tests
+        use this to flag it."""
+        return tuple(name for name in dict.fromkeys(names) if name not in self._chains)
 
     def extension_of_code(self, code) -> Extension | None:
         """The extension whose method has the code object ``code``, or ``None``."""
@@ -516,7 +528,21 @@ def _check_parent_cycles(parents: dict) -> None:
 
 def current_registry() -> "Registry | None":
     """The registry resolution uses when none is passed to it (``None`` outside :func:`using`)."""
-    return _CURRENT_REGISTRY.get()
+    return _resolution.current_registry()
+
+
+def _declared_method_of_code(code) -> str | None:
+    """A description of the declared method whose code object is ``code`` (in any module declared
+    in the process, built into a registry or not), or ``None``: for error messages only."""
+    with _LOCK:
+        handles = tuple(_DECLARATIONS.values())
+        declared = [(handle.name, tuple(handle._declared)) for handle in handles]
+    for module_name, items in declared:
+        for item in items:
+            for name, (kind, value) in item.definitions.items():
+                if kind is METHOD and value.__code__ is code:
+                    return f"method {name!r} of registry module {module_name!r} (extension of {item.registry_name!r})"
+    return None
 
 
 @contextlib.contextmanager
@@ -526,8 +552,8 @@ def using(registry: "Registry | None"):
     registry is attached to transactions (Task 8)."""
     if registry is not None and not isinstance(registry, Registry):
         raise ProtoValidationError(f"using() takes a Registry or None, not {type(registry).__name__}")
-    token = _CURRENT_REGISTRY.set(registry)
+    token = _resolution.set_current_registry(registry)
     try:
         yield registry
     finally:
-        _CURRENT_REGISTRY.reset(token)
+        _resolution.reset_current_registry(token)

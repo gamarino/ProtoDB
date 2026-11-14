@@ -248,8 +248,10 @@ class DBObject(Atom):
         Called directly in the body of a registry method.  The running extension is found from
         the caller's code object (``sys._getframe(1).f_code``, read here, never through a
         wrapper); a call from anything else -- outside a method, from a closure, a helper, a
-        generator expression or a generator method -- or on an object whose linearization does
-        not contain the running extension's registry name raises ``ProtoUserError``."""
+        generator expression, a generator method or a method bound under another registry -- or
+        on an object whose linearization does not contain the running extension's registry name
+        raises ``ProtoUserError``.  A coroutine method may call it (R176).  A miss through the
+        proxy is ``None`` (R170): test the end of a chain with ``if self._super().f:``."""
         return resolution.super_proxy(self, sys._getframe(1).f_code)
 
     def _linearization(self) -> tuple:
