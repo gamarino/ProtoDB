@@ -61,19 +61,16 @@ All persisted state lives in database roots reserved by `format-spec.rst` ("The 
 | Root | Type of its value | Content |
 |---|---|---|
 | `__currentModules` | built-in `proto_db.registry.ModuleList` *(proposal)* | the installed module names, as symbols, in installation order, with each module's declared dependencies |
-| `__currentSymbols` | built-in `proto_db.registry.SymbolTable` *(proposal)* | string to symbol; only grows |
+| `__currentSymbols` | built-in `proto_db.registry.SymbolTable` *(proposal)* | symbol id to string; only grows; a storage table (section 3a) |
 | `__catalog` *(proposal: the name is fixed here)* | built-in `proto_db.registry.Catalog` | registry name to catalog class object |
 
 - A reader of format 5 identifies each root by its name **and** by the type of its value. A `__` root whose value is
   not of the registry's type is refused with `ProtoCorruptionError`, never read as registry state (format-spec
   rule).
-- **Symbol** (option c2 of the 2026-11-08 investigation): the value kind `{"@sym": name}`, order rank 16, hash and
-  token derived from its encoding. It is interned per process: equal names give the same Python object. Comparison
-  is by identity, with a fallback to the name.
-- `__currentSymbols` is updated at commit by add-if-absent in `_build_root`, from the version readable at commit
-  time, never from the one read at the start. Two transactions that create the same symbol therefore both succeed and
-  end with one entry, with no conflict and no redirection. A symbol created in an aborted transaction is discarded
-  with it.
+- **Symbols** are a storage encoding of strings (section 3a, superseding option c2's distinct value kind).
+  `__currentSymbols` is updated at commit by add-if-absent in `_build_root`, from the version readable at commit
+  time. Two transactions that intern the same string end with one entry, with no conflict and no redirection. An
+  entry added by an aborted transaction is discarded with it.
 - `__currentModules` is updated at commit by add-if-absent as well (installing is additive, decision 4). Two
   concurrent installs of different modules both land. The order of installation is the commit order.
 - **Every attribute name is a symbol (decision 7), with no byte change.** A key of an atom's state map `s` is
@@ -290,8 +287,9 @@ protoBaseST reads and writes the same roots, symbols and the `"p"` field of `DBO
   - `self.x` inside a method finds the newest override.
 - A data default overridden by a later module and by the instance.
 - Catalog data after the registry chain (Q1).
-- Symbols: two concurrent transactions create the same symbol; both commit and `__currentSymbols` holds one entry.
-  An aborted transaction leaves none.
+- Symbols: two concurrent transactions intern the same string; both commit and `__currentSymbols` holds one entry.
+  An aborted transaction leaves none. An inline copy and a referenced copy of one string are equal, are one key and
+  have one token. A planted hash collision conflicts at commit and is retried inline.
 - Two concurrent installs of different modules both land. A module outside the allowed set is refused.
 - A registry/module-list mismatch raises (Q2).
 - A `__` root of the wrong type raises `ProtoCorruptionError`.
@@ -315,16 +313,52 @@ protoBaseST reads and writes the same roots, symbols and the `"p"` field of `DBO
   - An object's parents are other `DBObject`s or strings, which are keys of the registry.
 - **Writes never climb the parents (maintainer, 2026-11-14).** Every write goes to the object itself (section 5).
 
-Open:
-- **Q7. Do we need `__currentSymbols` and `@sym` at all?**
-  - With Q6 and with attribute names written as today, the registry stores no symbol value. Attribute names are
-    strings in key position, and registry names are strings in the parents tuple.
-  - The table would therefore hold nothing that any read needs.
-  - The remaining use is the 2026-11-08 idea of symbols as a value kind the developer chooses over strings. In
-    memory, comparison by identity is faster. On disk, `{"@sym": name}` costs the same bytes as the name or more,
-    and it shares nothing.
-  - Proposal: drop `__currentSymbols`. Keep `@sym` as a value kind only if the developer-facing choice between
-    symbols and strings is still wanted. Otherwise defer it, and the registry needs no symbol feature in the format.
+- **Q3 confirmed:** the code-object mechanism of section 6.
+- **Q7, symbols are a storage optimization, never a structural change.** A symbol is a way to write a string that
+  is already interned in the database without copying it again. Semantically it **is** that string. Section 3a has
+  the consequences.
+
+## 3a. Symbols as a storage optimization (Q7, maintainer 2026-11-14)
+
+Rules:
+- **Transparent.** A symbol-encoded string decodes to the same `str`. It is equal to that string, hashes, orders
+  and has the same token as it, and it is a key equal to it. No developer-visible type exists. This replaces the
+  2026-11-08 "symbols versus strings" choice and option c2's distinct value kind with rank 16.
+- **Canonical form is the string.** Tokens, keys and hashes (D58) are computed on the expanded string, never on the
+  reference. Two encodings of one string are therefore one value, and a lookup never misses because one copy was
+  stored inline and the other by reference. D58 is amended to say that its "canonical bytes" are those of the
+  expanded value.
+- **The writer chooses; the reader always expands.** Writing a string inline is always valid. The reference form
+  is an optimization a writer applies by policy. The proposed policy: attribute names (state-map keys) and
+  registry names, plus any string value that is already interned and whose inline encoding is longer than the
+  reference.
+- **Expansion is cached** per process, id to `str`. Entries are immutable and never invalidated.
+
+The reference must be **smaller than the string**, or nothing is saved:
+- An atom reference (`@ref`: a 16-byte segment, an offset and a tag) is longer than most attribute names. Using it
+  would save nothing.
+- A compact id is needed. Two candidates:
+  - **(a) A content id**: a short hash of the string, with a table from id to string in `__currentSymbols` that only
+    grows.
+    - No allocation and no coordination are needed. Two transactions that intern the same string produce the same
+      id, so add-if-absent never clashes (the 2026-11-08 requirement).
+    - A hash collision with a *different* string is detected at commit in `_build_root`. The transaction then
+      conflicts and is retried, and the retry writes that string inline. The collision is explicit and never
+      silent.
+    - Cost: the reference is as long as the hash, so only strings longer than that gain.
+  - **(b) A sequential small id**, allocated in the root at commit.
+    - It gives the smallest references.
+    - New symbols become a read-modify-write of the table, so concurrent commits that create symbols conflict and
+      retry.
+    - Atoms are serialized before the root is built. An intent merge (D33) that rebases a commit would therefore
+      carry tentative ids. Either symbol-creating commits are never merged, only retried, or the records are
+      re-serialized.
+    - It is more machinery in the cluster path.
+
+  Proposal: (a).
+- **Measure before building.** Write the ERP example's data with and without symbol references, and with segment
+  compression, which removes repeated names with no format change at all. Report the bytes. The feature is
+  justified only if references save a material share where compression does not. No figure is claimed here.
 
 ## 14. Calls made after the builder check (proposals, for review)
 
