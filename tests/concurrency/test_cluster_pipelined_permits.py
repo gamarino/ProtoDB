@@ -31,6 +31,7 @@ import pytest
 
 from proto_db.cluster import coordinator as coordinator_module
 from proto_db.cluster.coordinator import ClusterCoordinator, _siblings
+from proto_db.cluster.protocol import decode_labeled_root
 from proto_db.cluster.rootlog import compare_roots
 from proto_db.errors import ProtoConflictError, ProtoDBError, ProtoOutcomeUnknownError, ProtoUnexpectedError
 from proto_db import transactions
@@ -332,7 +333,10 @@ def _p1_schedule(tmp_path, monkeypatch, *, first_of_term: bool, rule: str):
     a setup miss, not a result, and the schedule is built again in a fresh cluster, as the
     late-acks scenario does.  A miss is recognised by what the holder did, never by the
     conflict alone: B's conflict counts as a miss only when B sent no ``replicate`` and made
-    no own acceptance, so a conflict after a root stage (H7 broken) still fails.  Every run,
+    no own acceptance, so a conflict after a root stage (H7 broken) still fails.  Likewise B's
+    acknowledgement is a miss only when no ``replicate`` B sent carried k as its base: B's
+    permission on k ran out and B committed on the committed root under a term of its own
+    (Task P1-READ, acceptance trace).  Every run,
     a miss included, goes through the power cut and the reads, and :func:`_check_p1_reads`
     applies to each."""
     fs = _FrozenPowerLoss(monkeypatch)
@@ -389,12 +393,13 @@ def _p1_attempt(tmp_path, fs, first_of_term):
         if a.persister is not None:
             a.persister.stop()
         lost = threading.Event()
-        k_terms = []
+        k_terms, k_roots = [], []
         apply_b = b._apply_replicate
 
         def b_lane(msg):
             if msg["from"] == "n0" and msg["records"]:
                 k_terms.append(msg["term"])
+                k_roots.append(decode_labeled_root(msg["root"])[1:])
                 with b._lock:
                     b._note_owner(msg["term"])          # B learns the owner, not the records
                 lost.set()
@@ -408,12 +413,13 @@ def _p1_attempt(tmp_path, fs, first_of_term):
             raise OSError("power lost before the holder's own sync")
         a._self_accept_with_records = a_own_append
         # What B did that a voter may accept: a ``replicate`` sent, an own acceptance.
-        b_acceptable = []
+        b_acceptable, b_bases = [], []
         send_b = b.transport.send
 
         def b_send(to, msg):
             if msg["type"] == "replicate":
                 b_acceptable.append(f"replicate to {to}")
+                b_bases.append(decode_labeled_root(msg["pred"])[1:])
             return send_b(to, msg)
         b.transport.send = b_send
         for name in ("_self_accept_with_records", "_self_accept_root"):
@@ -458,6 +464,10 @@ def _p1_attempt(tmp_path, fs, first_of_term):
             miss = f"B's permission was not issued on A's proposal: {outcome}"
         elif outcome.get("b") == "ProtoConflictError" and not b_acceptable:
             miss = f"B's round sent nothing a voter may accept: {outcome}"
+        elif outcome.get("b") == "acked" and k_roots[0] not in b_bases:
+            # B's permission on k ran out and B committed on another base (the committed root,
+            # under a term of its own): an honest acknowledgement, not built on k.
+            miss = f"B committed on a base other than k: {outcome}"
         # The whole cluster loses power.
         for node in list(tc.ids):
             path = os.path.realpath(os.path.join(str(tmp_path), node))
