@@ -121,7 +121,8 @@ def test_a_fenced_term_steps_down_after_one_renewal():
         h.clock.t = own.lease.valid_until - a._belief / 8
         _remote_request(h, "a", "b", own.term, rid=50_001)
         _poke(a)
-        _wait_for(lambda: a._ownership is None and own.lease.released_at is not None, "the fenced end", a)
+        _wait_for(lambda: any(m["term"] == own.term for _, m in pump.messages("release")), "the release message", a)
+        assert a._ownership is None and own.lease.released_at is not None
         assert not own.abandoned, "the fenced term was abandoned while its lease is valid"
         time.sleep(SETTLE)                   # a second renewal, if any, would be sent now
         stats = a.stats()
@@ -132,7 +133,6 @@ def test_a_fenced_term_steps_down_after_one_renewal():
         assert own.fenced and own.ended
         refused = [m for to, m in pump.messages("permit_no") if to == "b" and m["rid"] == 50_001]
         assert refused and refused[0]["reason"] == "ending", pump.sent
-        assert any(m["term"] == own.term for _, m in pump.messages("release")), pump.sent
     finally:
         if pump is not None:
             pump.close()
@@ -179,7 +179,8 @@ def test_a_fenced_term_lets_its_outstanding_permission_end_by_its_done():
         assert stats["terms_abandoned"] == before["terms_abandoned"], stats
         assert stats["terms_fenced"] - before["terms_fenced"] == 1, stats
         assert stats["renewal_failures"] - before["renewal_failures"] == 1, stats
-        assert any(m["term"] == own.term for _, m in pump.messages("release")), pump.sent
+        # The lease is marked released before its release is broadcast (outside the lock).
+        _wait_for(lambda: any(m["term"] == own.term for _, m in pump.messages("release")), "the release message", a)
     finally:
         if pump is not None:
             pump.close()
