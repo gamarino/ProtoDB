@@ -107,8 +107,14 @@ Installing and the commit (spec section 7, 14 items 3 and 4)
     list names a module this process has not fully imported, the commit's build publishes
     nothing; the commit then builds that list's registry outside the lock, importing what it
     lacks, and runs its lock step again (:meth:`Registry.build` with ``imports=False`` is the
-    check made under the lock).  Every retry has strictly more of the list imported, so they are
-    bounded by the modules installed concurrently.  Reading the registry roots for resolution
+    check made under the lock), without the transaction's own lock either, so a module's
+    import-time code may use the transaction from another thread (it fails fast: the transaction
+    is committing).  Every retry has strictly more of the list imported, so they are bounded by
+    the modules installed concurrently.  A merged list that cannot be built only because of
+    modules a concurrent commit installed is a retryable ``ProtoConflictError`` naming them; a
+    retry installs on the list as it is then, and ``install_module`` states the real refusal.
+    ``install_module`` refuses a module the calling thread is still importing
+    (``ProtoUserError``): its declarations so far are not the module's.  Reading the registry roots for resolution
     (``installed_modules``, ``catalog_object``) never enters the read set: installs are additive,
     so a transaction that resolved with the older list committed a state that list described.
 
@@ -525,9 +531,16 @@ def _imported(path) -> str | None:
     return found.__name__
 
 
-def fully_imported(names: tuple, mapping: Mapping) -> bool:
-    """Whether every module of ``names`` is imported, its import finished."""
-    return all(_imported(mapping.get(name, name)) is not None for name in names)
+def being_imported(names: tuple, mapping: Mapping) -> tuple:
+    """The modules of ``names`` (each once) whose import has started and not finished."""
+    found = (sys.modules.get(mapping.get(name, name)) for name in dict.fromkeys(names))
+    return tuple(name for name, module in zip(dict.fromkeys(names), found)
+                 if module is not None and getattr(getattr(module, "__spec__", None), "_initializing", False))
+
+
+def not_fully_imported(names: tuple, mapping: Mapping) -> tuple:
+    """The modules of ``names`` (each once) that are not imported, or whose import has not finished."""
+    return tuple(name for name in dict.fromkeys(names) if _imported(mapping.get(name, name)) is None)
 
 
 def _load_order(names: tuple, depends: dict) -> tuple:

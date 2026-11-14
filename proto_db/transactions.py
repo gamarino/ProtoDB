@@ -186,6 +186,24 @@ _REGISTRY_ROOTS = frozenset({_registry.MODULES_ROOT, _registry.CATALOG_ROOT})
 _IMPORT_ROUNDS = 64
 
 
+class _released:
+    """Release an ``RLock`` held by this thread (at any depth) for the body, then hold it again
+    as before; the same operation ``threading.Condition.wait`` uses."""
+
+    __slots__ = ("lock", "saved")
+
+    def __init__(self, lock):
+        self.lock = lock
+        self.saved = None
+
+    def __enter__(self):
+        self.saved = self.lock._release_save()
+
+    def __exit__(self, *exc):
+        self.lock._acquire_restore(self.saved)
+        return False
+
+
 def _check_not_reserved(name: str) -> None:
     """Root names starting with ``__`` are reserved for the format (the runtime registry's roots,
     Task 10.P A1): applications never write nor remove one; the registry writes its own at commit."""
@@ -2070,6 +2088,7 @@ class Transaction:
         self._catalog_given: set = set()
         self._catalog_updates: dict = {}    # registry name -> (snapshot entry's pointer, new version)
         self._validated_modules: Optional[tuple] = None
+        self._own_modules: tuple = ()           # the list this transaction's installs saw (snapshot + pending)
         self._import_needed: Optional[tuple] = None     # set by a build that needs imports (I-1)
         record = database.space._snapshot_record()
         self._epoch = record.epoch if record is not None else 0
@@ -2329,6 +2348,13 @@ class Transaction:
             candidate = installed + tuple(module for module, _ in additions)
             if additions:
                 _registry.Registry.build(candidate, mapping=mapping, allowed=allowed)
+            unfinished = _registry.being_imported((name,) + candidate, mapping)
+            if unfinished:
+                # Only this thread can be inside such an import here (another thread's import is
+                # waited for by import_module): its declarations so far are not the module's.
+                raise ProtoUserError(
+                    f"Module(s) {', '.join(map(repr, unfinished))} are still being imported by this thread: "
+                    f"a module's import-time code cannot install itself or a module that needs it (review N-3)")
             with self._lock:
                 self._check_active()
                 if self._installed_names() != installed:
@@ -2343,6 +2369,7 @@ class Transaction:
                     self._catalog_new[rn] = DBObject(context=self, parents=(rn,))
                 if additions:
                     self._validated_modules = candidate
+                    self._own_modules = candidate
                 return
 
     def installed_modules(self) -> tuple:
@@ -2387,7 +2414,9 @@ class Transaction:
         the entry's continuity is the root, not the object.  As for any parent, objects that
         already list the previous version as a parent keep it (they reference that record).  Normal conflict rules: when the entry was changed by a
         concurrent commit since this transaction's snapshot, the commit raises
-        ``ProtoConflictError`` (the first updater wins).  Installs that add other names never
+        ``ProtoConflictError`` (the first updater wins).  That includes a name this transaction's
+        own install introduces, absent from the snapshot, that a concurrent install adds first
+        (review N-1): an update is never silently dropped.  Installs that add other names never
         conflict with it.
         """
         _registry._check_name("A registry name", registry_name)
@@ -2400,7 +2429,11 @@ class Transaction:
         with self._lock:
             self._check_active()
             if registry_name in self._catalog_new:
+                # An update of the object this transaction's own install creates: an update against an
+                # entry absent from the snapshot.  If a concurrent install adds the name first, the
+                # commit conflicts (review N-1): the update is never silently dropped.
                 self._catalog_new[registry_name] = obj
+                self._catalog_given.add(registry_name)
                 return
             catalog = _registry.registry_root(self._objects, _registry.CATALOG_ROOT, _registry.Catalog)
             existing = None if catalog is None else catalog.get(registry_name)
@@ -2429,8 +2462,9 @@ class Transaction:
         snapshot's, never through the read set), and its catalog updates applied when their
         entries are unchanged.  A merged list that differs from the one the installs were
         validated against (a concurrent install committed first) is built again, so a union
-        that cannot be loaded is refused here, explicitly, instead of committed; that build
-        never imports (review I-1).  ``None`` when it needs modules this process has not fully
+        that cannot be loaded is refused here, explicitly, instead of committed: a retryable
+        ``ProtoConflictError`` naming the concurrently installed modules (review N-4; retried,
+        ``install_module`` states the real refusal).  That build never imports (review I-1).  ``None`` when it needs modules this process has not fully
         imported: they are named in ``_import_needed`` and the commit imports them outside the
         lock, then runs its lock step again."""
         listed = _registry.registry_root(current_objects, _registry.MODULES_ROOT, _registry.ModuleList)
@@ -2445,6 +2479,8 @@ class Transaction:
                 except _registry.ModulesNotImported:
                     self._import_needed = names
                     return None
+                except ProtoDBError as e:
+                    raise self._union_conflict(names, e) from e
                 self._validated_modules = names
             objects = objects.set_at(_registry.MODULES_ROOT, merged)
         catalog = _registry.registry_root(current_objects, _registry.CATALOG_ROOT, _registry.Catalog)
@@ -2455,16 +2491,41 @@ class Transaction:
         return objects
 
     def _import_for_commit(self, names: tuple) -> None:
-        """Outside the root lock: build the registry of ``names``, importing what this process
-        lacks (errors are explicit and end the commit).  A module still being imported by this
-        very thread cannot finish first: ``ProtoUserError``."""
+        """Outside the root lock and the transaction's lock: build the registry of ``names`` (the
+        merged list), importing what this process lacks.  A module still being imported by this
+        very thread cannot finish first.  When the merged list cannot be built, the error depends
+        on whose modules make it so (review N-4): only modules a concurrent commit installed,
+        ``ProtoConflictError`` naming them (retryable: a retry installs on the list as it is now,
+        and ``install_module`` then states the real refusal); this transaction's own list,
+        ``ProtoUserError``, or the build's own error."""
         space = self._database.space
-        _registry.Registry.build(names, mapping=space.modules_mapping, allowed=space.modules_allowed)
-        if not _registry.fully_imported(names, space.modules_mapping):
+        try:
+            _registry.Registry.build(names, mapping=space.modules_mapping, allowed=space.modules_allowed)
+        except ProtoDBError as e:
+            raise self._union_conflict(names, e) from e
+        unfinished = _registry.not_fully_imported(names, space.modules_mapping)
+        if unfinished:
+            concurrent = [name for name in unfinished if name not in self._own_modules]
+            if len(concurrent) == len(unfinished):
+                raise ProtoConflictError(
+                    f"The union of this transaction's modules with the concurrently installed "
+                    f"{', '.join(map(repr, concurrent))} cannot be built yet: this thread is still importing "
+                    f"them; retry the transaction")
             raise ProtoUserError(
-                f"The modules {names} include one this thread is still importing: a module's import-time "
-                f"code cannot commit an install whose list needs that module")
+                f"Module(s) {', '.join(map(repr, unfinished))} of this transaction's list are still being imported "
+                f"by this thread: a module's import-time code cannot commit an install whose list needs it")
         self._validated_modules = names
+
+    def _union_conflict(self, names: tuple, error: ProtoDBError) -> ProtoDBError:
+        """The error for a merged list ``names`` whose build raised ``error``: the list this
+        transaction validated built, so modules installed concurrently make the union fail, a
+        retryable ``ProtoConflictError`` naming them (review N-4); ``error`` itself otherwise."""
+        concurrent = [name for name in names if name not in self._own_modules]
+        if not concurrent:
+            return error
+        return ProtoConflictError(
+            f"The union of this transaction's modules with the concurrently installed "
+            f"{', '.join(map(repr, concurrent))} cannot be built: {error}")
 
     # -- factories --------------------------------------------------------------------------
 
@@ -2545,7 +2606,10 @@ class Transaction:
             # The build published nothing: it needs modules this process has not fully imported,
             # which are never imported under the root lock (review I-1).  Import them, then run the
             # lock step again (on the root current then).
-            self._import_for_commit(self._import_needed)
+            # Without the transaction's lock either (review N-2): a module's import-time code may use
+            # this transaction from another thread, and fails fast (the state is committing).
+            with _released(self._lock):
+                self._import_for_commit(self._import_needed)
         else:
             raise ProtoConflictError(
                 f"Modules were installed concurrently through {_IMPORT_ROUNDS} attempts of this commit; retry it")

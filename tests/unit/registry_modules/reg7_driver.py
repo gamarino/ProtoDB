@@ -8,3 +8,9 @@ go = threading.Event()
 db = None
 tr = None
 peeked = []
+#: ``reg7_peekcommit``: the transaction being committed by another thread, and what reading it gave.
+committing = None
+seen = []
+#: ``reg7_selfinstall``: a transaction its import-time code installs it into, and what that raised.
+selfinstall = None
+selfinstall_errors = []

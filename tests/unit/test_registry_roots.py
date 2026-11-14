@@ -18,7 +18,6 @@ import os
 import subprocess
 import sys
 import threading
-import time
 
 import pytest
 
@@ -26,7 +25,8 @@ from proto_db.collections.dictionaries import Dictionary
 from proto_db.core.atom import type_tag
 from proto_db.core.dbobject import DBObject
 from proto_db.errors import ProtoConflictError, ProtoCorruptionError, ProtoNotSupportedError, ProtoValidationError
-from proto_db.registry import CATALOG_ROOT, MODULES_ROOT, Catalog, ModuleList
+from proto_db.errors import ProtoUserError
+from proto_db.registry import CATALOG_ROOT, MODULES_ROOT, Catalog, ModuleList, Registry
 from proto_db.storage import format as fmt
 from proto_db.storage.file import FileStorage
 from proto_db.storage.memory import MemoryStorage
@@ -36,7 +36,8 @@ pytestmark = [pytest.mark.timeout(120)]
 
 _PACKAGE = "tests.unit.registry_modules"
 _FIXTURES = ("reg7_base", "reg7_contacts", "reg7_crm", "reg7_a", "reg7_b", "reg7_c", "reg7_d",
-             "reg7_cyc_x", "reg7_cyc_y", "reg7_y", "reg7_importcommit", "reg7_peek")
+             "reg7_cyc_x", "reg7_cyc_y", "reg7_y", "reg7_importcommit", "reg7_peek", "reg7_peekcommit",
+             "reg7_selfinstall")
 MAPPING = {name: f"{_PACKAGE}.{name}" for name in _FIXTURES}
 
 
@@ -268,9 +269,13 @@ def test_union_that_cannot_be_built_is_refused_at_commit(db):
     first.install_module("reg7_cyc_x")
     second.install_module("reg7_cyc_y")
     first.commit()
-    with pytest.raises(ProtoValidationError, match="cycle"):
+    # Review N-4: the union is unbuildable only because of the concurrent install: retryable, naming it.
+    with pytest.raises(ProtoConflictError, match="concurrently installed 'reg7_cyc_x'.*cycle"):
         second.commit()
     assert _installed(db) == ("reg7_cyc_x",)
+    # Retried, the install sees the list as it is now and states the real refusal.
+    with pytest.raises(ProtoValidationError, match="cycle"):
+        db.run(lambda tr: tr.install_module("reg7_cyc_y"))
     tr = db.new_transaction()
     with pytest.raises(ProtoValidationError, match="cycle"):
         tr.install_module("reg7_cyc_y")     # refused at install as well, once it can be seen
@@ -402,41 +407,70 @@ def test_concurrent_installs_on_two_cluster_nodes_both_land():
 
 # -- fix round 1 (review of Task 7) -----------------------------------------------------------------
 
-def test_an_import_whose_code_commits_never_deadlocks_a_commit_that_needs_the_module(tmp_path):
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+def _install_in_another_process(path: str, name: str) -> None:
+    subprocess.run([sys.executable, "-m", "tests.unit.registry_modules.reg7_installer", path, name],
+                   check=True, timeout=60, cwd=REPO)
+
+
+def _guarded(fn, errors):
+    def body():
+        try:
+            fn()
+        except BaseException as e:      # reported by the test
+            errors.append(e)
+    return body
+
+
+def _signal_on_first_build(monkeypatch, event):
+    """Set ``event`` when ``Registry.build`` is next called: from a commit, that is its lock step
+    (review N-5: explicit synchronization instead of a sleep)."""
+    original = Registry.build.__func__
+
+    def build(cls, *args, **kwargs):
+        event.set()
+        return original(cls, *args, **kwargs)
+
+    monkeypatch.setattr(Registry, "build", classmethod(build))
+
+
+@pytest.fixture
+def driver():
+    from tests.unit.registry_modules import reg7_driver
+    reg7_driver.importing.clear()
+    reg7_driver.go.clear()
+    yield reg7_driver
+    reg7_driver.db = reg7_driver.tr = reg7_driver.committing = reg7_driver.selfinstall = None
+    del reg7_driver.peeked[:], reg7_driver.seen[:], reg7_driver.selfinstall_errors[:]
+
+
+def test_an_import_whose_code_commits_never_deadlocks_a_commit_that_needs_the_module(tmp_path, monkeypatch,
+                                                                                     driver):
     """Review I-1: the commit that finds a module of the merged list not yet imported must import it
     outside the root lock.  Thread A imports ``reg7_importcommit``, whose import-time code commits;
     meanwhile another process installs that module, and thread B commits an install it validated
-    before.  Under the lock B's merged list names a module still being imported by A: importing it
-    there waited for A's import lock while A waited for the root lock, forever."""
-    from tests.unit.registry_modules import reg7_driver
+    before.  B's lock step meets the module A is still importing: importing it there waited for A's
+    import lock while A waited for the root lock, forever.  A resumes only once B is in its lock
+    step (the build made there signals it), so the scenario is exercised on every run; the joins
+    only turn a regression into a failure instead of a hang."""
     path = str(tmp_path / "space")
     space = _space(FileStorage(path))
     try:
         db = space.new_database("db")
-        reg7_driver.db = db
         late = db.new_transaction()
         late.install_module("reg7_y")                  # validated against an empty list
-        subprocess.run([sys.executable, "-m", "tests.unit.registry_modules.reg7_installer", path,
-                        "reg7_importcommit"], check=True, timeout=60,
-                       cwd=os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+        _install_in_another_process(path, "reg7_importcommit")
+        driver.db = db
+        _signal_on_first_build(monkeypatch, driver.go)
         errors = []
-
-        def guarded(fn):
-            def body():
-                try:
-                    fn()
-                except BaseException as e:      # reported below
-                    errors.append(e)
-            return body
-
         importer = threading.Thread(
-            target=guarded(lambda: importlib.import_module(MAPPING["reg7_importcommit"])), daemon=True)
+            target=_guarded(lambda: importlib.import_module(MAPPING["reg7_importcommit"]), errors), daemon=True)
         importer.start()
-        assert reg7_driver.importing.wait(10)
-        committer = threading.Thread(target=guarded(late.commit), daemon=True)
+        assert driver.importing.wait(10)
+        committer = threading.Thread(target=_guarded(late.commit, errors), daemon=True)
         committer.start()
-        time.sleep(0.5)                             # let the commit take the root lock (scenario only)
-        reg7_driver.go.set()
         committer.join(30)
         importer.join(30)
         assert not committer.is_alive() and not importer.is_alive(), "deadlock: commit and import still blocked"
@@ -448,13 +482,105 @@ def test_an_import_whose_code_commits_never_deadlocks_a_commit_that_needs_the_mo
         finally:
             tr.abort()
     finally:
-        reg7_driver.db = None
         space.close()
 
 
-def test_install_module_imports_outside_the_transaction_lock(db):
+def test_the_commit_imports_without_the_transaction_lock(tmp_path, monkeypatch, driver):
+    """Review N-2: a module the commit imports (outside the root lock) may, from the thread importing
+    it, use the transaction being committed: that read fails fast (the transaction is committing)
+    instead of waiting for a lock the commit holds while it waits for the import."""
+    path = str(tmp_path / "space")
+    space = _space(FileStorage(path))
+    try:
+        db = space.new_database("db")
+        late = db.new_transaction()
+        late.install_module("reg7_y")
+        _install_in_another_process(path, "reg7_peekcommit")
+        driver.committing = late
+        _signal_on_first_build(monkeypatch, driver.go)
+        errors = []
+        importer = threading.Thread(
+            target=_guarded(lambda: importlib.import_module(MAPPING["reg7_peekcommit"]), errors), daemon=True)
+        importer.start()
+        assert driver.importing.wait(10)
+        committer = threading.Thread(target=_guarded(late.commit, errors), daemon=True)
+        committer.start()
+        committer.join(30)
+        importer.join(30)
+        assert not committer.is_alive() and not importer.is_alive(), "deadlock: import and transaction lock"
+        assert errors == []
+        assert len(driver.seen) == 1 and isinstance(driver.seen[0], ProtoUserError)
+        assert "committing" in str(driver.seen[0])
+        assert _installed(db) == ("reg7_peekcommit", "reg7_y")
+    finally:
+        space.close()
+
+
+def test_install_module_refuses_a_module_this_thread_is_still_importing(db, driver):
+    """Review N-3: its declarations so far are not the module's; installing it would plan the
+    catalog from half of them."""
+    tr = db.new_transaction()
+    driver.selfinstall = tr
+    importlib.import_module(MAPPING["reg7_selfinstall"])
+    driver.selfinstall = None
+    assert len(driver.selfinstall_errors) == 1
+    error = driver.selfinstall_errors[0]
+    assert isinstance(error, ProtoUserError) and "reg7_selfinstall" in str(error)
+    assert tr.installed_modules() == ()
+    tr.install_module("reg7_selfinstall")       # imported now: every extension is planned
+    assert tr.catalog_object("reg7.SelfFirst") is not None and tr.catalog_object("reg7.SelfSecond") is not None
+    tr.abort()
+
+
+def _importing(monkeypatch, module_name):
+    """Mark the imported module ``module_name`` as still being imported (as this thread would see a
+    module whose import it is inside)."""
+    spec = sys.modules[MAPPING[module_name]].__spec__
+    monkeypatch.setattr(spec, "_initializing", True, raising=False)
+
+
+def test_a_union_unbuildable_because_of_a_concurrent_install_is_a_conflict(db, monkeypatch):
+    """Review N-4: the commit's import step finds a concurrently installed module that this thread is
+    still importing: retryable ``ProtoConflictError`` naming it, not a user error."""
+    late = db.new_transaction()
+    late.install_module("reg7_y")
+    db.run(lambda tr: tr.install_module("reg7_a"))
+    _importing(monkeypatch, "reg7_a")
+    with pytest.raises(ProtoConflictError, match="concurrently installed 'reg7_a'"):
+        late.commit()
+
+
+def test_an_own_module_still_being_imported_at_commit_is_a_user_error(db, monkeypatch):
+    """Review N-4, the other side: the module still being imported is in this transaction's own list."""
+    late = db.new_transaction()
+    late.install_module("reg7_y")
+    db.run(lambda tr: tr.install_module("reg7_a"))      # the merged list differs: the commit builds it
+    _importing(monkeypatch, "reg7_y")
+    with pytest.raises(ProtoUserError, match="'reg7_y' of this transaction's list"):
+        late.commit()
+
+
+def test_a_catalog_update_of_a_name_a_concurrent_install_adds_first_conflicts(db):
+    """Review N-1 (the reviewer's repro): the update of a name this transaction's own install
+    introduces is never silently dropped when a concurrent install adds the name first."""
+    t1, t2 = db.new_transaction(), db.new_transaction()
+    t1.install_module("reg7_base")
+    t1.set_catalog_object("reg7.Partner", DBObject(parents=("reg7.Partner",)).with_(note="t1-config"))
+    t2.install_module("reg7_base")
+    t2.commit()
+    with pytest.raises(ProtoConflictError, match="reg7.Partner"):
+        t1.commit()
+    # Retried, the install is already there and the update applies.
+    def install_and_configure(tr):
+        tr.install_module("reg7_base")
+        tr.set_catalog_object("reg7.Partner", DBObject(parents=("reg7.Partner",)).with_(note="t1-config"))
+    db.run(install_and_configure)
+    assert _catalog(db, "reg7.Partner").note == "t1-config"
+
+
+def test_install_module_imports_outside_the_transaction_lock(db, driver):
     """Review M-5: another thread may use the installing transaction while the module is imported."""
-    from tests.unit.registry_modules import reg7_driver
+    reg7_driver = driver
     tr = db.new_transaction()
     reg7_driver.tr = tr
     try:
