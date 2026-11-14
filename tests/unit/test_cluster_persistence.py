@@ -67,7 +67,10 @@ def test_commits_are_persisted_asynchronously_and_sync_waits_for_them(tmp_path):
         _commit(tc, tc.ids, 12)
         space = tc.spaces["n2"]                          # the last committer (others learn it on release)
         space.sync(timeout=10)
-        assert space.persisted_epoch >= space.committed_epoch == 13
+        # At least one epoch per commit: a re-commit of a base under a new lease adds one with the
+        # same data (``_commit_base``), so the count is a floor, not an equality (Task 11.1, A3:
+        # 14 under load).  The store's value below counts the commits exactly.
+        assert space.persisted_epoch >= space.committed_epoch >= 13
         assert _remote_value(tc.store) == 12
         assert all(tc.storages[n].stats()["root_writes_in_critical"] == 0 for n in tc.ids)
 

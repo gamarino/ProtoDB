@@ -363,13 +363,16 @@ def test_sync_waits_for_the_persisted_epoch_and_exposes_both_epochs():
         for i in range(5):
             _run(spaces[i % 3].open_database("db"), _incr, **RUN_KW)
         spaces[1].sync(timeout=stress.budget(5))                         # the last committer
-        assert spaces[1].persisted_epoch >= spaces[1].committed_epoch == 6
+        # At least one epoch per commit (a base re-commit adds one with the same data; Task 11.1):
+        # the plain reader's value counts the commits exactly.
+        epoch = spaces[1].committed_epoch
+        assert spaces[1].persisted_epoch >= epoch >= 6
         plain = ObjectSpace(shared)                       # a reader without the cluster
         assert _value(plain) == 5
         root = shared.read_root()
-        assert _eventually(lambda: spaces[0].committed_epoch == 6)
+        assert _eventually(lambda: spaces[0].committed_epoch >= epoch)
         tr = db.new_transaction()
-        assert tr._epoch == 6
+        assert tr._epoch == spaces[0].committed_epoch
         tr.abort()
         assert root is not None
 
