@@ -870,8 +870,14 @@ def test_a_successor_whose_base_records_are_nowhere_gets_a_retryable_conflict(tm
 
 def _records_nowhere(tmp_path, outage):
     """One run of the scenario above: ``None`` when it formed (every assertion held), otherwise
-    why it did not form."""
-    with _cluster(tmp_path) as tc:
+    why it did not form.
+
+    The lease is 1.8 s, not the file's 0.9 s (as for the lost-done scenario): n2's term must
+    outlast A's request, A's proposal and B's permit, which the owner delays by 0.3 s, and B's
+    permission must still be valid when it arrives.  At 0.9 s, with CPU burners beside the test
+    on a machine at load average 17-21, B received a permission issued on k in 4 of 32 runs
+    (Task P1-READ, every one of them ended ``none``); the rules and assertions are unchanged."""
+    with _cluster(tmp_path, lease_duration=1.8) as tc:
         _confirmed(tc)
         _no_owner(tc)
         tc.store.set_outage(outage)
