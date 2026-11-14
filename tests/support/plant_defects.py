@@ -314,6 +314,21 @@ def blind_snapshot_of'''),),
         # Without stores the pipeline also degrades: either assertion of the test may fire first.
         ("tests/concurrency/test_cluster_pipelined_permits.py::test_permits_overlap_the_predecessors_durability",),
         ("overlapped their data stage", "of the permits were issued on a proposal"), "product: a pipelined permit's data stage no longer overlaps (review I5)"),
+    # Task ABANDON: the two pipeline tests accept an O5 abandonment only after a reserve refusal
+    # of that very permission.  Here a pipelined round ends "none" with nothing refused, at most
+    # three times per process: the owner abandons its term by O5, which they must not accept.
+    "o5_none_unrefused": Plant((
+        ("proto_db/transactions.py", "_RETRY_HOLD = 0.1\n",
+         "_RETRY_HOLD = 0.1\n_PLANT_FIRED = [0]   # PLANT\n"),
+        ("proto_db/transactions.py", "        base = _lease_base(coordinator, tier, permission)\n",
+         "        if getattr(permission, \"after\", None) is not None and _PLANT_FIRED[0] < 3:\n"
+         "            _PLANT_FIRED[0] += 1   # PLANT: a pipelined round ends without a root, unrefused\n"
+         "            raise ProtoConflictError(\"PLANT: a pipelined round sent nothing\")\n"
+         "        base = _lease_base(coordinator, tier, permission)\n"),),
+        ("tests/concurrency/test_cluster_pipelined_permits.py::test_permits_overlap_the_predecessors_durability",
+         "tests/concurrency/test_cluster_pipelined_permits.py::test_p5_a_proposal_base_is_never_re_proposed[False]"),
+        ("abandoned for no timing reason: ['permission", "abandoned for no timing reason: ['unknown', 'permission"),
+        "tests: an O5 abandonment without a reserve refusal is taken for a timing one (Task ABANDON)"),
     "renewal_term_cut": Plant((
         ("proto_db/cluster/coordinator.py", "class Peer(NamedTuple):",
          "_PLANT_FIRED = False   # PLANT\n\n\nclass Peer(NamedTuple):"),

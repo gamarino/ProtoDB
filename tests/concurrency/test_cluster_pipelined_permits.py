@@ -23,6 +23,7 @@ lost ``done``, a failing predecessor, and the R86 safety bounds under random fau
 import logging
 import os
 import random
+import re
 import threading
 import time
 
@@ -109,14 +110,85 @@ def _slow_acceptor_writes(tc, seconds):
         st.accept_replication = slow
 
 
+_ABANDON = re.compile(r"Node (\S+) abandons lease term (\d+): (.*)", re.S)
+# The owner's timers (R82): an entry past its deadline (validity plus ``request_timeout``), or the
+# lease ending with an entry outstanding (review I3).
+_TIMER_REASONS = (re.compile(r"permission \d+ of \S+ timed out$"),
+                  re.compile(r"lease expired with permission \d+ of \S+ outstanding$"))
+_ENDED_WITHOUT_ROOT = re.compile(r"permission (\d+) of (\S+) ended without a root ")
+
+
+class _Abandonments(logging.Handler):
+    """The term abandonments logged while the context is open, each with its reason, and the
+    permissions the send reserve refused (R121) meanwhile (Task ABANDON).
+
+    :meth:`classify` separates the abandonments timing explains from every other one.  Timing
+    explains two kinds, both conservative and both by rule:
+
+    * an owner timer (R82): a permission past its deadline, or the lease ending while one was
+      outstanding;
+    * rule O5 after a reserve refusal of that very permission.  The owner issues a permission
+      with as little as a quarter of its belief left (D50's D/4 rule; here 250 ms, equal to
+      ``send_reserve``), and the holder counts the validity from its request's send (D45).  A
+      permit issued near that floor, or on a request that waited in the owner's queue, arrives
+      with less than the reserve left; the holder sends nothing (R121: a truthful, retried
+      conflict) and ends ``none`` while its predecessor is outstanding, which abandons the term
+      (O5).  Measured under CPU load with the GIL on: permits arriving with 46 to 110 ms of
+      validity.
+
+    Any other abandonment -- O4, an O5 ``none`` without a refusal of that permission, an
+    ``unknown`` outcome -- stays unexplained."""
+
+    def __init__(self, monkeypatch):
+        super().__init__(logging.INFO)
+        self.records = []           # (owner, term, reason)
+        self.refused = set()        # (holder, term, seq) refused by the send reserve
+        check, refused = ClusterCoordinator._check_reserve, self.refused
+
+        def spy(coordinator, lease, *, locked=False):
+            try:
+                return check(coordinator, lease, locked=locked)
+            except ProtoConflictError:
+                refused.add((coordinator.node_id, lease.term, getattr(lease, "seq", 0)))
+                raise
+        monkeypatch.setattr(ClusterCoordinator, "_check_reserve", spy)
+        self._logger = logging.getLogger(coordinator_module.__name__)
+
+    def emit(self, record):
+        match = _ABANDON.fullmatch(record.getMessage())
+        if match:
+            self.records.append((match.group(1), int(match.group(2)), match.group(3)))
+
+    def __enter__(self):
+        self._level = self._logger.level
+        self._logger.setLevel(logging.INFO)
+        self._logger.addHandler(self)
+        return self
+
+    def __exit__(self, *exc):
+        self._logger.removeHandler(self)
+        self._logger.setLevel(self._level)
+
+    def classify(self) -> tuple:
+        """``(timing, other)``: the reasons of the abandonments timing explains, and the rest."""
+        timing, other = [], []
+        for owner, term, why in list(self.records):
+            ended = _ENDED_WITHOUT_ROOT.match(why)
+            refused = ended is not None and (ended.group(2), term, int(ended.group(1))) in self.refused
+            (timing if refused or any(r.match(why) for r in _TIMER_REASONS) else other).append(why)
+        return timing, other
+
+
 def _rounds_per_second(tmp_path, monkeypatch, depth, seconds=3.0):
     """Two threads per member of three increment their own keys for ``seconds`` with
     records-bearing acceptor writes slowed to 20 ms and ``DEPTH = depth``.  Returns the rounds
-    per second, the share of permits issued on a proposal, the terms abandoned and the unknown
-    outcomes; every outcome is resolved by a blind token on every member, and each thread's key
-    equals its tokens present (R86, R114; used by ``benchmarks/pipelined_round_rate.py`` too)."""
+    per second, the share of permits issued on a proposal, the terms abandoned (and how many of
+    them timing explains, :class:`_Abandonments`) and the unknown outcomes; every outcome is
+    resolved by a blind token on every member, and each thread's key equals its tokens present
+    (R86, R114; used by ``benchmarks/pipelined_round_rate.py`` too)."""
     monkeypatch.setattr(coordinator_module, "DEPTH", depth)
-    with _cluster(tmp_path / f"d{depth}", lease_duration=3.0, request_timeout=0.25) as tc:
+    with _Abandonments(monkeypatch) as log, \
+            _cluster(tmp_path / f"d{depth}", lease_duration=3.0, request_timeout=0.25) as tc:
         _slow_acceptor_writes(tc, 0.02)
         stop = time.monotonic() + seconds
         tokens = CommitTokens()
@@ -157,10 +229,12 @@ def _rounds_per_second(tmp_path, monkeypatch, depth, seconds=3.0):
              for n in tc.ids}, tokens)
         for node, values in res.values.items():
             assert values == {k: sum(1 for t in res.present if t.rsplit("-", 1)[0] == k) for k in keys}, (node, values)
+        timing, other = log.classify()
         return {"rate": rounds / elapsed, "pipelined": pipelined / max(1, issued), "issued": issued,
                 "pipelined_permits": pipelined, "stores_sent": sum(s["stores_sent"] for s in stats),
                 "gate_open_at_send": sum(s["gate_open_at_send"] for s in stats),
-                "abandoned": sum(s["terms_abandoned"] for s in stats), "unknown": len(tokens.unknown_tokens),
+                "abandoned": sum(s["terms_abandoned"] for s in stats), "abandoned_timing": len(timing),
+                "abandon_reasons": other, "unknown": len(tokens.unknown_tokens),
                 "rounds": rounds, "acked": len(tokens.acked_tokens)}
 
 
@@ -179,8 +253,8 @@ def test_permits_overlap_the_predecessors_durability(tmp_path, monkeypatch):
     print(f"\nrounds/s serial {serial['rate']:.1f}, pipelined {piped['rate']:.1f}; pipelined permits "
           f"{piped['pipelined']:.0%} of {piped['issued']}; data stages sent before the base was known "
           f"committed {piped['stores_sent']} (gate open at send {piped['gate_open_at_send']}); "
-          f"terms abandoned {serial['abandoned']} / {piped['abandoned']}; "
-          f"unknown {serial['unknown']} / {piped['unknown']}")
+          f"terms abandoned {serial['abandoned']} / {piped['abandoned']} (timing {serial['abandoned_timing']} / "
+          f"{piped['abandoned_timing']}); unknown {serial['unknown']} / {piped['unknown']}")
     assert serial["pipelined"] == 0 and serial["stores_sent"] == 0
     assert piped["pipelined"] >= 0.8, f"only {piped['pipelined']:.0%} of the permits were issued on a proposal"
     # Fix round 1 (review I5): the overlap itself.  A pipelined permit's data stage leaves as a
@@ -191,8 +265,11 @@ def test_permits_overlap_the_predecessors_durability(tmp_path, monkeypatch):
     assert piped["stores_sent"] >= piped["pipelined_permits"] // 2, \
         f"only {piped['stores_sent']} of {piped['pipelined_permits']} pipelined permits overlapped their data stage"
     # The first term may be abandoned at start-up (base behaviour); a later one only with an
-    # unknown outcome (P5: a conservative end, resolved by the tokens above).
-    assert piped["abandoned"] <= 1 + piped["unknown"], piped
+    # unknown outcome (P5: a conservative end, resolved by the tokens above), or for a reason
+    # timing explains (R82: an owner timer, or rule O5 after a reserve refusal of that very
+    # permission; Task ABANDON, CI run 43585824975 failed here with one such O5).
+    assert piped["abandoned"] - piped["abandoned_timing"] <= 1 + piped["unknown"], \
+        f"terms abandoned for no timing reason: {piped['abandon_reasons']}; {piped}"
 
 
 # -- P1, P1v and V2 as written: the voters carry safety ------------------------------------------
@@ -525,7 +602,10 @@ def test_p5_a_proposal_base_is_never_re_proposed(tmp_path, monkeypatch, planted)
     no term is abandoned, and every acknowledged commit is read back.  The planted slip shows
     as either symptom (proposals below 80 % of replications, or an abandoned term: the owner
     sees a permission end without a root while another is outstanding), so both are one
-    stated assertion.
+    stated assertion.  An abandonment timing explains (an owner timer, or rule O5 after a
+    reserve refusal of that permission: :class:`_Abandonments`) is not counted: under CPU
+    load a permit can arrive with less than ``send_reserve`` left (R82: timing never decides
+    the verdict).
 
     The design's P5 expected a safety symptom (a re-proposal sent before the gate).  Here the
     gate guards every first root of a pipelined permit inside ``replicate`` itself, the
@@ -547,11 +627,12 @@ def test_p5_a_proposal_base_is_never_re_proposed(tmp_path, monkeypatch, planted)
                 tc.db(node).run(write, **RUN_KW)
                 acked[key] = acked.get(key, 0) + 1
         threads = [threading.Thread(target=work, args=(n, i)) for n in tc.ids for i in range(2)]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
-        after = {n: tc[n].stats() for n in tc.ids}
+        with _Abandonments(monkeypatch) as log:
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+            after = {n: tc[n].stats() for n in tc.ids}
 
         def delta(key):
             return sum(after[n][key] - before[n][key] for n in tc.ids)
@@ -559,10 +640,15 @@ def test_p5_a_proposal_base_is_never_re_proposed(tmp_path, monkeypatch, planted)
         # The one assertion P5 trips.  Its symptom shows either way, nondeterministically
         # (review 8.3k, M2): a round whose root no longer extends its issued base cannot
         # propose, so proposals fall below 80 % of replications; or the owner sees a permission
-        # end without a root while another is outstanding, and abandons its term.
+        # end without a root while another is outstanding, and abandons its term.  An
+        # abandonment timing explains is not that symptom (Task ABANDON, CI run 43585824975:
+        # rule O5 after a reserve refusal of a permit that waited in the owner's queue;
+        # :class:`_Abandonments`), so only the others count.
         proposals, replications, abandoned = delta("proposals"), delta("replications"), delta("terms_abandoned")
-        assert abandoned == 0 and proposals >= 0.8 * replications, \
-            f"the pipeline collapsed: {proposals} proposals in {replications} replications, {abandoned} terms abandoned"
+        timing, other = log.classify()
+        assert not other and proposals >= 0.8 * replications, \
+            f"the pipeline collapsed: {proposals} proposals in {replications} replications, {abandoned} terms " \
+            f"abandoned, {len(timing)} for a timing reason; terms abandoned for no timing reason: {other}"
         time.sleep(0.2)
         for node in tc.ids:
             values = _read_keys(tc, node, list(acked))

@@ -31,6 +31,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Tests: pytest-timeout ends a run that overruns by stopping the process (`timeout_method = "thread"`) rather
   than raising in the main thread, which on 3.14 could leak a lock and left test threads running into the
   next tests (CI-314); `test_pager_stability` stops its threads and bounds its writers.
+- Tests: the two pipelined-permit tests that bounded the abandoned terms
+  (`test_permits_overlap_the_predecessors_durability`, `test_p5_a_proposal_base_is_never_re_proposed`) no
+  longer count an abandonment that timing explains: an owner timer (R82), or rule O5 after a send-reserve
+  refusal (R121) of that very permission, which a permit that waited in the owner's queue gets under CPU load.
+  Every other abandonment still fails them; plant `o5_none_unrefused` checks it.
 - Tests: the two compaction checks of `test_owner_locks` held on ext4, where a freed inode number is
   reused; they now keep the original file open and compare with `os.path.samestat`.
 
