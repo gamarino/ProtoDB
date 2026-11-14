@@ -76,34 +76,46 @@ All persisted state lives in database roots reserved by `format-spec.rst` ("The 
   with it.
 - `__currentModules` is updated at commit by add-if-absent as well (installing is additive, decision 4). Two
   concurrent installs of different modules both land. The order of installation is the commit order.
-- **Every attribute name is a symbol (decision 7).** The new object type of section 4 stores its attribute names as
-  symbols. Existing `DBObject` atoms keep their format-4 encoding and their meaning (additive rule); there are no
-  existing registry databases to migrate.
+- **Every attribute name is a symbol (decision 7), with no byte change.** A key of an atom's state map `s` is
+  always an attribute name, so the format-4 bytes (a msgpack string in key position) already identify the symbol
+  unambiguously. Attribute names are interned symbols in memory and are written as they are today. `@sym` is needed
+  only where a symbol is a *value*: in a parents tuple, or as a collection key or element.
+- **Parents: the only new atom field.** An object that has parents writes the envelope key `"p"` (the parents tuple)
+  beside `"t"`, `"oid"` and `"s"`. It is the format-5 feature `parents`. An object without parents writes no `"p"`
+  and keeps version 4, byte for byte.
 - The cluster `PROTOCOL_VERSION` rises in the same change, since cluster messages carry values.
 
-## 4. The object model
+## 4. The object model: `DBObject` gains parents
 
-A new built-in atom type, `proto_db.Object` *(proposal for the name)*, is a registry-aware object. `DBObject`,
-collections and `MutableObject` are unchanged. They are values the new objects can hold, and nothing about them
-changes in this feature.
+There is no new class (maintainer, 2026-11-14). The capability is added to `DBObject`. **A `DBObject` without parents,
+in a database without modules, is today's base scheme, unchanged**: the same API, bytes and behaviour. Plain data
+objects need nothing new.
 
-An `Object` holds:
+A `DBObject` holds:
 - **its own attributes**: symbol to canonical value. Values only; a callable is never persisted (anti-goal A1);
-- **its parents**: an ordered tuple, persisted. Each parent is either:
-  - an `Object`, referenced like any other atom, or a `MutableObject` handle when the parent is an entity whose
+- **its parents** (new, optional): an ordered tuple, persisted as `"p"` (section 3). Each parent is either:
+  - a `DBObject`, referenced like any other atom, or a `MutableObject` handle when the parent is an entity whose
     current version resolves in the transaction (the values-and-entities decision of 2026-11-08); or
   - a registry name: a symbol.
 
-A **catalog class object** is an `Object` stored in `__catalog`. It gathers a class's definition data. It is a root
+Construction: `DBObject(parents=(...), **attributes)` *(proposal)*; `parents` becomes a reserved keyword, like
+`context`. `o.with_(...)` keeps the parents. `o.with_parents(...)` returns a version with other parents *(proposal)*.
+
+A **catalog class object** is a `DBObject` stored in `__catalog`. It gathers a class's definition data. It is a root
 of the database, not of the object space, so each database has its own catalog.
 - An instance lists its catalog class object as a parent (option a).
 - The catalog class object lists its registry name among its parents. Lookup therefore continues from it into the
   in-memory registry chain.
 
-Immutability is unchanged: an `Object` is a value. A changed object is a new version made with
-`o._with(name=value, ...)` *(proposal, section 5)*. A stable identity is a `MutableObject` whose value is an
-`Object`. The versioned entity is a documented pattern (a new version points at the previous one), not part of the
-base module.
+Immutability and identity are unchanged: a `DBObject` is an immutable atom compared by `oid` (D10). A stable identity
+is a `MutableObject` whose value is a `DBObject`. The versioned entity is a documented pattern (a new version points
+at the previous one), not part of the base module.
+
+**Python subclasses of `DBObject`** (today's way to give an object methods) keep working. Their Python members are
+found by Python before resolution runs, so they come first. Resolution covers everything else. A module may not
+define, in a registry name, a member that a `DBObject` subclass it extends already defines in Python: that is
+refused at load with `ProtoValidationError`, because it could never be reached (anti-goal A2). The registry path is
+the recommended one for extensible models; subclasses remain for fixed, non-extensible types *(proposal)*.
 
 ## 5. Resolution: one rule for fields and methods
 
@@ -111,7 +123,7 @@ base module.
 
 1. `o`'s own attributes;
 2. then, in order, every node of the C3 linearization of `o`'s parents.
-   - An `Object` node contributes its own attributes. A `MutableObject` node contributes the attributes of its
+   - A `DBObject` node contributes its own attributes. A `MutableObject` node contributes the attributes of its
      current value in the transaction.
    - A registry-name node contributes its extension chain, from the newest extension to the oldest (section 6).
    - Each registry name is visited once, even when several parents reach it (C3, decided 2026-11-08).
@@ -133,12 +145,14 @@ The message names the object, the name and the linearization searched.
 The Python surface:
 - `o.name` and `o["name"]` run the same resolution. `o["name"]` accepts a `str` or a symbol, so the name may be
   computed at run time (`o[field_name]`). `o.name` covers every name that is a valid identifier.
-- The Python-level API of `Object` uses only names that start with `_`: `_with`, `_parents`, `_own`, `_super`,
-  `_resolve`, `_linearization` *(proposal)*. Attribute names never start with `_` (the existing `DBObject` rule), so
-  no attribute can be shadowed by the API and no API member can be shadowed by an attribute. Dunder names
-  (`__len__`, `__eq__`, ...) never go through resolution.
+- The Python-level API is `DBObject`'s own: `with_`, `has_defined_attr`, `oid`, `atom_pointer`, `context`, plus the
+  new `parents` and `with_parents`, and the underscore helpers `_own`, `_super`, `_resolve` and `_linearization`
+  *(proposal)*. These names are already refused as attribute names today (the `DBObject` rule: no leading `_`, no
+  name of a class member). For the same reason a module may not define them in a registry name. So no attribute
+  shadows the API and no API member is shadowed by resolution. Dunder names (`__len__`, `__eq__`, ...) never go
+  through resolution.
 - `name in o` reports whether resolution finds `name`. `o._own` returns the own attributes only.
-- Writes never go into a parent. `o._with(...)` sets own attributes, and `o["x"] = v` is refused: values are
+- Writes never go into a parent. `o.with_(...)` sets own attributes, and `o["x"] = v` is refused: values are
   immutable. A data default that an extension defines is overridden by setting the attribute on the instance.
 
 Late binding (see feedback "the platform is late-binding"): the linearization is resolved when it is used, against
@@ -161,7 +175,7 @@ class Opportunity:
 
     def win(self, tr):
         self._super().win(tr)                      # the next definition of `win` in the linearization
-        return self._with(stage="won")
+        return self.with_(stage="won")
 ```
 
 - The class is only a container. Its instances are never created. Its Python MRO is not used, and Python's
@@ -220,7 +234,7 @@ class Opportunity:
 - A per-name cache maps (linearization, symbol) to the position found.
   - A miss walks the frames once.
   - Registry frames are immutable for the registry's life.
-  - `Object` frames are immutable by version.
+  - `DBObject` frames are immutable by version.
   - A `MutableObject` frame resolves its value in the transaction and is never cached across transactions.
 - Symbols make each own-attribute lookup an identity-keyed dict probe.
 - Superseded versions leave the current collections and indexes. Resolution never visits history, so its cost does
@@ -229,7 +243,7 @@ class Opportunity:
 
 ## 10. Polyglot
 
-protoBaseST reads and writes the same roots, symbols and `Object` records.
+protoBaseST reads and writes the same roots, symbols and the `"p"` field of `DBObject` records.
 - The persisted state of sections 3 and 4 is normative and goes into `format-spec.rst` with test vectors.
 - Resolution (section 5), `_super` and module loading are each language's own. Smalltalk resolves by its own rules
   over the same parents.
@@ -282,7 +296,7 @@ protoBaseST reads and writes the same roots, symbols and `Object` records.
   (section 6)?
 - **Q4. Callable data defaults.** May an extension define a non-method callable, such as a computed default, which
   resolves as a callable? Or must every callable be a method bound to the receiver?
-- **Q5. Names.** The names `proto_db.Object`, `__catalog`, `install_module` and `_with` are proposals.
+- **Q5. Names.** The names `__catalog`, `install_module`, `parents` and `with_parents` are proposals.
 - **Q6. How a registry name gets parents.** C3 needs each node's parents, and `extends("crm.Opportunity")` names a
   single registry name. Two candidates:
   - (a) An extension may declare parents, `extends("crm.Lead", parents=("mail.Thread",))`, as Odoo's multiple
@@ -298,12 +312,9 @@ protoBaseST reads and writes the same roots, symbols and `Object` records.
 
 ## 14. Calls made after the builder check (proposals, for review)
 
-1. **Record layout.** An `Object` persists two fields:
-   - `a`: a map from `@sym` to value, the own attributes;
-   - `p`: the parents tuple.
-
-   Symbols are persisted, not only held in memory. `Object` reuses `Atom`'s lazy loading for these two fields
-   alone. Its attributes are never Python instance attributes.
+1. **Record layout.** Superseded by the 2026-11-14 ruling (no new class). The state map `s` is unchanged, with
+   attribute names as strings in key position that are read as symbols. The parents are the new envelope key `"p"`.
+   Section 3 has the details.
 2. **Load-order ties.** The topological sort breaks ties by installation order, the order persisted in
    `__currentModules`. Every process therefore resolves a chain the same way.
 3. **`__catalog` writes.** `install_module` adds, by add-if-absent at commit, a catalog class object for each
@@ -320,9 +331,9 @@ protoBaseST reads and writes the same roots, symbols and `Object` records.
    the format spec's warning that they are different keys. Only `o["name"]` and `o.name` convert a `str` name to its
    symbol, for attribute lookup. A read never creates a symbol in the database: a lookup miss interns the symbol in
    the process only.
-6. **Reserved names.** `Atom`'s public members `oid`, `atom_pointer` and `context` are reserved attribute names for
-   `Object` and are refused. `o.oid` is the atom's `oid`.
-7. **Equality and cache keys.** An `Object` is an immutable atom compared by `oid` (D10), not by content. The
+6. **Reserved names.** `Atom`'s public members `oid`, `atom_pointer` and `context`, and the `DBObject` API, stay
+   refused as attribute names, as they are today, and as registry definitions. `o.oid` is the atom's `oid`.
+7. **Equality and cache keys.** A `DBObject` is an immutable atom compared by `oid` (D10), not by content. The
    `_super` view copies that.
    - The linearization cache uses one of two keys:
      - **parent tuples of saved atoms only:** keyed by the parents' pointers, process-wide;
