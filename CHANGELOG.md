@@ -10,9 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `proto_db.__version__` reports the package version; in 2.0.0rc3 it still said `2.0.0.dev0`.
 - `CloudStorage.publish_root` reports a write refused by its precondition as `ProtoConflictError`, which
   `Database.run` retries, when the object store declares that its refusals are definitive
-  (`refusals_are_definitive`: nothing below it re-sends a conditional write). The bundled `S3ObjectStore` and
-  `GCSObjectStore` declare it with the clients they build; an S3 client passed in declares it only when it is
-  configured for one attempt in total. Before, such a refusal was reported as `ProtoOutcomeUnknownError` when
+  (`refusals_are_definitive`: nothing below it re-sends a conditional write). `GCSObjectStore` declares it with any
+  client (its writes pass `retry=None`); `S3ObjectStore` declares it with the client it builds, and with a
+  client passed in only when that client is configured for one attempt in total. Before, such a refusal was reported as `ProtoOutcomeUnknownError` when
   another instance had published more than `root_history` roots before the read-back, although nothing of
   ours could have been applied (seen as an intermittent CI failure of two instances sharing a counter). Other
   stores keep the unknown outcome, and the read-back still runs first, so a write that did land is reported as

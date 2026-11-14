@@ -306,6 +306,7 @@ def test_a_refusal_after_a_hidden_retry_that_applied_our_write_is_still_resolved
     our epoch, so ``publish_root`` reports success, never a conflict: a conflict would make
     ``Database.run`` apply the transaction a second time."""
     store = FakeObjectStore()
+    store.refusals_are_definitive = False      # it emulates a hidden SDK retry (see the fake)
     s = make(store)
     r1 = s.publish_root(s.push_atom(atom_payload(1)), 0)
     p2 = s.push_atom(atom_payload(2))

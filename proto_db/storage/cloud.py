@@ -721,7 +721,8 @@ class S3ObjectStore:
     and for a client passed in only when ``client.meta.config.retries`` shows one attempt in
     total.  Any other client is accepted: a refused root write whose epoch the root history no
     longer reaches is then reported as an unknown outcome (the conservative answer), because the
-    SDK may have re-sent a write that did land.
+    SDK may have re-sent a write that did land.  The flag is computed once, when the adapter is
+    built: replace the client by building a new adapter, not by assigning to its ``client``.
 
     Args:
         bucket: bucket name.
@@ -844,7 +845,8 @@ class GCSObjectStore:
     for "absent").  Writes pass ``retry=None`` so the SDK never re-sends a conditional
     write on its own (:class:`CloudStorage` decides); reads keep the SDK defaults.  Its
     refusals are therefore definitive (``refusals_are_definitive``, ruling R147a), with the
-    client it builds and with one passed in alike.
+    client it builds and with one passed in alike.  ``retry=None`` covers the SDK's own retries
+    only: a client given a custom HTTP session that re-sends requests itself must not be used.
 
     Args:
         bucket: bucket name.
