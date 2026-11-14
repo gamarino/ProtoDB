@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ours could have been applied (seen as an intermittent CI failure of two instances sharing a counter). Other
   stores keep the unknown outcome, and the read-back still runs first, so a write that did land is reported as
   applied (D43 amendment, ruling R147a).
+- A cluster commit that started while the node was ending a write permission kept for a retry (D50 "held
+  retries": its hold timer expired, or `Database.run` returned instead of retrying) no longer fails with
+  `ProtoUserError("Node ... already holds a write permission")`, a misuse error that `Database.run` does not
+  retry. The commit now waits until that permission is finished and then asks for a new one; the wait counts
+  against the permit timeout and ends, like the permit's own wait, with `ProtoTimeoutError` (ruling R148).
+  `ClusterCoordinator.acquire_timeout` exposes the default permit timeout.
 - `S3ObjectStore` builds its client with one attempt in total (`retries={"total_max_attempts": 1}`). botocore
   reads the former `max_attempts=1` as one retry, so a conditional `PutObject` could be sent twice.
 - Documented a Python 3.14 hazard (concurrency model, "Interrupts and signal handlers on Python 3.14"): an

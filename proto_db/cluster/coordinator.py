@@ -857,6 +857,11 @@ class ClusterCoordinator:
         return self._duration
 
     @property
+    def acquire_timeout(self) -> float:
+        """Default seconds :meth:`acquire` and :meth:`permit` try before ``ProtoTimeoutError``."""
+        return self._acquire_timeout
+
+    @property
     def persister(self):
         """The :class:`~proto_db.cluster.persister.Persister` started by :meth:`attach`, or ``None``."""
         return self._persister
