@@ -78,8 +78,8 @@ All persisted state lives in database roots reserved by `format-spec.rst` ("The 
   concurrent installs of different modules both land. The order of installation is the commit order.
 - **Every attribute name is a symbol (decision 7), with no byte change.** A key of an atom's state map `s` is
   always an attribute name, so the format-4 bytes (a msgpack string in key position) already identify the symbol
-  unambiguously. Attribute names are interned symbols in memory and are written as they are today. `@sym` is needed
-  only where a symbol is a *value*: in a parents tuple, or as a collection key or element.
+  unambiguously. Attribute names are interned symbols in memory and are written as they are today. Registry names
+  in a parents tuple are plain strings (Q6). The registry itself therefore needs no `@sym` value (Q7, section 13).
 - **Parents: the only new atom field.** An object that has parents writes the envelope key `"p"` (the parents tuple)
   beside `"t"`, `"oid"` and `"s"`. It is the format-5 feature `parents`. An object without parents writes no `"p"`
   and keeps version 4, byte for byte.
@@ -94,9 +94,10 @@ objects need nothing new.
 A `DBObject` holds:
 - **its own attributes**: symbol to canonical value. Values only; a callable is never persisted (anti-goal A1);
 - **its parents** (new, optional): an ordered tuple, persisted as `"p"` (section 3). Each parent is either:
-  - a `DBObject`, referenced like any other atom, or a `MutableObject` handle when the parent is an entity whose
-    current version resolves in the transaction (the values-and-entities decision of 2026-11-08); or
-  - a registry name: a symbol.
+  - another `DBObject`, referenced like any other atom; or
+  - a `str`: a key of the registry (a registry name).
+
+  Nothing else is a parent (maintainer, 2026-11-14, Q6).
 
 Construction: `DBObject(parents=(...), **attributes)` *(proposal)*; `parents` becomes a reserved keyword, like
 `context`. `o.with_(...)` keeps the parents. `o.with_parents(...)` returns a version with other parents *(proposal)*.
@@ -123,17 +124,20 @@ the recommended one for extensible models; subclasses remain for fixed, non-exte
 
 1. `o`'s own attributes;
 2. then, in order, every node of the C3 linearization of `o`'s parents.
-   - A `DBObject` node contributes its own attributes. A `MutableObject` node contributes the attributes of its
-     current value in the transaction.
+   - A `DBObject` node contributes its own attributes.
    - A registry-name node contributes its extension chain, from the newest extension to the oldest (section 6).
-   - Each registry name is visited once, even when several parents reach it (C3, decided 2026-11-08).
-3. The catalog class object's own attributes come after its registry chain (decision 1 of 2026-11-08: modules can
-   redefine the catalog's data). See open question Q1.
+   - Each node is visited once, even when several parents reach it (C3, decided 2026-11-08).
+
+The catalog class object needs no rule of its own (maintainer, 2026-11-14, Q1: the catalog **before** the
+registry). It is an ordinary `DBObject` node whose parents include its registry name, so C3 places its data before
+that name's chain. The registry is the last thing searched.
 
 What is found:
 - **A value** (data on an object, or a data default of an extension) is returned as is.
-- **A callable** (a function defined in an extension) is returned bound to the receiver `o` and to its position in
-  the linearization (section 6). It is never persisted; it exists only in the process's registry.
+- **A method** (a function defined in an extension) is returned bound to the receiver `o`, exactly like a Python
+  bound method: `self is o`. It is never persisted; it exists only in the process's registry.
+- Nothing else is ever computed (maintainer, 2026-11-14, Q4). There are no properties, computed defaults or other
+  computation rules. A value that must be computed is a method.
 
 A miss raises:
 - `o.name` raises `AttributeError`, which subclasses `ProtoNotFoundError` *(proposal)*. `hasattr`, `getattr` with a
@@ -180,13 +184,25 @@ class Opportunity:
 
 - The class is only a container. Its instances are never created. Its Python MRO is not used, and Python's
   `super()` is not the mechanism (it needs `self` to be an instance of the class).
-- **`_super`** *(proposal)*: a method found at position `i` of `o`'s linearization is bound to a receiver view `(o, i)`.
-  - Inside the method, `self.x` resolves from the start of the linearization (late binding: an override further down
-    still wins).
-  - `self._super()` returns a view that resolves from position `i + 1`. `self._super().win` is therefore the next
-    `win`, wherever it is: another extension of the same name, a registry name further along, or the catalog's data.
-  - The view is equal to `o` and hashes as `o`, and storing it stores `o` (it is canonicalized to `o`). Only `is`
-    differs. The alternatives are compared in section 11.
+- **What an extension may define (Q4).**
+  - Plain functions are methods.
+  - Every other attribute is a data default and passes through `canonical()`.
+  - Anything else that is callable is refused at load with `ProtoValidationError`: a `property`, a `staticmethod`, a
+    `classmethod`, a callable instance, or a lambda assigned as a default.
+- **`_super` keeps `self is o`** (maintainer, 2026-11-14, Q3; *proposal for the mechanism*).
+  - At load, the registry indexes each method's code object to its extension. A function used in two definitions
+    is refused, because it would be ambiguous.
+  - `self._super()` reads the caller's code object (`sys._getframe(1).f_code`). That code object names the
+    extension that is running, and `_super()` finds the extension's position `i` in `self`'s linearization. It
+    returns a transient lookup proxy, as Python's `super()` does, that resolves from position `i + 1` and binds
+    what it finds to `self`.
+  - `self._super().win(tr)` therefore runs the next `win` with the same `self`, wherever that `win` is: another
+    extension of the same name, or a registry name further along.
+  - Inside any method, `self.x` resolves from the start (late binding: an override further down still wins).
+  - Calling `_super()` outside a registry method raises `ProtoUserError` naming the caller; that includes a closure,
+    a helper and a generator body defined elsewhere. So does calling it on an object whose linearization does not
+    contain the running extension. It never resolves silently from the wrong place (anti-goal A2).
+  - The proxy is never stored, compared or returned as a value; storing it is refused.
 - Within one registry name, extensions chain in module load order: the extension of the module loaded last is
   found first.
 
@@ -235,7 +251,6 @@ class Opportunity:
   - A miss walks the frames once.
   - Registry frames are immutable for the registry's life.
   - `DBObject` frames are immutable by version.
-  - A `MutableObject` frame resolves its value in the transaction and is never cached across transactions.
 - Symbols make each own-attribute lookup an identity-keyed dict probe.
 - Superseded versions leave the current collections and indexes. Resolution never visits history, so its cost does
   not depend on history depth (anti-goal A4). This is a claim to verify with a ProtoBase-only measurement in the
@@ -255,9 +270,11 @@ protoBaseST reads and writes the same roots, symbols and the `"p"` field of `DBO
   `super()` would do the chain at native speed. Rejected for this design. Methods would live in the class and data
   in the objects, which is two mechanisms against G1. Object parents and dynamic names would still need
   `__getattr__`.
-- **`_super` through a context variable** set around each bound call, which keeps `self is o`. Rejected
-  *(proposal)*: the cursor is lost in closures, callbacks and generators that outlive the call, and a stale cursor
-  would resolve silently wrong (anti-goal A2).
+- **`_super` through a receiver view** `(o, i)` that carries the position (the first draft). Rejected (Q3): `self`
+  would be equal to `o` but not `o`.
+- **`_super` through a context variable** set around each bound call. Rejected: the cursor is lost in closures,
+  callbacks and generators that outlive the call, and a stale cursor would resolve silently wrong (anti-goal A2).
+  The code-object lookup fails explicitly in the same cases.
 - **Persisted method source**: rejected by anti-goal A1.
 
 ## 12. Acceptance tests (outline for the plan)
@@ -282,33 +299,32 @@ protoBaseST reads and writes the same roots, symbols and the `"p"` field of `DBO
 - Resolution cost against history depth: flat, in the tutorial measurement.
 - Plants for each rule above.
 
-## 13. Open questions for the maintainer
+## 13. Maintainer decisions (2026-11-14) and the open question
 
-- **Q1. Order of the catalog class object.**
-  - The 2026-11-08 decision puts the catalog's own data after the registry chain, so modules can redefine it.
-  - Today's statement reads "the parent chain, and finally the registry".
-  - Should the registry come last, with the catalog's data before it, or the catalog's data last, as decided on
-    2026-11-08?
-- **Q2. Mismatch handling.** On a mismatch between the process's registry and the transaction's `__currentModules`:
-  - always an explicit error (decision 3 as written); or
-  - rebuild automatically when every module of the new list is importable and allowed, and raise only otherwise.
-- **Q3. `_super` identity.** Is it acceptable that `self` inside a method is a view equal to `o` but not `o`
-  (section 6)?
-- **Q4. Callable data defaults.** May an extension define a non-method callable, such as a computed default, which
-  resolves as a callable? Or must every callable be a method bound to the receiver?
-- **Q5. Names.** The names `__catalog`, `install_module`, `parents` and `with_parents` are proposals.
-- **Q6. How a registry name gets parents.** C3 needs each node's parents, and `extends("crm.Opportunity")` names a
-  single registry name. Two candidates:
-  - (a) An extension may declare parents, `extends("crm.Lead", parents=("mail.Thread",))`, as Odoo's multiple
-    `_inherit` does. A name's parents are then the union in load order (*proposal*).
-  - (b) The parents of the name's catalog class object.
+- **Q1, catalog before the registry.** The catalog class object is an ordinary node that comes before its registry
+  name, and the registry is searched last (section 5).
+- **Q2, a mismatch is an error.** A transaction whose `__currentModules` differs from the list the process's
+  registry was built from raises an explicit error. There is no automatic rebuild (section 8, decision 3).
+- **Q3, `self is o`.** `_super` finds its position from the running method's code object; there is no receiver
+  view (section 6).
+- **Q4, only methods.** There are no computation rules. A computed value is a method (sections 5 and 6).
+- **Q5, the names are accepted:** `__catalog`, `install_module`, `parents`, `with_parents`.
+- **Q6, parents.**
+  - A registry name's parents are declared by its extensions: `extends("crm.Lead", parents=("mail.Thread",))`, the
+    union in load order.
+  - An object's parents are other `DBObject`s or strings, which are keys of the registry.
+- **Writes never climb the parents (maintainer, 2026-11-14).** Every write goes to the object itself (section 5).
 
-  Under (a), the catalog class object is a node right after its own name's chain and before that name's parents, so
-  it appears once.
-- **Q7. The purpose of `__currentSymbols`.** Under option c2 a symbol is fully identified by `{"@sym": name}`, so the
-  table no longer serves identity. Keep it as an enumerable catalog for tooling and protoBaseST, which costs a scan
-  of the written values at commit to add every new symbol? Or drop it? A reader would never depend on the table to
-  resolve a symbol either way.
+Open:
+- **Q7. Do we need `__currentSymbols` and `@sym` at all?**
+  - With Q6 and with attribute names written as today, the registry stores no symbol value. Attribute names are
+    strings in key position, and registry names are strings in the parents tuple.
+  - The table would therefore hold nothing that any read needs.
+  - The remaining use is the 2026-11-08 idea of symbols as a value kind the developer chooses over strings. In
+    memory, comparison by identity is faster. On disk, `{"@sym": name}` costs the same bytes as the name or more,
+    and it shares nothing.
+  - Proposal: drop `__currentSymbols`. Keep `@sym` as a value kind only if the developer-facing choice between
+    symbols and strings is still wanted. Otherwise defer it, and the registry needs no symbol feature in the format.
 
 ## 14. Calls made after the builder check (proposals, for review)
 
@@ -336,9 +352,8 @@ protoBaseST reads and writes the same roots, symbols and the `"p"` field of `DBO
 7. **Equality and cache keys.** A `DBObject` is an immutable atom compared by `oid` (D10), not by content. The
    `_super` view copies that.
    - The linearization cache uses one of two keys:
-     - **parent tuples of saved atoms only:** keyed by the parents' pointers, process-wide;
-     - **any parent unsaved, or any `MutableObject` parent:** keyed by the tuple object for the life of one
-       transaction, because a mutable parent's current value can change between transactions.
+     - **parent tuples of saved atoms and strings:** keyed by the parents' pointers and names, process-wide;
+     - **any parent unsaved:** keyed by the tuple object for the life of one transaction.
 8. **Dependencies.** At load time the code's `depends` wins. The dependencies persisted in `__currentModules` are a
    record of the install. A dependency the code declares that the list lacks is installed by the next
    `install_module`. Opening the database raises `ProtoNotSupportedError` until then. `install_module` imports the
