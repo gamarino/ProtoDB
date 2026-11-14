@@ -661,13 +661,19 @@ def _records(path: Path) -> list:
         if kind == fmt.RecordKind.ATOM:
             p = msgpack.unpackb(payload, raw=False)
             state = codec.decode_state(p["s"], stub)
+            parents = codec.decode_value(p["p"], stub) if "p" in p else None
             try:
-                again = _pack({"t": p["t"], "oid": p["oid"], "s": codec.encode_state(state, saved_pointer)})
+                envelope = {"t": p["t"], "oid": p["oid"], "s": codec.encode_state(state, saved_pointer)}
+                if parents is not None:
+                    envelope["p"] = codec.encode_value(parents, saved_pointer)
+                again = _pack(envelope)
             except ProtoValidationError:          # a format-3 map key form: read, never written again
                 again = None
             entry.update({"tag": p["t"], "type": type_name_of(p["t"]), "oid": p["oid"].hex(),
-                          "state": [[k, typed.describe(v)] for k, v in state.items()],
-                          "canonical": again == payload, "rewritable": again is not None})
+                          "state": [[k, typed.describe(v)] for k, v in state.items()]})
+            if parents is not None:
+                entry["parents"] = [typed.describe(v) for v in parents]
+            entry.update({"canonical": again == payload, "rewritable": again is not None})
         out.append(entry)
         pos += size
     return out
@@ -678,9 +684,11 @@ def gen_database(manifest):
         manifest["database"] = _write_space("database", [_fill_first, _fill_second])
 
 
-def _write_space(directory: str, fills: list) -> dict:
+def _write_space(directory: str, fills: list, segments_expected: int = 1) -> dict:
     """A file-storage space under ``vectors/<directory>`` holding the database ``db`` written by
-    ``fills`` (one transaction each), and its manifest entry."""
+    ``fills`` (one transaction each), and its manifest entry.  A space of one segment is listed
+    by ``segment``, ``format`` and ``records``; a space of several by ``segments``, a list of
+    those three, in the order they were written (by format version, then name)."""
     target = VECTORS / directory
     shutil.rmtree(target, ignore_errors=True)
     space = ObjectSpace(FileStorage(str(target)))
@@ -691,18 +699,23 @@ def _write_space(directory: str, fills: list) -> dict:
     for name in os.listdir(target):
         if not (name == "space.root" or name.endswith(".seg")):
             os.remove(target / name)                 # the lock file: no data
-    segments = sorted(n for n in os.listdir(target) if n.endswith(".seg"))
-    assert len(segments) == 1, segments
+    def version(name):
+        return int.from_bytes((target / name).read_bytes()[8:10], "little")
+    segments = sorted((n for n in os.listdir(target) if n.endswith(".seg")), key=lambda n: (version(n), n))
+    assert len(segments) == segments_expected, segments
     root = fmt.decode_root((target / "space.root").read_bytes())
-    return {
-        "dir": directory,
-        "segment": segments[0],
-        "format": int.from_bytes((target / segments[0]).read_bytes()[8:10], "little"),
-        "root": {"version": int(msgpack.unpackb((target / "space.root").read_bytes()[4:])["version"]),
-                 "segment": root.segment.hex, "offset": root.offset, "epoch": root.epoch},
-        "records": _records(target / segments[0]),
-        "contents": _contents(target),
-    }
+    listed = [{"segment": name, "format": version(name), "records": _records(target / name)} for name in segments]
+    entry = {"dir": directory}
+    if segments_expected == 1:
+        entry.update(segment=listed[0]["segment"], format=listed[0]["format"])
+    else:
+        entry["segments"] = listed
+    entry["root"] = {"version": int(msgpack.unpackb((target / "space.root").read_bytes()[4:])["version"]),
+                     "segment": root.segment.hex, "offset": root.offset, "epoch": root.epoch}
+    if segments_expected == 1:
+        entry["records"] = listed[0]["records"]
+    entry["contents"] = _contents(target)
+    return entry
 
 
 # -- a database as format 3 wrote it ------------------------------------------------------------
@@ -888,6 +901,31 @@ def gen_polyglot_database(manifest):
     entry["opaque_type"] = OPAQUE_TYPE
     entry["opaque_alias"] = OPAQUE_ALIAS
     manifest["polyglot_database"] = entry
+
+
+#: The registry name the parents vector names as a parent (a plain string, spec Q6).
+PARENTS_NAME = "acme.sales.Order"
+
+
+def _fill_parents_first(tx):
+    tx.set_root_object("base", DBObject(kind="base", rate=Decimal("0.21")))
+
+
+def _fill_parents_second(tx):
+    """Records with parents: a saved parent, an unsaved one (saved with its child, once) and a
+    registry name; and a record whose only parent is a registry name."""
+    mixin = DBObject(kind="mixin")
+    tx.set_root_object("order", DBObject(parents=(tx.get_root_object("base"), mixin, PARENTS_NAME), number=7))
+    tx.set_root_object("named", DBObject(parents=(PARENTS_NAME,), number=8))
+
+
+def gen_parents_database(manifest):
+    """A space using the format-5 feature ``parents``: its first segment is format 4 (records
+    without parents), and the first record with parents opens a format-5 segment (R151)."""
+    with _Deterministic(0x5000):
+        entry = _write_space("parents", [_fill_parents_first, _fill_parents_second], segments_expected=2)
+    entry["registry_name"] = PARENTS_NAME
+    manifest["parents_database"] = entry
 
 
 def gen_legacy_database(manifest):
@@ -1180,6 +1218,7 @@ def main():
     gen_database(manifest)
     gen_legacy_database(manifest)
     gen_polyglot_database(manifest)
+    gen_parents_database(manifest)
     gen_cluster(manifest)
     MANIFEST.write_text(json.dumps(manifest, indent=1, ensure_ascii=False) + "\n")
     PINS.write_text(pin_lines())

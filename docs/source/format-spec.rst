@@ -134,7 +134,7 @@ that version and its own, so a root over format-5 data is format 5 whichever nod
 **The pinned vectors.** ``tests/conformance/vectors.sha256`` lists the SHA-256 of every file
 under ``tests/conformance/vectors/`` (``<hex digest>  <path>``, one line per file, sorted by path
 in code point order, ``/`` as the separator), then the digest of ``manifest.json``. The SHA-256
-of that list file is ``f9eba972a6b1926ef38f52827870607ca6fd00a8c90602111071f5542e1927c3``. ``test_conformance.py`` checks that the committed files
+of that list file is ``2d5103f03c637a4038ed90652b350dd4784fa2582dda2885f9d151cf1c5fc5b0``. ``test_conformance.py`` checks that the committed files
 match the list and that this page states the list's digest. Each vector file is governed by
 the number that covers what it holds: ``vectors/cluster/*.log`` by ``LOG_FORMAT_VERSION``,
 ``vectors/cluster/messages/`` by ``PROTOCOL_VERSION``, every other file by ``FORMAT_VERSION``.
@@ -169,6 +169,8 @@ The per-database class registry
     registry specification identifies its roots by name **and** by the type of their value, and
     a reader of the registry's version refuses a ``__`` root whose value is not of the
     registry's type (``ProtoCorruptionError``) rather than reading it as registry state.
+    Its first part is implemented: an object's parents, the atom envelope key ``p`` (the
+    format-5 feature ``parents``, `Atom records`_).
 
 Conventions
 -----------
@@ -386,6 +388,11 @@ order::
 
     {"t": <type tag>, "oid": <16 bytes>, "s": <state map>}
 
+or, for an object that has parents (the feature ``parents``, format version 5), with exactly
+four keys, written in this order::
+
+    {"t": <type tag>, "oid": <16 bytes>, "s": <state map>, "p": <parents>}
+
 ``t``
     The **type tag**: an integer alias of a built-in type (the table below) or the type name as
     a string. A reader maps the tag to a type name; an unknown alias or a non-integer,
@@ -402,6 +409,24 @@ order::
     the order in which the object's attributes were set (which differs, for example, between
     an empty collection and a later version of it). Writers that want byte equality with
     ``proto_db`` reproduce the order shown by the vectors.
+
+``p``
+    The object's **parents** (format version 5, feature ``parents``), in order: a ``@tup``
+    value (`Canonical values`_) of at least one item. Each item is either a reference to a
+    record of ``proto_db.core.dbobject.DBObject`` or of an application subtype of it (an
+    ``@ref``, like any nested atom; a writer saves an unsaved parent before its child, once),
+    or a **registry name**: a non-empty string, written as a plain msgpack string. No other
+    kind of item is a parent. A writer writes ``p`` only for an object that has parents: an
+    object without parents writes the three-key payload, byte for byte as format 4, so its
+    record keeps version 4. Only a ``DBObject`` record (or a record of a type the reader has no
+    class for, `Atoms of unknown types (D59)`_, whose parents a reader keeps) may carry ``p``:
+    on a record of any other built-in type it is ``ProtoCorruptionError``, and so is a ``p``
+    that is not a non-empty tuple of those items. A record that has ``p`` is of version 5, so
+    it lands in a segment of version 5 or later (`Format stability`_). An object may not be its
+    own parent; ``proto_db`` refuses to write one whose parent has its ``oid``
+    (``ProtoValidationError``). What a parent means for reading an attribute (resolution along
+    the parents) is behaviour, not format: it is specified by the runtime registry, and a
+    reader that only reads data needs none of it.
 
 A payload with other keys, or whose ``t`` names another type than the one the reference was
 made with, is ``ProtoCorruptionError``.
@@ -420,7 +445,9 @@ later release may be absent from its older records (it reads as nil).
 every implementation of it, and a type's *behaviour names* are reserved: a persisted attribute
 MUST NOT carry one.
 
-- ``proto_db.core.dbobject.DBObject`` reserves ``with_`` and ``has_defined_attr``.
+- ``proto_db.core.dbobject.DBObject`` reserves ``with_``, ``has_defined_attr``, ``parents`` and
+  ``with_parents`` (the last two from format version 5: an object's parents are the envelope
+  key ``p``, never an attribute).
 - An application type reserves the names of the methods and properties its class defines in
   each implementation that defines it, **except accessors**. An accessor of an attribute is a
   method named like the attribute that only returns its stored value, or only stores a new
@@ -1876,8 +1903,9 @@ Known gaps
 
 None of these breaks a round trip between conforming implementations.
 
-- **Symbols** (``@sym``) and the class registry are decided but not implemented: an
-  implementation cannot store symbols yet without breaking the round trip. Both are additive
+- **Symbols** (``@sym``) and the class registry are decided but not implemented, apart from an
+  object's parents (`Atom records`_): an implementation cannot store symbols yet without
+  breaking the round trip. Both are additive
   and land with ``FORMAT_VERSION`` 5 (`Format stability`_).
 - **Format-3 zone datetimes need a tz database** (what remains of B3). Format-4 data never does
   for its keys, hashes or tokens (an ``["instant", key]`` value holds its UTC instant), only to
@@ -1949,7 +1977,11 @@ JSON description of what every file means, in a language-neutral notation), the 
   and an older record of that type whose ``t`` is its previous name ``polyglot.st.SalesOrder``,
   referenced under the declared name.
   The test changes the referencing record and checks that the opaque record is kept byte for
-  byte and still reachable at its pointer.
+  byte and still reachable at its pointer;
+- a ``parents`` space using the format-5 feature ``parents``: a format-4 segment, then the
+  format-5 segment opened by the first record with parents, holding a record whose parents are
+  a saved record, a record saved in the same commit and a registry name, and a record whose
+  only parent is a registry name; its root record is version 5.
 
 ``tests/conformance/vectors.sha256`` pins the vector files (`Format stability`_).
 

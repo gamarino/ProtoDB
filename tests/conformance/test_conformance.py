@@ -243,14 +243,20 @@ def _check_segment(rel: str, records: list) -> None:
         size = fmt.record_size(data[pos:pos + fmt.RECORD_HEADER_SIZE])
         assert (int(kind), size) == (entry["kind"], entry["size"])
         envelope = msgpack.unpackb(payload, raw=False)
-        assert list(envelope) == ["t", "oid", "s"]
+        # The parents (format 5, feature "parents") are the envelope key "p", after "s".
+        assert list(envelope) == ["t", "oid", "s"] + (["p"] if "parents" in entry else [])
         assert envelope["t"] == entry["tag"] and type_name_of(entry["tag"]) == entry["type"]
         assert envelope["oid"].hex() == entry["oid"]
         state = codec.decode_state(envelope["s"], stub)
         assert [[k, typed.describe(v)] for k, v in state.items()] == entry["state"]
+        parents = codec.decode_value(envelope["p"], stub) if "p" in envelope else None
+        if parents is not None:
+            assert type(parents) is tuple and [typed.describe(v) for v in parents] == entry["parents"]
         if entry["rewritable"]:
-            again = _pack({"t": envelope["t"], "oid": envelope["oid"],
-                           "s": codec.encode_state(state, saved_pointer)})
+            written = {"t": envelope["t"], "oid": envelope["oid"], "s": codec.encode_state(state, saved_pointer)}
+            if parents is not None:
+                written["p"] = codec.encode_value(parents, saved_pointer)
+            again = _pack(written)
             # Records of the current format re-encode byte for byte; a legacy record (an alias, a
             # format-3 zone datetime or token) decodes to the listed state and re-encodes canonically.
             assert (again == payload) is entry["canonical"]
@@ -272,6 +278,45 @@ def test_database_segment(name):
         assert all(r["canonical"] for r in db["records"])
     else:
         assert not all(r["rewritable"] for r in db["records"])      # the format-3 maps are there
+
+
+def test_parents_database_segments():
+    """A format-4 segment, then the format-5 segment the first record with parents opened (R151)."""
+    db = MANIFEST["parents_database"]
+    assert [s["format"] for s in db["segments"]] == [4, 5]
+    for segment in db["segments"]:
+        _check_segment(f"{db['dir']}/{segment['segment']}", segment["records"])
+        assert int.from_bytes(_bytes(f"{db['dir']}/{segment['segment']}")[8:10], "little") == segment["format"]
+        assert all(r["canonical"] for r in segment["records"])
+    first, second = db["segments"]
+    assert not any("parents" in r for r in first["records"])
+    assert "parents" in second["records"][[r["offset"] for r in second["records"]].index(26)]
+    with_parents = [r for r in second["records"] if "parents" in r]
+    name = {"str": db["registry_name"]}
+    assert [r["parents"][-1] for r in with_parents] == [name, name]
+    assert sorted(len(r["parents"]) for r in with_parents) == [1, 3]
+    root = fmt.decode_root(_bytes(f"{db['dir']}/space.root"))
+    assert root.version == 5 and db["root"]["version"] == 5
+    assert fmt.encode_root(root) == _bytes(f"{db['dir']}/space.root")
+
+
+def test_parents_database_contents_through_the_public_api(tmp_path):
+    db = MANIFEST["parents_database"]
+    work = tmp_path / "db"
+    shutil.copytree(HERE / "vectors" / db["dir"], work)
+    space = ObjectSpace(FileStorage(str(work)))
+    try:
+        assert space.open_database("db").run(describe_database) == db["contents"]
+
+        def check(tx):
+            order = tx.get_root_object("order")
+            base, mixin, name = order.parents
+            assert base == tx.get_root_object("base") and base.kind == "base"
+            assert mixin.kind == "mixin" and name == db["registry_name"] and order.number == 7
+            assert tx.get_root_object("named").parents == (db["registry_name"],)
+        space.open_database("db").run(check)
+    finally:
+        space.close()
 
 
 def test_every_persistable_builtin_type_appears():

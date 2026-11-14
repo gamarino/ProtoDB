@@ -7,6 +7,14 @@ absent attribute.  A DBObject cannot be modified: :meth:`DBObject.with_`
 returns a new version, which is a distinct atom with a new ``oid``
 (assigned lazily, D21).
 
+A DBObject may have **parents** (runtime registry, spec section 4): an ordered tuple whose items
+are other DBObjects or registry names (non-empty ``str``), given as ``DBObject(parents=(...))``
+and read as :attr:`DBObject.parents`.  :meth:`DBObject.with_` keeps them and
+:meth:`DBObject.with_parents` returns a version with others.  They are persisted in the record's
+envelope key ``"p"`` (the format-5 feature ``parents``); a DBObject without parents writes the
+format-4 record, byte for byte.  ``parents`` and ``with_parents`` are therefore not attribute
+names.
+
 ``list`` and ``dict`` values are stored as ``FrozenList`` and ``FrozenDict``
 (by :func:`proto_db.values.canonical`, D25): attempts to mutate them raise
 ``ProtoValidationError``; use ``.copy()`` to get a mutable copy.
@@ -23,6 +31,8 @@ from ..values import MutableObject, canonical, check_text
 from .atom import _ABSENT, RESERVED_NAMES, Atom, PersistenceContext, _check_context, class_defines
 
 __all__ = ["DBObject", "MutableObject"]
+
+_osa = object.__setattr__
 
 
 def _check_name(cls, name) -> None:
@@ -42,27 +52,51 @@ _SHADOW_RULE = ("the class defines an attribute of that name (a method, a proper
                 "accessor is refused too")
 
 
-class DBObject(Atom):
-    """Immutable record of named canonical values.
+def _checked_parents(parents) -> tuple:
+    """``parents`` as a tuple, each item validated: a DBObject (or an opaque atom read from
+    storage, another implementation's type) or a non-empty ``str`` that :func:`check_text`
+    accepts.  Anything else is ``ProtoValidationError``."""
+    if not isinstance(parents, (tuple, list)):
+        raise ProtoValidationError(
+            f"parents must be a tuple of DBObjects and registry names (non-empty str), "
+            f"not {type(parents).__name__}")
+    for parent in parents:
+        if type(parent) is str:
+            if not parent:
+                raise ProtoValidationError("A parent registry name must be a non-empty str")
+            check_text(parent)
+        elif not (isinstance(parent, Atom) and type(parent)._parented):
+            raise ProtoValidationError(
+                f"A parent must be a DBObject or a registry name (a non-empty str), not "
+                f"{type(parent).__name__}")
+    return tuple(parents)
 
-    ``DBObject(context=None, **attributes)``.  Attribute names must not start
+
+class DBObject(Atom):
+    """Immutable record of named canonical values, with optional parents.
+
+    ``DBObject(context=None, parents=(), **attributes)``.  Attribute names must not start
     with an underscore, be one of ``oid``, ``atom_pointer``, ``context``, nor
-    name an attribute of the class (``with_``, ``has_defined_attr``, or a
-    subclass method or property).
+    name an attribute of the class (``parents``, ``with_``, ``with_parents``,
+    ``has_defined_attr``, or a subclass method or property).
+    ``parents`` is a tuple (or list) of DBObjects and registry names (non-empty ``str``).
     Values are validated and normalised with :func:`proto_db.values.canonical`.
     Equality and hashing follow the ``oid`` (D10): two versions with the same
     content are different atoms.
     """
 
     __type_name__ = "proto_db.core.dbobject.DBObject"
+    _parented = True
 
-    def __init__(self, *, context: PersistenceContext | None = None, **attributes):
+    def __init__(self, *, context: PersistenceContext | None = None, parents=(), **attributes):
         super().__init__(context=context)
         self._install(attributes)
+        self._install_parents(parents)
 
     @classmethod
-    def _from_state(cls, state: dict, context: PersistenceContext | None) -> "DBObject":
-        """Protected constructor: a new unsaved atom of ``cls`` with ``state``, bypassing ``__init__``."""
+    def _from_state(cls, state: dict, context: PersistenceContext | None, parents=()) -> "DBObject":
+        """Protected constructor: a new unsaved atom of ``cls`` with ``state`` and ``parents``,
+        bypassing ``__init__``."""
         _check_context(context)
         obj = object.__new__(cls)
         osa = object.__setattr__
@@ -70,7 +104,23 @@ class DBObject(Atom):
         osa(obj, "atom_pointer", None)
         osa(obj, "context", context)
         obj._install(state)
+        obj._install_parents(parents)
         return obj
+
+    def _install_parents(self, parents) -> None:
+        """Validate ``parents`` and keep them as ``_parents``; none are kept for an empty tuple,
+        so a DBObject without parents has exactly the attributes it had before parents existed."""
+        if type(parents) is tuple and not parents:
+            return
+        checked = _checked_parents(parents)
+        if checked:
+            _osa(self, "_parents", checked)
+
+    @property
+    def parents(self) -> tuple:
+        """The parents of this object, in order: DBObjects and registry names (``()`` for none)."""
+        found = self._probe("_parents")
+        return () if found is _ABSENT else found
 
     def _install(self, attributes: dict) -> None:
         values = {}
@@ -103,7 +153,12 @@ class DBObject(Atom):
         """
         state = self._state()
         state.update(changes)
-        return type(self)._from_state(state, self.context)
+        return type(self)._from_state(state, self.context, self.parents)
+
+    def with_parents(self, *parents) -> "DBObject":
+        """Return a new version with the same attributes and ``parents`` instead of this one's
+        (none when called without arguments): a new atom with a new ``oid``, not saved."""
+        return type(self)._from_state(self._state(), self.context, parents)
 
     def __setattr__(self, name, value):
         if name.startswith("_"):
@@ -120,6 +175,9 @@ class DBObject(Atom):
     def __repr__(self):
         if not self._loaded_now():
             return super().__repr__()
-        fields = ", ".join(f"{k}={v!r}" for k, v in self._state().items())
-        return f"{type(self).__name__}({fields})"
+        fields = [f"{k}={v!r}" for k, v in self._state().items()]
+        parents = self.parents
+        if parents:
+            fields.insert(0, f"parents={parents!r}")
+        return f"{type(self).__name__}({', '.join(fields)})"
 

@@ -9,7 +9,8 @@ The verifier opens the space read-only (it never publishes a root), then:
 1. reads and checks the root record;
 2. decodes every atom reachable from the space root, depth first: the space root, every
    database root and every older version it links to, every collection with its tree nodes and
-   indexes, every record. Each atom is decoded once (by pointer). An atom of a type this process
+   indexes, every record and every parent of a record (the envelope key ``"p"``). Each atom is
+   decoded once (by pointer). An atom of a type this process
    has no class for is read as an opaque atom (D59) and listed under ``opaque_types``;
 3. checks that every record in a segment of the current write version or later is in its canonical
    encoding: re-encoding the decoded record (keeping the writer's attribute order, which is
@@ -43,7 +44,7 @@ import msgpack
 
 from ..collections.base import IndexedCollection
 from ..core import codec
-from ..core.atom import BUILTIN_TYPE_ALIASES, Atom, OpaqueAtom, type_name_of, type_tag
+from ..core.atom import _ABSENT, BUILTIN_TYPE_ALIASES, Atom, OpaqueAtom, type_name_of, type_tag
 from ..storage import format as fmt
 from ..storage.file import FileStorage
 from ..transactions import ObjectSpace, _SpaceContext
@@ -123,12 +124,17 @@ def _non_canonical(storage, context, ptr) -> str:
     state = codec.decode_state(raw["s"], context.load)
     encoded = codec.encode_state(state, lambda a: a.atom_pointer)
     stored_refs, written_refs = _ref_bodies(raw["s"], []), _ref_bodies(encoded, [])
+    if "p" in raw:                                 # the parents (format 5): written after "s"
+        parents = codec.encode_value(codec.decode_value(raw["p"], context.load), lambda a: a.atom_pointer)
+        stored_refs, written_refs = _ref_bodies(raw["p"], stored_refs), _ref_bodies(parents, written_refs)
     if len(stored_refs) == len(written_refs):
         for stored, written in zip(stored_refs, written_refs):
             if len(stored) == 3 and len(written) == 3:
                 written[2] = _as_stored(stored[2], written[2])
-    again = msgpack.packb({"t": _as_stored(raw["t"], type_tag(type_name_of(raw["t"]))), "oid": raw["oid"],
-                           "s": encoded}, use_bin_type=True)
+    envelope = {"t": _as_stored(raw["t"], type_tag(type_name_of(raw["t"]))), "oid": raw["oid"], "s": encoded}
+    if "p" in raw:
+        envelope["p"] = parents
+    again = msgpack.packb(envelope, use_bin_type=True)
     if again == bytes(payload):
         return ""
     at = next((i for i, (a, b) in enumerate(zip(again, payload)) if a != b), min(len(again), len(payload)))
@@ -203,6 +209,10 @@ def verify(directory: str) -> tuple[dict, list[str]]:
             children: list = []
             for value in state.values():
                 _children(value, children)
+            if type(atom)._parented:
+                parents = atom._probe("_parents")   # loaded above: no further read
+                if parents is not _ABSENT:
+                    _children(parents, children)
             stack.extend(reversed(children))
         report["opaque_types"] = sorted(opaque)
         try:

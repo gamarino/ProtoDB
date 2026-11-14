@@ -46,7 +46,10 @@ Saving
     (through ``context.save``, with no stripe held), then, under the atom's
     stripe, the atom's own payload
     ``{"t": type_tag, "oid": oid_bytes, "s": encoded_state}`` is pushed to
-    ``context.storage`` unless another thread published a pointer first.
+    ``context.storage`` unless another thread published a pointer first.  An atom with parents
+    (``DBObject``) adds ``"p"``, its encoded parents tuple (saved first, like any child), and
+    declares the format feature ``parents`` to ``push_atom``; any other payload is pushed
+    without features, as in format 4.
     Concurrent calls push exactly one payload and return one pointer (racing
     callers may encode the state more than once; only one result is pushed).
     After its push, the call that pushed tells the context through the optional hook
@@ -128,6 +131,14 @@ __all__ = ["AtomPointer", "PersistenceContext", "Atom", "register_atom_class", "
 #: Public attribute names managed by :class:`Atom` itself; never part of the persisted state.
 RESERVED_NAMES = frozenset({"oid", "atom_pointer", "context"})
 
+#: The keys of an atom record's envelope: without parents, and with them (the key ``"p"``, the
+#: format-5 feature ``parents``; only a type whose ``_parented`` is true may carry it).
+_ENVELOPE = frozenset({"t", "oid", "s"})
+_ENVELOPE_WITH_PARENTS = frozenset({"t", "oid", "s", "p"})
+
+#: The format features a record with parents declares to ``push_atom``.
+_PARENTS_FEATURE = frozenset({"parents"})
+
 
 @dataclass(frozen=True)
 class AtomPointer:
@@ -149,7 +160,8 @@ class PersistenceContext(Protocol):
 
     Implemented by transactions (Task 5.1) and by simple direct contexts.
     ``storage`` must offer ``push_atom(payload: dict) -> AtomPointer`` and
-    ``get_atom(ptr: AtomPointer) -> dict``.
+    ``get_atom(ptr: AtomPointer) -> dict``; saving an atom with parents also needs
+    ``push_atom(payload, features=...)`` (``SharedStorage.push_atom``).
 
     Not part of the protocol: a context may define the private hook
     ``_atom_saved(atom, ptr, state)``, which :meth:`Atom._save` calls after each push (the
@@ -571,6 +583,11 @@ class Atom:
     #: Whether this class overrides the hooks that install a loaded state, so that each load
     #: checks they installed exactly the decoded state's keys (:func:`_restore_checked`).
     _custom_restore = False
+    #: Whether this type's records may carry parents (the envelope key ``"p"``, held in memory as
+    #: the private attribute ``_parents``) and its atoms may be named as parents: ``DBObject`` and
+    #: its subclasses, and opaque atoms (types of another implementation).  For any other type a
+    #: record with ``"p"`` is ``ProtoCorruptionError``.
+    _parented = False
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
@@ -854,7 +871,9 @@ class Atom:
                 else:
                     ptr = self.atom_pointer
                     payload = self.context.storage.get_atom(ptr)
-                    if not isinstance(payload, dict) or set(payload) != {"t", "oid", "s"}:
+                    if not isinstance(payload, dict) or not (
+                            payload.keys() == _ENVELOPE
+                            or (payload.keys() == _ENVELOPE_WITH_PARENTS and type(self)._parented)):
                         raise ProtoCorruptionError(f"Malformed atom payload at {ptr}")
                     stored = type_name_of(payload["t"])
                     if stored != type(self).__type_name__ and not self._adopt_stored_type(stored):
@@ -872,6 +891,7 @@ class Atom:
             if missing:
                 raise ProtoCorruptionError(f"Atom at {self.atom_pointer} "
                                            f"({type(self).__type_name__}) lacks the required fields {missing}")
+            parents = _decode_parents(payload["p"], context.load, self.atom_pointer) if "p" in payload else None
             oid = uuid.UUID(bytes=payload["oid"])
             with lock:
                 if self._loaded:
@@ -880,6 +900,9 @@ class Atom:
                     continue                # loaded and unloaded since phase 1: fetch again
                 names = _installed_names(type(self), state)
                 _restore_checked(self, state, names)
+                if parents is not None:
+                    object.__setattr__(self, "_parents", parents)
+                    names += ("_parents",)
                 object.__setattr__(self, "oid", oid)
                 snapshot = {name: getattr(self, name) for name in names}    # installed just above
                 snapshot["oid"] = oid
@@ -1010,19 +1033,37 @@ class Atom:
                     f"Attribute {name!r} of {cls.__type_name__} shadows a class attribute and "
                     f"could not be loaded back lazily")
         encoded = codec.encode_state(state, context.save)
+        parents = self._own_parents() if cls._parented else ()
+        # The parents are saved like any child: before this atom, once (an atom already saved
+        # answers its pointer), and deferred under _save_iteratively like the state's children.
+        encoded_parents = codec.encode_value(parents, context.save) if parents else None
         if getattr(_nesting, "deferred", None):
             return None                     # children to save first (_save_iteratively)
         with _lock_for(self):
             ptr = self.atom_pointer
             if ptr is not None:
                 return ptr
-            payload = {"t": type_tag(cls.__type_name__), "oid": self._oid_locked().bytes, "s": encoded}
-            ptr = context.storage.push_atom(payload)
+            oid = self._oid_locked()
+            payload = {"t": type_tag(cls.__type_name__), "oid": oid.bytes, "s": encoded}
+            if parents:
+                _check_not_own_parent(self, parents, oid)
+                payload["p"] = encoded_parents
+                ptr = context.storage.push_atom(payload, features=_PARENTS_FEATURE)
+            else:
+                ptr = context.storage.push_atom(payload)       # the format-4 record, unchanged
             object.__setattr__(self, "atom_pointer", ptr)
         saved = getattr(context, "_atom_saved", None)
         if saved is not None:
             saved(self, ptr, state)         # no stripe held (lock order rule)
         return ptr
+
+    def _own_parents(self) -> tuple:
+        """The parents of this atom, being saved: an unsaved atom is loaded and never unloaded
+        (an unload needs a pointer), so its attributes are read directly.  ``()`` for none."""
+        try:
+            return _get(self, "_parents")
+        except AttributeError:
+            return ()
 
     def _decoded_twin(self, context: PersistenceContext, ptr: AtomPointer, state: dict,
                       inline: Optional[list] = None) -> "Atom":
@@ -1045,6 +1086,10 @@ class Atom:
         osa(twin, "context", context)
         names = _installed_names(type(twin), decoded)
         _restore_checked(twin, decoded, names)
+        parents = self._own_parents() if type(self)._parented else ()
+        if parents:
+            osa(twin, "_parents", codec.redecode_value(parents, load, inline))
+            names += ("_parents",)
         osa(twin, "oid", self.oid)
         osa(twin, "_loaded", _Generation(names))
         return twin
@@ -1075,6 +1120,53 @@ class Atom:
                 oid = None
             return f"<{type(self).__type_name__} oid={oid}>"
         return f"<{type(self).__type_name__} stub at {self.atom_pointer}>"
+
+
+# -- parents (the envelope key "p", format 5) ------------------------------------------------------
+
+def _decode_parents(raw, load, ptr) -> tuple:
+    """The parents tuple of the record at ``ptr``, decoded from its envelope key ``"p"``.
+
+    It must be a non-empty tuple (a writer writes no ``"p"`` for an atom without parents) whose
+    items are registry names (non-empty strings) or references to atoms of a type that may be a
+    parent (``_parented``); anything else is ``ProtoCorruptionError``."""
+    from . import codec
+    parents = codec.decode_value(raw, load)
+    if type(parents) is not tuple or not parents:
+        raise ProtoCorruptionError(f"Malformed parents in the atom at {ptr}: a non-empty tuple is required")
+    for parent in parents:
+        if type(parent) is str:
+            if parent:
+                continue
+        elif isinstance(parent, Atom) and type(parent)._parented:
+            continue
+        raise ProtoCorruptionError(
+            f"Malformed parent in the atom at {ptr}: a parent is a DBObject reference or a registry name "
+            f"(a non-empty str), not {_describe_parent(parent)}")
+    return parents
+
+
+def _describe_parent(parent) -> str:
+    if isinstance(parent, Atom):
+        return f"an atom of type {type(parent).__type_name__!r}"
+    if type(parent) is str:
+        return "an empty str"
+    return f"a {type(parent).__name__}"
+
+
+def _check_not_own_parent(atom: "Atom", parents: tuple, oid: uuid.UUID) -> None:
+    """``ProtoValidationError`` if one of ``parents`` is ``atom`` itself, by identity or by
+    ``oid`` (a parent whose oid is not resident is a saved record, never loaded for this)."""
+    for parent in parents:
+        if not isinstance(parent, Atom):
+            continue
+        try:
+            same = parent is atom or _get(parent, "oid") == oid
+        except AttributeError:
+            continue
+        if same:
+            raise ProtoValidationError(
+                f"Cannot save {type(atom).__type_name__} {oid}: an object may not be its own parent")
 
 
 # -- saving deep graphs (R128) -----------------------------------------------------------------
@@ -1165,6 +1257,8 @@ class OpaqueAtom(Atom):
     __type_name__ = "proto_db.core.atom.OpaqueAtom"
     #: Never registered, nor its per-name subclasses: no record is ever of this type.
     _opaque_stand_in = True
+    #: Another implementation's record may carry parents; they are kept, never resolved here.
+    _parented = True
 
     def __init__(self, *args, **kwargs):
         raise ProtoNotSupportedError(
