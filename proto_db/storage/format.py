@@ -45,8 +45,9 @@ SEGMENT_MAGIC = b"PDB2SEG\0"
 #: large node values in atoms of their own (D51).  The root record's shape is unchanged.
 #: 4: exact tokens are canonical encodings and indexes persist ``member_tokens``, zone datetimes
 #: are written as their UTC instant, one spelling per value, the map-key rule (D58).
-#: 5: the feature ``parents``, the atom envelope key ``"p"`` (runtime registry, ruling R151).  Data
-#: that does not use it is still written as version 4 (:data:`WRITE_FORMAT_VERSION`).
+#: 5: the feature ``parents``, the atom envelope key ``"p"`` (runtime registry, ruling R151), and the
+#: feature ``registry``, records of the registry's built-in types.  Data that uses neither is still
+#: written as version 4 (:data:`WRITE_FORMAT_VERSION`).
 FORMAT_VERSION = 5
 #: The version written in every segment header and root record: the lowest version sufficient
 #: for what this revision can write.  It differs from :data:`FORMAT_VERSION` (the highest
@@ -56,7 +57,14 @@ FORMAT_VERSION = 5
 WRITE_FORMAT_VERSION = 4
 #: The features added after the freeze, each with the format version that introduced it.
 #: ``parents``: an atom whose envelope has the key ``"p"`` (its parents tuple, runtime registry).
-FEATURE_VERSIONS: dict = {"parents": 5}
+#: ``registry``: a record of one of the runtime registry's built-in types (:data:`REGISTRY_TYPES`).
+FEATURE_VERSIONS: dict = {"parents": 5, "registry": 5}
+
+#: The runtime registry's built-in types (``proto_db.registry``): their type names and their
+#: aliases (``proto_db.core.atom.BUILTIN_TYPE_ALIASES``; a test keeps the two in step).  A record
+#: whose type tag is one of them uses the feature ``registry``.
+REGISTRY_TYPES = {"proto_db.registry.ModuleList": 22, "proto_db.registry.Catalog": 23}
+_REGISTRY_TAGS = frozenset(REGISTRY_TYPES) | frozenset(REGISTRY_TYPES.values())
 
 
 def write_version(features=()) -> int:
@@ -70,7 +78,17 @@ def payload_features(payload: dict) -> frozenset:
     Every feature is detectable from the bytes of the records that use it: a node that rebuilds a
     segment header from replicated records derives the version from the segment's first record
     (:func:`framed_version`), so the version of a record never depends on anything but its bytes."""
-    return frozenset({"parents"}) if "p" in payload else frozenset()
+    tag = payload.get("t")
+    registry = type(tag) in (int, str) and tag in _REGISTRY_TAGS
+    if "p" in payload:
+        return _PARENTS_AND_REGISTRY if registry else _PARENTS
+    return _REGISTRY if registry else _NONE
+
+
+_NONE = frozenset()
+_PARENTS = frozenset({"parents"})
+_REGISTRY = frozenset({"registry"})
+_PARENTS_AND_REGISTRY = _PARENTS | _REGISTRY
 
 
 def atom_version(payload: dict, features=frozenset()) -> int:

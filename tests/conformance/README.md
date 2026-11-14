@@ -19,6 +19,7 @@ ProtoBase's own encoders (`generate.py`) and is checked byte for byte against th
 | `vectors/legacy/` | A format-3 space: a DatabaseRoot without `origin`, a key-group index (tokens of every kind) and a vector index written with format-3 member tokens and plain KeyNode trees, zone datetimes in the wall-clock form, maps with format-3 key forms (zone datetimes, NaNs twice), collections that format 3 misfiled by writing a `(str, Enum)` member through `str()`, an application record and reference spelled by an alias |
 | `vectors/polyglot/` | A format-4 space holding a record of `polyglot.st.Order`, a type no Python class implements (an opaque atom, D59), which references a ProtoBase record and is referenced from a root, plus an older record of that type written as `polyglot.st.SalesOrder` (its previous name) and referenced under the declared name |
 | `vectors/parents/` | A space using the format-5 feature `parents`: a format-4 segment, then the format-5 segment opened by the first record with parents (the envelope key `p`), with records whose parents are records and a registry name (`registry_name`) |
+| `vectors/registry/` | A space using the format-5 feature `registry`: a format-4 segment, then the format-5 segment opened by an install of the module `conformance.sales` and its dependency `conformance.base` (`installed`): the catalog objects of `catalog_names` (records whose only parent is their registry name), the `proto_db.registry.ModuleList` of `__currentModules` and the `proto_db.registry.Catalog` of `__catalog` |
 | `vectors.sha256` | The SHA-256 of every vector file and of `manifest.json`, sorted by path; `format-spec.rst` states this file's own digest |
 | `vectors/cluster/<uuid>.seg` | The segment of one cluster commit: a `SpaceRoot` with its lease term, epoch and predecessor |
 | `vectors/cluster/roots.log` | An acceptor log holding every entry kind (1 to 6), each listed field by field |
@@ -47,7 +48,8 @@ Every description is a JSON object with one key.
 
 **Stored objects** (database contents): `{"object": type, "attrs": [[name, ...], ...]}` (a
 record, attributes sorted by name), `{"opaque": type, "attrs": [...]}` (a record of a type the
-reader has no class for), `{"collection": type, "elements": [...]}` (List, Set) or
+reader has no class for), `{"registry": type, "attrs": [...]}` (a record of one of the runtime
+registry's types: `proto_db.registry.ModuleList`, `proto_db.registry.Catalog`), `{"collection": type, "elements": [...]}` (List, Set) or
 `{"collection": type, "items": [[key or element, value or count], ...]}` (the dictionaries,
 CountedSet), in the collection's iteration order. A record with parents also has `"parents": [...]`, its parents in
 order: records described as stored objects, registry names as `{"str": name}`.
@@ -118,7 +120,14 @@ A reader passes when, for every entry of `manifest.json`:
     (references as `ref`, registry names as `str`), and re-encodes to the same bytes with `p`
     after `s`. The root record is version 5, and the contents list each record's `parents`.
 
-11. `values_depth`: `max_value_depth` is `MAX_VALUE_DEPTH` (1022), the deepest nesting of
+11. `registry_database`: as `parents_database`. The records of `proto_db.registry.ModuleList`
+    (alias 22) and `proto_db.registry.Catalog` (alias 23) use the feature `registry` and so are
+    in the format-5 segment. The root `__currentModules` lists `installed` (each with the
+    dependencies its module declared) in installation order; the root `__catalog` maps each of
+    `catalog_names` to a record whose parents are exactly that name. The contents describe both
+    roots as `registry`, with their fields as `attrs`.
+
+12. `values_depth`: `max_value_depth` is `MAX_VALUE_DEPTH` (1022), the deepest nesting of
     MessagePack containers a value may have (format spec, "Value nesting depth": a list adds 1, a
     `@tup` 2, a `@map` 3, a tag 1, 2 or 3 by the arrays in its body). Each entry describes its
     value as `levels`, `[kind, count]` pairs from the outside in (`list`, `tuple`, `map`: a map

@@ -224,4 +224,4 @@ def test_a_writer_that_reads_a_newer_version_still_writes_the_lowest_sufficient_
     assert root["version"] == 4
     for segment in path.glob("*.seg"):
         assert struct.unpack_from("<8sH", segment.read_bytes())[1] == 4
-    assert fmt.WRITE_FORMAT_VERSION == 4 and fmt.FEATURE_VERSIONS == {"parents": 5}
+    assert fmt.WRITE_FORMAT_VERSION == 4 and fmt.FEATURE_VERSIONS == {"parents": 5, "registry": 5}

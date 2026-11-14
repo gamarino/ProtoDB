@@ -4,9 +4,9 @@ A *value description* is a one-key JSON object naming the value's kind: ``{"int"
 ``{"str": "a"}``, ``{"datetime": [...]}``, ``{"ref": {...}}``... (:func:`describe`).  A database
 is described by :func:`describe_database`: its roots in name order (records as ``object`` with
 their attributes sorted by name and, for a record with parents, its ``parents`` in order,
-collections as ``collection`` with their elements or items in the collection's own order, atoms
-of a type this process has no class for as ``opaque``), its mutables, its indexes and its
-origin.  :mod:`proto_db.tools.verify` prints it; the conformance
+collections as ``collection`` with their elements or items in the collection's own order, the
+runtime registry's roots as ``registry`` with their fields, atoms of a type this process has no
+class for as ``opaque``), its mutables, its indexes and its origin.  :mod:`proto_db.tools.verify` prints it; the conformance
 manifest holds it for the vector spaces.
 """
 from __future__ import annotations
@@ -23,6 +23,7 @@ from ..collections.lists import List
 from ..collections.sets import CountedSet, Set
 from ..core.atom import _ABSENT, Atom, OpaqueAtom
 from ..core.dbobject import DBObject
+from ..registry import Catalog, ModuleList
 from ..values import MISSING, FrozenDict, FrozenList, MutableObject
 
 __all__ = ["describe", "describe_object", "describe_database"]
@@ -125,6 +126,8 @@ def _shape(o) -> tuple:
         return _with_attrs("object", o)
     if isinstance(o, OpaqueAtom):
         return _with_attrs("opaque", o)
+    if isinstance(o, (ModuleList, Catalog)):
+        return _with_attrs("registry", o)
     if isinstance(o, (List, Set)):
         elements = list(o.elements())
         out = [None] * len(elements)

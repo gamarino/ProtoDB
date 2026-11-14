@@ -319,8 +319,50 @@ def test_parents_database_contents_through_the_public_api(tmp_path):
         space.close()
 
 
+def test_registry_database_segments():
+    """A format-4 segment, then the format-5 segment the install's first record opened (R151): the
+    catalog objects (feature ``parents``), the module list and the catalog (feature ``registry``)."""
+    db = MANIFEST["registry_database"]
+    assert [s["format"] for s in db["segments"]] == [4, 5]
+    for segment in db["segments"]:
+        _check_segment(f"{db['dir']}/{segment['segment']}", segment["records"])
+        assert int.from_bytes(_bytes(f"{db['dir']}/{segment['segment']}")[8:10], "little") == segment["format"]
+        assert all(r["canonical"] for r in segment["records"])
+    first, second = db["segments"]
+    registry_types = set(fmt.REGISTRY_TYPES)
+    assert not any(r.get("type") in registry_types or "parents" in r for r in first["records"])
+    assert "parents" in second["records"][0]           # the install's first record opened the segment
+    assert registry_types <= {r.get("type") for r in second["records"]}
+    for record in second["records"]:
+        if record.get("type") in registry_types:
+            assert record["tag"] == fmt.REGISTRY_TYPES[record["type"]] and "parents" not in record
+    catalog_objects = [r for r in second["records"] if "parents" in r]
+    assert sorted(r["parents"][0]["str"] for r in catalog_objects) == db["catalog_names"]
+    root = fmt.decode_root(_bytes(f"{db['dir']}/space.root"))
+    assert root.version == 5 and db["root"]["version"] == 5
+
+
+def test_registry_database_contents_through_the_public_api(tmp_path):
+    from tests.conformance.registry_fixture import MAPPING
+    db = MANIFEST["registry_database"]
+    work = tmp_path / "db"
+    shutil.copytree(HERE / "vectors" / db["dir"], work)
+    space = ObjectSpace(FileStorage(str(work)), modules_mapping=MAPPING)
+    try:
+        assert space.open_database("db").run(describe_database) == db["contents"]
+
+        def check(tx):
+            assert tx.installed_modules() == tuple(db["installed"])
+            for name in db["catalog_names"]:
+                assert tx.catalog_object(name).parents == (name,)
+        space.open_database("db").run(check)
+    finally:
+        space.close()
+
+
 def test_every_persistable_builtin_type_appears():
     seen = {r["type"] for r in MANIFEST["database"]["records"] + MANIFEST["cluster"]["segment"]["records"]}
+    seen |= {r["type"] for r in MANIFEST["registry_database"]["segments"][1]["records"]}
     abstract = {"proto_db.collections.IndexedCollection", "proto_db.collections.sets._HashBuckets",
                 "proto_db.indexing.Index", "proto_db.indexing.keyed.KeyGroupIndex", "proto_db.avl._Node"}
     assert set(BUILTIN_TYPE_ALIASES) - abstract <= seen

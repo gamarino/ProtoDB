@@ -684,14 +684,14 @@ def gen_database(manifest):
         manifest["database"] = _write_space("database", [_fill_first, _fill_second])
 
 
-def _write_space(directory: str, fills: list, segments_expected: int = 1) -> dict:
+def _write_space(directory: str, fills: list, segments_expected: int = 1, **space_kw) -> dict:
     """A file-storage space under ``vectors/<directory>`` holding the database ``db`` written by
     ``fills`` (one transaction each), and its manifest entry.  A space of one segment is listed
     by ``segment``, ``format`` and ``records``; a space of several by ``segments``, a list of
     those three, in the order they were written (by format version, then name)."""
     target = VECTORS / directory
     shutil.rmtree(target, ignore_errors=True)
-    space = ObjectSpace(FileStorage(str(target)))
+    space = ObjectSpace(FileStorage(str(target)), **space_kw)
     db = space.new_database("db")
     for fill in fills:
         db.run(fill)
@@ -926,6 +926,32 @@ def gen_parents_database(manifest):
         entry = _write_space("parents", [_fill_parents_first, _fill_parents_second], segments_expected=2)
     entry["registry_name"] = PARENTS_NAME
     manifest["parents_database"] = entry
+
+
+def _fill_registry_first(tx):
+    tx.set_root_object("plain", DBObject(n=1))
+
+
+def _fill_registry_second(tx):
+    """Install a module and its dependency: the module list, the catalog and its objects."""
+    tx.install_module(REGISTRY_MODULE)
+
+
+#: The module the registry vector installs; it depends on ``conformance.base``.
+REGISTRY_MODULE = "conformance.sales"
+
+
+def gen_registry_database(manifest):
+    """A space using the format-5 feature ``registry``: a format-4 segment, then the format-5
+    segment the install's first record opened (R151): the catalog objects (records with parents),
+    the ``ModuleList`` and the ``Catalog`` (records of the registry's built-in types)."""
+    from tests.conformance.registry_fixture import MAPPING
+    with _Deterministic(0x6000):
+        entry = _write_space("registry", [_fill_registry_first, _fill_registry_second], segments_expected=2,
+                             modules_mapping=MAPPING)
+    entry["installed"] = ["conformance.base", REGISTRY_MODULE]
+    entry["catalog_names"] = ["acme.Partner", "acme.sales.Order"]
+    manifest["registry_database"] = entry
 
 
 def gen_legacy_database(manifest):
@@ -1219,6 +1245,7 @@ def main():
     gen_legacy_database(manifest)
     gen_polyglot_database(manifest)
     gen_parents_database(manifest)
+    gen_registry_database(manifest)
     gen_cluster(manifest)
     MANIFEST.write_text(json.dumps(manifest, indent=1, ensure_ascii=False) + "\n")
     PINS.write_text(pin_lines())

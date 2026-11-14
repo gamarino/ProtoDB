@@ -40,6 +40,16 @@ Merge of roots written but not read (D9, D33)
     replaces instead of replaying this transaction's operations again.  Reading back a root written before it
     was read returns the value as written, not the merged one.
 
+The registry roots (runtime registry)
+    ``install_module`` never writes a root directly: at commit, under the root lock, its
+    modules and catalog objects are merged add-if-absent into ``__currentModules`` and
+    ``__catalog`` as they are in the root current then (:mod:`proto_db.registry`), whatever
+    the snapshot held and without entering the read set, so concurrent installs never
+    conflict.  Every commit path builds its root here (:meth:`Transaction._build_root`): a
+    commit alone, a group-commit round (each build on the root the previous one produced) and
+    a round under the cluster lease (each build on the committed base).  Applications cannot
+    write nor remove a ``__`` root.
+
 Mutable cells (D11, D35)
     The mutable table is a second namespace beside the roots: ``new_mutable``,
     ``get_mutable``, ``set_mutable``, ``remove_mutable`` and ``mutable_names`` mirror
@@ -107,9 +117,11 @@ import random
 import sys
 import threading
 import time
+import types
 import uuid
 import weakref
 from _weakref import _remove_dead_weakref
+from collections.abc import Mapping
 from typing import Any, Callable, Optional
 
 from .collections.base import ConcurrentOptimized, _Immutable
@@ -122,6 +134,7 @@ from .core.dbobject import DBObject, MutableObject
 from .errors import (ProtoClosedError, ProtoConflictError, ProtoCorruptionError, ProtoDBError, ProtoOutcomeUnknownError,
                      ProtoReferenceError, ProtoTimeoutError, ProtoUnexpectedError, ProtoUserError,
                      ProtoValidationError)
+from . import registry as _registry
 from .resolution import new_cache
 from .storage.base import check_lock_timeout
 from .storage.cache import BoundedCache
@@ -159,6 +172,13 @@ def _utc_now() -> datetime.datetime:
     return datetime.datetime.now(datetime.timezone.utc)
 
 
+def _check_not_reserved(name: str) -> None:
+    """Root names starting with ``__`` are reserved for the format (the runtime registry's roots,
+    Task 10.P A1): applications never write nor remove one; the registry writes its own at commit."""
+    if name.startswith("__"):
+        raise ProtoValidationError(f"Root names starting with '__' are reserved for the format, not {name!r}")
+
+
 def _check_name(name, what: str = "root") -> str:
     if not isinstance(name, str) or not name:
         raise ProtoValidationError(f"A {what} name must be a non-empty str, not {name!r}")
@@ -166,6 +186,33 @@ def _check_name(name, what: str = "root") -> str:
         return check_text(name)
     except ProtoValidationError as e:
         raise ProtoValidationError(f"Invalid {what} name {name!r}: {e}") from e
+
+
+def _modules_mapping(mapping) -> Mapping:
+    """``modules_mapping`` checked (a mapping of non-empty ``str`` to non-empty ``str``) and frozen."""
+    if mapping is None:
+        return types.MappingProxyType({})
+    if not isinstance(mapping, Mapping):
+        raise ProtoValidationError(f"modules_mapping must be a mapping, not {type(mapping).__name__}")
+    frozen = dict(mapping)
+    for name, path in frozen.items():
+        if type(name) is not str or not name or type(path) is not str or not path:
+            raise ProtoValidationError(
+                f"modules_mapping maps module names to import paths (non-empty str), not {name!r}: {path!r}")
+    return types.MappingProxyType(frozen)
+
+
+def _modules_allowed(allowed) -> Optional[frozenset]:
+    """``modules_allowed`` checked (``None``, or a collection of non-empty ``str``) and frozen."""
+    if allowed is None:
+        return None
+    if isinstance(allowed, (str, bytes)) or not hasattr(allowed, "__iter__"):
+        raise ProtoValidationError(
+            f"modules_allowed must be a collection of module names, not {type(allowed).__name__}")
+    frozen = frozenset(allowed)
+    if any(type(name) is not str or not name for name in frozen):
+        raise ProtoValidationError("modules_allowed must hold module names (non-empty str)")
+    return frozen
 
 
 # -- root atoms -------------------------------------------------------------------------------
@@ -1551,11 +1598,14 @@ class ObjectSpace:
     """
 
     def __init__(self, storage, *, lock_timeout: Optional[float] = None, coordinator=None,
-                 atom_cache_entries: int = ATOM_CACHE_ENTRIES, query_cache_bytes: int = QUERY_CACHE_BYTES):
+                 atom_cache_entries: int = ATOM_CACHE_ENTRIES, query_cache_bytes: int = QUERY_CACHE_BYTES,
+                 modules_mapping: Optional[Mapping] = None, modules_allowed=None):
         if lock_timeout is not None:
             check_lock_timeout(lock_timeout)
         if type(atom_cache_entries) is not int or atom_cache_entries < 0:
             raise ProtoValidationError("atom_cache_entries must be a non-negative int")
+        self._modules_mapping = _modules_mapping(modules_mapping)
+        self._modules_allowed = _modules_allowed(modules_allowed)
         self._storage = storage
         self._atoms = _AtomCache(storage, atom_cache_entries) if atom_cache_entries else None
         self._query_cache = QueryCache(query_cache_bytes, self._space_load)
@@ -1608,6 +1658,17 @@ class ObjectSpace:
     def lock_timeout(self) -> Optional[float]:
         """Seconds a commit waits for the root lock (``None``: the storage default)."""
         return self._lock_timeout
+
+    @property
+    def modules_mapping(self) -> Mapping:
+        """The runtime's mapping from registry module name to Python import path (read-only; a
+        name it lacks is imported under its own name, spec section 7)."""
+        return self._modules_mapping
+
+    @property
+    def modules_allowed(self) -> Optional[frozenset]:
+        """The registry modules this runtime may install and load, or ``None`` for any (decision 6)."""
+        return self._modules_allowed
 
     @property
     def coordinator(self):
@@ -1986,6 +2047,14 @@ class Transaction:
         self._mreads: dict = {}         # mutable name -> token (or ABSENT) seen in the snapshot
         self._mwrites: dict = {}        # mutable name -> value or REMOVED
         self._mexpected: set = set()    # mutables set blindly: must still exist at commit
+        # The runtime registry (proto_db.registry): modules to add at commit (name -> depends, in
+        # install order), catalog objects to add (registry name -> DBObject), the names whose new
+        # catalog object was handed to the application, and the module list the installs were
+        # validated against (the snapshot's list with the additions).
+        self._installs: dict = {}
+        self._catalog_new: dict = {}
+        self._catalog_given: set = set()
+        self._validated_modules: Optional[tuple] = None
         record = database.space._snapshot_record()
         self._epoch = record.epoch if record is not None else 0
         self._snapshot_pointer = record.pointer if record is not None else None
@@ -2089,10 +2158,7 @@ class Transaction:
         being written is never merged: a concurrent change to it is a conflict.
         """
         _check_name(name)
-        if name.startswith("__"):
-            # Reserved for additive extensions of the format (the runtime registry's
-            # __currentModules and __currentSymbols, Task 10.P A1): never written by applications.
-            raise ProtoValidationError(f"Root names starting with '__' are reserved for the format, not {name!r}")
+        _check_not_reserved(name)
         if not isinstance(replace, bool):
             raise ProtoValidationError("replace must be a bool")
         value = canonical_for(value, f"Root {name!r}")
@@ -2105,6 +2171,7 @@ class Transaction:
     def remove_root_object(self, name: str) -> None:
         """Remove root ``name`` at commit (a no-op if it is absent then); a later set of it replaces."""
         _check_name(name)
+        _check_not_reserved(name)
         with self._lock:
             self._check_active()
             self._writes[name] = _REMOVED
@@ -2215,6 +2282,89 @@ class Transaction:
                     names.add(name)
             return sorted(names)
 
+    # -- the runtime registry ----------------------------------------------------------------
+
+    def install_module(self, name: str) -> None:
+        """Install the registry module ``name`` at commit, with the dependencies the list lacks.
+
+        The module is imported to learn its ``depends`` (and so are its dependencies); the
+        modules the list lacks are added, dependencies first, and a catalog object is made for
+        each registry name their extensions introduce that has none.  The resulting list must
+        build a registry (:meth:`proto_db.registry.Registry.build`).  A module outside the
+        runtime's ``modules_allowed`` or a dependency cycle raises ``ProtoValidationError``, a
+        module that cannot be imported ``ProtoNotSupportedError``; nothing of a refused install
+        stays pending.  Installing an installed module adds only what it lacks (idempotent).  At
+        commit the list and the catalog merge add-if-absent against the current root (see
+        :mod:`proto_db.registry`): a concurrent install is never a conflict.  Installing is
+        permanent; there is no uninstall.
+        """
+        with self._lock:
+            self._check_active()
+            space = self._database.space
+            mapping, allowed = space.modules_mapping, space.modules_allowed
+            installed = self._installed_names()
+            additions, introduced = _registry.install_plan(name, installed, mapping, allowed)
+            candidate = installed + tuple(module for module, _ in additions)
+            if additions:
+                _registry.Registry.build(candidate, mapping=mapping, allowed=allowed)
+            catalog = _registry.registry_root(self._objects, _registry.CATALOG_ROOT, _registry.Catalog)
+            missing = [rn for rn in introduced
+                       if rn not in self._catalog_new and (catalog is None or catalog.get(rn) is None)]
+            # Validated: from here nothing raises, so a refused install leaves nothing pending.
+            for module, depends in additions:
+                self._installs[module] = depends
+            for rn in missing:
+                self._catalog_new[rn] = DBObject(context=self, parents=(rn,))
+            if additions:
+                self._validated_modules = candidate
+
+    def installed_modules(self) -> tuple:
+        """The installed module names, in installation order, as this transaction sees them (its
+        own installs last).  Not recorded in the read set."""
+        with self._lock:
+            self._check_active()
+            return self._installed_names()
+
+    def _installed_names(self) -> tuple:
+        listed = _registry.registry_root(self._objects, _registry.MODULES_ROOT, _registry.ModuleList)
+        return (listed.names() if listed is not None else ()) + tuple(self._installs)
+
+    def catalog_object(self, registry_name: str) -> Optional[DBObject]:
+        """The catalog object of ``registry_name`` as this transaction sees it, or ``None``.  Not
+        recorded in the read set: a catalog entry, once committed, is never replaced.  A catalog
+        object this transaction's own install created is handed out here; if a concurrent
+        install commits another one for the same name first, this commit then conflicts
+        instead of leaving the object handed out unreachable from the catalog."""
+        _registry._check_name("A registry name", registry_name)
+        with self._lock:
+            self._check_active()
+            pending = self._catalog_new.get(registry_name)
+            if pending is not None:
+                self._catalog_given.add(registry_name)
+                return pending
+            catalog = _registry.registry_root(self._objects, _registry.CATALOG_ROOT, _registry.Catalog)
+            return None if catalog is None else catalog.get(registry_name)
+
+    def _merged_registry(self, objects: Dictionary, current_objects: Dictionary) -> Dictionary:
+        """Under the root lock: ``objects`` with this transaction's installs merged add-if-absent
+        into the registry roots of ``current_objects``, the roots current at commit (never the
+        snapshot's, never through the read set).  A merged list that differs from the one the
+        installs were validated against (a concurrent install committed first) is built again,
+        so a union that cannot be loaded is refused here, explicitly, instead of committed."""
+        listed = _registry.registry_root(current_objects, _registry.MODULES_ROOT, _registry.ModuleList)
+        merged = _registry.merged_module_list(listed, self._installs, self)
+        if merged is not None:
+            names = merged.names()
+            if names != self._validated_modules:
+                space = self._database.space
+                _registry.Registry.build(names, mapping=space.modules_mapping, allowed=space.modules_allowed)
+            objects = objects.set_at(_registry.MODULES_ROOT, merged)
+        catalog = _registry.registry_root(current_objects, _registry.CATALOG_ROOT, _registry.Catalog)
+        merged_catalog = _registry.merged_catalog(catalog, self._catalog_new, self._catalog_given, self)
+        if merged_catalog is not None:
+            objects = objects.set_at(_registry.CATALOG_ROOT, merged_catalog)
+        return objects
+
     # -- factories --------------------------------------------------------------------------
 
     def _new(self, cls):
@@ -2276,9 +2426,9 @@ class Transaction:
                 self._state = _COMMITTED if committed else _ABORTED
 
     def _commit(self) -> None:
-        if not self._writes and not self._mwrites:
+        if not self._writes and not self._mwrites and not self._installs and not self._catalog_new:
             return
-        written = list(self._writes.values()) + list(self._mwrites.values())
+        written = list(self._writes.values()) + list(self._mwrites.values()) + list(self._catalog_new.values())
         for value in written:
             if isinstance(value, Atom):
                 self.save(value)
@@ -2327,6 +2477,10 @@ class Transaction:
                 value = self._merged(value, current_objects.get_at(name, _ABSENT))
                 replay += clock() - merge_started
             objects = objects.set_at(name, value)
+        if self._installs or self._catalog_new:
+            merge_started = clock()
+            objects = self._merged_registry(objects, current_objects)
+            replay += clock() - merge_started
         mutables = db_root.mutables
         for name, value in self._mwrites.items():
             if value is not _REMOVED:

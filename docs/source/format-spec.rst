@@ -116,7 +116,8 @@ it. A reader of version *n* reads every version up to *n*. Processes of differen
 share a directory while only features all of them read are written; ``proto_db`` writes 4 in this
 revision (``proto_db.storage.format.WRITE_FORMAT_VERSION``) for data that uses no later feature, and
 ``FEATURE_VERSIONS`` lists the version of every feature added later: ``parents`` (an atom whose
-envelope has the key ``"p"``) is version 5.
+envelope has the key ``"p"``) is version 5, and so is ``registry`` (a record of one of the
+runtime registry's built-in types, aliases 22 and 23, `Registry roots`_).
 
 A segment header is written before the segment's records, so ``proto_db`` opens a new segment
 for a record that needs a later version than the open segment's, and a segment's version is the
@@ -134,16 +135,16 @@ that version and its own, so a root over format-5 data is format 5 whichever nod
 **The pinned vectors.** ``tests/conformance/vectors.sha256`` lists the SHA-256 of every file
 under ``tests/conformance/vectors/`` (``<hex digest>  <path>``, one line per file, sorted by path
 in code point order, ``/`` as the separator), then the digest of ``manifest.json``. The SHA-256
-of that list file is ``2d5103f03c637a4038ed90652b350dd4784fa2582dda2885f9d151cf1c5fc5b0``. ``test_conformance.py`` checks that the committed files
+of that list file is ``6299acaceb9ce352f61fb80b34ce26c90835f8b5e2efd3633b9211ada1404a79``. ``test_conformance.py`` checks that the committed files
 match the list and that this page states the list's digest. Each vector file is governed by
 the number that covers what it holds: ``vectors/cluster/*.log`` by ``LOG_FORMAT_VERSION``,
 ``vectors/cluster/messages/`` by ``PROTOCOL_VERSION``, every other file by ``FORMAT_VERSION``.
 A change to an existing vector file is a change of its number's items; a new vector adds lines
 and changes the manifest's line, and raises nothing by itself.
 
-Two extensions are decided and not implemented. Both are **additive**: no existing byte, order,
+Two extensions were decided after the freeze. Both are **additive**: no existing byte, order,
 hash or token changes, data written without them keeps its version and its meaning, and they
-are marked by the version rule above.
+are marked by the version rule above. The registry is implemented (format 5); symbols are not.
 
 Symbols (``@sym``)
     A new value kind, ``{"@sym": name}`` (option (c2) of the runtime-symbols investigation; see
@@ -157,20 +158,17 @@ Symbols (``@sym``)
     another key when ``@sym`` lands, and lookups by the symbol would silently miss it.
 
 The per-database class registry
-    Its persisted state is database roots whose names start with ``__``: ``__currentModules``
-    (the installed modules), ``__currentSymbols`` (string to symbol) and a catalog root of class
-    objects, whose name the registry specification fixes. Nothing in them is specific to a
-    language. **Root names starting with ``__`` are reserved for the format from this revision
-    on**: ``proto_db`` refuses to write one (``ProtoValidationError``). The registry holds symbols
-    and atoms of new built-in types under ``proto_db.``, which a reader that predates them
-    refuses (`Atoms of unknown types (D59)`_), so it is a format-5 feature if it ships with
-    ``@sym``, otherwise one of the next version. A space whose data never uses it keeps its
-    version. Data written before this revision may hold a root named like a registry root: the
-    registry specification identifies its roots by name **and** by the type of their value, and
-    a reader of the registry's version refuses a ``__`` root whose value is not of the
+    Its persisted state is database roots whose names start with ``__``. **Root names starting
+    with ``__`` are reserved for the format from ``v2.0.0rc1`` on**: ``proto_db`` refuses to
+    write or remove one through the application API (``ProtoValidationError``); only the
+    registry writes its own roots, at commit. Two of them are implemented, as the format-5
+    features ``parents`` (an object's parents, the atom envelope key ``p``, `Atom records`_) and
+    ``registry`` (the roots ``__currentModules`` and ``__catalog``, whose values are records of
+    two new built-in types, `Registry roots`_). A space whose data never uses them keeps its
+    version. ``__currentSymbols`` is reserved for symbols. Data written before the reservation
+    may hold a root named like a registry root: a reader identifies the registry's roots by name
+    **and** by the type of their value, and refuses a ``__`` root whose value is not of the
     registry's type (``ProtoCorruptionError``) rather than reading it as registry state.
-    Its first part is implemented: an object's parents, the atom envelope key ``p`` (the
-    format-5 feature ``parents``, `Atom records`_).
 
 Conventions
 -----------
@@ -636,6 +634,12 @@ its alias; readers also accept its name (format 2 wrote names).
    * - 21
      - ``proto_db.avl.CountedKeyNode``
      - yes (added in format 3, D56)
+   * - 22
+     - ``proto_db.registry.ModuleList``
+     - yes (added in format 5, feature ``registry``)
+   * - 23
+     - ``proto_db.registry.Catalog``
+     - yes (added in format 5, feature ``registry``)
 
 Lazy loading (implementation-specific, portable)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1468,6 +1472,34 @@ Space and database roots
       later version, the database's identity across processes (D56). **Optional: absent means
       nil**, for databases created before it existed; such a database never gets one.
 
+Registry roots
+~~~~~~~~~~~~~~
+
+The runtime registry's state (the per-database class registry of `Format stability`_) is two
+roots of a database's ``objects``. Their records are of the built-in types below, which use the
+format-5 feature ``registry``: a record whose type tag is alias 22 or 23 (or either name) is
+version 5, so it lands in a segment of version 5 or later. Both types carry no parents (no
+``p``).
+
+``proto_db.registry.ModuleList``, the value of the root ``__currentModules``
+    ``modules``: a ``@tup`` of 2-item ``@tup`` values ``(name, depends)``, one per installed
+    module, in installation order. ``name`` is the module name (a non-empty string, language
+    neutral); ``depends`` a ``@tup`` of the module names it declared as dependencies when it was
+    installed (non-empty strings; a record of the install: at load time a runtime follows its
+    code's declaration). A name appears once. Anything else is ``ProtoCorruptionError``.
+
+``proto_db.registry.Catalog``, the value of the root ``__catalog``
+    ``entries``: a ref to a Dictionary from registry name (a non-empty string) to a ref to its
+    **catalog object**: a ``proto_db.core.dbobject.DBObject`` record whose parents include that
+    registry name (``proto_db`` writes exactly the one-name tuple). An entry of another type, or
+    whose parents lack its name, is ``ProtoCorruptionError``.
+
+A writer changes these roots only by **adding**: a module is appended to ``modules`` and a
+registry name added to ``entries`` when absent, and an existing entry is never changed nor
+removed. ``proto_db`` merges both against the root current at commit (add-if-absent), so
+concurrent installs of different modules all land, in commit order; that rule is behaviour,
+specified by the runtime registry, and leaves no trace in the bytes.
+
 To read a database: decode ``space.root``, load its SpaceRoot, look the database's name up in
 ``databases``, then read ``objects`` and ``mutables`` of that DatabaseRoot. History is the chain
 of ``previous`` links; every version stays readable (nothing is ever deleted).
@@ -1909,10 +1941,10 @@ Known gaps
 
 None of these breaks a round trip between conforming implementations.
 
-- **Symbols** (``@sym``) and the class registry are decided but not implemented, apart from an
-  object's parents (`Atom records`_): an implementation cannot store symbols yet without
-  breaking the round trip. Both are additive
-  and land with ``FORMAT_VERSION`` 5 (`Format stability`_).
+- **Symbols** (``@sym``) are decided but not implemented: an implementation cannot store
+  symbols yet without breaking the round trip. The class registry's persisted state is
+  implemented, an object's parents (`Atom records`_) and the registry roots (`Registry roots`_),
+  as format-5 features (`Format stability`_).
 - **Format-3 zone datetimes need a tz database** (what remains of B3). Format-4 data never does
   for its keys, hashes or tokens (an ``["instant", key]`` value holds its UTC instant), only to
   show a wall clock. A format-3 ``["zone", key]`` value holds a wall clock, and its instant, its
@@ -1987,7 +2019,11 @@ JSON description of what every file means, in a language-neutral notation), the 
 - a ``parents`` space using the format-5 feature ``parents``: a format-4 segment, then the
   format-5 segment opened by the first record with parents, holding a record whose parents are
   a saved record, a record saved in the same commit and a registry name, and a record whose
-  only parent is a registry name; its root record is version 5.
+  only parent is a registry name; its root record is version 5;
+- a ``registry`` space using the format-5 feature ``registry``: a format-4 segment, then the
+  format-5 segment opened by an install of a module and its dependency, holding the catalog
+  objects, the ``ModuleList`` of ``__currentModules`` and the ``Catalog`` of ``__catalog``
+  (`Registry roots`_); its root record is version 5.
 
 ``tests/conformance/vectors.sha256`` pins the vector files (`Format stability`_).
 

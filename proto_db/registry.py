@@ -67,6 +67,36 @@ Errors (all explicit)
     - a ``ProtoDBError`` raised while a module is imported (a refused definition) propagates
       unchanged, with a note naming the module.
 
+Persisted state (spec section 3)
+    The registry state of a database is two of its roots, each identified by its name **and** by
+    the type of its value; a ``__`` root whose value is of another type is refused with
+    ``ProtoCorruptionError``, never read as registry state (:func:`registry_root`):
+
+    - :data:`MODULES_ROOT` (``__currentModules``) holds a :class:`ModuleList`: the installed
+      module names in installation order, each with the dependencies its code declared when it
+      was installed (a record of the install; at load time the code's ``depends`` wins, spec 14
+      item 8);
+    - :data:`CATALOG_ROOT` (``__catalog``) holds a :class:`Catalog`: registry name to its
+      **catalog object** (spec Q1, 14 item 3).  The catalog object of the registry name ``N`` is
+      a plain ``DBObject`` whose parents are exactly ``(N,)``, created once, by the install that
+      first introduces ``N`` (a name some extension of the module ``extends``), and never
+      replaced by the registry.  An object that lists it as a parent therefore finds it before
+      ``N`` in its linearization, and the catalog object's own data before the registry's.
+
+    Both are records of built-in types that use the format feature ``registry`` (version 5).
+
+Installing and the commit (spec section 7, 14 items 3 and 4)
+    ``Transaction.install_module(name)`` imports the module to learn its ``depends``
+    (:func:`install_plan`), adds the modules the list lacks, dependencies first, and a catalog
+    object for each registry name that has none; it builds the resulting list's registry once
+    to refuse a list that could never be loaded.  Nothing of a refused install stays pending.
+    At commit both roots merge **add-if-absent against the root current at commit time**
+    (:func:`merged_module_list`, :func:`merged_catalog`): never through the read set, never last
+    writer wins.  Two concurrent installs of different modules both land, without a conflict,
+    and the list's order is the commit order.  Reading the registry roots for resolution
+    (``installed_modules``, ``catalog_object``) never enters the read set: installs are additive,
+    so a transaction that resolved with the older list committed a state that list described.
+
 The current registry
     Resolution reads the registry of the running code from :func:`current_registry` when none is
     passed to it.  Until the registry is attached to transactions (Task 8), it is set by
@@ -86,13 +116,21 @@ import threading
 import types
 from collections.abc import Container, Mapping
 
-from .core.atom import RESERVED_NAMES, Atom
-from .errors import ProtoDBError, ProtoNotSupportedError, ProtoValidationError
+from .collections.base import _Immutable
+from .collections.dictionaries import Dictionary
+from .core.atom import RESERVED_NAMES, Atom, PersistenceContext
+from .errors import ProtoConflictError, ProtoCorruptionError, ProtoDBError, ProtoNotSupportedError, ProtoValidationError
 from . import resolution as _resolution
 from .values import canonical, check_text, is_atom
 
 __all__ = ["module", "ModuleHandle", "Extension", "Registry", "METHOD", "DATA", "using",
-           "current_registry"]
+           "current_registry", "ModuleList", "Catalog", "MODULES_ROOT", "CATALOG_ROOT"]
+
+#: The root holding the installed modules (a :class:`ModuleList`).
+MODULES_ROOT = "__currentModules"
+#: The root holding the catalog objects by registry name (a :class:`Catalog`; spec Q5).
+CATALOG_ROOT = "__catalog"
+_REGISTRY_FEATURE = frozenset({"registry"})
 
 #: The kinds of a definition.
 METHOD = "method"
@@ -558,3 +596,184 @@ def using(registry: "Registry | None"):
         yield registry
     finally:
         _resolution.reset_current_registry(token)
+
+
+# -- persisted state ---------------------------------------------------------------------------
+
+def _corrupt(root: str, detail: str) -> ProtoCorruptionError:
+    return ProtoCorruptionError(f"Registry root {root!r}: {detail}")
+
+
+class ModuleList(_Immutable, Atom):
+    """The value of :data:`MODULES_ROOT`: ``modules``, a tuple of ``(name, depends)`` pairs in
+    installation order, ``depends`` a tuple of module names (see the module docstring)."""
+
+    __type_name__ = "proto_db.registry.ModuleList"
+    _required_fields = ("modules",)
+    _format_features = _REGISTRY_FEATURE
+
+    def __init__(self, *, modules: tuple = (), context: PersistenceContext | None = None):
+        """A module list of the ``(name, depends)`` pairs ``modules``."""
+        super().__init__(context=context)
+        object.__setattr__(self, "modules", tuple((name, tuple(depends)) for name, depends in modules))
+
+    def entries(self) -> tuple:
+        """The ``(name, depends)`` pairs, in installation order, checked: anything but a tuple of
+        pairs of a non-empty ``str`` and a tuple of non-empty ``str``, or a name listed twice, is
+        ``ProtoCorruptionError``."""
+        modules = self.modules
+        if type(modules) is not tuple:
+            raise _corrupt(MODULES_ROOT, f"modules is a {type(modules).__name__}, not a tuple")
+        seen = set()
+        for entry in modules:
+            if (type(entry) is not tuple or len(entry) != 2 or type(entry[0]) is not str or not entry[0]
+                    or type(entry[1]) is not tuple
+                    or any(type(d) is not str or not d for d in entry[1])):
+                raise _corrupt(MODULES_ROOT, f"{entry!r} is not a (module name, dependencies) pair")
+            if entry[0] in seen:
+                raise _corrupt(MODULES_ROOT, f"module {entry[0]!r} is listed twice")
+            seen.add(entry[0])
+        return modules
+
+    def names(self) -> tuple:
+        """The installed module names, in installation order."""
+        return tuple(name for name, _ in self.entries())
+
+
+class Catalog(_Immutable, Atom):
+    """The value of :data:`CATALOG_ROOT`: ``entries``, a
+    :class:`~proto_db.collections.dictionaries.Dictionary` from registry name to its catalog
+    object (see the module docstring)."""
+
+    __type_name__ = "proto_db.registry.Catalog"
+    _required_fields = ("entries",)
+    _format_features = _REGISTRY_FEATURE
+
+    def __init__(self, *, entries: Dictionary, context: PersistenceContext | None = None):
+        """A catalog over the ``entries`` dictionary."""
+        super().__init__(context=context)
+        object.__setattr__(self, "entries", entries)
+
+    def _entries(self) -> Dictionary:
+        entries = self.entries
+        if not isinstance(entries, Dictionary):
+            raise _corrupt(CATALOG_ROOT, f"entries is a {type(entries).__name__}, not a Dictionary")
+        return entries
+
+    def get(self, registry_name: str):
+        """The catalog object of ``registry_name``, or ``None``.  An entry that is not a
+        ``DBObject`` whose parents include its name is ``ProtoCorruptionError``."""
+        from .core.dbobject import DBObject
+        found = self._entries().get_at(registry_name, None)
+        if found is None:
+            return None
+        if not isinstance(found, DBObject) or registry_name not in found.parents:
+            raise _corrupt(CATALOG_ROOT, f"the entry of {registry_name!r} is not a DBObject with that registry "
+                                         f"name among its parents")
+        return found
+
+    def names(self) -> tuple:
+        """The registry names that have a catalog object, in key order."""
+        return tuple(self._entries().keys())
+
+
+def registry_root(objects, name: str, cls: type):
+    """The value of the registry root ``name`` in the roots dictionary ``objects``, or ``None``
+    when it is absent; a value that is not a ``cls`` is ``ProtoCorruptionError``."""
+    value = objects.get_at(name, None)
+    if value is not None and not isinstance(value, cls):
+        raise _corrupt(name, f"its value is a {type(value).__name__}, not a {cls.__type_name__}: it is not "
+                             f"registry state")
+    return value
+
+
+def merged_module_list(current: ModuleList | None, additions: Mapping, context) -> ModuleList | None:
+    """The module list for ``current`` (the list current at commit, or ``None``) with the
+    ``name -> depends`` ``additions`` it lacks appended in their order (add-if-absent), or
+    ``None`` when it lacks none of them."""
+    entries = current.entries() if current is not None else ()
+    present = {name for name, _ in entries}
+    added = tuple((name, depends) for name, depends in additions.items() if name not in present)
+    if not added:
+        return None
+    return ModuleList(modules=entries + added, context=context)
+
+
+def merged_catalog(current: Catalog | None, additions: Mapping, handed_out, context) -> Catalog | None:
+    """The catalog for ``current`` (the catalog current at commit, or ``None``) with each
+    ``registry name -> catalog object`` of ``additions`` whose name it lacks (add-if-absent), or
+    ``None`` when it lacks none.  A name it already has keeps its object; when that object is
+    not the one in ``additions`` and the name is in ``handed_out`` (the transaction gave its own
+    object to the application, which may reference it), ``ProtoConflictError``: keeping either
+    silently would leave the other unreachable from the catalog."""
+    entries = current._entries() if current is not None else None
+    changed = False
+    for name, obj in additions.items():
+        existing = current.get(name) if current is not None else None
+        if existing is not None:
+            if name in handed_out and existing.oid != obj.oid:
+                raise ProtoConflictError(
+                    f"The catalog object of {name!r} was created by a concurrent install, and this "
+                    f"transaction used its own")
+            continue
+        if entries is None:
+            entries = Dictionary(context=context)
+        entries = entries.set_at(name, obj)
+        changed = True
+    return Catalog(entries=entries, context=context) if changed else None
+
+
+def install_plan(name: str, installed: tuple, mapping: Mapping, allowed: Container | None) -> tuple:
+    """``(additions, introduced)`` for installing ``name`` over the list ``installed``.
+
+    The modules reachable from ``name`` through the ``depends`` their code declares are imported
+    (spec 14 item 8).  ``additions`` are the ``(name, depends)`` pairs of those not in
+    ``installed``, dependencies first; ``introduced`` the registry names their extensions
+    declare, each once.  A module outside ``allowed`` or a dependency cycle is
+    ``ProtoValidationError``; a module that cannot be imported, or that declares no registry
+    module of its name, ``ProtoNotSupportedError``."""
+    _check_name("A module name", name)
+    present = set(installed)
+    handles = {}
+    order = []
+    state = {}                          # 1: on the current path, 2: placed
+    path, stack = [], []
+
+    def enter(module_name):
+        handle = _declaration(module_name, mapping, allowed)
+        handles[module_name] = handle
+        state[module_name] = 1
+        path.append(module_name)
+        stack.append(iter(handle.depends))
+
+    enter(name)
+    while stack:
+        child = next((d for d in stack[-1] if state.get(d) != 2), None)
+        if child is None:
+            done = path.pop()
+            stack.pop()
+            state[done] = 2
+            order.append(done)
+        elif state.get(child) == 1:
+            cycle = path[path.index(child):] + [child]
+            raise ProtoValidationError(f"Module dependency cycle: {' -> '.join(cycle)}")
+        else:
+            enter(child)
+    additions = tuple((m, handles[m].depends) for m in order if m not in present)
+    with _LOCK:
+        declared = [item.registry_name for m in order for item in handles[m]._declared]
+    return additions, tuple(dict.fromkeys(declared))
+
+
+def _declaration(name: str, mapping: Mapping, allowed: Container | None) -> ModuleHandle:
+    """The declaration of the module ``name``, imported through ``mapping``; refused outside
+    ``allowed`` (see :func:`install_plan`)."""
+    if allowed is not None and name not in allowed:
+        raise ProtoValidationError(f"Module {name!r} is not allowed by this runtime's configuration")
+    source = _import(name, mapping.get(name, name))
+    with _LOCK:
+        handle = _DECLARATIONS.get(name)
+    if handle is None or handle.source != source:
+        raise ProtoNotSupportedError(
+            f"Module {name!r}: the Python module {source!r} declares no registry module named {name!r}")
+    return handle

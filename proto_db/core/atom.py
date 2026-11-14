@@ -228,6 +228,8 @@ BUILTIN_ATOM_MODULES: dict[str, str] = {
     "proto_db.indexing.VectorIndex": "proto_db.indexing.vector",
     "proto_db.transactions.SpaceRoot": "proto_db.transactions",
     "proto_db.transactions.DatabaseRoot": "proto_db.transactions",
+    "proto_db.registry.ModuleList": "proto_db.registry",
+    "proto_db.registry.Catalog": "proto_db.registry",
 }
 
 
@@ -256,6 +258,8 @@ BUILTIN_TYPE_ALIASES: tuple[str, ...] = (
     "proto_db.core.dbobject.DBObject",
     "proto_db.avl._Node",
     "proto_db.avl.CountedKeyNode",
+    "proto_db.registry.ModuleList",
+    "proto_db.registry.Catalog",
 )
 _ALIAS_OF = {name: i for i, name in enumerate(BUILTIN_TYPE_ALIASES)}
 
@@ -591,6 +595,10 @@ class Atom:
     #: its subclasses, and opaque atoms (types of another implementation).  For any other type a
     #: record with ``"p"`` is ``ProtoCorruptionError``.
     _parented = False
+    #: The format features every record of this type uses beyond the envelope (names of
+    #: ``proto_db.storage.format.FEATURE_VERSIONS``), declared to ``push_atom`` with the record:
+    #: ``registry`` for the runtime registry's built-in types; none for every other type.
+    _format_features: frozenset = frozenset()
     #: Persisted field names that this class's API took over later (ruling R157): a record written
     #: before still holds such a field, and it stays readable.  Maps the field name to the private
     #: attribute it is held in, since the public name now reads the API member; ``_state()`` gives
@@ -1073,10 +1081,13 @@ class Atom:
                 return ptr
             oid = self._oid_locked()
             payload = {"t": type_tag(cls.__type_name__), "oid": oid.bytes, "s": encoded}
+            features = cls._format_features
             if parents:
                 _check_not_own_parent(self, parents, oid)
                 payload["p"] = encoded_parents
-                ptr = context.storage.push_atom(payload, features=_PARENTS_FEATURE)
+                ptr = context.storage.push_atom(payload, features=features | _PARENTS_FEATURE)
+            elif features:
+                ptr = context.storage.push_atom(payload, features=features)
             else:
                 ptr = context.storage.push_atom(payload)       # the format-4 record, unchanged
             object.__setattr__(self, "atom_pointer", ptr)

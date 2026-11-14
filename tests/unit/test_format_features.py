@@ -103,10 +103,17 @@ def persistent(request, tmp_path):
 # --- the version table ----------------------------------------------------------------------------
 
 def test_the_parents_feature_is_version_5_and_plain_data_stays_4():
-    assert fmt.FEATURE_VERSIONS == {"parents": 5}
+    assert fmt.FEATURE_VERSIONS == {"parents": 5, "registry": 5}
     assert fmt.FORMAT_VERSION == 5 and fmt.WRITE_FORMAT_VERSION == 4
     assert fmt.READABLE_FORMAT_VERSIONS == frozenset({2, 3, 4, 5})
     assert fmt.write_version() == 4 and fmt.write_version({"parents"}) == 5
+    assert fmt.write_version({"registry"}) == 5
+
+
+def test_the_registry_types_of_the_format_are_the_builtin_aliases():
+    from proto_db.core.atom import BUILTIN_TYPE_ALIASES, type_tag
+    for name, alias in fmt.REGISTRY_TYPES.items():
+        assert BUILTIN_TYPE_ALIASES[alias] == name and type_tag(name) == alias
 
 
 def test_an_atom_declares_only_features_its_payload_uses():
