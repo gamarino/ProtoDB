@@ -529,7 +529,12 @@ class _Ownership:
     newest root it knows committed in its term ``(known, root, label)`` (known committed when
     ``committed``), which a permit carries when no proposal is waiting to be issued on.  Only
     the incarnation a permission was issued to can end it with ``"none"`` or ``"committed"``
-    (8.3f review, C1)."""
+    (8.3f review, C1).
+
+    ``fenced``: a lost renewal proved that a majority will never renew this term (ruling R149):
+    the term issues nothing new and ends once its pipeline is empty.  ``renew_after``: after any
+    other lost renewal, the time on the coordinator's clock before which it is not renewed
+    again (``None`` once a renewal won)."""
 
     def __init__(self, lease: Lease, base: tuple, committed: bool, now: float):
         self.lease = lease
@@ -543,10 +548,12 @@ class _Ownership:
         self.last_local = now           # the last permission request of this node's own threads
         self.abandoned = False
         self.ended = False
+        self.fenced = False
+        self.renew_after = None
 
     def serving(self, now: float) -> bool:
-        """True while permissions may be issued: neither abandoned nor ended, lease valid."""
-        return not self.abandoned and not self.ended and self.lease.is_valid()
+        """True while permissions may be issued: neither abandoned, fenced nor ended, lease valid."""
+        return not self.abandoned and not self.fenced and not self.ended and self.lease.is_valid()
 
     def entry(self, node: str, seq: int) -> Optional[_Issued]:
         """The issued permission ``seq`` of ``node``, if it is in the pipeline."""
@@ -799,7 +806,8 @@ class ClusterCoordinator:
         self._placements = collections.OrderedDict()    # root_key -> (copies, ranges) of a commit
         self._replica_suspects = {}         # member -> monotonic time until which it is tried last
         for key in ("permits_issued", "permits_held", "permit_requests_sent", "permits_refused", "renewals",
-                    "renewal_failures", "ownerships", "terms_abandoned", "permit_rounds", "permits_foreign_dropped",
+                    "renewal_failures", "ownerships", "terms_abandoned", "terms_fenced", "permit_rounds",
+                    "permits_foreign_dropped",
                     "permit_requests_retried", "pipelined_permits", "proposals", "proposals_received",
                     "foreign_proposals", "gate_open_at_send", "gate_waits", "gate_fallbacks", "gate_closures",
                     "stores_sent", "stores_applied", "records_cached_on_receipt", "sends_refused_reserve"):
@@ -3015,7 +3023,7 @@ class ClusterCoordinator:
                 while wait.reply is None:
                     if self._state != "running" or self._failure is not None or self._tier_failure is not None:
                         break
-                    if target is None and (self._ownership is not own or own.ended):
+                    if target is None and (self._ownership is not own or own.ended or own.fenced):
                         break
                     now = time.monotonic()
                     if now >= min(limit, deadline):
@@ -3306,8 +3314,9 @@ class ClusterCoordinator:
         (``none``): the only entry, which did not propose, is removed and the next permit
         reuses the committed base (D50); any other ``none`` abandons the term.  O6: any other
         outcome abandons the term (D50)."""
-        if self._idle_release is not None:
-            self._cond.notify_all()     # a draining ownership thread ends the term now (R80)
+        if self._idle_release is not None or own.fenced:
+            # A draining (R80) or fenced (R149) ownership thread ends the term now.
+            self._cond.notify_all()
         if outcome == "committed":
             if issued.proposal is not None and issued.proposal != (root, label):
                 return self._abandon(own, f"permission {issued.seq} of {issued.node} committed another root "
@@ -3454,7 +3463,9 @@ class ClusterCoordinator:
             raise
 
     def _own_loop_body(self, own: "_Ownership") -> None:
-        """The loop of :meth:`_own_loop`."""
+        """The loop of :meth:`_own_loop`.  After a lost renewal it renews again only once
+        ``own.renew_after`` has passed, and a fenced term is never renewed: it ends ("fenced")
+        when its pipeline is empty (ruling R149, issue #1)."""
         idle = self._duration / 4
         while True:
             renew = False
@@ -3476,6 +3487,10 @@ class ClusterCoordinator:
                         # know yet: abandon, so the release is uncertain (review I3).
                         sends = self._abandon(own, f"lease expired with permission {own.pipeline[0].seq} "
                                                    f"of {own.pipeline[0].node} outstanding")
+                elif own.fenced and not own.pipeline:
+                    # No majority will renew this term (R149) and no permission is outstanding
+                    # any more (one that was ended by its done): end it and release normally.
+                    end = "fenced"
                 elif not own.pipeline and not own.queue and mono - own.last_demand > idle:
                     end = "idle"
                 elif not own.pipeline and self._idle_release is not None \
@@ -3493,9 +3508,21 @@ class ClusterCoordinator:
                     demand = own.pipeline or own.queue or mono - own.last_demand <= self._duration / 2
                     # Renewed when half of the holder's belief is left (ruling R78b: with the
                     # default margin, every lease_duration / 6 -- a message, no fsync).
-                    renew = demand and own.lease.remaining() < self._belief / 2
+                    backing_off = own.renew_after is not None and now < own.renew_after
+                    renew = demand and not own.fenced and not backing_off \
+                        and own.lease.remaining() < self._belief / 2
                     if not renew:
-                        waits = [max(0.001, own.lease.remaining() - self._belief / 2) if demand else idle]
+                        if own.fenced:
+                            # Never renewed: woken by the outstanding permission's done (or
+                            # its deadline); the lease's expiry abandons it (review I3).
+                            waits = [max(0.001, own.lease.remaining())]
+                        elif demand:
+                            due = own.lease.remaining() - self._belief / 2
+                            if backing_off:
+                                due = max(due, own.renew_after - now)
+                            waits = [max(0.001, due)]
+                        else:
+                            waits = [idle]
                         if own.pipeline:
                             waits.append(max(0.001, min(e.deadline for e in own.pipeline) - now))
                         elif not own.queue:
@@ -3516,7 +3543,10 @@ class ClusterCoordinator:
                 self._renew(own)
 
     def _renew(self, own: "_Ownership") -> None:
-        """Ask the granters to extend the lease of ``own`` (same term; D50, renewal)."""
+        """Ask the granters to extend the lease of ``own`` (same term; D50, renewal).  A lost
+        round either fences the term (a majority refused it for good, ruling R149: the queue is
+        refused ``"ending"``, nothing new is issued) or sets ``own.renew_after``, the back-off
+        before the next renewal (issue #1)."""
         with self._log_lock, self._lock:
             if self._state != "running" or self._ownership is not own:
                 return
@@ -3552,10 +3582,26 @@ class ClusterCoordinator:
             sends = []
             if attempt.state == "won" and self._clock() < attempt.valid_until and self._ownership is own:
                 own.lease.valid_until = max(own.lease.valid_until, attempt.valid_until)
+                own.renew_after = None
                 self._stats["renewals"] += 1
                 sends = self._dispatch(own)        # a request may have waited for the renewal
             else:
                 self._stats["renewal_failures"] += 1
+                if attempt.state == "lost" and self._ownership is own and not own.fenced:
+                    if attempt.term_fenced:
+                        # Ruling R149: no majority will ever renew this term.  Step down
+                        # without abandoning: an outstanding permission ends by its done (or
+                        # its deadline), then the ownership thread releases the lease.
+                        own.fenced = True
+                        self._stats["terms_fenced"] += 1
+                        logger.info("Node %s: lease term %d is fenced by a majority; it ends", self._node,
+                                    own.term)
+                        sends = self._refuse_queue(own, "ending")
+                    else:
+                        # Possibly transient (a grace, another grant): renewing sooner cannot win.
+                        own.renew_after = self._clock() + min(
+                            own.lease.remaining(),
+                            max(attempt.busy_remaining, self._request_timeout / 4, 0.001))
             self._cond.notify_all()
         self._send_all(sends)
 

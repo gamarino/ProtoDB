@@ -429,6 +429,39 @@ def blind_snapshot_of'''),),
         "assert {'a': None, 'b': None} == {'a': None, 'b': 1}",
         "tests: an acknowledgement of a commit that never took effect, which the records-nowhere setup-miss rule "
         "takes for a miss, still fails its check of the next term (Task P1-READ)"),
+    # Task RENEW-BACKOFF (ruling R149, issue #1): a lost renewal fences the term only on a majority of
+    # permanent refusals, and otherwise backs off; a fenced term is never abandoned for being fenced.
+    "renew_fence_highest_seen": Plant((
+        ("proto_db/cluster/lease.py",
+         "        return permanent > self._size - self._needed\n",
+         "        return permanent > self._size - self._needed or self.highest_seen > self.term   # PLANT\n"),),
+        ("tests/unit/test_cluster_renew_backoff.py::test_a_minority_busy_with_a_lower_term_never_fences_the_owner",),
+        "fenced the owner",
+        "product: the term is fenced on the highest term seen alone (one peer can raise it)"),
+    "renew_busy_permanent": Plant((
+        ("proto_db/cluster/lease.py",
+         '''                        if reason in ("stale_term", "term_taken") or highest > self.term)''',
+         '''                        if reason in ("stale_term", "term_taken", "busy") or highest > self.term)  # PLANT'''),),
+        ("tests/unit/test_cluster_renew_backoff.py::test_a_minority_busy_with_a_lower_term_never_fences_the_owner",),
+        "fenced the owner",
+        "product: a busy refusal counts as permanent without a higher term"),
+    "renew_no_backoff": Plant((
+        ("proto_db/cluster/coordinator.py",
+         "                        own.renew_after = self._clock() + min(\n",
+         "                        _plant = self._clock() + min(   # PLANT: no back-off\n"),),
+        ("tests/unit/test_cluster_renew_backoff.py::test_a_transient_refusal_backs_off_until_the_refusals_remaining",),
+        "renewals sent at",
+        "product: a transiently lost renewal is renewed again at once (issue #1)"),
+    "renew_fence_abandons": Plant((
+        ("proto_db/cluster/coordinator.py",
+         '''                                    own.term)
+                        sends = self._refuse_queue(own, "ending")\n''',
+         '''                                    own.term)
+                        sends = self._abandon(own, "PLANT: fenced") + self._refuse_queue(own, "ending")\n'''),),
+        ("tests/unit/test_cluster_renew_backoff.py::test_a_fenced_term_steps_down_after_one_renewal",
+         "tests/unit/test_cluster_renew_backoff.py::test_a_fenced_term_lets_its_outstanding_permission_end_by_its_done"),
+        "abandoned while its lease is valid",
+        "product: a fenced term is abandoned at once instead of letting its permission end (R149)"),
     "shiplock": Plant((
         ("proto_db/storage/tiered.py", "            data = self._copy_prefix(segment, end)",
          "            with self._ship_lock:   # PLANT: the hole is filled under the ship lock\n"
