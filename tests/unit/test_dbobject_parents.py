@@ -415,3 +415,102 @@ def test_an_opaque_atom_with_parents_loads_and_keeps_them():
                             features={"parents"})
     atom = DirectContext(storage).load(ptr, "polyglot.st.Order")
     assert atom.n == 1 and atom._probe("_parents") == ("st.Base",)
+
+
+# -- application subclasses that define their own parents member (review I1, m1, m2) ------------
+
+class _MethodNode(DBObject):
+    __type_name__ = "tests.parents.MethodNode"
+
+    def parents(self):                              # a domain method, predating DBObject parents
+        return ("domain",)
+
+
+class _PropertyNode(DBObject):
+    __type_name__ = "tests.parents.PropertyNode"
+
+    @property
+    def parents(self):                              # a computed domain property
+        return (self.up,) if self.has_defined_attr("up") else ()
+
+
+def _saved_payload(obj):
+    storage, _, ptr = _save_direct(obj)
+    (_, payload, features), = [e for e in storage.pushed if e[0] == ptr]
+    return storage, ptr, payload, features
+
+
+def test_a_subclass_with_a_parents_method_keeps_working_and_stays_v4():
+    node = _MethodNode(a=1)
+    newer = node.with_(a=2)
+    assert newer.a == 2 and newer.parents() == ("domain",)
+    assert repr(newer) == "_MethodNode(a=2)"
+    storage, ptr, payload, features = _saved_payload(newer)
+    assert list(payload) == ["t", "oid", "s"] and features == frozenset()
+    assert storage._segment_versions[ptr.segment] == 4
+
+
+def test_a_subclass_with_a_parents_property_keeps_working_and_stays_v4():
+    up = DBObject(n=0)
+    leaf = _PropertyNode(up=up, x=0)
+    newer = leaf.with_(x=1)
+    assert newer.parents == (up,) and newer.x == 1
+    assert repr(newer).startswith("_PropertyNode(up=")
+    storage, ptr, payload, features = _saved_payload(newer)
+    assert list(payload) == ["t", "oid", "s"] and features == frozenset()
+    assert storage._segment_versions[ptr.segment] == 4
+
+
+@pytest.mark.parametrize("cls", [_MethodNode, _PropertyNode])
+def test_real_parents_of_such_a_subclass_go_through_the_private_path(cls):
+    obj = cls(parents=("acme.Base",), n=1).with_(n=2)
+    assert obj._probe("_parents") == ("acme.Base",)
+    _, _, payload, features = _saved_payload(obj.with_parents("acme.Other"))
+    assert payload["p"] == {"@tup": ["acme.Other"]} and features == {"parents"}
+
+
+@pytest.mark.parametrize("cls", [_MethodNode, _PropertyNode])
+def test_a_subclass_defining_parents_still_refuses_a_parents_field(cls):
+    storage = MemoryStorage()
+    ptr = storage.push_atom({"t": cls.__type_name__, "oid": uuid.UUID(int=0x2e9).bytes,
+                             "s": {"n": 1, "parents": "old"}})
+    with pytest.raises(ProtoCorruptionError):
+        DirectContext(storage).load(ptr, cls.__type_name__).n
+
+
+def test_repr_labels_a_legacy_field_apart_from_the_parents():
+    storage = MemoryStorage()
+    o = DirectContext(storage).load(_legacy(storage), DBOBJECT).with_parents("acme.B")
+    text = repr(o)
+    assert text.count("parents=") == 1 and "parents=('acme.B',)" in text
+    assert "<field parents>='old'" in text and "<field with_parents>=(1, 2)" in text
+
+
+# -- duplicate parents (review m5) -------------------------------------------------------------------
+
+def test_duplicate_parents_are_refused():
+    a = DBObject(n=1)
+    for parents in (("x.Y", "x.Y"), (a, a), (a, "x.Y", a)):
+        with pytest.raises(ProtoValidationError, match="more than once"):
+            DBObject(parents=parents)
+        with pytest.raises(ProtoValidationError, match="more than once"):
+            DBObject(n=1).with_parents(*parents)
+    storage, context, ptr = _save_direct(a)
+    again = context.load(ptr, DBOBJECT)             # another object, the same oid
+    with pytest.raises(ProtoValidationError, match="more than once"):
+        DBObject(parents=(a, again))
+    assert DBObject(parents=(a, DBObject(n=1), "x.Y", "x.Z")).parents[2:] == ("x.Y", "x.Z")
+
+
+@pytest.mark.parametrize("dup", ["name", "ref"])
+def test_a_record_with_duplicate_parents_is_corrupt(dup):
+    storage = MemoryStorage()
+    context = DirectContext(storage)
+    base = DBObject(n=1)
+    base._bind(context)
+    bptr = base._save()
+    ref = {"@ref": [bptr.segment.bytes, bptr.offset, _T]}
+    items = ["x.Y", "x.Y"] if dup == "name" else [ref, "x.Y", ref]
+    ptr = storage.push_atom({"t": _T, "oid": _OID, "s": {}, "p": {"@tup": items}}, features={"parents"})
+    with pytest.raises(ProtoCorruptionError, match="more than once"):
+        context.load(ptr, DBOBJECT).n

@@ -421,7 +421,8 @@ four keys, written in this order::
     record keeps version 4. Only a ``DBObject`` record (or a record of a type the reader has no
     class for, `Atoms of unknown types (D59)`_, whose parents a reader keeps) may carry ``p``:
     on a record of any other built-in type it is ``ProtoCorruptionError``, and so is a ``p``
-    that is not a non-empty tuple of those items. A record that has ``p`` is of version 5, so
+    that is not a non-empty tuple of those items, or that holds one item twice (the same record
+    reference or the same name; a writer never writes a parent twice). A record that has ``p`` is of version 5, so
     it lands in a segment of version 5 or later (`Format stability`_). An object may not be its
     own parent; ``proto_db`` refuses to write one whose parent has its ``oid``
     (``ProtoValidationError``). What a parent means for reading an attribute (resolution along

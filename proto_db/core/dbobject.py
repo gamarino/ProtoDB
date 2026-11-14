@@ -60,15 +60,22 @@ def _checked_parents(parents) -> tuple:
         raise ProtoValidationError(
             f"parents must be a tuple of DBObjects and registry names (non-empty str), "
             f"not {type(parents).__name__}")
+    seen = set()
     for parent in parents:
         if type(parent) is str:
             if not parent:
                 raise ProtoValidationError("A parent registry name must be a non-empty str")
             check_text(parent)
-        elif not (isinstance(parent, Atom) and type(parent)._parented):
+            key = ("name", parent)
+        elif isinstance(parent, Atom) and type(parent)._parented:
+            key = ("atom", parent.oid)      # D10: one object per oid
+        else:
             raise ProtoValidationError(
                 f"A parent must be a DBObject or a registry name (a non-empty str), not "
                 f"{type(parent).__name__}")
+        if key in seen:
+            raise ProtoValidationError(f"The parent {parent!r} appears more than once")
+        seen.add(key)
     return tuple(parents)
 
 
@@ -121,7 +128,15 @@ class DBObject(Atom):
 
     @property
     def parents(self) -> tuple:
-        """The parents of this object, in order: DBObjects and registry names (``()`` for none)."""
+        """The parents of this object, in order: DBObjects and registry names (``()`` for none).
+
+        An application subclass may define its own ``parents`` member, which then wins (Python
+        members come first); the internal paths never read this property (review I1)."""
+        return self._persisted_parents()
+
+    def _persisted_parents(self) -> tuple:
+        """The persisted parents (the private slot ``_parents``), whatever the class defines as
+        ``parents``; ``()`` for none."""
         found = self._probe("_parents")
         return () if found is _ABSENT else found
 
@@ -158,7 +173,7 @@ class DBObject(Atom):
     def _own_probe(self, name):
         if not isinstance(name, str) or name.startswith("_") or name in RESERVED_NAMES:
             return _ABSENT
-        held = type(self)._legacy_fields.get(name)
+        held = type(self)._legacy_held.get(name)
         return self._probe(name if held is None else held)
 
     def with_(self, **changes) -> "DBObject":
@@ -170,7 +185,7 @@ class DBObject(Atom):
         state = self._state()
         legacy = self._take_legacy(state)
         state.update(changes)
-        return type(self)._from_state(state, self.context, self.parents)._carry(legacy)
+        return type(self)._from_state(state, self.context, self._persisted_parents())._carry(legacy)
 
     def with_parents(self, *parents) -> "DBObject":
         """Return a new version with the same attributes and ``parents`` instead of this one's
@@ -182,13 +197,13 @@ class DBObject(Atom):
     def _take_legacy(self, state: dict) -> dict:
         """Remove from ``state`` (this record's ``_state()``) the legacy fields (R157) and return
         them, so that a change can never write one and a new version carries them unchanged."""
-        legacy = type(self)._legacy_fields
+        legacy = type(self)._legacy_held
         return {name: state.pop(name) for name in legacy if name in state}
 
     def _carry(self, legacy: dict) -> "DBObject":
         """Install the legacy fields ``legacy`` (already canonical: read from a record) on this
         new version, under their private names; return it."""
-        held = type(self)._legacy_fields
+        held = type(self)._legacy_held
         for name, value in legacy.items():
             _osa(self, held[name], value)
         return self
@@ -208,8 +223,10 @@ class DBObject(Atom):
     def __repr__(self):
         if not self._loaded_now():
             return super().__repr__()
-        fields = [f"{k}={v!r}" for k, v in self._state().items()]
-        parents = self.parents
+        held = type(self)._legacy_held
+        # A legacy field named like the API (R157) is labelled apart from the parents (review m1).
+        fields = [f"<field {k}>={v!r}" if k in held else f"{k}={v!r}" for k, v in self._state().items()]
+        parents = self._persisted_parents()
         if parents:
             fields.insert(0, f"parents={parents!r}")
         return f"{type(self).__name__}({', '.join(fields)})"

@@ -443,7 +443,7 @@ def _installed_names(cls, state: dict) -> tuple:
     """The keys :meth:`Atom._restore` installs for ``state``: its attributes, and ``_links`` for
     the history links among them."""
     links = cls._history_links
-    legacy = cls._legacy_fields
+    legacy = cls._legacy_held
     if legacy:
         state = [legacy.get(name, name) for name in state]
     if not links:
@@ -596,13 +596,21 @@ class Atom:
     #: attribute it is held in, since the public name now reads the API member; ``_state()`` gives
     #: it back under its field name, so a new version carries it over unchanged.  A class refuses
     #: to create such a field (``DBObject._check_name``); loading and saving one are allowed.
+    #: Declared in the body of the class whose API took the names over (only there).
     _legacy_fields: dict = {}
-    #: The inverse of ``_legacy_fields`` (computed per class).
+    #: The legacy fields in effect for this class (computed per class): those of ``_legacy_fields``
+    #: whose name still resolves to the declaring class's own member.  A subclass that defines a
+    #: member of that name itself keeps the plain shadow rule for it, as before (review m2).
+    _legacy_held: dict = {}
+    #: The inverse of ``_legacy_held``.
     _legacy_attrs: dict = {}
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
-        cls._legacy_attrs = {attr: name for name, attr in cls._legacy_fields.items()}
+        owner = next(k for k in cls.__mro__ if "_legacy_fields" in k.__dict__)
+        cls._legacy_held = {name: attr for name, attr in cls._legacy_fields.items()
+                            if next((k for k in cls.__mro__ if name in k.__dict__), None) is owner}
+        cls._legacy_attrs = {attr: name for name, attr in cls._legacy_held.items()}
         cls._custom_restore = cls._restore is not Atom._restore or cls._set_link is not Atom._set_link
         if cls.__dict__.get("_opaque_stand_in"):
             cls._type_name_declared = True      # an OpaqueAtom stand-in: never registered (D59)
@@ -958,7 +966,7 @@ class Atom:
         so it may transform the values of ``state`` in place; it must not depend on the
         identity of ``self``."""
         cls = type(self)
-        legacy = cls._legacy_fields
+        legacy = cls._legacy_held
         for name in state:
             if name.startswith("_") or name in RESERVED_NAMES:
                 raise ProtoCorruptionError(f"Invalid persisted attribute name {name!r} for {cls.__type_name__}")
@@ -1048,7 +1056,7 @@ class Atom:
         from . import codec
         state = self._state()
         for name in state:
-            if class_defines(cls, name) and name not in cls._legacy_fields:
+            if class_defines(cls, name) and name not in cls._legacy_held:
                 raise ProtoValidationError(
                     f"Attribute {name!r} of {cls.__type_name__} shadows a class attribute and "
                     f"could not be loaded back lazily")
@@ -1154,15 +1162,24 @@ def _decode_parents(raw, load, ptr) -> tuple:
     parents = codec.decode_value(raw, load)
     if type(parents) is not tuple or not parents:
         raise ProtoCorruptionError(f"Malformed parents in the atom at {ptr}: a non-empty tuple is required")
+    seen = set()
     for parent in parents:
         if type(parent) is str:
             if parent:
-                continue
+                key = parent
+            else:
+                key = None
         elif isinstance(parent, Atom) and type(parent)._parented:
-            continue
-        raise ProtoCorruptionError(
-            f"Malformed parent in the atom at {ptr}: a parent is a DBObject reference or a registry name "
-            f"(a non-empty str), not {_describe_parent(parent)}")
+            key = parent.atom_pointer        # a reference: one record per pointer (no load)
+        else:
+            key = None
+        if key is None:
+            raise ProtoCorruptionError(
+                f"Malformed parent in the atom at {ptr}: a parent is a DBObject reference or a registry "
+                f"name (a non-empty str), not {_describe_parent(parent)}")
+        if key in seen:
+            raise ProtoCorruptionError(f"Malformed parents in the atom at {ptr}: {parent!r} appears more than once")
+        seen.add(key)
     return parents
 
 
