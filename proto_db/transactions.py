@@ -944,20 +944,23 @@ def _take_kept(group: _Group, coordinator, tier, timeout: Optional[float]):
     permit timeout (``timeout``, ``None``: the coordinator's ``acquire_timeout``) and ends, as
     :meth:`~proto_db.cluster.coordinator.ClusterCoordinator.permit` does, with
     ``ProtoTimeoutError``: a ``finish`` that hangs never hangs the node's runners (R82)."""
-    deadline = None
     with group.cond:
-        while isinstance(group.kept, _Ending):
-            if deadline is None:
-                bound = coordinator.acquire_timeout if timeout is None else timeout
-                deadline = time.monotonic() + bound
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise ProtoTimeoutError(
-                    f"Node {coordinator.node_id} could not obtain a write permission within {bound} s: "
-                    f"its kept permission is still being ended")
-            group.cond.wait(timeout=remaining)
-        if deadline is not None:
-            timeout = max(0.0, deadline - time.monotonic())
+        if isinstance(group.kept, _Ending):
+            bound = coordinator.acquire_timeout if timeout is None else timeout
+            deadline = time.monotonic() + bound
+            while True:
+                remaining = deadline - time.monotonic()
+                ending = isinstance(group.kept, _Ending)
+                if remaining <= 0:
+                    # Never ``permit(0.0)``: its "within 0.0 s" would hide the configured bound.
+                    raise ProtoTimeoutError(
+                        f"Node {coordinator.node_id} could not obtain a write permission within {bound} s: "
+                        + ("its kept permission is still being ended" if ending else
+                           "waiting for its kept permission to be ended used the whole timeout"))
+                if not ending:
+                    break
+                group.cond.wait(timeout=remaining)
+            timeout = remaining
         kept = group.kept
         if kept is None:
             return None, 0, timeout
@@ -1061,7 +1064,15 @@ def _run_round(coordinator, lock_timeout, batch: list, group: _Group) -> bool:
     try:
         permission, rounds, timeout = _take_kept(group, coordinator, tier, lock_timeout)
         if permission is None:
-            permission = coordinator.permit(timeout)
+            try:
+                permission = coordinator.permit(timeout)
+            except ProtoTimeoutError as e:
+                if timeout is lock_timeout:
+                    raise               # no wait for an ending kept permission: permit()'s own message
+                bound = coordinator.acquire_timeout if lock_timeout is None else lock_timeout
+                raise ProtoTimeoutError(
+                    f"Node {coordinator.node_id} could not obtain a write permission within {bound} s, "
+                    f"{bound - timeout:.3f} s of it spent waiting for its kept permission to be ended") from e
     except BaseException as e:
         for entry in live:
             entry.finish(error=e, shared=True)

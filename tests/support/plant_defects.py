@@ -301,6 +301,13 @@ def blind_snapshot_of'''),),
         ("tests/unit/test_kept_permit_window.py::test_a_commit_inside_the_end_of_a_kept_permission_waits_for_it_and_commits",),
         "already holds a write permission",
         "product: a kept permission being ended is neither kept nor finished for the next runner (R148)"),
+    "kept_full_budget": Plant((
+        ("proto_db/transactions.py",
+         "                permission = coordinator.permit(timeout)\n",
+         "                permission = coordinator.permit(lock_timeout)     # PLANT: the wait is not counted\n"),),
+        ("tests/unit/test_kept_permit_window.py::test_the_permit_gets_what_the_wait_for_an_ending_kept_permission_left",),
+        "got the full timeout after waiting",
+        "product: permit() gets the full timeout after waiting for an ending kept permission (R148 review)"),
     "nostore": Plant((
         ("proto_db/cluster/coordinator.py", "            use_store = bounded and not gate_open\n",
          "            use_store = False   # PLANT: no data stage leaves before the gate opens\n"),),
