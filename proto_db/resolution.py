@@ -7,8 +7,11 @@ Nodes
     A node is a :class:`~proto_db.core.dbobject.DBObject` (it contributes its own attributes,
     including the legacy fields of ruling R157, never its Python class members), an
     :class:`~proto_db.core.atom.OpaqueAtom` (an atom of another implementation's type, ruling
-    R161: its own fields as data and its persisted parents; no methods), or a registry name (a
-    ``str``).  Nodes are identified by ``oid`` (D10, ruling R159): two parent objects that are
+    R161: its own fields as data and its persisted parents; no methods.  It is read through
+    ``_probe``, which skips a name its stand-in class defines, so a field named like an
+    ``OpaqueAtom`` class member would not be seen through it; ``OpaqueAtom`` and ``Atom`` define
+    no public member today, so no field is hidden, but a public member added to either later
+    would hide the fields of that name in opaque parents), or a registry name (a ``str``).  Nodes are identified by ``oid`` (D10, ruling R159): two parent objects that are
     different stubs or records of one oid are one node, and the object used is the one met first
     in a left-to-right, depth-first walk of the parents; the other one's fields and parents are
     never read.
@@ -38,10 +41,14 @@ Cache (spec section 9)
       stale; instances decoded from different records share it.  The cache lives as long as
       that context, so it never keeps a closed space's storage alive; each cache is bounded
       (:data:`CACHE_NODES` nodes, least recently used first out);
-    - when a parent is unsaved, on the transaction that is the object's context, keyed by that
-      tuple object (``with_`` keeps it, so the versions of one object share the entry).
-    An object whose context keeps no cache (no context, or a plain test context) has its
-    linearization computed at each lookup that needs it.
+    - when a parent is unsaved, only on the transaction that is the object's context, for the
+      life of that transaction, keyed by that tuple object (``with_`` keeps it, so the versions
+      of one object share the entry).  With any other context -- none, a plain test context, or
+      the space's shared atom cache that a version of a loaded object inherits -- it is not
+      cached, so unsaved state is never retained beyond its transaction.
+    An object whose context keeps no cache has its linearization computed at each lookup that
+    needs it.  Each node keeps its full linearization while the walk runs, so a parent chain of
+    depth d costs O(d^2) to linearize once; the cached result is then reused.
     Resolution never visits history: superseded versions are not parents, so the cost of a
     lookup does not depend on how many versions a database holds (anti-goal A4).
 """
@@ -150,10 +157,12 @@ def _cache_slot(obj, parents: tuple, registry) -> tuple:
 
     - Every parent saved: the ``_linearizations`` of the first object parent's context (the
       space's shared atom cache, or the transaction when that cache is off), keyed by the
-      object's class, the registry and the parents' pointers and names; registry names only:
-      a module-level cache.  A pointer names one record of that context's storage forever.
-    - A parent unsaved: the ``_linearizations`` of ``obj``'s context (its transaction), keyed by
-      the identity of the tuple, which the entry holds so that the identity stays unique.
+      registry and the parents' pointers and names; registry names only: a module-level cache.
+      A pointer names one record of that context's storage forever.  The object's class is not
+      part of the key: the linearization of a parents tuple does not depend on the child.
+    - A parent unsaved: the ``_linearizations`` of ``obj``'s context when it is a
+      :class:`~proto_db.transactions.Transaction`, keyed by the identity of the tuple, which the
+      entry holds so that the identity stays unique; with any other context, not cached.
     """
     keys = []
     context = None
@@ -163,15 +172,33 @@ def _cache_slot(obj, parents: tuple, registry) -> tuple:
             continue
         ptr = parent.atom_pointer
         if ptr is None:
-            store = getattr(obj.context, "_linearizations", None)
-            return store, (id(parents), type(obj), registry), parents
+            # Only a transaction holds such an entry, for its own life (spec 14.7): a version of
+            # a loaded object has the space's shared atom cache as its context, which must never
+            # retain unsaved (perhaps aborted) state (review I1).
+            owner = obj.context
+            if not isinstance(owner, _transaction_class()):
+                return None, None, None
+            return owner._linearizations, (id(parents), registry), parents
         if context is None:
             context = parent.context
         keys.append(ptr)
-    key = (type(obj), registry, tuple(keys))
+    key = (registry, tuple(keys))
     if context is None:
         return _names_cache, key, None
     return getattr(context, "_linearizations", None), key, None
+
+
+def _transaction_class() -> type:
+    """:class:`proto_db.transactions.Transaction`, imported on first use (that module imports
+    this one)."""
+    global _Transaction
+    if _Transaction is None:
+        from .transactions import Transaction
+        _Transaction = Transaction
+    return _Transaction
+
+
+_Transaction = None
 
 
 def _node_key(node):

@@ -496,7 +496,7 @@ class _Operand:
             value = compute(element)
             if value is MISSING or value is None:
                 return False
-            return getattr(value, method)(operand)
+            return _type_method(value, method)(value, operand)
 
         return _Opaque(test, f"{self._wrapped(_PREC_ATOM)}.{method}({operand!r})")
 
@@ -518,11 +518,11 @@ class _Operand:
 
     def lower(self) -> "Computed":
         """The key lower-cased (computed, untranslatable)."""
-        return self._unary("lower", lambda v: v.lower())
+        return self._unary("lower", lambda v: _type_method(v, "lower")(v))
 
     def upper(self) -> "Computed":
         """The key upper-cased (computed, untranslatable)."""
-        return self._unary("upper", lambda v: v.upper())
+        return self._unary("upper", lambda v: _type_method(v, "upper")(v))
 
     def length(self) -> "Computed":
         """``len`` of the key (computed, untranslatable)."""
@@ -645,6 +645,16 @@ class Field(_Operand):
              metric: str | None = None) -> Predicate:
         """The ``near[]`` term: the ``k`` nearest and/or those within ``threshold`` (needs a vector index)."""
         return _Pure(Term(self._path, NEAR, NearQuery(vector, k=k, threshold=threshold, metric=metric)))
+
+
+def _type_method(value, name: str):
+    """The method ``name`` of ``value``'s Python type (``AttributeError`` if it has none).  Asked of
+    the type, never of the value: a DBObject would answer through resolution over its parents,
+    and a key method is a property of the key's type (str, bytes), never application data."""
+    method = getattr(type(value), name, None)
+    if method is None:
+        raise AttributeError(f"{type(value).__name__!r} object has no attribute {name!r}")
+    return method
 
 
 def path_of(field: Field) -> str | None:

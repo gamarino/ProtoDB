@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   byte for byte. `parents` and `with_parents` can no longer be created as field names (`ProtoValidationError`),
   but a record written before that holds a field of either name still loads, keeps the field readable and
   `with_` carries it over unchanged: it is never refused (ruling R157).
+- `DBObject` resolves a name it does not hold along the C3 linearization of its parents (`proto_db.resolution`);
+  a miss is still `None`. `DBObject` now defines `__getitem__` (`o["name"]` reads what `o.name` reads),
+  `__contains__` (`"name" in o`), `__setitem__` and `__delitem__` (both raise `ProtoUserError`), and sets
+  `__iter__ = None` (it stays non-iterable). A mixin listed after `DBObject` in a subclass's bases no longer
+  provides any of these, and `%`-formatting with a `DBObject` as the mapping (`"%(n)s" % o`) now formats instead
+  of raising `TypeError`. `has_defined_attr`, index keys and query paths read own attributes only, as before.
 - `proto_db.__version__` reports the package version; in 2.0.0rc3 it still said `2.0.0.dev0`.
 - `CloudStorage.publish_root` reports a write refused by its precondition as `ProtoConflictError`, which
   `Database.run` retries, when the object store declares that its refusals are definitive

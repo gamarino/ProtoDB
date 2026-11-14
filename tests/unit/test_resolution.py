@@ -274,16 +274,27 @@ def test_without_the_atom_cache_saved_parents_are_cached_on_the_transaction(monk
 
 
 def test_cost_does_not_depend_on_history_depth(monkeypatch):
-    """A structural count, not a timing: the frames walked are the same for a parent with 100
-    superseded versions and one with 1,000 (anti-goal A4)."""
+    """A structural count, not a timing: the frames walked are the same for parents with 100
+    superseded versions and with 1,000 (anti-goal A4).  Every version keeps its predecessor as an
+    attribute, and each version of ``base`` has the current version of ``kind`` as its parent, so
+    a resolution that walked history (or old parents) would visit more frames with more depth."""
     def frames(depth):
         space = ObjectSpace(MemoryStorage())
         db = space.new_database("db")
-        db.run(lambda tx: tx.set_root_object("base", DBObject(version=0)))
+
+        def start(tx):
+            kind = DBObject(kind_version=0)
+            tx.set_root_object("kind", kind)
+            tx.set_root_object("base", DBObject(parents=(kind,), version=0))
+        db.run(start)
         for v in range(1, depth + 1):
             def supersede(tx, v=v):
+                kind = tx.get_root_object("kind")
+                kind = kind.with_(kind_version=v, previous=kind)
+                tx.set_root_object("kind", kind)
                 previous = tx.get_root_object("base")
-                tx.set_root_object("base", previous.with_(version=v, previous=previous))
+                base = previous.with_(version=v, previous=previous).with_parents(kind)
+                tx.set_root_object("base", base)
             db.run(supersede)
 
         def child(tx):
@@ -294,14 +305,15 @@ def test_cost_does_not_depend_on_history_depth(monkeypatch):
 
         def read(tx):
             c = tx.get_root_object("child")
-            assert c.version == depth and c.missing is None
+            assert c.version == depth and c.kind_version == depth and c.missing is None
             out["frames"] = len(counter.visited)
             out["lin"] = len(c._linearization())
         db.run(read)
         space.close()
         return out
     shallow, deep = frames(100), frames(1000)
-    assert shallow == deep == {"frames": 2, "lin": 2}
+    # version: 1 frame; kind_version: 2; missing: 2 (base, kind) -- o's own probes are apart.
+    assert shallow == deep == {"frames": 5, "lin": 3}
 
 
 # -- rulings R159, R160, R161 ---------------------------------------------------------------------
@@ -445,3 +457,70 @@ def test_item_names_are_validated():
             o[bad]
     with pytest.raises(TypeError):
         iter(o)
+
+
+# -- review fix round 1 ---------------------------------------------------------------------------
+
+def test_unsaved_parent_entries_never_reach_the_space_cache():
+    """I1: a version of a loaded object (its context is the space's shared atom cache) with an
+    unsaved parent is not cached there, and keeps no reference to that parent once it ends."""
+    import gc
+    import weakref
+
+    space = ObjectSpace(MemoryStorage())
+    db = space.new_database("db")
+    db.run(lambda tx: tx.set_root_object("o", DBObject(n=1)))
+    ref = {}
+
+    def use(tx):
+        loaded = tx.get_root_object("o")
+        unsaved = DBObject(k="unsaved")
+        ref["parent"] = weakref.ref(unsaved)
+        version = loaded.with_parents(unsaved)
+        assert version.context is space._atoms
+        assert version.k == "unsaved" and version.with_(m=2).k == "unsaved"
+    db.run(use)
+    assert len(space._atoms._linearizations) == 0
+    gc.collect()
+    assert ref["parent"]() is None
+    space.close()
+
+
+def test_unsaved_parent_entries_are_cached_only_on_a_transaction(monkeypatch):
+    calls = []
+    real = resolution._compute
+    monkeypatch.setattr(resolution, "_compute", lambda p, r: calls.append(p) or real(p, r))
+    unsaved = DBObject(k=1)
+    o = DBObject(context=DirectContext(MemoryStorage()), parents=(unsaved,))
+    assert o.k == 1 and o.k == 1
+    assert len(calls) == 2                          # no cache outside a transaction
+
+
+def _unreachable_registry_object():
+    """A DBObject whose lookups past its own attributes reach a registry name (no registry), with
+    a parent holding data under the names of library protocols."""
+    decoy = DBObject(elements="data", as_query_plan="data", plan="data", startswith="data",
+                     endswith="data", lower="data", upper="data")
+    return DBObject(parents=(decoy, "acme.Base"), n=1), DBObject(parents=("acme.Base",), n=1)
+
+
+def test_library_protocol_probes_never_go_through_resolution():
+    """I2: library code asks the Python type, never resolution, whether a value has a protocol
+    member: no ProtoNotSupportedError from the registry name, and inherited data is ignored."""
+    from proto_db.query.cache import as_plan
+    from proto_db.query.linq import F, from_collection
+    from proto_db.query.plans import Unnest
+    from proto_db.collections.lists import List
+
+    for obj in _unreachable_registry_object():
+        with pytest.raises(ProtoValidationError, match="Expected a QueryPlan"):
+            as_plan(obj)
+        plan = Unnest(List.from_iterable([DBObject(tags=obj)]).as_query_plan(), "tags")
+        with pytest.raises(ProtoValidationError, match="Unnest"):
+            list(plan.execute())
+        rows = [{"s": obj}]
+        for predicate in (F.s.startswith("A"), F.s.endswith("A"), F.s.lower() == "a", F.s.upper() == "A"):
+            with pytest.raises(AttributeError):
+                from_collection(rows).where(predicate).to_list()
+    assert from_collection([{"s": "Abc"}]).where(F.s.startswith("A")).count() == 1
+    assert from_collection([{"s": "Abc"}]).where(F.s.lower() == "abc").count() == 1

@@ -1078,7 +1078,9 @@ class Unnest(QueryPlan):
                     continue
                 if isinstance(value, (list, tuple)):
                     items = value
-                elif is_atom(value) and callable(getattr(value, "elements", None)):
+                elif is_atom(value) and callable(getattr(type(value), "elements", None)):
+                    # The Python type is asked, never the value: a DBObject would answer through
+                    # resolution over its parents (application data and extensions).
                     items = value.elements()
                 else:
                     raise ProtoValidationError(f"Unnest of {path!r} needs a list or tuple (or a collection), "
