@@ -49,7 +49,8 @@ Non-goals:
 
 Anti-goals: the feature fails, even if it works, if:
 - A1. Anything language-specific is persisted: Python code, Python class names or import paths.
-- A2. A lookup miss returns `None`, a default, or a stale result instead of raising.
+- A2. A lookup returns a stale result, or an error is swallowed. A miss is not an error: it returns `None`
+  (maintainer, 2026-11-14, so that extending a model over time stays easy).
 - A3. A concurrent symbol creation, or two concurrent module installs, can produce two symbol objects, or lose an
   install by last-writer-wins.
 - A4. Resolution cost grows with the database's history depth.
@@ -136,12 +137,9 @@ What is found:
 - Nothing else is ever computed (maintainer, 2026-11-14, Q4). There are no properties, computed defaults or other
   computation rules. A value that must be computed is a method.
 
-A miss raises:
-- `o.name` raises `AttributeError`, which subclasses `ProtoNotFoundError` *(proposal)*. `hasattr`, `getattr` with a
-  default and the Python protocols that probe attributes keep working.
-- `o["name"]` raises `KeyError`, which subclasses `ProtoNotFoundError` *(proposal)*.
-
-The message names the object, the name and the linearization searched.
+A miss returns `None`, through `o.name` and through `o["name"]` alike, with or without parents (maintainer,
+2026-11-14). This is today's `DBObject` behaviour, and it lets a model gain attributes over time without breaking
+older objects or older code. `"name" in o` and `has_defined_attr` tell an absent name from an explicit `None`.
 
 The Python surface:
 - `o.name` and `o["name"]` run the same resolution. `o["name"]` accepts a `str` or a symbol, so the name may be
@@ -152,7 +150,7 @@ The Python surface:
   name of a class member). For the same reason a module may not define them in a registry name. So no attribute
   shadows the API and no API member is shadowed by resolution. Dunder names (`__len__`, `__eq__`, ...) never go
   through resolution.
-- `name in o` reports whether resolution finds `name`. `o._own` returns the own attributes only.
+- `name in o` reports whether resolution finds `name`, along the whole linearization. `o._own` returns the own attributes only.
 - Writes never go into a parent. `o.with_(...)` sets own attributes, and `o["x"] = v` is refused: values are
   immutable. A data default that an extension defines is overridden by setting the attribute on the instance.
 
@@ -280,7 +278,7 @@ protoBaseST reads and writes the same roots, symbols and the `"p"` field of `DBO
   - own data, parent data and registry data;
   - a registry method;
   - a computed name;
-  - a miss (`AttributeError` and `KeyError`, both `ProtoNotFoundError`).
+  - a miss (`None` in both forms; `in` is False).
 - C3 order on a diamond of registry names, with each name visited once. An inconsistent hierarchy raises.
 - An extension chain across three modules:
   - `_super` reaches each definition once, in load order;
