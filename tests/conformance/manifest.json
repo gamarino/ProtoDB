@@ -8,7 +8,7 @@
    4,
    5
   ],
-  "log_format": 2,
+  "log_format": 3,
   "protocol": 14
  },
  "builtin_type_aliases": [
@@ -1533,10 +1533,10 @@
    "type": "proto_db.core.dbobject.DBObject"
   },
   {
-   "id": "log-version-3",
+   "id": "log-version-4",
    "layer": "log",
    "error": "not_supported",
-   "file": "invalid/log-version-3.bin",
+   "file": "invalid/log-version-4.bin",
    "note": "a log of another format version",
    "kind": "ROOT"
   },
@@ -20908,6 +20908,61 @@
     "promised": 7,
     "top": 7,
     "empty": false
+   }
+  },
+  "roots_log_v5": {
+   "file": "cluster/roots-v5.log",
+   "kind": "ROOT",
+   "log_version": 3,
+   "entry_kind": 7,
+   "entries": [
+    {
+     "name": "accepted-v5",
+     "size": 44,
+     "fields": {
+      "kind": 1,
+      "label": 7,
+      "root": {
+       "segment": "5eed0000000040008000000000002002",
+       "offset": 26,
+       "epoch": 4
+      },
+      "version": 5
+     }
+    },
+    {
+     "name": "committed-v5",
+     "size": 44,
+     "fields": {
+      "kind": 2,
+      "label": 7,
+      "root": {
+       "segment": "5eed0000000040008000000000002002",
+       "offset": 26,
+       "epoch": 4
+      },
+      "version": 5
+     }
+    }
+   ],
+   "loaded": {
+    "accepted": [
+     7,
+     {
+      "segment": "5eed0000000040008000000000002002",
+      "offset": 26,
+      "epoch": 4
+     }
+    ],
+    "committed": [
+     7,
+     {
+      "segment": "5eed0000000040008000000000002002",
+      "offset": 26,
+      "epoch": 4
+     }
+    ],
+    "version": 5
    }
   },
   "roots_log_torn": {

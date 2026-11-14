@@ -449,7 +449,8 @@ def gen_invalid(manifest):
     header = logfile.encode_header(rootlog.LOG_KIND)
     entry = rootlog._payload(1, 7, fmt.RootRecord(fmt.WRITE_FORMAT_VERSION, PTR_SEGMENT, 26, 3))
     out += [
-        ("log-version-3", "log", fmt_log_header(3, rootlog.LOG_KIND) + logfile.encode_frame(entry),
+        (f"log-version-{logfile.LOG_FORMAT_VERSION + 1}", "log",
+         fmt_log_header(logfile.LOG_FORMAT_VERSION + 1, rootlog.LOG_KIND) + logfile.encode_frame(entry),
          "a log of another format version", "not_supported", {"kind": "ROOT"}),
         ("log-kind-mismatch", "log", logfile.encode_header(tiered.MANIFEST_KIND) + logfile.encode_frame(seg),
          "a SEGS log opened as ROOT", "corruption", {"kind": "ROOT"}),
@@ -896,7 +897,6 @@ def gen_legacy_database(manifest):
     3 allowed (zone datetimes, NaNs twice), and an application record and reference spelled by
     an alias."""
     from proto_db.core import atom as atom_module
-    import proto_db.transactions as tx_module
     from proto_db.transactions import DatabaseRoot
     real_tag = atom_module.type_tag
 
@@ -919,7 +919,7 @@ def gen_legacy_database(manifest):
                mock.patch.object(codec, "check_map_keys", any_keys),
                mock.patch.object(values_module, "check_map_keys", any_keys),
                mock.patch.object(DatabaseRoot, "__init__", no_origin)]
-    patches += [mock.patch.object(m, "WRITE_FORMAT_VERSION", 3) for m in (fmt, tx_module)]
+    patches.append(mock.patch.object(fmt, "WRITE_FORMAT_VERSION", 3))   # read at call time by every writer
     with _Deterministic(0x3000):
         for p in patches:
             p.start()
@@ -1078,6 +1078,17 @@ def gen_cluster(manifest):
     ranges_payload = tiered.TieredStorage._ranges_payload((root.segment, root.offset), (7, root.epoch), ranges)
     ranges_log = logfile.encode_header(tiered.RANGES_KIND) + logfile.encode_frame(ranges_payload)
     segs_log = logfile.encode_header(tiered.MANIFEST_KIND) + logfile.encode_frame(seg_uuid.bytes)
+    # A root of storage format 5 (a space holding format-5 data): versioned entries (kind 7) in a
+    # log of format 3; a reader of log format 2 refuses it at the header, of entry kinds 1-6 at
+    # the entry.
+    root_v5 = fmt.RootRecord(fmt.FORMAT_VERSION, root.segment, root.offset, root.epoch)
+    v5_entries = [
+        ("accepted-v5", rootlog._payload(1, 7, root_v5),
+         {"kind": 1, "label": 7, "root": root_desc(root), "version": fmt.FORMAT_VERSION}),
+        ("committed-v5", rootlog._payload(2, 7, root_v5),
+         {"kind": 2, "label": 7, "root": root_desc(root), "version": fmt.FORMAT_VERSION}),
+    ]
+    log_v5 = logfile.log_contents(rootlog.LOG_KIND, [p for _, p, _ in v5_entries], rootlog.VERSIONED_LOG_VERSION)
 
     manifest["cluster"] = {
         "segment": {"file": seg_file, "records": _records(VECTORS / seg_file)},
@@ -1087,6 +1098,13 @@ def gen_cluster(manifest):
             "base": root_desc(base), "root": root_desc(root), "label": 7,
             "loaded": {"accepted": [7, root_desc(root)], "committed": [7, root_desc(root)], "promised": 7,
                        "top": 7, "empty": False},
+        },
+        "roots_log_v5": {
+            "file": _write("cluster/roots-v5.log", log_v5), "kind": "ROOT",
+            "log_version": rootlog.VERSIONED_LOG_VERSION, "entry_kind": rootlog.VERSIONED_KIND,
+            "entries": [{"name": n, "size": len(p), "fields": f} for n, p, f in v5_entries],
+            "loaded": {"accepted": [7, root_desc(root)], "committed": [7, root_desc(root)],
+                       "version": fmt.FORMAT_VERSION},
         },
         "roots_log_torn": {
             "file": _write("cluster/roots-torn.log", torn), "kind": "ROOT", "valid_end": len(log) - len(last),

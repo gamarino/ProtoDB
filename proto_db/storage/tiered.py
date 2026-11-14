@@ -208,8 +208,8 @@ from .file import DURABILITY_MODES, FileStorage
 from . import format as _format
 from .format import (FORMAT_VERSION, WRITE_FORMAT_VERSION, RECORD_HEADER_SIZE, RECORD_MAGIC, SEGMENT_HEADER_SIZE,
                      SEGMENT_MAGIC, RecordKind, RootRecord, atom_version, decode_root, decode_segment_header,
-                     encode_record, encode_segment_header, framed_version, read_record, record_header,
-                     undecodable_atom)
+                     encode_record, encode_segment_header, framed_version, peek_segment_header, read_record,
+                     record_header, undecodable_atom)
 from .logfile import encode_frame, log_contents, open_log, prepare_replacement, read_fd, write_all
 from .ownerlock import OwnerLock
 
@@ -903,13 +903,12 @@ class TieredStorage(SharedStorage):
             # version bytes are intact; a version this revision cannot read is refused, never
             # repaired.  A header torn before its version is rewritten at the highest version
             # (_unknown_header); the redo of its first record writes the exact one.
-            version = None
-            if size >= 10 and data[:8] == SEGMENT_MAGIC:
-                version = struct.unpack_from("<H", data, 8)[0]
-                if version not in _format.READABLE_FORMAT_VERSIONS:
-                    raise ProtoNotSupportedError(
-                        f"Own segment {segment.hex} at {path} has format version {version}, which this "
-                        f"version does not read")
+            magic_ok, version = peek_segment_header(data)
+            version = version if magic_ok else None
+            if version is not None and version not in _format.READABLE_FORMAT_VERSIONS:
+                raise ProtoNotSupportedError(
+                    f"Own segment {segment.hex} at {path} has format version {version}, which this "
+                    f"version does not read")
             header = encode_segment_header(segment, FORMAT_VERSION if version is None else version)
             if size >= SEGMENT_HEADER_SIZE and data[:SEGMENT_HEADER_SIZE] == header:
                 pos = SEGMENT_HEADER_SIZE
@@ -932,8 +931,9 @@ class TieredStorage(SharedStorage):
                     ambiguous = False
             else:
                 keep = 0
-                while keep < min(size, SEGMENT_HEADER_SIZE) and (
-                        data[keep] == header[keep] or (version is None and keep in (8, 9))):
+                # Without a readable version (torn before it), the version bytes are not compared.
+                version_bytes = range(len(SEGMENT_MAGIC), len(SEGMENT_MAGIC) + 2) if version is None else ()
+                while keep < min(size, SEGMENT_HEADER_SIZE) and (data[keep] == header[keep] or keep in version_bytes):
                     keep += 1
                 if any(view[keep:]):
                     raise ProtoCorruptionError(
@@ -1078,6 +1078,11 @@ class TieredStorage(SharedStorage):
             raise ProtoValidationError("Atom payload must be a dict")
         version = atom_version(payload, features)
         return self._push(RecordKind.ATOM, msgpack.packb(payload, use_bin_type=True), version)
+
+    @property
+    def written_version(self) -> int:
+        """See :attr:`SharedStorage.written_version` (the local tier's own segments)."""
+        return self._local.written_version
 
     def push_blob(self, data: bytes) -> AtomPointer:
         """See :meth:`SharedStorage.push_blob`."""
@@ -1903,6 +1908,11 @@ class TieredStorage(SharedStorage):
 
         Returns True when written, False when the store already holds that root or a newer
         one.  Raises ``ProtoUnexpectedError`` when the store stays unreachable.
+
+        The root is written at the highest of its own version (the committer's, carried on the
+        wire and in the acceptor log), the version of the root it replaces and this node's
+        :attr:`written_version`.  The same root held at a lower version is written again at
+        the higher one: a root's version is never kept lower than its data needs.
         """
         with self._ship_lock:       # object-store writes: never once close() has started
             self._refuse_closed("persisting the root", local=False)
@@ -1913,12 +1923,14 @@ class TieredStorage(SharedStorage):
                         current_label, current_root = _decode_root_object(current)
                     except ObjectNotFoundError:
                         etag, current_label, current_root = None, 0, None
-                    if etag is not None and compare_roots(current_label, current_root, label, record) >= 0:
-                        return False
                     # Never lower than the root it replaces, nor than a segment this node wrote
                     # (``SharedStorage.publish_root``).
                     version = max(record.version, self._local.written_version,
                                   current_root.version if current_root is not None else 0)
+                    if etag is not None:
+                        order = compare_roots(current_label, current_root, label, record)
+                        if order > 0 or (order == 0 and current_root.version >= version):
+                            return False
                     data = _encode_root_object(RootRecord(version, record.segment, record.offset, record.epoch),
                                                label)
                     if etag is None:
@@ -2337,7 +2349,8 @@ class TieredStorage(SharedStorage):
         persisted = self.read_persisted()
         return None if persisted is None else persisted[1]
 
-    def publish_root(self, ptr: AtomPointer, expected_epoch: Optional[int]) -> RootRecord:
+    def publish_root(self, ptr: AtomPointer, expected_epoch: Optional[int], *,
+                     version: Optional[int] = None) -> RootRecord:
         """Not supported: a tiered storage's root is committed by the cluster and persisted by
         the persister (D46)."""
         raise ProtoNotSupportedError("TieredStorage roots are committed by the cluster (use a ClusterCoordinator)")

@@ -431,16 +431,37 @@ def test_cluster_segment():
 
 def _log(vector: dict, kind: bytes) -> list:
     data = _bytes(vector["file"])
-    assert data[:logfile.HEADER_SIZE] == logfile.encode_header(kind)
+    version = vector.get("log_version", logfile.LOG_WRITE_VERSION)
+    assert data[:logfile.HEADER_SIZE] == logfile.encode_header(kind, version)
     result = logfile.scan(data, kind, vector["file"])
     assert not result.torn and result.valid_end == len(data)
-    assert logfile.log_contents(kind, result.payloads) == data
+    assert logfile.log_contents(kind, result.payloads, version) == data
     return result.payloads
 
 
-def _root(desc):
-    return None if desc is None else fmt.RootRecord(fmt.WRITE_FORMAT_VERSION, uuid.UUID(hex=desc["segment"]),
+def _root(desc, version=fmt.WRITE_FORMAT_VERSION):
+    return None if desc is None else fmt.RootRecord(version, uuid.UUID(hex=desc["segment"]),
                                                     desc["offset"], desc["epoch"])
+
+
+def test_roots_log_of_a_format_5_space():
+    """Roots of storage format 5 ride in versioned entries (kind 7) of a log of format 3, read
+    back at version 5; a reader that knows only kinds 1-6 refuses the entries, and a reader of
+    log format 2 refuses the file at its header."""
+    vector = MANIFEST["cluster"]["roots_log_v5"]
+    assert vector["log_version"] == rootlog.VERSIONED_LOG_VERSION == 3
+    payloads = _log(vector, rootlog.LOG_KIND)
+    assert [len(p) for p in payloads] == [e["size"] for e in vector["entries"]]
+    for entry, payload in zip(vector["entries"], payloads):
+        fields = entry["fields"]
+        assert payload[0] == vector["entry_kind"] == rootlog.VERSIONED_KIND, entry["name"]
+        assert int.from_bytes(payload[1:3], "little") == fields["version"]
+        assert payload[3:] == rootlog._payload(fields["kind"], fields["label"], _root(fields["root"]))
+        assert rootlog._payload(fields["kind"], fields["label"], _root(fields["root"], fields["version"])) == payload
+    loaded = rootlog._decode(payloads, vector["file"])
+    version = vector["loaded"]["version"]
+    assert loaded.accepted == (7, _root(vector["loaded"]["accepted"][1])) and loaded.accepted[1].version == version
+    assert loaded.committed[1].version == version
 
 
 def test_roots_log():

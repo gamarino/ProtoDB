@@ -32,7 +32,8 @@ from ..errors import ProtoCorruptionError, ProtoNotSupportedError, ProtoValidati
 from ..values import MAX_VALUE_DEPTH
 
 __all__ = ["SEGMENT_MAGIC", "FORMAT_VERSION", "WRITE_FORMAT_VERSION", "FEATURE_VERSIONS", "write_version",
-           "payload_features", "atom_version", "record_version", "framed_version", "READABLE_FORMAT_VERSIONS",
+           "payload_features", "atom_version", "next_root_version", "peek_segment_header", "record_version",
+           "framed_version", "READABLE_FORMAT_VERSIONS",
            "SEGMENT_HEADER_SIZE", "RECORD_HEADER_SIZE", "RECORD_MAGIC", "RecordKind", "RootRecord",
            "encode_segment_header", "decode_segment_header", "segment_header_version", "encode_record",
            "record_header", "record_size", "read_record", "encode_root", "decode_root", "undecodable_atom"]
@@ -75,19 +76,34 @@ def payload_features(payload: dict) -> frozenset:
 def atom_version(payload: dict, features=frozenset()) -> int:
     """The version an atom ``payload`` needs: :func:`write_version` of the features it uses.
 
-    ``features`` are the features its writer declares (``push_atom(..., features=...)``).  A name
-    that is not in :data:`FEATURE_VERSIONS`, or a declared feature the payload does not use, raises
-    ``ProtoValidationError``: the version of a record must follow from its bytes alone (see
-    :func:`payload_features`).  A feature the payload uses counts even when it is not declared."""
+    ``features`` are the features its writer declares (``push_atom(..., features=...)``): they
+    must be exactly the features the payload uses (:func:`payload_features`).  A name that is not
+    in :data:`FEATURE_VERSIONS`, a declared feature the payload does not use, and a feature the
+    payload uses without declaring it all raise ``ProtoValidationError``.  So a writer states
+    which format features it writes, and the storage checks the statement against the bytes,
+    whose version alone a receiver can derive (:func:`framed_version`)."""
     used = payload_features(payload)
+    if isinstance(features, str):
+        raise ProtoValidationError("features must be a collection of feature names, not a string")
     declared = frozenset(features)
     unknown = sorted(str(f) for f in declared if f not in FEATURE_VERSIONS)
     if unknown:
         raise ProtoValidationError(f"Unknown format features {unknown}; known: {sorted(FEATURE_VERSIONS)}")
-    if not declared <= used:
+    if declared != used:
         raise ProtoValidationError(
-            f"The atom declares the format features {sorted(declared - used)} but its payload does not use them")
+            f"The atom declares the format features {sorted(declared)} but its payload uses {sorted(used)}")
     return write_version(used)
+
+
+def next_root_version(previous, storage) -> int:
+    """The version of a root built on ``previous`` (a :class:`RootRecord` or ``None``) by a writer
+    on ``storage``: the highest of :data:`WRITE_FORMAT_VERSION`, ``previous``'s version and the
+    highest segment version ``storage`` has written (``SharedStorage.written_version``).  A root
+    is never lower than the root it replaces, so once a space holds data of a later version every
+    later root of it is of that version, in cluster mode too, where the root's version travels on
+    the wire and in the acceptor log ("Format stability" in format-spec.rst)."""
+    return max(WRITE_FORMAT_VERSION, previous.version if previous is not None else 0,
+               getattr(storage, "written_version", WRITE_FORMAT_VERSION))
 
 
 def record_version(kind: int, payload) -> int:
@@ -178,6 +194,20 @@ def _decode_header(data) -> tuple:
 def decode_segment_header(data: bytes) -> uuid.UUID:
     """Validate a segment header (extra trailing bytes are ignored) and return its UUID."""
     return _decode_header(data)[1]
+
+
+def peek_segment_header(data) -> tuple:
+    """``(magic_ok, version)`` of the possibly incomplete segment header at the start of ``data``:
+    ``magic_ok`` tells that the bytes present agree with :data:`SEGMENT_MAGIC` (a torn header is a
+    prefix of it), ``version`` is the header's version when its bytes are there, else ``None``.
+    Nothing is validated beyond that; :func:`decode_segment_header` validates a complete header."""
+    magic_size = len(SEGMENT_MAGIC)
+    head = bytes(data[:magic_size])
+    if not SEGMENT_MAGIC.startswith(head):
+        return False, None
+    if len(data) < magic_size + 2:
+        return True, None
+    return True, struct.unpack_from("<H", data, magic_size)[0]
 
 
 def segment_header_version(data: bytes) -> int:

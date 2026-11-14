@@ -28,7 +28,7 @@ import weakref
 
 from proto_db.cluster.coordinator import ClusterCoordinator
 from proto_db.errors import ProtoDBError
-from proto_db.storage.format import FORMAT_VERSION, RootRecord
+from proto_db.storage.format import WRITE_FORMAT_VERSION, RootRecord
 from proto_db.storage.memory import MemoryStorage
 from tests.support.cluster import MemoryTier
 
@@ -98,7 +98,7 @@ class RecordTier(MemoryTier):
 
 def rec(epoch: int) -> RootRecord:
     """A fake root record at ``epoch`` with a pointer of its own."""
-    return RootRecord(FORMAT_VERSION, uuid.UUID(int=next(_ids)), 64, epoch)
+    return RootRecord(WRITE_FORMAT_VERSION, uuid.UUID(int=next(_ids)), 64, epoch)
 
 
 class FakeClock:

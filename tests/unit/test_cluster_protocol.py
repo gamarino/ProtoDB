@@ -8,11 +8,11 @@ import pytest
 from proto_db.cluster.protocol import (MAX_FRAME_BYTES, PROTOCOL_VERSION, ClusterProtocolError,
                                        FrameDecoder, decode_labeled_root, decode_message, decode_root, encode_frame,
                                        encode_root, make_message)
-from proto_db.storage.format import FORMAT_VERSION, RootRecord
+from proto_db.storage.format import WRITE_FORMAT_VERSION, RootRecord
 
 
 def _record(epoch=3):
-    return RootRecord(FORMAT_VERSION, uuid.uuid4(), 64, epoch)
+    return RootRecord(WRITE_FORMAT_VERSION, uuid.uuid4(), 64, epoch)
 
 
 def test_every_message_carries_the_protocol_version_and_sender():

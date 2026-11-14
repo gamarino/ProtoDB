@@ -40,8 +40,9 @@ The key words MUST, MUST NOT, SHOULD and MAY are used as in RFC 2119. A section 
      - every segment header and every root record; versions 2 to 5 are read, and 4 is written
        unless the data uses a feature of 5 (`Format stability`_)
    * - Framed log format (``LOG_FORMAT_VERSION``)
-     - 2
-     - the header of every framed log file
+     - 3
+     - the header of every framed log file; versions 2 and 3 are read, and 2 is written unless the
+       log is an acceptor log holding a versioned entry (kind 7, `The acceptor log (kind ROOT)`_)
    * - Cluster protocol (``PROTOCOL_VERSION``)
      - 14
      - the ``v`` field of every cluster message; no other version is accepted
@@ -125,12 +126,15 @@ the bytes of the records that use it. A node that writes replicated or recovered
 segment file it did not create (a cluster copy, a redo from the acceptor log) writes the header
 version of the segment's first record, and the highest version it writes while it lacks that
 record. A root record's version is the highest of 4, the version of the root it replaces and the
-highest segment version its writer has written.
+highest segment version its writer has written; in cluster mode the committer's root version
+travels with the root (the fifth element of a wire *root*, `Cluster wire protocol`_, and the
+versioned entry of the acceptor log), and a node that persists the root writes the highest of
+that version and its own, so a root over format-5 data is format 5 whichever node persists it.
 
 **The pinned vectors.** ``tests/conformance/vectors.sha256`` lists the SHA-256 of every file
 under ``tests/conformance/vectors/`` (``<hex digest>  <path>``, one line per file, sorted by path
 in code point order, ``/`` as the separator), then the digest of ``manifest.json``. The SHA-256
-of that list file is ``bb9ab65f4334e7359d1e9afcad9c03500442aad357c8db14424998a81c11c5ef``. ``test_conformance.py`` checks that the committed files
+of that list file is ``f9eba972a6b1926ef38f52827870607ca6fd00a8c90602111071f5542e1927c3``. ``test_conformance.py`` checks that the committed files
 match the list and that this page states the list's digest. Each vector file is governed by
 the number that covers what it holds: ``vectors/cluster/*.log`` by ``LOG_FORMAT_VERSION``,
 ``vectors/cluster/messages/`` by ``PROTOCOL_VERSION``, every other file by ``FORMAT_VERSION``.
@@ -1449,10 +1453,15 @@ Framed log files
 Every append-only log of a node (``roots.log``, ``ranges.log``, ``segments.log``, a shared
 storage's ``cluster/<node_id>.roots``) has this layout.
 
-Header (14 bytes): magic ``PDB2LOG\0`` (8 bytes), the log format version (``u16``, 2), and the
-kind (4 ASCII bytes: ``ROOT``, ``RANG`` or ``SEGS``). A reader checks all three: a header that is
-only a prefix of the expected one (possibly followed by zero bytes, and nothing else) is a new
-log; any other header is ``ProtoCorruptionError``, another version ``ProtoNotSupportedError``.
+Header (14 bytes): magic ``PDB2LOG\0`` (8 bytes), the log format version (``u16``, 2 or 3), and
+the kind (4 ASCII bytes: ``ROOT``, ``RANG`` or ``SEGS``). A reader checks all three: a header that
+is only a prefix of the expected one (possibly followed by zero bytes, and nothing else) is a new
+log; any other header is ``ProtoCorruptionError``, a version it does not read
+``ProtoNotSupportedError``. Version 3 differs from 2 only in that an acceptor log may hold
+versioned entries (kind 7); a writer writes 2 for every other log, and raises the header of an
+acceptor log to 3 in place, ``fsync``-ed, before it appends the log's first versioned entry (a
+compaction writes 3 when it keeps one). A reader of version 2 therefore refuses such a log at
+its header.
 
 Then frames, one per entry:
 
@@ -1546,6 +1555,17 @@ first byte:
        kind 5. Flag bit 0 (``ACCEPTED``) marks an accepted root; without it the entry only makes
        the records durable on a data replica. Other flag bits, and a range with ``start >
        end``, are ``ProtoCorruptionError``.
+   * - 7 versioned
+     - 3 + entry
+     - ``kind (u8) | storage format version (u16) |`` the payload of an entry of kind 1, 2, 5 or
+       6: that entry, whose roots (root and ``pred``) are of the given storage format version
+       (above 4). An entry whose root, ``pred`` or records need a storage format above 4 is
+       written in this form, every other entry in its plain form; a committer gives its root at
+       least the version of every record of its commit (`Format stability`_). A version of 4 or
+       less, a wrapped kind other than 1, 2, 5 or 6, or an entry of 3 bytes or fewer is
+       ``ProtoCorruptionError``; a version the reader does not read is
+       ``ProtoNotSupportedError``. A reader that predates kind 7 refuses it as an unknown kind,
+       so it never reads a format-5 root or record as format 4.
 
 ``seq`` is the write permission the root was committed under (0 under a plain lease); ``pred``
 is the root it was built on, all zero when unknown (``pred`` label 0 and epoch 0). Kinds 1 to 4
@@ -1597,7 +1617,10 @@ Field types:
 - *int*: a non-negative integer; *number*: a non-negative integer or float; *str*, *bool*;
 - *uuid*: 16 bytes; *optional bytes* / *optional str*: the type or nil;
 - *root*: nil (unknown), ``[0, nil, nil, label]`` (the empty space, known) or ``[epoch, segment
-  16 bytes, offset, label]``; a 3-item form without the label is read with label 0;
+  16 bytes, offset, label]``; a 3-item form without the label is read with label 0; a root of a
+  storage format above 4 adds the version as a fifth item, ``[epoch, segment, offset, label,
+  version]`` (a version of 4 or less there, or one the reader does not read, is refused as a
+  malformed message);
 - *records*: an array of ``[segment 16 bytes, offset, framed record bytes or nil]``;
 - *ranges*: nil or an array of ``[segment 16 bytes, start, end]`` with ``start <= end``;
 - *list of str*; *after*: nil or ``[seq > 0, holder str]``.

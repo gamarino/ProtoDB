@@ -7,7 +7,9 @@ reader of an earlier revision refuses version-5 data with ``ProtoNotSupportedErr
 """
 import os
 import struct
+import uuid
 
+import msgpack
 import pytest
 
 from proto_db.errors import ProtoNotSupportedError, ProtoValidationError
@@ -109,8 +111,9 @@ def test_the_parents_feature_is_version_5_and_plain_data_stays_4():
 
 def test_an_atom_declares_only_features_its_payload_uses():
     assert fmt.atom_version(PLAIN) == 4
-    assert fmt.atom_version(WITH_PARENTS) == 5                       # detected without a declaration
     assert fmt.atom_version(WITH_PARENTS, {"parents"}) == 5
+    with pytest.raises(ProtoValidationError):
+        fmt.atom_version(WITH_PARENTS)                               # used, not declared
     with pytest.raises(ProtoValidationError):
         fmt.atom_version(PLAIN, {"parents"})                         # declared, not used
     with pytest.raises(ProtoValidationError):
@@ -118,14 +121,14 @@ def test_an_atom_declares_only_features_its_payload_uses():
 
 
 def test_a_record_tells_the_version_it_needs():
-    plain = fmt.encode_record(fmt.RecordKind.ATOM, __import__("msgpack").packb(PLAIN, use_bin_type=True))
-    parents = fmt.encode_record(fmt.RecordKind.ATOM, __import__("msgpack").packb(WITH_PARENTS, use_bin_type=True))
+    plain = fmt.encode_record(fmt.RecordKind.ATOM, msgpack.packb(PLAIN, use_bin_type=True))
+    parents = fmt.encode_record(fmt.RecordKind.ATOM, msgpack.packb(WITH_PARENTS, use_bin_type=True))
     blob = fmt.encode_record(fmt.RecordKind.BLOB, b"\x81\xa1p\x01")  # a blob is never an atom
     assert fmt.framed_version(plain) == 4 and fmt.framed_version(parents) == 5 and fmt.framed_version(blob) == 4
 
 
 def test_a_segment_header_carries_its_version_and_a_v4_reader_refuses_v5(monkeypatch):
-    seg = __import__("uuid").uuid4()
+    seg = uuid.uuid4()
     assert fmt.segment_header_version(fmt.encode_segment_header(seg)) == 4
     raw = fmt.encode_segment_header(seg, 5)
     assert fmt.segment_header_version(raw) == 5 and fmt.decode_segment_header(raw) == seg
@@ -135,7 +138,7 @@ def test_a_segment_header_carries_its_version_and_a_v4_reader_refuses_v5(monkeyp
 
 
 def test_a_root_keeps_version_5_when_read_and_a_v4_reader_refuses_it(monkeypatch):
-    seg = __import__("uuid").uuid4()
+    seg = uuid.uuid4()
     assert fmt.decode_root(fmt.encode_root(fmt.RootRecord(5, seg, 26, 3))).version == 5
     assert fmt.decode_root(fmt.encode_root(fmt.RootRecord(2, seg, 26, 3))).version == 4   # read as current
     monkeypatch.setattr(fmt, "READABLE_FORMAT_VERSIONS", frozenset({2, 3, 4}))
@@ -160,32 +163,41 @@ def test_a_parents_record_lands_in_a_v5_segment(harness):
     assert parents.segment != plain.segment
     assert harness.header_version(st, plain.segment) == 4
     assert harness.header_version(st, parents.segment) == 5
-    assert after.segment == parents.segment or harness.header_version(st, after.segment) == 4
+    assert after.segment == parents.segment           # the rule rolls only upward
     assert [st.get_atom(p) for p in (plain, parents, after)] == [PLAIN, WITH_PARENTS, AFTER]
     st.close()
 
 
-def test_an_undeclared_parents_record_still_lands_in_a_v5_segment(harness):
+def test_declared_features_must_match_the_payload(harness):
     st = harness.open()
-    ptr = st.push_atom(WITH_PARENTS)
-    assert harness.header_version(st, ptr.segment) == 5
     with pytest.raises(ProtoValidationError):
-        st.push_atom(PLAIN, features={"parents"})
+        st.push_atom(WITH_PARENTS)                    # uses parents without declaring it
+    with pytest.raises(ProtoValidationError):
+        st.push_atom(PLAIN, features={"parents"})     # declares parents without using it
+    ptr = st.push_atom(PLAIN)
+    assert harness.header_version(st, ptr.segment) == 4   # nothing refused was written
     st.close()
 
 
 def test_a_v4_reader_refuses_the_v5_segment(persistent, monkeypatch):
     st = persistent.open()
+    plain = st.push_atom(PLAIN)
     ptr = st.push_atom(WITH_PARENTS, features={"parents"})
     st.flush()
     st.close()
     monkeypatch.setattr(fmt, "READABLE_FORMAT_VERSIONS", frozenset({2, 3, 4}))
-    with pytest.raises(ProtoNotSupportedError):
-        reader = persistent.open()
-        try:
-            reader.get_atom(ptr)
-        finally:
-            reader.close()
+    if isinstance(persistent, _Tiered):
+        # A tiered node checks its own segments when it opens: it refuses to open at all.
+        with pytest.raises(ProtoNotSupportedError):
+            persistent.open()
+        return
+    reader = persistent.open()                         # opening reads no segment
+    try:
+        assert reader.get_atom(plain) == PLAIN         # the v4 segment of the space stays readable
+        with pytest.raises(ProtoNotSupportedError):
+            reader.get_atom(ptr)                       # the read of the v5 segment refuses
+    finally:
+        reader.close()
 
 
 def test_reopen_reads_mixed_v4_and_v5_segments(persistent):
@@ -341,3 +353,162 @@ def test_a_part_filled_from_a_peer_carries_the_exact_header_not_the_rebuilt_one(
     assert parts and {struct.unpack_from("<H", store._objects[k][0], 8)[0] for k in parts} == {4}
     writer.close()
     survivor.close()
+
+
+def test_a_segment_header_prefix_tells_its_version_when_the_magic_and_version_bytes_are_there():
+    seg = uuid.uuid4()
+    raw = fmt.encode_segment_header(seg, 5)
+    assert fmt.peek_segment_header(raw) == (True, 5)
+    assert fmt.peek_segment_header(raw[:10]) == (True, 5)
+    assert fmt.peek_segment_header(raw[:9]) == (True, None)       # magic intact, version torn
+    assert fmt.peek_segment_header(b"PDB2SE") == (True, None)     # a torn magic is a prefix
+    assert fmt.peek_segment_header(b"XXXXXXXX" + raw[8:]) == (False, None)
+
+
+def test_a_closed_memory_storage_keeps_no_segment_table():
+    st = MemoryStorage()
+    st.push_atom(WITH_PARENTS, features={"parents"})
+    st.close()
+    assert st._segments == {} and st._segment_versions == {}
+
+
+# --- the root version in cluster mode (review I2) --------------------------------------------------
+
+def test_the_next_root_version_is_the_space_version():
+    st = MemoryStorage()
+    seg = uuid.uuid4()
+    assert fmt.next_root_version(None, st) == 4
+    assert fmt.next_root_version(fmt.RootRecord(5, seg, 26, 1), st) == 5     # never lower than the base
+    st.push_atom(WITH_PARENTS, features={"parents"})
+    assert st.written_version == 5 and fmt.next_root_version(fmt.RootRecord(4, seg, 26, 1), st) == 5
+
+
+def test_a_wire_root_carries_its_version_and_a_v4_root_keeps_its_bytes():
+    from proto_db.cluster import protocol
+    seg = uuid.uuid4()
+    v4 = fmt.RootRecord(4, seg, 26, 3)
+    assert protocol.encode_root(v4, known=True, term=7) == [3, seg.bytes, 26, 7]          # unchanged shape
+    wire = protocol.encode_root(fmt.RootRecord(5, seg, 26, 3), known=True, term=7)
+    assert wire == [3, seg.bytes, 26, 7, 5]
+    known, record, term = protocol.decode_labeled_root(wire)
+    assert known and term == 7 and record.version == 5
+    assert protocol.decode_labeled_root([3, seg.bytes, 26, 7])[1].version == 4
+    with pytest.raises(protocol.ClusterProtocolError):
+        protocol.decode_labeled_root([3, seg.bytes, 26, 7, fmt.FORMAT_VERSION + 1])  # unreadable here
+
+
+def test_a_root_replicated_to_a_peer_keeps_its_version():
+    from tests.support.manual_cluster import Harness
+    h = Harness("abc")
+    try:
+        h.bootstrap("a")
+        lease = h.attempt("a", {"b", "c"})
+        root = fmt.RootRecord(5, uuid.uuid4(), 64, 2)
+        assert h.replicate("a", lease, root, {"b", "c"}) is not None
+        for name in "bc":
+            assert h.nodes[name].accepted_root()[1] == root
+            assert h.nodes[name].accepted_root()[1].version == 5
+    finally:
+        h.close()
+
+
+def test_a_tiered_node_persists_the_version_of_a_root_it_did_not_write(tmp_path):
+    st = _Tiered(tmp_path).open()
+    plain = st.push_atom(PLAIN)                       # this node writes only v4 data
+    assert st.persist(1, fmt.RootRecord(4, plain.segment, plain.offset, 1))
+    assert st.read_persisted()[1].version == 4
+    # A root another node committed over v5 data reaches this node as v5: persisted as v5.
+    assert st.persist(1, fmt.RootRecord(5, plain.segment, plain.offset + 1, 2))
+    assert st.read_persisted()[1].version == 5
+    # The same root held at a lower version is corrected, never kept lower.
+    other = _Tiered(tmp_path / "o").open()
+    p = other.push_atom(PLAIN)
+    assert other.persist(1, fmt.RootRecord(4, p.segment, p.offset, 1))
+    assert other.persist(1, fmt.RootRecord(5, p.segment, p.offset, 1))
+    assert other.read_persisted()[1].version == 5
+    st.close()
+    other.close()
+
+
+# --- the acceptor log (review I1) --------------------------------------------------------------------
+
+def _roots_log(tmp_path):
+    from proto_db.cluster.rootlog import RootsLog
+    return RootsLog(str(tmp_path / "log" / "roots.log"))
+
+
+def _log_header_version(tmp_path):
+    with open(tmp_path / "log" / "roots.log", "rb") as f:
+        return struct.unpack_from("<H", f.read(10), 8)[0]
+
+
+def _records(payload, offset=fmt.SEGMENT_HEADER_SIZE):
+    return [[uuid.uuid4().bytes, offset, fmt.encode_record(fmt.RecordKind.ATOM,
+                                                           msgpack.packb(payload, use_bin_type=True))]]
+
+
+def test_a_featureless_acceptor_log_keeps_log_version_2_and_its_entry_kinds(tmp_path):
+    from proto_db.storage.logfile import LOG_MAGIC, read_log
+    log = _roots_log(tmp_path)
+    root = fmt.RootRecord(4, uuid.uuid4(), 64, 1)
+    log.append("accepted", 7, root)
+    log.append_records(7, fmt.RootRecord(4, uuid.uuid4(), 64, 2), _records(PLAIN))
+    log.close()
+    with open(tmp_path / "log" / "roots.log", "rb") as f:
+        assert f.read(10) == LOG_MAGIC + (2).to_bytes(2, "little")
+    assert [p[0] for p in read_log(str(tmp_path / "log" / "roots.log"), b"ROOT")] == [1, 5]
+
+
+def test_a_v5_entry_is_versioned_and_read_back_with_its_version(tmp_path):
+    from proto_db.cluster import rootlog
+    log = _roots_log(tmp_path)
+    log.append("accepted", 7, fmt.RootRecord(4, uuid.uuid4(), 64, 1))
+    assert _log_header_version(tmp_path) == 2
+    root = fmt.RootRecord(5, uuid.uuid4(), 64, 2)
+    records = _records(WITH_PARENTS)
+    log.append_records(8, root, records)
+    assert _log_header_version(tmp_path) == 3         # the log now holds a format-5 entry
+    log.close()
+    log = _roots_log(tmp_path)
+    accepted = log.load().accepted
+    assert accepted == (8, root) and accepted[1].version == 5
+    redo = log.take_redo()
+    assert len(redo) == 1 and redo[0].root.version == 5 and redo[0].records == records
+    log.close()
+    assert rootlog.VERSIONED_KIND == 7
+
+
+def test_a_compacted_log_keeps_the_root_version(tmp_path):
+    log = _roots_log(tmp_path)
+    root = fmt.RootRecord(5, uuid.uuid4(), 64, 2)
+    log.append("accepted", 8, root)
+    log.append("committed", 8, root)
+    log.mark_rejoined()
+    log.compact_records(log.mark())
+    log.close()
+    log = _roots_log(tmp_path)
+    loaded = log.load()
+    assert loaded.accepted[1].version == 5 and loaded.committed[1].version == 5
+    assert _log_header_version(tmp_path) == 3
+    log.close()
+
+
+def test_an_older_reader_refuses_a_log_holding_a_v5_entry(tmp_path, monkeypatch):
+    from proto_db.cluster import rootlog
+    from proto_db.errors import ProtoCorruptionError
+    from proto_db.storage import logfile
+    from proto_db.storage.logfile import read_log
+    log = _roots_log(tmp_path)
+    log.append_records(8, fmt.RootRecord(5, uuid.uuid4(), 64, 2), _records(WITH_PARENTS))
+    log.close()
+    path = str(tmp_path / "log" / "roots.log")
+    payloads = read_log(path, b"ROOT")
+    # An older revision knows entry kinds 1 to 6: it refuses the versioned entry, never misreads it.
+    monkeypatch.setattr(rootlog, "_KNOWN_KINDS", frozenset({1, 2, 3, 4, 5, 6}))
+    with pytest.raises(ProtoCorruptionError):
+        rootlog._decode(payloads, path)
+    monkeypatch.undo()
+    # ... and an older revision of the log format refuses the file at its header.
+    monkeypatch.setattr(logfile, "READABLE_LOG_VERSIONS", frozenset({2}))
+    with pytest.raises(ProtoNotSupportedError):
+        read_log(path, b"ROOT")

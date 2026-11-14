@@ -217,7 +217,7 @@ def test_a_base_with_the_snapshot_epoch_but_another_root_is_validated():
     """Review I2b: after a refound a dead-branch snapshot and the new lineage's base can share
     an epoch.  The commit must validate against the base, not trust the snapshot."""
     from proto_db.errors import ProtoConflictError
-    from proto_db.storage.format import FORMAT_VERSION, RootRecord
+    from proto_db.storage.format import WRITE_FORMAT_VERSION, RootRecord
     from proto_db.storage.memory import MemoryStorage
     storage = MemoryStorage()
     space = ObjectSpace(storage)
@@ -227,7 +227,7 @@ def test_a_base_with_the_snapshot_epoch_but_another_root_is_validated():
     tr = db.new_transaction()
     incr(tr)                                             # reads n == 1 from its snapshot
     snapshot = storage.read_root()
-    same_epoch_other_root = RootRecord(FORMAT_VERSION, other.segment, other.offset, snapshot.epoch)
+    same_epoch_other_root = RootRecord(WRITE_FORMAT_VERSION, other.segment, other.offset, snapshot.epoch)
     with pytest.raises(ProtoConflictError):
         tr._build_root(same_epoch_other_root)
     tr.abort()
@@ -238,7 +238,7 @@ def test_a_verified_dead_branch_root_never_shortens_the_persisters_walk(tmp_path
     """Review I2c: a root verified on a dead branch (with a higher epoch) must not stop the walk
     over the new lineage early, or a root whose records are not all remote gets persisted."""
     from proto_db.cluster.rootlog import root_key
-    from proto_db.storage.format import FORMAT_VERSION, RootRecord
+    from proto_db.storage.format import WRITE_FORMAT_VERSION, RootRecord
     with TieredCluster(tmp_path) as tc:
         tc.create_database("n0")
         tc.commit("n0", incr)
@@ -249,7 +249,7 @@ def test_a_verified_dead_branch_root_never_shortens_the_persisters_walk(tmp_path
         persister = tc["n0"].persister
         persister.stop()
         known, record, label = tc["n0"].committed_root()[:3]
-        dead = RootRecord(FORMAT_VERSION, record.segment, record.offset + 1, 99)     # a dead-branch root
+        dead = RootRecord(WRITE_FORMAT_VERSION, record.segment, record.offset + 1, 99)     # a dead-branch root
         persister._verified.add(root_key(label - 1, dead))
         storage = tc.storages["n0"]
         walked = []
@@ -267,7 +267,7 @@ def test_a_commit_racing_the_close_of_the_space_has_an_unknown_outcome(tmp_path)
     import uuid
     from proto_db.cluster.persister import PlainTier
     from proto_db.errors import ProtoOutcomeUnknownError
-    from proto_db.storage.format import FORMAT_VERSION, RootRecord
+    from proto_db.storage.format import WRITE_FORMAT_VERSION, RootRecord
     with Cluster(3, **FAST) as cl:
         tiers = {n: PlainTier(FileStorage(str(tmp_path / "space"), durability="none"), n) for n in cl.ids}
         for n in cl.ids:
@@ -283,7 +283,7 @@ def test_a_commit_racing_the_close_of_the_space_has_an_unknown_outcome(tmp_path)
                 tiers["n0"].close()                       # ObjectSpace.close closes the log
 
         transport.send = send_then_close
-        root = RootRecord(FORMAT_VERSION, uuid.uuid4(), 64, 1)
+        root = RootRecord(WRITE_FORMAT_VERSION, uuid.uuid4(), 64, 1)
         with pytest.raises(ProtoOutcomeUnknownError) as info:
             cl["n0"].replicate(lease, root)
         assert isinstance(info.value.__cause__, ProtoValidationError)

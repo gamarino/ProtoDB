@@ -23,7 +23,7 @@ import pytest
 
 from proto_db.cluster.rootlog import RECORDS_KIND
 from proto_db.storage import tiered
-from proto_db.storage.format import FORMAT_VERSION, SEGMENT_HEADER_SIZE, RootRecord, encode_record
+from proto_db.storage.format import WRITE_FORMAT_VERSION, SEGMENT_HEADER_SIZE, RootRecord, encode_record
 from proto_db.storage.logfile import read_log
 from tests.support.fake_object_store import FakeObjectStore
 
@@ -38,7 +38,7 @@ _CHILD = textwrap.dedent("""
     import os, sys, threading
     sys.path.insert(0, sys.argv[1])
     from proto_db.storage import tiered
-    from proto_db.storage.format import FORMAT_VERSION, RootRecord
+    from proto_db.storage.format import WRITE_FORMAT_VERSION, RootRecord
     from tests.support.fake_object_store import FakeObjectStore
 
     st = tiered.TieredStorage(sys.argv[2], FakeObjectStore(), durability=sys.argv[3],
@@ -71,7 +71,7 @@ _CHILD = textwrap.dedent("""
     offsets = [off for raw, off, _ in recs if raw == seg]
     ends = [off + len(data) for raw, off, data in recs if raw == seg]
     print("CONTIGUOUS" if all(o == e for o, e in zip(offsets[1:], ends)) else "HOLE", offsets, flush=True)
-    st.accept_replication(1, RootRecord(FORMAT_VERSION, root_ptr.segment, root_ptr.offset, 1), recs)
+    st.accept_replication(1, RootRecord(WRITE_FORMAT_VERSION, root_ptr.segment, root_ptr.offset, 1), recs)
     stall.set()
     os._exit(0)
 """)
@@ -135,7 +135,7 @@ def test_a_checkpoint_mark_survives_an_automatic_compaction(tmp_path, monkeypatc
     st = tiered.TieredStorage(d, FakeObjectStore(), durability="none", release_local=False)
     path = os.path.join(d, tiered.ROOTS_LOG)
     seg = uuid.uuid4()
-    rec = lambda e: RootRecord(FORMAT_VERSION, seg, SEGMENT_HEADER_SIZE + e, e)   # noqa: E731
+    rec = lambda e: RootRecord(WRITE_FORMAT_VERSION, seg, SEGMENT_HEADER_SIZE + e, e)   # noqa: E731
     e = 1
     # Committed roots up to just below the automatic compaction size, no kind-5 entry pending.
     while os.path.getsize(path) < 1024 * 1024 - 200:
@@ -153,7 +153,7 @@ def test_a_checkpoint_mark_survives_an_automatic_compaction(tmp_path, monkeypatc
             st.log_root("committed", 1, rec(e))
             e += 1
         # ... and an acceptance arrives after the checkpoint swapped its dirty sets.
-        st.accept_replication(2, RootRecord(FORMAT_VERSION, foreign, SEGMENT_HEADER_SIZE, e),
+        st.accept_replication(2, RootRecord(WRITE_FORMAT_VERSION, foreign, SEGMENT_HEADER_SIZE, e),
                               [[foreign.bytes, SEGMENT_HEADER_SIZE, framed]])
 
     monkeypatch.setattr(st, "_checkpoint_data", during_the_syncs)
@@ -220,7 +220,7 @@ def test_concurrent_checkpoints_never_drop_records_before_their_copies_are_synce
     c1.start()
     time.sleep(0.2)                  # C1 holds its mark and waits before the swap
     acceptance = threading.Thread(target=st.accept_replication, args=(
-        2, RootRecord(FORMAT_VERSION, foreign, SEGMENT_HEADER_SIZE, 1),
+        2, RootRecord(WRITE_FORMAT_VERSION, foreign, SEGMENT_HEADER_SIZE, 1),
         [[foreign.bytes, SEGMENT_HEADER_SIZE, framed]]))
     acceptance.start()
     acceptance.join(0.5)             # done at once without the fix (it may wait for C1 with it)

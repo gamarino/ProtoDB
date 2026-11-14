@@ -513,8 +513,7 @@ class FileStorage(SharedStorage):
 
     @property
     def written_version(self) -> int:
-        """The highest segment header version this instance has written (at least
-        :data:`~proto_db.storage.format.WRITE_FORMAT_VERSION`)."""
+        """See :attr:`SharedStorage.written_version`."""
         with self._state_lock:
             return self._written_version
 
@@ -720,7 +719,8 @@ class FileStorage(SharedStorage):
         if sync:
             self._fs.fsync_dir(self._path)
 
-    def publish_root(self, ptr: AtomPointer, expected_epoch: Optional[int]) -> RootRecord:
+    def publish_root(self, ptr: AtomPointer, expected_epoch: Optional[int], *,
+                     version: Optional[int] = None) -> RootRecord:
         """See :meth:`SharedStorage.publish_root`.
 
         Flushes first (data before root), checks that ``ptr`` names a valid record, then
@@ -745,7 +745,7 @@ class FileStorage(SharedStorage):
             if expected_epoch is not None and expected_epoch != epoch:
                 raise ProtoConflictError(f"Root epoch is {epoch}, expected {expected_epoch}")
             with self._state_lock:
-                version = max(self._written_version, current.version if current is not None else 0)
+                version = max(self._written_version, current.version if current is not None else 0, version or 0)
             root = RootRecord(version, ptr.segment, ptr.offset, epoch + 1)
             try:
                 self._write_root(root)

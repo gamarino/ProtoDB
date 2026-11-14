@@ -368,6 +368,12 @@ class CloudStorage(SharedStorage):
         self._check_open()
         return self._append(RecordKind.ATOM, msgpack.packb(payload, use_bin_type=True), version)
 
+    @property
+    def written_version(self) -> int:
+        """See :attr:`SharedStorage.written_version`."""
+        with self._state_lock:
+            return self._written_version
+
     def push_blob(self, data: bytes) -> AtomPointer:
         """See :meth:`SharedStorage.push_blob`; may raise for a spill upload as :meth:`push_atom`."""
         if not isinstance(data, (bytes, bytearray, memoryview)):
@@ -571,7 +577,8 @@ class CloudStorage(SharedStorage):
             return
         self._fetch_record(ptr)  # a segment written by another instance
 
-    def publish_root(self, ptr: AtomPointer, expected_epoch: Optional[int]) -> RootRecord:
+    def publish_root(self, ptr: AtomPointer, expected_epoch: Optional[int], *,
+                     version: Optional[int] = None) -> RootRecord:
         """See :meth:`SharedStorage.publish_root` and the module docstring.
 
         Checks that ``ptr`` names a record, uploads every pending segment, then writes the
@@ -606,19 +613,20 @@ class CloudStorage(SharedStorage):
                 current, etag, recent = self._read_root_object()
                 epoch = current.epoch if current is not None else 0
                 with self._state_lock:
-                    version = max(self._written_version, current.version if current is not None else 0)
+                    root_version = max(self._written_version, current.version if current is not None else 0,
+                                       version or 0)
                 if expected_epoch is not None and expected_epoch != epoch:
                     if uncertain:
                         # An earlier attempt of ours may be what moved the root.
                         verdict = self._verdict(current, recent, ptr.segment, ptr.offset, expected_epoch + 1)
                         if verdict is True:
-                            return RootRecord(version, ptr.segment, ptr.offset, expected_epoch + 1)
+                            return RootRecord(root_version, ptr.segment, ptr.offset, expected_epoch + 1)
                         if verdict is None:
                             raise ProtoOutcomeUnknownError(
                                 f"The root moved to epoch {epoch} after an attempt with an unknown outcome "
                                 f"and its history no longer reaches epoch {expected_epoch + 1}")
                     raise ProtoConflictError(f"Root epoch is {epoch}, expected {expected_epoch}")
-                mine = RootRecord(version, ptr.segment, ptr.offset, epoch + 1)
+                mine = RootRecord(root_version, ptr.segment, ptr.offset, epoch + 1)
                 history = ([(current.segment, current.offset, current.epoch)] + recent
                            if current is not None else [])
                 data = _encode_root_object(mine, history[:self._root_history])

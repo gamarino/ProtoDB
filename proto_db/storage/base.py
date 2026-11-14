@@ -11,7 +11,7 @@ from typing import ContextManager, Optional
 
 from ..core.atom import AtomPointer
 from ..errors import ProtoValidationError
-from .format import RootRecord
+from .format import RootRecord, write_version
 
 __all__ = ["SharedStorage", "check_lock_timeout"]
 
@@ -70,6 +70,14 @@ class SharedStorage(ABC):
         segments only.
         """
 
+    @property
+    def written_version(self) -> int:
+        """The highest segment header version this instance has written, at least
+        :data:`~proto_db.storage.format.WRITE_FORMAT_VERSION`: what a root built over this
+        instance's data must reach (:func:`~proto_db.storage.format.next_root_version`).  A
+        storage that writes no feature keeps the default."""
+        return write_version()
+
     @abstractmethod
     def get_atom(self, ptr: AtomPointer) -> dict:
         """Return a freshly decoded copy of the atom payload stored at ``ptr``.
@@ -94,7 +102,8 @@ class SharedStorage(ABC):
         """Return the currently published root, or ``None`` for a store never published to."""
 
     @abstractmethod
-    def publish_root(self, ptr: AtomPointer, expected_epoch: Optional[int]) -> RootRecord:
+    def publish_root(self, ptr: AtomPointer, expected_epoch: Optional[int], *,
+                     version: Optional[int] = None) -> RootRecord:
         """Publish ``ptr`` as the root if the current epoch equals ``expected_epoch``.
 
         Raises ``ProtoConflictError`` otherwise, leaving the root unchanged.
@@ -102,10 +111,12 @@ class SharedStorage(ABC):
         Returns the new :class:`RootRecord`.
 
         Its format version is the highest of :data:`~proto_db.storage.format.WRITE_FORMAT_VERSION`,
-        the version of the root it replaces and the highest segment version this instance has
-        written: a root is never lower than the root it replaces, and once a space holds data
-        of a later version every later root of it is of that version (``format-spec.rst``,
-        "Format stability").
+        the version of the root it replaces, the highest segment version this instance has
+        written (:attr:`written_version`) and ``version``, the version of the root as its
+        writer built it when another instance wrote some of its data (a cluster persisting a
+        committed root): a root is never lower than the root it replaces, and once a space
+        holds data of a later version every later root of it is of that version
+        (``format-spec.rst``, "Format stability").
         """
 
     def publish_outcome(self, ptr: AtomPointer, epoch: int) -> Optional[bool]:

@@ -27,7 +27,7 @@ from proto_db.errors import ProtoValidationError
 from proto_db.storage import tiered as tiered_module
 from proto_db.storage.cloud import CloudStorage
 from proto_db.storage.file import FileStorage
-from proto_db.storage.format import FORMAT_VERSION, RootRecord
+from proto_db.storage.format import WRITE_FORMAT_VERSION, RootRecord
 from proto_db.storage.tiered import TieredStorage
 from tests.support.fake_object_store import FakeObjectStore
 
@@ -139,7 +139,7 @@ def _replication(tmp_path, store):
     """Three records written by node ``w`` and the root on the last: ``(writer, records, root)``."""
     writer = _tiered(tmp_path, store, "w")
     ptrs = [writer.push_atom({"i": i}) for i in range(3)]
-    root = RootRecord(FORMAT_VERSION, ptrs[2].segment, ptrs[2].offset, 3)
+    root = RootRecord(WRITE_FORMAT_VERSION, ptrs[2].segment, ptrs[2].offset, 3)
     return writer, writer.outgoing(), root
 
 
@@ -185,7 +185,7 @@ def test_a1_an_apply_paused_across_close_writes_through_no_reused_descriptor(tmp
             opened.append(os.open(os.devnull, os.O_RDONLY))
             x = _tiered(tmp_path, store, "x")
             x.log_promise(3)
-            x.log_root("accepted", 4, RootRecord(FORMAT_VERSION, uuid.uuid4(), 64, 5))
+            x.log_root("accepted", 4, RootRecord(WRITE_FORMAT_VERSION, uuid.uuid4(), 64, 5))
         s2 = _tiered(tmp_path, store, "s")
         before = _files(tmp_path)
     finally:
@@ -193,7 +193,7 @@ def test_a1_an_apply_paused_across_close_writes_through_no_reused_descriptor(tmp
     _refused(t, out)
     assert _files(tmp_path) == before, "a write after close() changed a file"
     if variant == "other2":
-        r8 = RootRecord(FORMAT_VERSION, uuid.uuid4(), 64, 8)
+        r8 = RootRecord(WRITE_FORMAT_VERSION, uuid.uuid4(), 64, 8)
         x.log_root("accepted", 6, r8)
         x.close()
         x = _tiered(tmp_path, store, "x")
@@ -331,7 +331,7 @@ def test_a_persist_waiting_for_the_shipping_lock_is_refused_once_closed(tmp_path
     s = _tiered(tmp_path, store, "s")
     ptr = s.push_atom({"x": 1})
     gated = _gate(s, "_ship_lock")
-    t, out = _stale(lambda: s.persist(1, RootRecord(FORMAT_VERSION, ptr.segment, ptr.offset, 1)))
+    t, out = _stale(lambda: s.persist(1, RootRecord(WRITE_FORMAT_VERSION, ptr.segment, ptr.offset, 1)))
     try:
         assert gated.waiting.wait(10)
         s.close()
@@ -419,7 +419,7 @@ def _apply_op(tmp_path, store, s):
     ("_ranges_lock", _apply_op),
     ("_copies_lock", _apply_op),
     ("_manifest_lock", lambda tmp_path, store, s: lambda: s.push_atom({"x": 1})),
-    ("_ship_lock", lambda tmp_path, store, s: lambda: s.persist(1, RootRecord(FORMAT_VERSION, uuid.uuid4(), 64, 1))),
+    ("_ship_lock", lambda tmp_path, store, s: lambda: s.persist(1, RootRecord(WRITE_FORMAT_VERSION, uuid.uuid4(), 64, 1))),
 ])
 def test_close_waits_for_a_write_in_progress_under_each_lock(tmp_path, lock, make_op):
     """The other half of the rule: ``close()`` takes each lock before it releases what the

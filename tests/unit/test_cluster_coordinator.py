@@ -10,7 +10,7 @@ import pytest
 from proto_db.cluster.coordinator import ClusterCoordinator
 from proto_db.cluster.transport import InProcessNetwork
 from proto_db.errors import ProtoConflictError, ProtoOutcomeUnknownError, ProtoTimeoutError, ProtoValidationError
-from proto_db.storage.format import FORMAT_VERSION, RootRecord
+from proto_db.storage.format import WRITE_FORMAT_VERSION, RootRecord
 from tests.support.cluster import Cluster
 
 pytestmark = pytest.mark.timeout(60)
@@ -20,7 +20,7 @@ FAST = dict(lease_duration=0.9, request_timeout=0.1, startup_grace=0.0,
 
 
 def _rec(epoch):
-    return RootRecord(FORMAT_VERSION, uuid.UUID(int=epoch), 64, epoch)
+    return RootRecord(WRITE_FORMAT_VERSION, uuid.UUID(int=epoch), 64, epoch)
 
 
 @pytest.fixture

@@ -83,6 +83,12 @@ class MemoryStorage(SharedStorage):
         self._check_open()
         return self._append(RecordKind.ATOM, msgpack.packb(payload, use_bin_type=True), version)
 
+    @property
+    def written_version(self) -> int:
+        """See :attr:`SharedStorage.written_version`."""
+        with self._state_lock:
+            return self._written_version
+
     def get_atom(self, ptr: AtomPointer) -> dict:
         """See :meth:`SharedStorage.get_atom`."""
         return msgpack.unpackb(self._fetch(ptr, RecordKind.ATOM), raw=False)
@@ -109,7 +115,8 @@ class MemoryStorage(SharedStorage):
             self._check_open()
             return self._root
 
-    def publish_root(self, ptr: AtomPointer, expected_epoch: Optional[int]) -> RootRecord:
+    def publish_root(self, ptr: AtomPointer, expected_epoch: Optional[int], *,
+                     version: Optional[int] = None) -> RootRecord:
         """See :meth:`SharedStorage.publish_root`."""
         if expected_epoch is not None and (type(expected_epoch) is not int or expected_epoch < 0):
             raise ProtoValidationError("expected_epoch must be a non-negative int or None")
@@ -119,8 +126,9 @@ class MemoryStorage(SharedStorage):
             if expected_epoch is not None and expected_epoch != current:
                 raise ProtoConflictError(
                     f"Root epoch is {current}, expected {expected_epoch}")
-            version = max(self._written_version, self._root.version if self._root is not None else 0)
-            self._root = RootRecord(version, ptr.segment, ptr.offset, current + 1)
+            root_version = max(self._written_version, self._root.version if self._root is not None else 0,
+                               version or 0)
+            self._root = RootRecord(root_version, ptr.segment, ptr.offset, current + 1)
             return self._root
 
     def root_lock(self, timeout: Optional[float] = None):
@@ -148,4 +156,5 @@ class MemoryStorage(SharedStorage):
             self._closed = True
             self._records = []
             self._segments = {}
+            self._segment_versions = {}
             self._root = None
