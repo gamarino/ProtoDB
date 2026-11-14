@@ -229,7 +229,9 @@ def _verify(tmp_path, acked, traced):
     ids = set(result["ids"])
     assert acked <= ids, f"{len(acked - ids)} acknowledged commits lost"
     assert ids <= traced, f"ids no commit wrote: {sorted(ids - traced)[:10]}"
-    assert result["n"] == len(result["ids"]) == len(ids)  # every commit applied whole, none twice
+    # every commit applied whole, none twice; a database no commit reached holds no counter, which
+    # only a stress-mode run (its progress floor recorded, not asserted) can reach
+    assert (result["n"] or 0) == len(result["ids"]) == len(ids)
     reader = ObjectSpace(TieredStorage(str(tmp_path / "reader"), DirObjectStore(str(tmp_path / "store"))))
     try:
         tr = reader.open_database("db").new_transaction()
