@@ -250,10 +250,6 @@ def test_not_applied_and_superseded_is_a_conflict():
         mine.publish_root(p2, r1.epoch)
 
 
-@pytest.mark.xfail(strict=True, raises=ProtoOutcomeUnknownError, reason=(
-    "open product defect (Task CI-FLAKES): publish_root resolves a refused write by reading the root "
-    "back and reports an unknown outcome when the history has moved past its epoch, although nothing "
-    "of ours can have been applied; the CI failure of test_plain_int_counter_across_instances[reliable]"))
 def test_a_refused_root_write_with_no_earlier_uncertain_attempt_is_a_conflict():
     """A real failed precondition (another instance published between our read and our write),
     on the first attempt, over a store with no faults: nothing of ours was applied (the adapters
@@ -285,6 +281,30 @@ def test_a_refused_root_write_with_no_earlier_uncertain_attempt_is_a_conflict():
         mine.publish_root(p2, r1.epoch)
     assert store.failed_preconditions[mine.root_key] == 1     # a real refusal, nothing injected
     assert mine.read_root().pointer == theirs[-1]              # ours was never applied
+
+
+def test_a_refusal_after_a_hidden_retry_that_applied_our_write_is_still_resolved_as_applied():
+    """A client passed in with the SDK's own retries left on (against the S3ObjectStore advice) can
+    apply our write, then re-send it and get a failed precondition.  The read-back still finds
+    our epoch, so ``publish_root`` reports success, never a conflict: a conflict would make
+    ``Database.run`` apply the transaction a second time."""
+    store = FakeObjectStore()
+    s = make(store)
+    r1 = s.publish_root(s.push_atom(atom_payload(1)), 0)
+    p2 = s.push_atom(atom_payload(2))
+    real = store.put_if_match
+
+    def hidden_retry(key, data, etag):
+        if key == s.root_key:
+            store.put_if_match = real
+            real(key, data, etag)                 # the first send lands ...
+            return real(key, data, etag)          # ... and the SDK's re-send is refused
+        return real(key, data, etag)
+
+    store.put_if_match = hidden_retry
+    r2 = s.publish_root(p2, r1.epoch)
+    assert r2.epoch == r1.epoch + 1 and s.read_root().pointer == p2
+    assert store.failed_preconditions[s.root_key] == 1
 
 
 def test_unknown_outcome_is_resolvable_by_read_root():

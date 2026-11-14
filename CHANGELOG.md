@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [2.0.0rc4] - unreleased
 
 - `proto_db.__version__` reports the package version; in 2.0.0rc3 it still said `2.0.0.dev0`.
+- `CloudStorage.publish_root` reports a write refused by its precondition as `ProtoConflictError`, which
+  `Database.run` retries, as D43 states. It reported `ProtoOutcomeUnknownError` when another instance had
+  published more than `root_history` roots before the read-back, although nothing of ours could have been
+  applied (seen as an intermittent CI failure of two instances sharing a counter). The read-back still
+  runs first, so a write that did land is reported as applied.
 - Documented a Python 3.14 hazard (concurrency model, "Interrupts and signal handlers on Python 3.14"): an
   exception from a signal handler, such as `KeyboardInterrupt`, can leave a `proto_db` lock held, so a
   process interrupted inside `proto_db` code should end rather than keep using the space.

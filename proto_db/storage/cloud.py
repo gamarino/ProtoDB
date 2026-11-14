@@ -498,11 +498,19 @@ class CloudStorage(SharedStorage):
         current, _, recent = self._read_root_object()
         return self._verdict(current, recent, ptr.segment, ptr.offset, epoch)
 
-    def _resolve(self, mine: RootRecord, etag_before: Optional[str], error) -> str:
+    def _resolve(self, mine: RootRecord, etag_before: Optional[str], error,
+                 refused: bool = False) -> str:
         """After an uncertain root write: ``"applied"``, ``"unchanged"`` or ``"taken"``.
 
-        Raises ``ProtoOutcomeUnknownError`` if the root cannot be read or its history no
-        longer reaches the epoch we tried to take.
+        ``refused`` says that this attempt's write was refused by its precondition and no
+        earlier attempt of this call had an unknown outcome: nothing of ours can have been
+        applied (the adapters turn the SDK's own retries off, D43), so when the history no
+        longer reaches our epoch the answer is ``"taken"``, a conflict.  The read-back still
+        runs first, so a write that did land (a client passed in with hidden retries left on)
+        is found and reported as applied, never as a conflict ``Database.run`` would apply again.
+
+        Raises ``ProtoOutcomeUnknownError`` if the root cannot be read, or if its history no
+        longer reaches the epoch we tried to take and the write was not ``refused``.
         """
         try:
             current, etag, recent = self._read_root_object()
@@ -515,7 +523,7 @@ class CloudStorage(SharedStorage):
         verdict = self._verdict(current, recent, mine.segment, mine.offset, mine.epoch)
         if verdict is True:
             return "applied"
-        if verdict is False:
+        if verdict is False or refused:
             return "taken"
         raise ProtoOutcomeUnknownError(
             f"The outcome of publishing the root is unknown ({error}): the root changed and its "
@@ -597,8 +605,9 @@ class CloudStorage(SharedStorage):
                 except TransientObjectStoreError as e:
                     error, outcome = e, "unchanged"
                 except (PreconditionFailedError, OutcomeUnknownError) as e:
+                    refused = isinstance(e, PreconditionFailedError) and not uncertain
                     uncertain = uncertain or isinstance(e, OutcomeUnknownError)
-                    error, outcome = e, self._resolve(mine, etag, e)
+                    error, outcome = e, self._resolve(mine, etag, e, refused)
                 if outcome == "applied":
                     return mine
             # The upload lock is released: decide, and back off without holding it.
