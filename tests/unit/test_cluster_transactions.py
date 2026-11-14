@@ -555,6 +555,10 @@ def test_a_setup_new_database_whose_recovery_query_goes_unanswered_conflicts_and
             tc[node].transport.send = filtered
         with pytest.raises(ProtoConflictError, match="witnesses needed answered the recovery query"):
             tc.spaces["n0"].new_database("db")
+        # Both answers to the first query are lost; under load the second may be sent after the
+        # round already ended (Task 11.1, A4: only n1's had been dropped when this was checked), so
+        # wait for it before the next queries, which must all be answered.
+        assert _eventually(lambda: len(dropped) == 2), dropped
         assert sorted(dropped) == ["n1", "n2"] and tc.spaces["n0"].list_databases() == []
         tc.create_database("n0")                           # the next queries are answered
         _run(tc.db("n0"), incr, **TRUN_KW)
