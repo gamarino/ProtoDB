@@ -817,11 +817,24 @@ def _acks_after_the_predecessors_validity(tmp_path):
                what="B's data stage", tc=tc)
         if not data_stage():
             # B's pipelined permission ran out before B could send (the setup miss of the
-            # docstring above): release A, let both commits end, and report the miss.
+            # docstring above): release A, let both commits end, and check what a miss run can
+            # still prove (review M5): the members converge, and every outcome is honest (R86:
+            # acknowledged exactly once, unknown at most once, a conflict never applied).
             hold.set()
             ta.join(30)
             tb.join(60)
             armed.clear()
+            assert not ta.is_alive() and not tb.is_alive(), f"a commit of the miss run never ended: {results}"
+            _no_owner(tc, timeout=10)
+            tc.commit("n2", _setter("c"))
+            _await(lambda: len({str(_read_keys(tc, m, ("a", "b", "c"))) for m in tc.ids}) == 1,
+                   what="convergence after a miss")
+            reads = _read_keys(tc, "n2", ("a", "b", "c"))
+            allowed = {"acked": (1,), "unknown": (None, 1), "conflict": (None,)}
+            for key in ("a", "b"):
+                assert results.get(key) in allowed, (key, results)
+                assert reads[key] in allowed[results[key]], (key, results, reads)
+            assert reads["c"] == 1, reads
             return (f"B's permission ran out before its data stage ({results}; n1 refused "
                     f"{b.stats()['sends_refused_reserve'] - reserve_refusals} sends for the reserve)")
         hold.set()
