@@ -246,7 +246,9 @@ SPLIT_ATTEMPTS = 5
 def _split_segment(tc):
     """Task 8.3g review I1's setup: nine commits of n0 in ONE own segment, the middle three hedged
     to n2 while n1 is partitioned away, so n1's copy lacks the middle and n2's the start.  The
-    split is checked, not assumed: returns ``None`` when this cluster has it, otherwise why not.
+    split is checked, not assumed: returns ``None`` when this cluster has it, or why not when a
+    hedge of the first three commits put the start on n2 (the one timing miss); any other
+    departure from the split fails the test.
 
     Whether the split forms depends on timing, never on a rule: n0 hedges a commit's records to
     n2 whenever n1 has not stored them ``request_timeout`` (0.1 s) after n0's own append, so on a
@@ -276,9 +278,11 @@ def _split_segment(tc):
     assert len({r.segment for r in roots}) == 1, "n0's commits are not in one segment"
     ptr = [AtomPointer(r.segment, r.offset) for r in roots]
     if tc.storages["n2"]._local_record(ptr[0]) is not None:
+        # Only a hedge of the first three commits (n1 slow to store, timing) may put the start
+        # on n2; without one, n2 holding it is a result, and the test fails here (review M4).
+        assert early_hedges > 0, "n2's copy has the start, with no hedge in the first three commits"
         return f"n2's copy has the start ({early_hedges} hedges in the first three commits)"
-    if all(tc.storages["n1"]._local_record(p) is not None for p in ptr[3:6]):
-        return "n1's copy has the middle"
+    assert any(tc.storages["n1"]._local_record(p) is None for p in ptr[3:6]), "n1's copy has the middle"
     return None
 
 
