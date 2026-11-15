@@ -191,8 +191,9 @@ are in ``docs/superpowers/2026-11-14-symbol-measurement.md``), the segment holds
 2,799,544 bytes compressed per 64 KiB block; with 17-byte content ids, references plus compression are larger
 than compression alone at every minimum length measured (+7.15 % at 8 and 16 bytes, +4.63 % at 24), and the
 best of any reference size, a 3-byte sequential id, is -5.99 %, short of 10 %. Compression already removes the
-repeated names. Format 5 therefore has no symbols feature, and the reserved ``@sym`` tag of the older design is
-not a value kind (:doc:`/format-spec`, "Symbols").
+repeated names. Format 5 therefore has no symbol-reference feature (:doc:`/format-spec`, "Symbol references").
+The reserved ``@sym`` tag, and the format's rule for a language's own symbol type, are a separate matter and
+unchanged.
 
 What was tried and rejected
 ---------------------------

@@ -46,9 +46,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     writing version 4, and a reader of format 4 refuses version-5 segments and roots with
     `ProtoNotSupportedError`. The cluster `PROTOCOL_VERSION` is 14, and an acceptor log that holds a root of
     format 5 has log format 3. `remove_root_object` refuses `__` roots, which only the registry writes. The
-    conformance vectors gained `parents/` and `registry/`; `format-spec.rst` publishes the additions, and its
-    symbol text now follows decision Q7: symbols are not a value kind, and symbol references were measured
-    and deferred (`docs/superpowers/2026-11-14-symbol-measurement.md`).
+    conformance vectors gained `parents/` and `registry/`; `format-spec.rst` publishes the additions, and states
+    that symbol references were measured and deferred (`docs/superpowers/2026-11-14-symbol-measurement.md`).
 - `proto_db.__version__` reports the package version; in 2.0.0rc3 it still said `2.0.0.dev0`.
 - `CloudStorage.publish_root` reports a write refused by its precondition as `ProtoConflictError`, which
   `Database.run` retries, when the object store declares that its refusals are definitive

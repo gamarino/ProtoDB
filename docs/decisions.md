@@ -985,7 +985,7 @@ Source: `docs/superpowers/specs/2026-11-01-protodb-v2-design.md` section 2.
   - Q4: extensions define only plain functions and canonical data defaults; a computed value is a method (one mechanism, not two).
   - Q5: the names `__catalog`, `install_module`, `parents` and `with_parents` are accepted.
   - Q6: parents are `DBObject`s or registry names only; a registry name's parents are the union of its extensions' `parents=`, in load order; writes never climb the parents.
-  - Q7: a symbol is a storage optimization of a string and semantically is that string (no developer-visible type); this supersedes the 2026-11-08 `@sym` value kind.
+  - Q7: a symbol reference (deferred, R153) is a storage optimization of a repeated string and semantically is that string (no developer-visible type); the reserved `@sym` tag and the format-spec rule for a language's own symbol type are unchanged (ruling R228).
 - Rulings that shaped the behaviour, one line each with its reason:
   - R150: a miss returns `None` in `o.x` and `o["x"]`, and `in` / `has_defined_attr` tell absence from `None` - a model must gain attributes over time without breaking older objects or code (supersedes anti-goal A2 for misses).
   - R151: a record that needs a feature is appended only to a segment of at least that version; a space that never uses one keeps writing v4 - headers are written before their records.
