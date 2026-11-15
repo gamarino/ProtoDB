@@ -5,7 +5,7 @@ All notable changes to `proto_db` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.0.0rc4] - unreleased
+## [2.0.0rc4] - 2026-11-15
 
 - A read on a cluster owner after its term lease expired, but before the lease was released, no longer asks its
   peers with a timeout of 0 s: only a read inside a commit is capped, at what remains of the commit's write
