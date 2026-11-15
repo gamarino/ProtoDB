@@ -26,6 +26,27 @@ proto_db.core.dbobject
 .. automodule:: proto_db.core.dbobject
    :members:
 
+proto_db.registry
+-----------------
+
+The runtime registry: modules, extensions and the registry roots (tutorial:
+:doc:`tutorials/extensible-models`; design: :doc:`design-guide/registry`).
+
+.. automodule:: proto_db.registry
+   :members:
+
+proto_db.resolution
+-------------------
+
+.. automodule:: proto_db.resolution
+   :members:
+
+proto_db.modules.base
+---------------------
+
+.. automodule:: proto_db.modules.base
+   :members:
+
 proto_db.collections.base
 -------------------------
 

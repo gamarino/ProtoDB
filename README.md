@@ -92,6 +92,10 @@ If you read only one thing before the code, read
     read-modify-write transactions, fairness is not yet guaranteed (open defect D-LIVE-2).
   - *Reads*: a local read is a committed snapshot that may lag; a linearizable read is a barrier commit,
     which adds a permanent version per read (see the cluster tutorial).
+- **Extensible models**: a `DBObject` may have parents (other records, or registry names); `o.x` and
+  `o["x"]` resolve own attributes, then the parents in C3 order, then the extension chains that the
+  database's installed modules define. Methods and data defaults extend by the same rule, `_super()`
+  reaches the next definition, and the database stores only data and module names, never code.
 - **Free-threading**: tested on CPython 3.14t (GIL disabled) and with the GIL; `parallel_scan` and
   `parallel_filter` scale on free-threaded builds.
 - **Interop**: export to Apache Arrow and Parquet (`to_arrow`, `to_parquet`).
@@ -211,6 +215,42 @@ tr.abort()
 space.close()
 ```
 
+## Extensible models
+
+A module extends a registry name; a record lists the name (through its catalog object) among its parents.
+The database stores the record and the module names; the code lives in the imported module.
+
+```python
+import os, sys
+from proto_db import MemoryStorage, ObjectSpace
+
+with open("readme_contacts.py", "w") as f:   # a module, normally a file of the application
+    f.write(
+        "from proto_db.registry import module\n"
+        "contacts = module('readme_contacts')\n"
+        "@contacts.extends('readme.Partner')\n"
+        "class Partner:\n"
+        "    country = 'AR'                                  # a data default\n"
+        "    def greeting(self):                             # a method\n"
+        "        return f'Dear {self.name} ({self.country})'\n")
+sys.path.insert(0, os.getcwd())
+
+space = ObjectSpace(MemoryStorage())
+db = space.new_database("erp")
+with db.new_transaction() as tr:
+    tr.install_module("readme_contacts")             # added to the database's module list at commit
+
+with db.new_transaction() as tr:
+    partner_class = tr.catalog_object("readme.Partner")
+    ana = tr.new_object(parents=(partner_class,), name="Ana")
+    print(ana.greeting(), ana["country"], ana.phone)  # Dear Ana (AR) AR None: a miss is None
+    print("country" in ana, ana.has_defined_attr("country"))  # True False: inherited, not own
+space.close()
+```
+
+The [extensible-models tutorial](docs/source/tutorials/extensible-models.rst) covers `_super`, C3, catalog
+objects, as-of reads with the modules of their time, and every error the registry raises.
+
 ## Examples
 
 Runnable, self-checking scripts live in `examples/` (see `examples/README.md`): getting started,
@@ -225,8 +265,8 @@ The Sphinx site is under `docs/source` (build it with `python -m sphinx -W -b ht
 - **Tutorials**, each executed by the test suite: getting started, modelling data, indexing and querying,
   concurrency and retries, vector search, writing a custom index, operations (durability, inspection,
   backup), an ERP example ("as of" queries, an audit with no audit table, stable paginated reports), a CAD
-  example (reusing decoded objects across transactions) and a cluster tutorial (local against linearizable
-  reads).
+  example (reusing decoded objects across transactions), a cluster tutorial (local against linearizable
+  reads) and extensible models (parents, modules and the runtime registry).
 - **Design**: concepts, architecture, the concurrency and isolation model, the index framework, the query
   planner, durability and recovery, objects across transactions, the storage format.
 - **Reference**: the API (generated from the docstrings of the `proto_db` package, whose module docstring

@@ -1,0 +1,224 @@
+The runtime registry: one rule for data and behaviour
+=====================================================
+
+*Runtime registry plan of 2026-11-14. Decision D62; rulings R150-R154, R166-R176, R189-R190, R201-R209;
+principles P1, P2 and P6. The code is* ``proto_db.registry``, ``proto_db.resolution`` *and*
+``proto_db.modules.base``.
+
+What it gives the ERP
+---------------------
+
+A small ERP is built from modules: contacts defines partners, CRM adds leads and changes how a partner's name
+is shown, pricing changes a default currency, an activity module makes leads mailable and schedulable. None of
+them edits another. The :doc:`extensible-models tutorial </tutorials/extensible-models>` builds exactly that,
+and every behaviour this chapter describes is printed there by running code.
+
+The database stays language-neutral while it does so: it stores data, the names of the installed modules, and
+nothing that only Python can read.
+
+The problem
+-----------
+
+Four requirements pull against each other.
+
+* **One rule for fields and methods.** A module must be able to change a default or a method by the same
+  mechanism, and ``o.name`` and ``o["name"]`` must find the same thing, so that a name computed at run time
+  works like a written one.
+* **Nothing language-specific is persisted** (anti-goal A1 of the design): no code, no Python class of a model
+  or of an extension, no import path. protoBaseST reads and writes the same database.
+* **Installs are never lost.** Two processes that install different modules at the same time must both land,
+  without one silently overwriting the other.
+* **Every error is explicit**, and a lookup never resolves silently from the wrong place. A *miss* is not an
+  error: it returns ``None`` (the maintainer's ruling R150, so that a model can grow over time without
+  breaking older objects or older code).
+
+Why the obvious solutions fail
+------------------------------
+
+**Python subclasses of** ``DBObject``. They are still supported, and right for a fixed model. For an
+extensible one they fail at the first record already stored: a record names its class's type name, so a
+record written before a module subclassed the class loads as the old class and never sees the module's
+behaviour. The tutorial shows it in section 3. The type name is also a Python class, which another language
+cannot run.
+
+**Dynamic Python classes per registry name**, Odoo's approach (``type(name, extensions, {})``). Python's MRO
+and ``super()`` would do the chaining at native speed. It was rejected because it makes two mechanisms:
+methods in the class, data in the objects, against the first requirement. An object's *own* parents (other
+records) would still need a lookup of their own beside the class.
+
+**Persisting the methods' source.** Rejected by A1, and because a record would then carry code into every
+process that reads it.
+
+**A module list kept in an ordinary root.** It is a read-modify-write: two installs conflict and one retries
+(tutorial, section 4). A merge that takes the last writer would lose an install.
+
+**Python's** ``super()`` **for the next definition.** It needs ``self`` to be an instance of the class whose
+method runs; an extension's container class has no instances, and the receiver is a ``DBObject`` (tutorial,
+section 5).
+
+The choice, and the invariants that make it correct
+---------------------------------------------------
+
+Parents
+    A ``DBObject`` has an ordered tuple of parents, each another ``DBObject`` or a registry name (a non-empty
+    string; nothing else, decision Q6). It is persisted as the envelope key ``"p"`` of the record, the
+    format-5 feature ``parents`` (:doc:`/format-spec`). An object without parents writes the format-4 record
+    byte for byte, so data that never uses the feature keeps its version.
+
+One resolution rule
+    ``resolve(o, name)`` returns the first definition along the C3 linearization of ``o``: its own
+    attributes, then each node in C3 order. An object node contributes its own attributes; a registry-name
+    node contributes its extension chain, newest module first. A value is returned as is, a method bound to
+    ``o`` (``self is o``). Nothing else is computed (Q4): a computed value is a method. Writes never climb the
+    parents. C3 is chosen over a depth-first walk because a depth-first walk visits a shared ancestor more
+    than once and before the names that override it (tutorial, section 7); C3 orders every node after all of
+    its children and refuses a hierarchy that has no such order (``ProtoValidationError``).
+
+The catalog object, before the registry (Q1)
+    ``install_module`` creates, for each registry name a module introduces, a plain ``DBObject`` whose only
+    parent is that name, stored in the root ``__catalog``. Instances list it as a parent, so its data comes
+    after the instance's and before the registry's, with no rule of its own. Its data is application data:
+    ``set_catalog_object`` replaces it with a new version, under the normal conflict rules (the first updater
+    wins, R189). A version is a new record with a new ``oid`` (D18), so the root entry, not the oid, carries the
+    continuity (R190).
+
+Modules and the registry
+    A module declares itself from inside the Python module that implements it (``module(name,
+    depends=...)``) and lists its extensions with ``@handle.extends(registry_name, parents=...)``. Only plain
+    functions (methods) and canonical data defaults are definitions; a ``property``, a ``staticmethod``, a
+    ``classmethod``, a callable instance, a lambda, a nested class, and a data default holding a database
+    object at any depth (R166: a default is shared by every database the process opens) are refused at import
+    with ``ProtoValidationError``. The registry of a module list is built per process, in topological order of
+    the dependencies the code declares, ties broken by installation order, and is immutable once built.
+    Module names are process-global: one name maps to one Python module per process (R167). Running the same
+    module scope again (a reload) replaces its declaration; two ``module()`` calls in one execution raise
+    (R168).
+
+The base module (R204-R209)
+    ``base`` holds the default mechanisms. It is the implicit last parent of every registry name, so every
+    module can override what it defines and reach it with ``_super()``. ``install_module`` adds it first,
+    implicitly; a database that never installs a module never has it and pays nothing. Because every registry
+    linearization ends with ``base``, its public names are reserved against Python members of every
+    ``DBObject`` subclass that reaches a registry name (a Python member would hide the registry definition, so
+    such a class is refused at its first resolution). ``base`` therefore keeps its names few: today only
+    ``read_data_file``.
+
+``_super`` from the code object (Q3)
+    At load the registry indexes every method's code object to its extension. ``self._super()`` reads the
+    caller's code object, finds that extension's position in ``self``'s linearization, and resolves from the
+    next position, binding to the same ``self``. A miss is ``None`` (R170), so the end of a chain is tested
+    with ``if self._super().f:``. Code that is not a registry method is refused with ``ProtoUserError``: code
+    at module level, a closure or helper, a generator expression, a generator method (its frame may run after
+    the call returned, R172). A coroutine method is a method and may use it (R176). Positions are compared for
+    equality only; they are not ordered values (R175).
+
+Installs merge add-if-absent
+    At commit the two registry roots are merged against the root current at that moment, never through the
+    read set: the list only grows and the catalog only gains names, so the union is always right, two installs
+    never conflict with each other, and the order of the list is the commit order. A raw ``commit()`` on a
+    storage whose root lock is not global (``CloudStorage`` across processes) can still lose the root's
+    compare-and-swap like any commit; it raises ``ProtoConflictError`` and ``Database.run`` retries it. No
+    module is ever imported under a lock: a module's import-time code may itself commit, and would wait for
+    the lock its importer holds.
+
+Which registry resolves an object (R201)
+    The code doing the resolving decides, never the order in which records were loaded or the state of a
+    cache. An object created or derived in a transaction resolves through that transaction's registry for its
+    whole life. A loaded object resolves through the current reader: the transaction of a ``with tr:`` block
+    or of ``Database.run``, or the snapshot of ``with snapshot:``. Outside any reader it resolves only if every
+    database of the space that lists modules lists the same ones; otherwise ``ProtoUserError``. An as-of read
+    resolves with the list of its version and never changes how other code resolves.
+
+A mismatch is an error (Q2)
+    A space binds each database to the module list it first sees. When another process installs a module,
+    the next lookup through the registry raises ``ProtoValidationError`` naming both lists. There is no
+    automatic rebuild: rebuilding between two lines of a running program would interleave transactions on two
+    behaviours. ``ObjectSpace.reload_registry(database_name)`` is the explicit rebuild. A module that cannot be
+    imported raises ``ProtoNotSupportedError`` at the first lookup that needs the registry (opening the
+    database and reading data never do), and the failure is remembered for that list until
+    ``reload_registry`` (R202): Python does not cache a failed import, and every commit would retry it.
+
+**The invariant behind the caches: what a cache entry is keyed by never changes.** The linearization of a
+tuple of saved parents is cached by the parents' pointers and the registry. A record at a pointer never
+changes (P1), its own parents are fixed, and a built registry is immutable, so an entry is never stale and
+never needs invalidating. Each entry also remembers the position where each name was found, so a repeated
+lookup reads one definition. Unsaved parents are cached only on their transaction, for its life.
+
+Resolution never visits history: superseded versions are not parents, so the cost of a lookup does not depend
+on how many versions the database holds.
+
+Its cost, stated honestly
+-------------------------
+
+* **No latency is quoted here.** The cost of a lookup through the registry against an own attribute, and
+  the cost of setting the reader around each commit's lock step, were not measured by this plan. The
+  argument above is structural; the measurement is still to be made, with ``proto_db`` measured against itself.
+* **Catalog updates do not reach existing objects.** An instance lists the catalog object's version that
+  existed when it was created, and an immutable record never changes. Only objects created after an update
+  see it. This is the current semantics; a value that must change for every existing object belongs in a
+  module (new code) or behind a ``MutableObject`` the objects reference.
+* **Indexes and query paths read own attributes only.** An inherited default is invisible to them, because
+  an index of inherited values would have to change whenever a module or a catalog object did. An attribute
+  that is queried or indexed is set on the object itself (tutorial, section 10).
+* **A misspelt registry name is silent.** A name no module extends is an empty node, so lookups go on past
+  it (the opposite was implemented first and overturned, below). ``Registry.unknown_names`` lists such names
+  for tests and tools.
+* **One process, one meaning per module name.** Two runtimes in one process whose mappings point the same
+  module name at different Python modules are not supported.
+* **Methods are per language.** A database used from Python and Smalltalk lists module names, and each
+  language has its own version of each module. A process that cannot load a listed module raises; it never
+  runs with part of the model missing.
+* ``read_data_file`` **trusts the module's directory.** ``base.read_data_file(path)`` reads only inside the
+  directory of the module that asked (symbolic links that stay inside are followed). An absolute path, a
+  drive or UNC path, a path that leaves the directory once resolved, a NUL character and a file that is not a
+  regular file (a FIFO, a device) are refused. The file is opened first, without blocking, and its real
+  location is taken from the open descriptor (``/proc/self/fd`` on Linux, ``F_GETPATH`` on macOS) and checked
+  again, so a component swapped between the check and the open is refused. Elsewhere (Windows, the BSDs) the
+  fallback resolves the path again after the open and accepts it only if it names the very file opened. A
+  double swap timed between those steps can still pass. That residual race is accepted: whoever can swap
+  files inside a module's package directory can already replace the module's code, which is a larger power
+  than reading one of its files.
+
+Symbols: measured, and deferred
+-------------------------------
+
+The 2026-11-08 design made every attribute name a *symbol*, interned in the database. The 2026-11-14
+decision (Q7) made a symbol a storage optimization only: a reference to a string already stored, which **is**
+that string (equal, same hash and token, same key). Whether it pays was measured before building it (ruling
+R153, criterion R213: references plus compression must be at least 10 % smaller than compression alone).
+On a deterministic ERP data set of 13,964 objects (``benchmarks/symbol_bytes.py``; the figures and the method
+are in ``docs/superpowers/2026-11-14-symbol-measurement.md``), the segment holds 11,393,442 bytes inline and
+2,799,544 bytes compressed per 64 KiB block; with 17-byte content ids, references plus compression are larger
+than compression alone at every minimum length measured (+7.15 % at 8 and 16 bytes, +4.63 % at 24), and the
+best of any reference size, a 3-byte sequential id, is -5.99 %, short of 10 %. Compression already removes the
+repeated names. Format 5 therefore has no symbols feature, and the reserved ``@sym`` tag of the older design is
+not a value kind (:doc:`/format-spec`, "Symbols").
+
+What was tried and rejected
+---------------------------
+
+* **An unknown registry name raised** when a lookup reached it (R171). It made a name listed before its module
+  existed an error, against R150's "extension over time". Overturned: the name is an empty node, and
+  ``unknown_names`` is the mitigation.
+* **Per-database views of the shared atom cache**, to tell which database a loaded record belongs to (R197).
+  Review found that a record shared by two databases then resolved by whichever loaded it first, and that
+  query rows reloaded after eviction lost their database. Reverted: the code doing the resolving decides
+  (R201), which depends on nothing a cache does.
+* **As-of reads that bound the database** to the list they read. An old snapshot then made later lookups
+  outside any block raise for the life of the space. As-of reads now never bind (R196).
+* **Imports under the root lock.** A module whose import-time code commits deadlocked against the process
+  importing it, across processes. The commit now builds the merged list's registry outside every lock and
+  runs its lock step again when a module was missing.
+* **A context variable as the** ``_super`` **cursor**, set around each bound call. A closure, a callback or a
+  generator that outlives the call would keep a stale cursor and resolve silently wrong. The code-object
+  lookup fails explicitly in the same cases.
+* **A receiver view** ``(o, i)`` carrying the position. Rejected by Q3: ``self`` would be equal to ``o`` but not
+  ``o``.
+
+Back to the ERP
+---------------
+
+The ERP's modules each extend the partner and the lead by the rule that finds every attribute; the database
+holds the records, their parents and the module names. A process that runs the CRM's new code reloads its
+registry explicitly; a report of last quarter runs with last quarter's modules; and the lead's current
+version is the only one its indexes see, so no query needs a "current only" condition.

@@ -7,17 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [2.0.0rc4] - unreleased
 
-- `DBObject` gains parents (`DBObject(parents=(...))`, `o.parents`, `o.with_parents(...)`), persisted as the
-  atom envelope key `"p"`, the format-5 feature `parents`; an object without parents writes the format-4 record
-  byte for byte. `parents` and `with_parents` can no longer be created as field names (`ProtoValidationError`),
-  but a record written before that holds a field of either name still loads, keeps the field readable and
-  `with_` carries it over unchanged: it is never refused (ruling R157).
-- `DBObject` resolves a name it does not hold along the C3 linearization of its parents (`proto_db.resolution`);
-  a miss is still `None`. `DBObject` now defines `__getitem__` (`o["name"]` reads what `o.name` reads),
-  `__contains__` (`"name" in o`), `__setitem__` and `__delitem__` (both raise `ProtoUserError`), and sets
-  `__iter__ = None` (it stays non-iterable). A mixin listed after `DBObject` in a subclass's bases no longer
-  provides any of these, and `%`-formatting with a `DBObject` as the mapping (`"%(n)s" % o`) now formats instead
-  of raising `TypeError`. `has_defined_attr`, index keys and query paths read own attributes only, as before.
+- **The runtime registry** (format 5; decision D62; tutorial `docs/source/tutorials/extensible-models.rst`, design
+  chapter `docs/source/design-guide/registry.rst`). Additive: a `DBObject` without parents, in a database that
+  never installs a module, keeps today's API, bytes and behaviour.
+  - `DBObject` gains parents (`DBObject(parents=(...))`, `o.parents`, `o.with_parents(...)`): other `DBObject`s or
+    registry names (non-empty `str`), persisted as the atom envelope key `"p"`, the format-5 feature `parents`; an
+    object without parents writes the format-4 record byte for byte. `parents` and `with_parents` can no longer be
+    created as field names (`ProtoValidationError`), but a record written before that holds a field of either
+    name still loads, keeps the field readable (`o["parents"]`) and `with_` carries it over unchanged: it is
+    never refused (ruling R157).
+  - Resolution (`proto_db.resolution`): `o.x` and `o["x"]` read own attributes, then the C3 linearization of the
+    parents, registry names included (their extension chains, newest module first); a miss is still `None`
+    (R150), and `"x" in o` tells an inherited or explicit `None` from a miss. `o["oid"]`, `o["with_"]` and the
+    other API names raise `ProtoValidationError`. `DBObject` now defines `__getitem__`, `__contains__`,
+    `__setitem__` and `__delitem__` (both raise `ProtoUserError`), and sets `__iter__ = None` (it stays
+    non-iterable). A mixin listed after `DBObject` in a subclass's bases no longer provides any of these, and
+    `%`-formatting with a `DBObject` as the mapping (`"%(n)s" % o`) now formats instead of raising `TypeError`.
+    `has_defined_attr`, index keys and query paths read own attributes only, as before.
+  - Modules (`proto_db.registry`): `module(name, depends=...)` and `@handle.extends(registry_name, parents=...)`
+    declare extensions whose plain functions are methods and whose other attributes are canonical data
+    defaults; a property, staticmethod, classmethod, callable instance, lambda, nested class or a default holding
+    a database object is refused at import (`ProtoValidationError`). `self._super()` reaches the next definition
+    with the same `self` (a miss is `None`; refused outside a registry method and in generators, allowed in
+    coroutine methods). A registry name no module extends is an empty node; `Registry.unknown_names` lists such
+    names. Registry module names are process-global (one name, one Python module per process).
+  - `Transaction.install_module`, `installed_modules`, `registry`, `catalog_object` and `set_catalog_object`;
+    the roots `__currentModules` and `__catalog` (format-5 feature `registry`, built-in type aliases 22 and 23),
+    merged add-if-absent at commit, so concurrent installs never conflict with each other. Installing is
+    permanent. The module `base` (`proto_db.modules.base`, with `read_data_file`) is installed first,
+    implicitly, and is the last parent of every registry name. Catalog updates follow normal conflict rules
+    (the first updater wins) and reach only objects created after them.
+  - `ObjectSpace(modules_mapping=..., modules_allowed=...)` and `ObjectSpace.reload_registry(database_name)`. A
+    database whose module list changed under a running space raises `ProtoValidationError` at its next
+    registry lookup (no automatic rebuild); a listed module that cannot be imported raises
+    `ProtoNotSupportedError` at the first lookup that needs it, and is remembered until `reload_registry`. As-of
+    reads (`with snapshot:`) resolve with the modules of their version.
+  - Format: `FORMAT_VERSION` 5 (`FEATURE_VERSIONS`: `parents`, `registry`); a space that uses neither keeps
+    writing version 4, and a reader of format 4 refuses version-5 segments and roots with
+    `ProtoNotSupportedError`. The cluster `PROTOCOL_VERSION` is 14, and an acceptor log that holds a root of
+    format 5 has log format 3. `remove_root_object` refuses `__` roots, which only the registry writes. The
+    conformance vectors gained `parents/` and `registry/`; `format-spec.rst` publishes the additions, and its
+    symbol text now follows decision Q7: symbols are not a value kind, and symbol references were measured
+    and deferred (`docs/superpowers/2026-11-14-symbol-measurement.md`).
 - `proto_db.__version__` reports the package version; in 2.0.0rc3 it still said `2.0.0.dev0`.
 - `CloudStorage.publish_root` reports a write refused by its precondition as `ProtoConflictError`, which
   `Database.run` retries, when the object store declares that its refusals are definitive

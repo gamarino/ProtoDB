@@ -109,6 +109,7 @@ Errors
 
 Cache (spec section 9)
     The linearization of a parents tuple is cached, without the object itself:
+
     - when every parent is saved, keyed by the registry and the parents'
       pointers and names, in the cache of the context the parents were loaded through: the
       space's shared atom cache, so every transaction of the space shares the entry (or the
@@ -122,6 +123,7 @@ Cache (spec section 9)
       of one object share the entry).  With any other context -- none, a plain test context, or
       the space's shared atom cache that a version of a loaded object inherits -- it is not
       cached, so unsaved state is never retained beyond its transaction.
+
     An object whose context keeps no cache has its linearization computed at each lookup that
     needs it.  Each node keeps its full linearization while the walk runs, so a parent chain of
     depth d costs O(d^2) to linearize once; the cached result is then reused.

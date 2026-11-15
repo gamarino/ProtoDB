@@ -147,16 +147,19 @@ hash or token changes, data written without them keeps its version and its meani
 are marked by the version rule above. The registry is implemented (format 5); symbols are not, and
 symbol references are not part of format 5 (see `Symbol references`_ below).
 
-Symbols (``@sym``)
-    A new value kind, ``{"@sym": name}`` (option (c2) of the runtime-symbols investigation; see
-    the reserved tags under `Canonical values`_), with a new order rank 16, after the mutable
-    rank 15, and a hash and token derived from its encoding like every other kind. It is the
-    format-5 feature ``@sym``: a segment holding one is version 5. A reader of format 4 refuses
-    that segment (``ProtoNotSupportedError``) and, reading a record directly, refuses ``@sym``
-    as an unknown tag (``ProtoCorruptionError``). The cluster ``PROTOCOL_VERSION`` rises in the
-    same change, since cluster messages carry values. **Until then an implementation MUST
-    refuse to store a symbol** (`Canonical values`_): stored as a string, it would become
-    another key when ``@sym`` lands, and lookups by the symbol would silently miss it.
+.. _symbols:
+
+Symbols
+    Symbols are **not a value kind**. The decision of 2026-11-08 (option (c2) of the
+    runtime-symbols investigation: a distinct kind ``{"@sym": name}`` with an order rank of its
+    own) was superseded on 2026-11-14 (decision Q7 of the runtime registry): a symbol is a way
+    to write a string that is already stored in the database without copying it again, and it
+    **is** that string. Should symbol references be adopted, a symbol-encoded string decodes to
+    the same string, is equal to it, orders, hashes and has the token of the expanded string,
+    and is the same map key; no developer-visible type exists. They are deferred and not part
+    of format 5 (`Symbol references`_). The tag ``@sym`` stays reserved (all tags starting with
+    ``@`` are, `Canonical values`_): a reader refuses it as an unknown tag
+    (``ProtoCorruptionError``), and no writer writes it.
 
 The per-database class registry
     Its persisted state is database roots whose names start with ``__``. **Root names starting
@@ -174,6 +177,8 @@ The per-database class registry
     a database is corrupt for the registry: the application API cannot repair it (it neither
     writes nor removes ``__`` roots), so a repair is the job of tooling that rewrites the root,
     not of the API.
+
+.. _symbol references:
 
 Symbol references
     Symbol references are **not part of format 5**. The design of 2026-11-14 (a string already
@@ -801,12 +806,11 @@ value's name).
 
 **Host-language subclasses.** The rule concerns a host-language class that derives from a
 class the implementation maps to a format kind without being mapped to one itself. A class that
-a format kind names is that kind, not a subclass: in Smalltalk ``Symbol`` derives from
-``String`` but is the reserved ``@sym`` kind (see the reserved tags below). Until ``@sym`` is
-implemented, an implementation MUST refuse to store a symbol; it MUST NOT store it as its string
-(when ``@sym`` lands the two are different keys, and a collection keyed by symbols stored as
-strings would stop answering lookups by symbol without an error) and MUST NOT write a tag of its
-own.
+a format kind names is that kind, not a subclass. A host-language symbol type (Smalltalk's
+``Symbol``, which derives from ``String``) is not a format kind: the format has no symbol kind
+(`Symbols`_, decision Q7 of 2026-11-14, which superseded the reserved ``@sym`` kind of
+2026-11-08), so a symbol is stored as its string, under the rule above, and is read back as a
+string. An implementation MUST NOT write a tag of its own for it.
 
 **One spelling per value.** Every canonical value has exactly one encoding, and readers refuse
 the other spellings of the text forms (``@int``, ``@dec``, ``@td``), so decoding and
@@ -1028,13 +1032,12 @@ the same instant (which format 3 held as two keys) become one UTC key, and the a
 chooses which value to keep. Atoms that are never changed keep their format-3 maps as written.
 
 Reserved tags
-    ``@sym`` is reserved for symbols (the maintainer's runtime decision of 2026-11-08, option
-    (c2): a symbol is an immutable value identified by its name, ``{"@sym": name}``, compared,
-    hashed and ordered by name). **It is not implemented by this revision**: a ``proto_db`` reader
-    refuses ``@sym`` as an unknown tag, so an implementation MUST NOT write it until ``proto_db``
-    reads it. When it is added it will be an additive change marked by ``FORMAT_VERSION`` 5: a
-    new tag, and a new rank after the mutable rank in the order below (`Format stability`_).
-    Tags starting with ``@`` are reserved to the format.
+    ``@sym`` was reserved by the decision of 2026-11-08 for symbols as a value kind of their own.
+    That design was superseded on 2026-11-14 (decision Q7, `Symbols`_): a symbol, if ever
+    implemented, is a storage encoding of a string and equal to it, not a new kind, and symbol
+    references are deferred (`Symbol references`_). The tag stays reserved: a ``proto_db`` reader
+    refuses ``@sym`` as an unknown tag, and an implementation MUST NOT write it. Tags starting
+    with ``@`` are reserved to the format.
 
 Format 2 references
     Format 2 wrote ``@ref`` as ``[segment as 32 hexadecimal digits, offset, type name]``.
@@ -1961,9 +1964,9 @@ Known gaps
 
 None of these breaks a round trip between conforming implementations.
 
-- **Symbols** (``@sym``) are decided but not implemented: an implementation cannot store
-  symbols yet without breaking the round trip. Symbol *references* (a storage encoding of strings)
-  are deferred and not part of format 5 (`Symbol references`_). The class registry's persisted state is
+- **Symbols** are not a value kind (`Symbols`_): a host-language symbol is stored as its string.
+  Symbol *references* (a storage encoding of strings, transparent to values) are deferred and not
+  part of format 5 (`Symbol references`_). The class registry's persisted state is
   implemented, an object's parents (`Atom records`_) and the registry roots (`Registry roots`_),
   as format-5 features (`Format stability`_).
 - **Format-3 zone datetimes need a tz database** (what remains of B3). Format-4 data never does

@@ -18,3 +18,4 @@ fails the build. Read them in order the first time.
    erp
    cad
    cluster
+   extensible-models
