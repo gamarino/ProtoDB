@@ -101,7 +101,9 @@ The base module (R204-R209)
     linearization ends with ``base``, its public names are reserved against Python members of every
     ``DBObject`` subclass that reaches a registry name (a Python member would hide the registry definition, so
     such a class is refused at its first resolution). ``base`` therefore keeps its names few: today only
-    ``read_data_file``.
+    ``read_data_file``. Reading is lenient and writing strict (R235): a persisted list that does not start with
+    ``base`` (another language's writer) is read as if ``base`` preceded it, and the next install writes it
+    with ``base`` first. Every runtime provides a ``base`` module (``format-spec.rst``, "Registry roots").
 
 ``_super`` from the code object (Q3)
     At load the registry indexes every method's code object to its extension. ``self._super()`` reads the

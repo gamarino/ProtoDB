@@ -63,7 +63,9 @@ The module ``base`` (rulings R204, R205, R207)
     the name ``base`` to it; a runtime's ``mapping`` may point it elsewhere).  It has no
     dependencies and extends the registry name ``base``.  A non-empty module list must start
     with ``base`` (:meth:`Registry.build` refuses any other with ``ProtoValidationError``, and a
-    ``base`` that declares dependencies likewise), and ``install_module`` adds it first, by the
+    ``base`` that declares dependencies likewise; a persisted list that does not start with it is
+    read as if ``base`` preceded it, :meth:`ModuleList.names`, ruling R235, and the next install
+    writes it with ``base`` first), and ``install_module`` adds it first, by the
     same add-if-absent merge, to a database whose list lacks it; a database that never installs a
     module has no ``base``.  ``base`` is allowed whatever the runtime's ``allowed`` set when it is
     added implicitly or a list holding it is built; an explicit ``install_module("base")`` obeys
@@ -891,8 +893,20 @@ class ModuleList(_Immutable, Atom):
         return modules
 
     def names(self) -> tuple:
-        """The installed module names, in installation order."""
-        return tuple(name for name, _ in self.entries())
+        """The installed module names, in installation order, ``base`` first: a non-empty list
+        that does not start with ``base`` (another writer's) is read as if ``base`` preceded it
+        (ruling R235: lenient reading, strict writing; :func:`merged_module_list` repairs it on
+        the next install)."""
+        return tuple(name for name, _ in _base_first(self.entries()))
+
+
+def _base_first(entries: tuple) -> tuple:
+    """``entries`` (``(name, depends)`` pairs) with ``base`` first: moved there when it is listed
+    later, added with no dependencies when it is absent; ``()`` stays ``()`` (ruling R235)."""
+    if not entries or entries[0][0] == BASE:
+        return entries
+    found = next((entry for entry in entries if entry[0] == BASE), (BASE, ()))
+    return (found,) + tuple(entry for entry in entries if entry[0] != BASE)
 
 
 class Catalog(_Immutable, Atom):
@@ -946,8 +960,9 @@ def registry_root(objects, name: str, cls: type):
 def merged_module_list(current: ModuleList | None, additions: Mapping, context) -> ModuleList | None:
     """The module list for ``current`` (the list current at commit, or ``None``) with the
     ``name -> depends`` ``additions`` it lacks appended in their order (add-if-absent), or
-    ``None`` when it lacks none of them."""
-    entries = current.entries() if current is not None else ()
+    ``None`` when it lacks none of them.  The list written always starts with ``base``: a
+    current list that does not (another writer's) is repaired here (ruling R235)."""
+    entries = _base_first(current.entries()) if current is not None else ()
     present = {name for name, _ in entries}
     added = tuple((name, depends) for name, depends in additions.items() if name not in present)
     if not added:

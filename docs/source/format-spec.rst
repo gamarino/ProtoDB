@@ -1508,6 +1508,14 @@ version 5, so it lands in a segment of version 5 or later. Both types carry no p
     installed (non-empty strings; a record of the install: at load time a runtime follows its
     code's declaration). A name appears once. Anything else is ``ProtoCorruptionError``.
 
+    **The module** ``base``. ``base`` is the module of the default mechanisms, which every
+    runtime provides (its definitions are each language's own); it has no dependencies. A writer
+    **SHOULD** put ``base`` first in a non-empty ``modules`` (``proto_db`` always does, adding it
+    with an empty ``depends`` before the first module it installs). A reader **MUST** treat
+    ``base`` as implicitly first when a non-empty ``modules`` does not start with it: as if
+    ``(base, ())`` preceded the list when ``base`` is absent, or as if its entry were moved first
+    when it is listed later. An empty ``modules`` lists nothing, ``base`` included.
+
 ``proto_db.registry.Catalog``, the value of the root ``__catalog``
     ``entries``: a ref to a Dictionary from registry name (a non-empty string) to a ref to its
     **catalog object**: a ``proto_db.core.dbobject.DBObject`` record whose parents include that
@@ -1515,7 +1523,9 @@ version 5, so it lands in a segment of version 5 or later. Both types carry no p
     whose parents lack its name, is ``ProtoCorruptionError``.
 
 A writer changes ``modules`` only by **appending** a module that is absent, and never changes
-nor removes a listed one. An install changes ``entries`` only by adding a registry name that is
+nor removes a listed one, with one exception: a writer that appends to a list that does not start
+with ``base`` writes it with ``base`` first, moved there or added (``proto_db`` repairs such a
+list on its next install). An install changes ``entries`` only by adding a registry name that is
 absent. An existing entry is **never removed**, and it is replaced only by a new version of that
 catalog object: a record of the same type whose parents still include the name (the catalog
 object's data is application data; a version is a new record, with a new ``oid``).

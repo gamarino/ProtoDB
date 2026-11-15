@@ -37,7 +37,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     the roots `__currentModules` and `__catalog` (format-5 feature `registry`, built-in type aliases 22 and 23),
     merged add-if-absent at commit, so concurrent installs never conflict with each other. Installing is
     permanent. The module `base` (`proto_db.modules.base`, with `read_data_file`) is installed first,
-    implicitly, and is the last parent of every registry name. Catalog updates follow normal conflict rules
+    implicitly, and is the last parent of every registry name. A persisted list that does not start with `base`
+    (another writer's) is read as if `base` preceded it, and the next install writes it with `base` first;
+    `format-spec.rst` states it normatively (writers SHOULD put `base` first, readers MUST treat it as first). Catalog updates follow normal conflict rules
     (the first updater wins) and reach only objects created after them.
   - `ObjectSpace(modules_mapping=..., modules_allowed=...)` and `ObjectSpace.reload_registry(database_name)`. When
     another process installs a module, a space bound to the older list raises `ProtoValidationError` at the

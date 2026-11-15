@@ -295,7 +295,9 @@ default. Importing the module declares the extension in the process. Nothing is 
 
 A database lists the modules it uses. ``tr.install_module(name)`` adds the module, and the dependencies its
 code declares, at commit. The module ``base``, which holds the default mechanisms, is added first, implicitly:
-a database that never installs a module never has it and pays nothing for it.
+a database that never installs a module never has it and pays nothing for it. A list written by another
+language that does not start with ``base`` is read as if ``base`` came first, and the next install writes it
+that way.
 
 .. code-block:: python
 

@@ -23,7 +23,7 @@ from proto_db import registry as registry_module
 from proto_db.core.dbobject import DBObject
 from proto_db.errors import ProtoNotSupportedError, ProtoUserError, ProtoValidationError
 from proto_db.modules import base as base_module
-from proto_db.registry import BASE, MODULES_ROOT, Registry, using
+from proto_db.registry import BASE, MODULES_ROOT, ModuleList, Registry, using
 from proto_db.resolution import linearize
 from proto_db.storage.memory import MemoryStorage
 from proto_db.transactions import ObjectSpace
@@ -214,6 +214,41 @@ def test_two_installs_add_base_once():
         tr.abort()
     finally:
         space.close()
+
+
+def _write_foreign_list(db, names):
+    """Commit ``names`` as the module list, as a writer of another language may (final review I1):
+    through the internal write path, which only the registry uses."""
+    tr = db.new_transaction()
+    tr._writes[MODULES_ROOT] = ModuleList(modules=tuple((name, ()) for name in names), context=tr)
+    tr.commit()
+
+
+@pytest.mark.parametrize("foreign", [("reg7_base",), ("reg7_base", BASE)], ids=["no-base", "base-last"])
+def test_a_list_without_base_first_reads_with_base_first_and_is_repaired(foreign):
+    """Ruling R235: lenient reading, strict writing.  A persisted list that does not start with
+    ``base`` is read as if ``base`` preceded it; the next install writes ``base`` first."""
+    storage = MemoryStorage()
+    writer = ObjectSpace(storage, modules_mapping=MAPPING)
+    _write_foreign_list(writer.new_database("db"), foreign)
+    space = ObjectSpace(storage, modules_mapping=MAPPING)       # the reading process
+    try:
+        db = space.open_database("db")
+        tr = db.new_transaction()
+        assert tr.installed_modules() == (BASE, "reg7_base")
+        assert tr.registry.key == (BASE, "reg7_base")
+        partner = tr.new_object(parents=("reg7.Partner",))
+        assert partner.kind == "partner" and "read_data_file" in partner     # base is reached last
+        tr.install_module("reg7_contacts")
+        tr.commit()
+        tr = db.new_transaction()
+        entries = tr._objects.get_at(MODULES_ROOT).entries()
+        assert [name for name, _ in entries] == [BASE, "reg7_base", "reg7_contacts"]     # repaired
+        assert entries[0] == (BASE, ())
+        tr.abort()
+    finally:
+        space.close()
+        writer.close()
 
 
 def test_build_requires_base_first(tree):
