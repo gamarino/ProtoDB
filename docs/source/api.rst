@@ -23,6 +23,24 @@ proto_db.core.atom
 proto_db.core.dbobject
 ----------------------
 
+Parents are passed in two forms, side by side:
+
+.. list-table::
+   :header-rows: 1
+
+   * - Call
+     - Form of the parents
+     - Example
+   * - ``DBObject(parents=...)``, ``tr.new_object(parents=...)``
+     - one tuple (or list) of ``DBObject``\ s and registry names
+     - ``DBObject(parents=(catalog, "crm.Lead"), name="Ada")``
+   * - ``o.with_parents(...)``
+     - the parents as separate arguments (none: no parents)
+     - ``o.with_parents(catalog, "crm.Lead")``, or ``o.with_parents(*parents)`` for a tuple
+
+``o.with_parents((a, b))`` passes one tuple as a single parent and is refused (``ProtoValidationError``,
+"A parent must be ... not tuple"), so the two forms are never confused silently.
+
 .. automodule:: proto_db.core.dbobject
    :members:
 
