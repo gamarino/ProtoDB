@@ -1,0 +1,861 @@
+{
+ "ok": true,
+ "gil": true,
+ "python": "3.14.6",
+ "compressor": "zstd 1.5.7 (level 3)",
+ "block_bytes": 65536,
+ "seed": 20261114,
+ "objects": {
+  "partners": 1500,
+  "products": 600,
+  "orders": 2000,
+  "order_lines": 9864
+ },
+ "objects_total": 13964,
+ "read_back": {
+  "counts": {
+   "partners": 1500,
+   "products": 600,
+   "orders": 2000,
+   "order_lines": 9864
+  },
+  "sample_failures": [],
+  "sample_failure_count": 0
+ },
+ "segments": 1,
+ "records": 54360,
+ "record_types": {
+  "3": {
+   "records": 6,
+   "bytes": 300
+  },
+  "6": {
+   "records": 6066,
+   "bytes": 755737
+  },
+  "18": {
+   "records": 2022,
+   "bytes": 478790
+  },
+  "0": {
+   "records": 30280,
+   "bytes": 4942713
+  },
+  "17": {
+   "records": 2022,
+   "bytes": 171866
+  },
+  "19": {
+   "records": 13964,
+   "bytes": 5044010
+  }
+ },
+ "a": 11393442,
+ "c_whole": 2420928,
+ "c_block": 2799544,
+ "strings": {
+  "name": {
+   "total": 395706,
+   "distinct": 65,
+   "inline_bytes": 3149740,
+   "len>=8": {
+    "total": 133664,
+    "distinct": 37,
+    "inline_bytes": 1617714
+   },
+   "len>=16": {
+    "total": 2000,
+    "distinct": 1,
+    "inline_bytes": 34000
+   },
+   "len>=24": {
+    "total": 0,
+    "distinct": 0,
+    "inline_bytes": 0
+   }
+  },
+  "value": {
+   "total": 110820,
+   "distinct": 13942,
+   "inline_bytes": 1292836,
+   "len>=8": {
+    "total": 44077,
+    "distinct": 8869,
+    "inline_bytes": 878185
+   },
+   "len>=16": {
+    "total": 18752,
+    "distinct": 4723,
+    "inline_bytes": 593883
+   },
+   "len>=24": {
+    "total": 14692,
+    "distinct": 2788,
+    "inline_bytes": 510713
+   }
+  },
+  "dbobject_name": {
+   "total": 181668,
+   "distinct": 50,
+   "inline_bytes": 1875528,
+   "len>=8": {
+    "total": 125576,
+    "distinct": 33,
+    "inline_bytes": 1534812
+   },
+   "len>=16": {
+    "total": 2000,
+    "distinct": 1,
+    "inline_bytes": 34000
+   },
+   "len>=24": {
+    "total": 0,
+    "distinct": 0,
+    "inline_bytes": 0
+   }
+  },
+  "dbobject_value": {
+   "total": 80540,
+   "distinct": 13938,
+   "inline_bytes": 1080962,
+   "len>=8": {
+    "total": 41408,
+    "distinct": 8867,
+    "inline_bytes": 853522
+   },
+   "len>=16": {
+    "total": 18752,
+    "distinct": 4723,
+    "inline_bytes": 593883
+   },
+   "len>=24": {
+    "total": 14692,
+    "distinct": 2788,
+    "inline_bytes": 510713
+   }
+  }
+ },
+ "sha256": "5fc2f756aa2bb8d2c08302e67862423d023942d7e1c7ef14c60ade4a2be9d77e",
+ "variants": [
+  {
+   "L": 8,
+   "ref_size": 17,
+   "ref_form": "c1/16",
+   "kinds": "name+value",
+   "distinct_replaced": 4355,
+   "replaced": {
+    "name": 0,
+    "value": 18113
+   },
+   "saved_inline": {
+    "name": 0,
+    "value": 275099
+   },
+   "b_records": 11118343,
+   "b_table": 268168,
+   "b": 11386511,
+   "d_whole": 2607665,
+   "d_block": 2999701
+  },
+  {
+   "L": 8,
+   "ref_size": 17,
+   "ref_form": "c1/16",
+   "kinds": "name",
+   "distinct_replaced": 0,
+   "replaced": {
+    "name": 0,
+    "value": 0
+   },
+   "saved_inline": {
+    "name": 0,
+    "value": 0
+   },
+   "b_records": 11393442,
+   "b_table": 0,
+   "b": 11393442,
+   "d_whole": 2420928,
+   "d_block": 2799544
+  },
+  {
+   "L": 8,
+   "ref_size": 17,
+   "ref_form": "c1/16",
+   "kinds": "value",
+   "distinct_replaced": 4355,
+   "replaced": {
+    "name": 0,
+    "value": 18113
+   },
+   "saved_inline": {
+    "name": 0,
+    "value": 275099
+   },
+   "b_records": 11118343,
+   "b_table": 268168,
+   "b": 11386511,
+   "d_whole": 2607665,
+   "d_block": 2999701
+  },
+  {
+   "L": 16,
+   "ref_size": 17,
+   "ref_form": "c1/16",
+   "kinds": "name+value",
+   "distinct_replaced": 4355,
+   "replaced": {
+    "name": 0,
+    "value": 18113
+   },
+   "saved_inline": {
+    "name": 0,
+    "value": 275099
+   },
+   "b_records": 11118343,
+   "b_table": 268168,
+   "b": 11386511,
+   "d_whole": 2607665,
+   "d_block": 2999701
+  },
+  {
+   "L": 16,
+   "ref_size": 17,
+   "ref_form": "c1/16",
+   "kinds": "name",
+   "distinct_replaced": 0,
+   "replaced": {
+    "name": 0,
+    "value": 0
+   },
+   "saved_inline": {
+    "name": 0,
+    "value": 0
+   },
+   "b_records": 11393442,
+   "b_table": 0,
+   "b": 11393442,
+   "d_whole": 2420928,
+   "d_block": 2799544
+  },
+  {
+   "L": 16,
+   "ref_size": 17,
+   "ref_form": "c1/16",
+   "kinds": "value",
+   "distinct_replaced": 4355,
+   "replaced": {
+    "name": 0,
+    "value": 18113
+   },
+   "saved_inline": {
+    "name": 0,
+    "value": 275099
+   },
+   "b_records": 11118343,
+   "b_table": 268168,
+   "b": 11386511,
+   "d_whole": 2607665,
+   "d_block": 2999701
+  },
+  {
+   "L": 24,
+   "ref_size": 17,
+   "ref_form": "c1/16",
+   "kinds": "name+value",
+   "distinct_replaced": 2788,
+   "replaced": {
+    "name": 0,
+    "value": 14692
+   },
+   "saved_inline": {
+    "name": 0,
+    "value": 260949
+   },
+   "b_records": 11132493,
+   "b_table": 181066,
+   "b": 11313559,
+   "d_whole": 2534385,
+   "d_block": 2929171
+  },
+  {
+   "L": 24,
+   "ref_size": 17,
+   "ref_form": "c1/16",
+   "kinds": "name",
+   "distinct_replaced": 0,
+   "replaced": {
+    "name": 0,
+    "value": 0
+   },
+   "saved_inline": {
+    "name": 0,
+    "value": 0
+   },
+   "b_records": 11393442,
+   "b_table": 0,
+   "b": 11393442,
+   "d_whole": 2420928,
+   "d_block": 2799544
+  },
+  {
+   "L": 24,
+   "ref_size": 17,
+   "ref_form": "c1/16",
+   "kinds": "value",
+   "distinct_replaced": 2788,
+   "replaced": {
+    "name": 0,
+    "value": 14692
+   },
+   "saved_inline": {
+    "name": 0,
+    "value": 260949
+   },
+   "b_records": 11132493,
+   "b_table": 181066,
+   "b": 11313559,
+   "d_whole": 2534385,
+   "d_block": 2929171
+  },
+  {
+   "L": 8,
+   "ref_size": 9,
+   "ref_form": "c1/8",
+   "kinds": "name+value",
+   "distinct_replaced": 8881,
+   "replaced": {
+    "name": 98828,
+    "value": 38231
+   },
+   "saved_inline": {
+    "name": 414738,
+    "value": 481492
+   },
+   "b_records": 10497212,
+   "b_table": 412849,
+   "b": 10910061,
+   "d_whole": 2641249,
+   "d_block": 2927032
+  },
+  {
+   "L": 8,
+   "ref_size": 9,
+   "ref_form": "c1/8",
+   "kinds": "name",
+   "distinct_replaced": 30,
+   "replaced": {
+    "name": 98828,
+    "value": 0
+   },
+   "saved_inline": {
+    "name": 414738,
+    "value": 0
+   },
+   "b_records": 10978704,
+   "b_table": 1192,
+   "b": 10979896,
+   "d_whole": 2417490,
+   "d_block": 2789997
+  },
+  {
+   "L": 8,
+   "ref_size": 9,
+   "ref_form": "c1/8",
+   "kinds": "value",
+   "distinct_replaced": 8851,
+   "replaced": {
+    "name": 0,
+    "value": 38231
+   },
+   "saved_inline": {
+    "name": 0,
+    "value": 481492
+   },
+   "b_records": 10911950,
+   "b_table": 411683,
+   "b": 11323633,
+   "d_whole": 2647279,
+   "d_block": 2946247
+  },
+  {
+   "L": 16,
+   "ref_size": 9,
+   "ref_form": "c1/8",
+   "kinds": "name+value",
+   "distinct_replaced": 4724,
+   "replaced": {
+    "name": 2000,
+    "value": 18752
+   },
+   "saved_inline": {
+    "name": 16000,
+    "value": 425115
+   },
+   "b_records": 10952327,
+   "b_table": 249195,
+   "b": 11201522,
+   "d_whole": 2533229,
+   "d_block": 2840046
+  },
+  {
+   "L": 16,
+   "ref_size": 9,
+   "ref_form": "c1/8",
+   "kinds": "name",
+   "distinct_replaced": 1,
+   "replaced": {
+    "name": 2000,
+    "value": 0
+   },
+   "saved_inline": {
+    "name": 16000,
+    "value": 0
+   },
+   "b_records": 11377442,
+   "b_table": 69,
+   "b": 11377511,
+   "d_whole": 2421024,
+   "d_block": 2801573
+  },
+  {
+   "L": 16,
+   "ref_size": 9,
+   "ref_form": "c1/8",
+   "kinds": "value",
+   "distinct_replaced": 4723,
+   "replaced": {
+    "name": 0,
+    "value": 18752
+   },
+   "saved_inline": {
+    "name": 0,
+    "value": 425115
+   },
+   "b_records": 10968327,
+   "b_table": 249152,
+   "b": 11217479,
+   "d_whole": 2533563,
+   "d_block": 2841390
+  },
+  {
+   "L": 24,
+   "ref_size": 9,
+   "ref_form": "c1/8",
+   "kinds": "name+value",
+   "distinct_replaced": 2788,
+   "replaced": {
+    "name": 0,
+    "value": 14692
+   },
+   "saved_inline": {
+    "name": 0,
+    "value": 378485
+   },
+   "b_records": 11014957,
+   "b_table": 158762,
+   "b": 11173719,
+   "d_whole": 2479901,
+   "d_block": 2796999
+  },
+  {
+   "L": 24,
+   "ref_size": 9,
+   "ref_form": "c1/8",
+   "kinds": "name",
+   "distinct_replaced": 0,
+   "replaced": {
+    "name": 0,
+    "value": 0
+   },
+   "saved_inline": {
+    "name": 0,
+    "value": 0
+   },
+   "b_records": 11393442,
+   "b_table": 0,
+   "b": 11393442,
+   "d_whole": 2420928,
+   "d_block": 2799544
+  },
+  {
+   "L": 24,
+   "ref_size": 9,
+   "ref_form": "c1/8",
+   "kinds": "value",
+   "distinct_replaced": 2788,
+   "replaced": {
+    "name": 0,
+    "value": 14692
+   },
+   "saved_inline": {
+    "name": 0,
+    "value": 378485
+   },
+   "b_records": 11014957,
+   "b_table": 158762,
+   "b": 11173719,
+   "d_whole": 2479901,
+   "d_block": 2796999
+  },
+  {
+   "L": 8,
+   "ref_size": 24,
+   "ref_form": "tagged/16",
+   "kinds": "name+value",
+   "distinct_replaced": 2788,
+   "replaced": {
+    "name": 0,
+    "value": 14692
+   },
+   "saved_inline": {
+    "name": 0,
+    "value": 158105
+   },
+   "b_records": 11235337,
+   "b_table": 181066,
+   "b": 11416403,
+   "d_whole": 2538383,
+   "d_block": 2936715
+  },
+  {
+   "L": 8,
+   "ref_size": 24,
+   "ref_form": "tagged/16",
+   "kinds": "name",
+   "distinct_replaced": 0,
+   "replaced": {
+    "name": 0,
+    "value": 0
+   },
+   "saved_inline": {
+    "name": 0,
+    "value": 0
+   },
+   "b_records": 11393442,
+   "b_table": 0,
+   "b": 11393442,
+   "d_whole": 2420928,
+   "d_block": 2799544
+  },
+  {
+   "L": 8,
+   "ref_size": 24,
+   "ref_form": "tagged/16",
+   "kinds": "value",
+   "distinct_replaced": 2788,
+   "replaced": {
+    "name": 0,
+    "value": 14692
+   },
+   "saved_inline": {
+    "name": 0,
+    "value": 158105
+   },
+   "b_records": 11235337,
+   "b_table": 181066,
+   "b": 11416403,
+   "d_whole": 2538383,
+   "d_block": 2936715
+  },
+  {
+   "L": 16,
+   "ref_size": 24,
+   "ref_form": "tagged/16",
+   "kinds": "name+value",
+   "distinct_replaced": 2788,
+   "replaced": {
+    "name": 0,
+    "value": 14692
+   },
+   "saved_inline": {
+    "name": 0,
+    "value": 158105
+   },
+   "b_records": 11235337,
+   "b_table": 181066,
+   "b": 11416403,
+   "d_whole": 2538383,
+   "d_block": 2936715
+  },
+  {
+   "L": 16,
+   "ref_size": 24,
+   "ref_form": "tagged/16",
+   "kinds": "name",
+   "distinct_replaced": 0,
+   "replaced": {
+    "name": 0,
+    "value": 0
+   },
+   "saved_inline": {
+    "name": 0,
+    "value": 0
+   },
+   "b_records": 11393442,
+   "b_table": 0,
+   "b": 11393442,
+   "d_whole": 2420928,
+   "d_block": 2799544
+  },
+  {
+   "L": 16,
+   "ref_size": 24,
+   "ref_form": "tagged/16",
+   "kinds": "value",
+   "distinct_replaced": 2788,
+   "replaced": {
+    "name": 0,
+    "value": 14692
+   },
+   "saved_inline": {
+    "name": 0,
+    "value": 158105
+   },
+   "b_records": 11235337,
+   "b_table": 181066,
+   "b": 11416403,
+   "d_whole": 2538383,
+   "d_block": 2936715
+  },
+  {
+   "L": 24,
+   "ref_size": 24,
+   "ref_form": "tagged/16",
+   "kinds": "name+value",
+   "distinct_replaced": 2788,
+   "replaced": {
+    "name": 0,
+    "value": 14692
+   },
+   "saved_inline": {
+    "name": 0,
+    "value": 158105
+   },
+   "b_records": 11235337,
+   "b_table": 181066,
+   "b": 11416403,
+   "d_whole": 2538383,
+   "d_block": 2936715
+  },
+  {
+   "L": 24,
+   "ref_size": 24,
+   "ref_form": "tagged/16",
+   "kinds": "name",
+   "distinct_replaced": 0,
+   "replaced": {
+    "name": 0,
+    "value": 0
+   },
+   "saved_inline": {
+    "name": 0,
+    "value": 0
+   },
+   "b_records": 11393442,
+   "b_table": 0,
+   "b": 11393442,
+   "d_whole": 2420928,
+   "d_block": 2799544
+  },
+  {
+   "L": 24,
+   "ref_size": 24,
+   "ref_form": "tagged/16",
+   "kinds": "value",
+   "distinct_replaced": 2788,
+   "replaced": {
+    "name": 0,
+    "value": 14692
+   },
+   "saved_inline": {
+    "name": 0,
+    "value": 158105
+   },
+   "b_records": 11235337,
+   "b_table": 181066,
+   "b": 11416403,
+   "d_whole": 2538383,
+   "d_block": 2936715
+  },
+  {
+   "L": 8,
+   "ref_size": 3,
+   "ref_form": "seq/2",
+   "kinds": "name+value",
+   "distinct_replaced": 8906,
+   "replaced": {
+    "name": 133664,
+    "value": 44077
+   },
+   "saved_inline": {
+    "name": 1216722,
+    "value": 745954
+   },
+   "b_records": 9430766,
+   "b_table": 360288,
+   "b": 9791054,
+   "d_whole": 2475489,
+   "d_block": 2631776
+  },
+  {
+   "L": 8,
+   "ref_size": 3,
+   "ref_form": "seq/2",
+   "kinds": "name",
+   "distinct_replaced": 37,
+   "replaced": {
+    "name": 133664,
+    "value": 0
+   },
+   "saved_inline": {
+    "name": 1216722,
+    "value": 0
+   },
+   "b_records": 10176720,
+   "b_table": 1215,
+   "b": 10177935,
+   "d_whole": 2388202,
+   "d_block": 2719828
+  },
+  {
+   "L": 8,
+   "ref_size": 3,
+   "ref_form": "seq/2",
+   "kinds": "value",
+   "distinct_replaced": 8869,
+   "replaced": {
+    "name": 0,
+    "value": 44077
+   },
+   "saved_inline": {
+    "name": 0,
+    "value": 745954
+   },
+   "b_records": 10647488,
+   "b_table": 359099,
+   "b": 11006587,
+   "d_whole": 2508852,
+   "d_block": 2706816
+  },
+  {
+   "L": 16,
+   "ref_size": 3,
+   "ref_form": "seq/2",
+   "kinds": "name+value",
+   "distinct_replaced": 4724,
+   "replaced": {
+    "name": 2000,
+    "value": 18752
+   },
+   "saved_inline": {
+    "name": 28000,
+    "value": 537627
+   },
+   "b_records": 10827815,
+   "b_table": 220851,
+   "b": 11048666,
+   "d_whole": 2455585,
+   "d_block": 2692810
+  },
+  {
+   "L": 16,
+   "ref_size": 3,
+   "ref_form": "seq/2",
+   "kinds": "name",
+   "distinct_replaced": 1,
+   "replaced": {
+    "name": 2000,
+    "value": 0
+   },
+   "saved_inline": {
+    "name": 28000,
+    "value": 0
+   },
+   "b_records": 11365442,
+   "b_table": 63,
+   "b": 11365505,
+   "d_whole": 2420656,
+   "d_block": 2801430
+  },
+  {
+   "L": 16,
+   "ref_size": 3,
+   "ref_form": "seq/2",
+   "kinds": "value",
+   "distinct_replaced": 4723,
+   "replaced": {
+    "name": 0,
+    "value": 18752
+   },
+   "saved_inline": {
+    "name": 0,
+    "value": 537627
+   },
+   "b_records": 10855815,
+   "b_table": 220814,
+   "b": 11076629,
+   "d_whole": 2455512,
+   "d_block": 2695461
+  },
+  {
+   "L": 24,
+   "ref_size": 3,
+   "ref_form": "seq/2",
+   "kinds": "name+value",
+   "distinct_replaced": 2788,
+   "replaced": {
+    "name": 0,
+    "value": 14692
+   },
+   "saved_inline": {
+    "name": 0,
+    "value": 466637
+   },
+   "b_records": 10926805,
+   "b_table": 142034,
+   "b": 11068839,
+   "d_whole": 2430133,
+   "d_block": 2684365
+  },
+  {
+   "L": 24,
+   "ref_size": 3,
+   "ref_form": "seq/2",
+   "kinds": "name",
+   "distinct_replaced": 0,
+   "replaced": {
+    "name": 0,
+    "value": 0
+   },
+   "saved_inline": {
+    "name": 0,
+    "value": 0
+   },
+   "b_records": 11393442,
+   "b_table": 0,
+   "b": 11393442,
+   "d_whole": 2420928,
+   "d_block": 2799544
+  },
+  {
+   "L": 24,
+   "ref_size": 3,
+   "ref_form": "seq/2",
+   "kinds": "value",
+   "distinct_replaced": 2788,
+   "replaced": {
+    "name": 0,
+    "value": 14692
+   },
+   "saved_inline": {
+    "name": 0,
+    "value": 466637
+   },
+   "b_records": 10926805,
+   "b_table": 142034,
+   "b": 11068839,
+   "d_whole": 2430133,
+   "d_block": 2684365
+  }
+ ]
+}
