@@ -134,7 +134,8 @@ attribute from one explicitly set to ``None``. Two tests do:
 
 ``"fax" in bob`` is true because a parent defines ``fax`` (as ``None``); ``"pager" in bob`` is false because
 nothing does. The obvious alternative, raising on a miss as Python's attribute access does, would make every
-object written before a field existed an error for the code that reads the field. ``has_defined_attr`` keeps its earlier meaning, the object's *own* attributes, which is what
+object written before a field existed an error for the code that reads the field.
+``has_defined_attr`` keeps its earlier meaning, the object's *own* attributes, which is what
 index keys and query paths read too: an index never sees an inherited value.
 
 Writes never climb the parents. ``with_`` sets an attribute on the new version of the object itself, and the

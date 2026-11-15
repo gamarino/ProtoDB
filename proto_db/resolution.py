@@ -459,9 +459,10 @@ def super_proxy(obj, code, registry=None) -> "SuperProxy":
     if registry is None:
         raise ProtoUserError(f"_super() called from {where} with no registry current")
     if code.co_flags & _SUSPENDABLE:
+        kind = "a generator expression" if code.co_name == "<genexpr>" else "a generator"
         raise ProtoUserError(
-            f"_super() called from {where}, a generator: _super() is not available in generator "
-            f"methods; call it in the method and pass the result in")
+            f"_super() called from {where}, {kind}: _super() is not available in generators; "
+            f"call it in the method and pass the result in")
     extension = registry.extension_of_code(code)
     if extension is None:
         from .registry import _declared_method_of_code

@@ -166,7 +166,7 @@ def test_super_from_generator_raises(active):
         o.from_genexpr()
     # A generator method is a registry method, and _super() is refused in it by design (R172, R229);
     # coroutine methods are allowed (R176).
-    with pytest.raises(ProtoUserError, match=r"a generator: _super\(\) is not available in generator methods"):
+    with pytest.raises(ProtoUserError, match=r"a generator: _super\(\) is not available in generators"):
         next(o.generator_method())
 
 
