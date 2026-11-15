@@ -20,6 +20,7 @@ root then has a record that lives on the disks of the nodes that accepted it thr
 replication (``holds(name, root)``), served to peers by page requests, and a rejoin must
 copy it before the node acts as an acceptor (D46, ruling R50).
 """
+import contextlib
 import itertools
 import threading
 import time
@@ -53,6 +54,21 @@ class RecordTier(MemoryTier):
         super().__init__(storage, node_id)
         self.disk = storage
         self._fetcher = None
+        self._tls = threading.local()
+
+    @contextlib.contextmanager
+    def critical_section(self):
+        """As :meth:`~proto_db.storage.tiered.TieredStorage.critical_section`: the calling
+        thread is inside a commit's critical section (it holds a write permission)."""
+        previous = getattr(self._tls, "critical", False)
+        self._tls.critical = True
+        try:
+            yield
+        finally:
+            self._tls.critical = previous
+
+    def in_critical(self) -> bool:
+        return bool(getattr(self._tls, "critical", False))
 
     @property
     def held(self) -> set:
