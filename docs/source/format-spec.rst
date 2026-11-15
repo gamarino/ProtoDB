@@ -1520,6 +1520,21 @@ version 5, so it lands in a segment of version 5 or later. Both types carry no p
     ``(base, ())`` preceded the list when ``base`` is absent, or as if its entry were moved first
     when it is listed later. An empty ``modules`` lists nothing, ``base`` included.
 
+    **The load order.** The order of ``modules`` is the install history only: a runtime **MUST
+    NOT** let it decide how the registry is composed. A runtime **MUST** load the listed modules
+    in this order, a function of the set of listed names and of the dependencies their code
+    declares at load time: ``base`` first (whatever its name compares to), then, repeatedly,
+    among the modules not yet placed whose dependencies are all placed, the one whose name is
+    smallest in **code-point order** (the names compared as sequences of Unicode code points,
+    the first differing code point deciding and a proper prefix coming first; no locale, case
+    folding or normalization; UTF-8 byte order agrees with it, UTF-16 code-unit order does not).
+    A dependency cycle is an error. Everything the load order decides follows it: a registry
+    name's extensions are chained newest first (the module loaded last first), and its parents
+    are the union of the ``parents=`` its extensions declare, in load order. Two databases that
+    list the same modules in different orders therefore compose the same registry and resolve
+    every name the same way. A writer **MUST NOT** reorder ``modules`` into the load order (the
+    list is only appended to, see below).
+
 ``proto_db.registry.Catalog``, the value of the root ``__catalog``
     ``entries``: a ref to a Dictionary from registry name (a non-empty string) to a ref to its
     **catalog object**: a ``proto_db.core.dbobject.DBObject`` record whose parents include that

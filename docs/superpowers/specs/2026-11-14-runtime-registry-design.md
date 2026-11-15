@@ -381,6 +381,9 @@ The reference must be **smaller than the string**, or nothing is saved:
    Section 3 has the details.
 2. **Load-order ties.** The topological sort breaks ties by installation order, the order persisted in
    `__currentModules`. Every process therefore resolves a chain the same way.
+   **Superseded by ruling R253 (2026-11-15):** ties are broken by module name in code-point order, `base`
+   first; the persisted order is the install history only, so the registry is a function of the module set
+   (`docs/decisions.md`, D62).
 3. **`__catalog` writes.** `install_module` adds, by add-if-absent at commit, a catalog class object for each
    registry name that the module's extensions introduce. The catalog object's data is then ordinary application
    data, written by normal transactions under normal conflict rules. Resolving a registry name that has no catalog

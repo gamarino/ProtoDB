@@ -250,7 +250,8 @@ reading the same database cannot use.
 
 The registry turns this around. A record never names its code: it names a **registry name**, a plain string
 such as ``"tutorial.Partner"``, among its parents. Modules **extend** registry names, and the registry of a
-process chains the extensions of each name in module load order. A module is an ordinary Python module that
+process chains the extensions of each name in module **load order**: ``base`` first, then every module after
+the modules it depends on, ties broken by module name. A module is an ordinary Python module that
 declares itself with :func:`proto_db.registry.module`; there is no manifest file.
 
 The tutorial writes its modules into its working directory and imports them from there. Module names start
@@ -404,7 +405,9 @@ always the right answer, and two installs never conflict with each other:
 
    ('base', 'tut_contacts', 'tut_notes')
 
-The order of the list is the commit order. Reading the list for resolution, or through ``installed_modules``
+The order of the list is the commit order, and it is only the install history: the load order ignores it, so
+two databases that installed the same modules in different orders, or whose concurrent installs committed in
+either order, compose the same registry and behave the same. Reading the list for resolution, or through ``installed_modules``
 and ``catalog_object``, never enters a transaction's read set either, so an install never makes ordinary work
 conflict. ``tr.get_root_object("__currentModules")`` (or ``"__catalog"``) is an ordinary read, though: it
 enters the read set, and a concurrent install then makes that transaction's commit conflict. On a storage whose root lock is not global
