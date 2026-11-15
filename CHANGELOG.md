@@ -19,7 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Resolution (`proto_db.resolution`): `o.x` and `o["x"]` read own attributes, then the C3 linearization of the
     parents, registry names included (their extension chains, newest module first); a miss is still `None`
     (R150), and `"x" in o` tells an inherited or explicit `None` from a miss. `o["oid"]`, `o["with_"]` and the
-    other API names raise `ProtoValidationError`. `DBObject` now defines `__getitem__`, `__contains__`,
+    other API names raise `ProtoAttributeNameError` (new, exported from `proto_db`), a `ProtoValidationError`
+    that is also a `KeyError`, so a mapping-first consumer such as a Django template (`{{ obj.oid }}` tries
+    `obj["oid"]` first) falls back to attribute access as it did when `DBObject` was not subscriptable. `DBObject` now defines `__getitem__`, `__contains__`,
     `__setitem__` and `__delitem__` (both raise `ProtoUserError`), and sets `__iter__ = None` (it stays
     non-iterable). A mixin listed after `DBObject` in a subclass's bases no longer provides any of these, and
     `%`-formatting with a `DBObject` as the mapping (`"%(n)s" % o`) now formats instead of raising `TypeError`.

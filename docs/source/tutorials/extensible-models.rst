@@ -175,10 +175,14 @@ is refused rather than answered with something that is not an attribute:
 .. code-block:: text
    :caption: Output
 
-   ProtoValidationError 'oid' is part of the DBObject API, not an attribute name: read it as o.oid
-   ProtoValidationError 'with_' is part of the DBObject API, not an attribute name: read it as o.with_
-   ProtoValidationError '_private' is not an attribute name
+   ProtoAttributeNameError 'oid' is part of the DBObject API, not an attribute name: read it as o.oid
+   ProtoAttributeNameError 'with_' is part of the DBObject API, not an attribute name: read it as o.with_
+   ProtoAttributeNameError '_private' is not an attribute name
    None 1
+
+``ProtoAttributeNameError`` is a ``ProtoValidationError`` and also a ``KeyError``, so code that tries
+``obj[name]`` first and falls back to ``getattr`` on a ``KeyError`` (a Django template's ``{{ obj.oid }}``)
+still reads ``o.oid``.
 
 ``bob["parents"]`` is ``None``, not the parents: ``parents`` and ``with_parents`` were ordinary field names
 before parents existed, and a record written then that holds such a field still loads, with the field

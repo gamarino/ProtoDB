@@ -75,6 +75,7 @@ _EXPORTS = {
     "ProtoUnexpectedError": "errors", "ProtoOutcomeUnknownError": "errors", "ProtoBacklogFullError": "errors",
     "ProtoLockingError": "errors", "ProtoConflictError": "errors", "ProtoTimeoutError": "errors",
     "ProtoReferenceError": "errors", "ProtoStalePagerError": "errors", "ProtoClosedError": "errors",
+    "ProtoAttributeNameError": "errors",
     "ProtoBaseException": "errors", "ProtoValidationException": "errors", "ProtoUserException": "errors",
     "ProtoCorruptionException": "errors", "ProtoNotSupportedException": "errors",
     "ProtoNotAuthorizedException": "errors", "ProtoUnexpectedException": "errors",
@@ -114,7 +115,7 @@ if TYPE_CHECKING:  # pragma: no cover - static analysers only; never executed
                          ProtoMisfiledError,
                          ProtoNotAuthorizedError, ProtoNotAuthorizedException, ProtoNotSupportedError,
                          ProtoNotSupportedException, ProtoOutcomeUnknownError, ProtoReferenceError,
-                         ProtoClosedError, ProtoStalePagerError, ProtoTimeoutError,
+                         ProtoClosedError, ProtoStalePagerError, ProtoTimeoutError, ProtoAttributeNameError,
                          ProtoUnexpectedError, ProtoUnexpectedException, ProtoUserError, ProtoUserException,
                          ProtoValidationError, ProtoValidationException)
     from .indexing.base import Index

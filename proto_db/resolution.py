@@ -153,7 +153,8 @@ import inspect
 import types
 
 from .core.atom import _ABSENT, RESERVED_NAMES, OpaqueAtom, class_defines
-from .errors import ProtoCorruptionError, ProtoNotSupportedError, ProtoUserError, ProtoValidationError
+from .errors import (ProtoAttributeNameError, ProtoCorruptionError, ProtoNotSupportedError, ProtoUserError,
+                     ProtoValidationError)
 from .storage.cache import BoundedCache
 
 __all__ = ["linearize", "resolve", "new_cache", "super_proxy", "SuperProxy", "CACHE_NODES",
@@ -518,7 +519,7 @@ class SuperProxy:
         if type(name) is not str:
             raise TypeError(f"attribute names are str, not {type(name).__name__}")
         if not name or name.startswith("_") or name in RESERVED_NAMES:
-            raise ProtoValidationError(f"{name!r} is not an attribute name")
+            raise ProtoAttributeNameError(f"{name!r} is not an attribute name")
         return _walk(self._receiver, self._entry, name, self._registry, self._start,
                      self._start_extension)
 

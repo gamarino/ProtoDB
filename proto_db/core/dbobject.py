@@ -40,7 +40,7 @@ from __future__ import annotations
 import sys
 
 from .. import resolution
-from ..errors import ProtoUserError, ProtoValidationError
+from ..errors import ProtoAttributeNameError, ProtoUserError, ProtoValidationError
 from ..values import FrozenDict, MutableObject, canonical, check_text
 from .atom import _ABSENT, RESERVED_NAMES, Atom, PersistenceContext, _check_context, class_defines
 
@@ -187,7 +187,9 @@ class DBObject(Atom):
         format-4 record) is read here as the field, own or inherited, while ``o.parents`` stays
         the property.  The other API names (``oid``, ``context``, ``atom_pointer``, ``with_``,
         ``has_defined_attr``, ...) and names starting with ``_`` are not attribute names:
-        ``ProtoValidationError``.  A name that is not a ``str`` is ``TypeError``."""
+        :class:`~proto_db.errors.ProtoAttributeNameError`, a ``ProtoValidationError`` that is also a
+        ``KeyError`` (ruling R238: a mapping-first consumer, such as a Django template, then falls
+        back to attribute access).  A name that is not a ``str`` is ``TypeError``."""
         kind = self._item_kind(name)
         if kind is _DATA:
             return resolution.resolve(self, name)[0]
@@ -211,14 +213,14 @@ class DBObject(Atom):
         if not isinstance(name, str):
             raise TypeError(f"DBObject attribute names are str, not {type(name).__name__}")
         if not name or name.startswith("_"):
-            raise ProtoValidationError(f"{name!r} is not an attribute name")
+            raise ProtoAttributeNameError(f"{name!r} is not an attribute name")
         if name in _API_NAMES:
             cls = type(self)
             if name in cls._legacy_held:
                 return _DATA
             owner = next(k for k in cls.__mro__ if name in k.__dict__ or k is DBObject)
             if owner is DBObject or name in RESERVED_NAMES:
-                raise ProtoValidationError(
+                raise ProtoAttributeNameError(
                     f"{name!r} is part of the DBObject API, not an attribute name: read it as o.{name}")
             return _MEMBER
         return _ATTRIBUTE

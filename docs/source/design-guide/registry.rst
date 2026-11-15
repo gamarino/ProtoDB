@@ -72,7 +72,10 @@ One resolution rule
     ``o`` (``self is o``). Nothing else is computed (Q4): a computed value is a method. Writes never climb the
     parents. C3 is chosen over a depth-first walk because a depth-first walk visits a shared ancestor more
     than once and before the names that override it (tutorial, section 7); C3 orders every node after all of
-    its children and refuses a hierarchy that has no such order (``ProtoValidationError``).
+    its children and refuses a hierarchy that has no such order (``ProtoValidationError``). ``o["name"]`` reads
+    what ``o.name`` reads; an API name (``oid``, ``with_``, ...) or a ``_`` name is not an attribute name there,
+    ``ProtoAttributeNameError``, which is also a ``KeyError`` so that mapping-first consumers such as Django
+    templates fall back to attribute access (R238).
 
 The catalog object, before the registry (Q1)
     ``install_module`` creates, for each registry name a module introduces, a plain ``DBObject`` whose only

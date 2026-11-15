@@ -474,6 +474,27 @@ def test_item_names_are_validated():
         iter(o)
 
 
+def test_an_item_that_is_not_an_attribute_name_is_also_a_key_error():
+    """Final review I4 (ruling R238): ``o["oid"]`` raises an error that is both a
+    ``ProtoValidationError`` and a ``KeyError``, so a mapping-first consumer (a Django template's
+    ``{{ obj.oid }}`` tries ``obj["oid"]`` and falls back to attribute access only on ``KeyError``
+    and its peers) still reads the attribute; its message stays plain."""
+    from proto_db import ProtoAttributeNameError
+    o = DBObject(n=1)
+    for bad in ("", "_n", "oid", "context", "atom_pointer", "with_", "has_defined_attr"):
+        with pytest.raises(ProtoAttributeNameError) as raised:
+            o[bad]
+        assert isinstance(raised.value, ProtoValidationError) and isinstance(raised.value, KeyError)
+        assert str(raised.value) == raised.value.message                # not KeyError's repr
+
+    def mapping_first(obj, name):                   # Django's Variable._resolve_lookup, reduced
+        try:
+            return obj[name]
+        except (TypeError, AttributeError, KeyError, ValueError, IndexError):
+            return getattr(obj, name)
+    assert mapping_first(o, "oid") == o.oid and mapping_first(o, "n") == 1
+
+
 # -- review fix round 1 ---------------------------------------------------------------------------
 
 def test_unsaved_parent_entries_never_reach_the_space_cache():
