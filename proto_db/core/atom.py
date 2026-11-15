@@ -689,6 +689,19 @@ class Atom:
         osa(stub, "context", context)
         return stub
 
+    def _adopt_context(self, context, replaceable) -> bool:
+        """Give the unloaded stub ``self`` the context ``context`` when its current context is one
+        of ``replaceable`` (protected; the space's atom cache uses it to tell which database a
+        stub was reached in, Task 8 of the runtime registry).  A loaded atom, or one being loaded,
+        keeps its context: its children were (or are being) decoded through it.  Returns whether
+        the context changed."""
+        with _lock_for(self):
+            marker = _get(self, "_loaded")
+            if marker or type(marker) is _Pending or _get(self, "context") not in replaceable:
+                return False
+            object.__setattr__(self, "context", context)
+            return True
+
     def _bind(self, context: PersistenceContext) -> None:
         """Attach ``context`` to an atom that has none (protected; used by contexts)."""
         with _lock_for(self):

@@ -477,7 +477,8 @@ def test_unsaved_parent_entries_never_reach_the_space_cache():
         unsaved = DBObject(k="unsaved")
         ref["parent"] = weakref.ref(unsaved)
         version = loaded.with_parents(unsaved)
-        assert version.context is space._atoms
+        # The space's shared atom cache, through the database's view of it (Task 8, R197).
+        assert version.context is space._atoms.view("db")
         assert version.k == "unsaved" and version.with_(m=2).k == "unsaved"
     db.run(use)
     assert len(space._atoms._linearizations) == 0

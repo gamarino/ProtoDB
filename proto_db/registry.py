@@ -148,12 +148,13 @@ from collections.abc import Container, Mapping
 from .collections.base import _Immutable
 from .collections.dictionaries import Dictionary
 from .core.atom import RESERVED_NAMES, Atom, PersistenceContext
-from .errors import ProtoConflictError, ProtoCorruptionError, ProtoDBError, ProtoNotSupportedError, ProtoValidationError
+from .errors import (ProtoConflictError, ProtoCorruptionError, ProtoDBError, ProtoNotSupportedError, ProtoUserError,
+                     ProtoValidationError)
 from . import resolution as _resolution
 from .values import canonical, check_text, is_atom
 
 __all__ = ["module", "ModuleHandle", "Extension", "Registry", "METHOD", "DATA", "using",
-           "current_registry", "registry_for", "ModuleList", "Catalog", "MODULES_ROOT", "CATALOG_ROOT"]
+           "current_registry", "registry_for", "no_builds", "ModuleList", "Catalog", "MODULES_ROOT", "CATALOG_ROOT"]
 
 #: The root holding the installed modules (a :class:`ModuleList`).
 MODULES_ROOT = "__currentModules"
@@ -640,38 +641,55 @@ def _check_parent_cycles(parents: dict) -> None:
 _REGISTRIES: dict = {}
 _REGISTRIES_LOCK = threading.Lock()
 
+#: Per thread: inside :func:`no_builds` (a commit's lock step), :func:`registry_for` never builds.
+_NO_BUILDS = threading.local()
 
-def registry_for(module_names: tuple, *, mapping: Mapping | None = None, allowed: Container | None = None,
-                 fresh: bool = False) -> Registry:
+
+@contextlib.contextmanager
+def no_builds():
+    """While the body runs in this thread, :func:`registry_for` serves only registries already
+    built: building one imports, and the body holds a root lock (review I-1 of Task 7, minor 4
+    of Task 8).  A miss raises ``ProtoUserError``.  Nests."""
+    depth = getattr(_NO_BUILDS, "depth", 0)
+    _NO_BUILDS.depth = depth + 1
+    try:
+        yield
+    finally:
+        _NO_BUILDS.depth = depth
+
+
+def registry_for(module_names: tuple, *, mapping: Mapping | None = None,
+                 allowed: Container | None = None) -> Registry:
     """The registry of the module list ``module_names`` (installation order) in this process.
 
     Registries are cached per process by the **content** of the list (the ordered names) and
     the import path each name maps to (spec 14 item 4; ruling R192): every transaction, snapshot
     and space whose database lists the same modules, imported from the same Python modules, gets
     the same :class:`Registry` object, so the resolution caches keyed by the registry are shared.
-    ``allowed`` is checked on every call, cached or not.  ``fresh=True`` builds anew and replaces
-    the cached registry (``ObjectSpace.reload_registry``; a registry built earlier keeps what it
-    was built from).  The build imports, so no lock is held during it; two threads that race
-    build twice and keep the first one published.  The cache holds one registry per distinct list
-    and mapping the process has used: lists only grow by installs, so it is bounded by them."""
+    ``allowed`` is checked on every call, cached or not.  The build imports, so no lock is held
+    during it; two threads that race build twice and keep the first one published.  The cache
+    holds one registry per distinct list and mapping the process has used: lists only grow by
+    installs, so it is bounded by them.  ``ObjectSpace.reload_registry`` builds a registry of its
+    own (:meth:`Registry.build`) and never replaces an entry here (ruling R200)."""
     if not isinstance(module_names, tuple):
         raise ProtoValidationError(
             f"module_names must be a tuple of module names, not {type(module_names).__name__}")
     mapping = {} if mapping is None else mapping
     key = (module_names, tuple(mapping.get(name, name) for name in module_names))
-    if not fresh:
-        with _REGISTRIES_LOCK:
-            found = _REGISTRIES.get(key)
-        if found is not None:
-            for name in module_names:
-                if allowed is not None and name not in allowed:
-                    raise ProtoValidationError(f"Module {name!r} is not allowed by this runtime's configuration")
-            return found
+    with _REGISTRIES_LOCK:
+        found = _REGISTRIES.get(key)
+    if found is not None:
+        for name in module_names:
+            if allowed is not None and name not in allowed:
+                raise ProtoValidationError(f"Module {name!r} is not allowed by this runtime's configuration")
+        return found
+    if getattr(_NO_BUILDS, "depth", 0):
+        raise ProtoUserError(
+            f"The registry of the modules {list(module_names)} is not built, and a commit's lock step never "
+            f"builds one (building imports, which may deadlock under the root lock): resolve through the "
+            f"registry before committing")
     built = Registry.build(module_names, mapping=mapping, allowed=allowed)
     with _REGISTRIES_LOCK:
-        if fresh:
-            _REGISTRIES[key] = built
-            return built
         return _REGISTRIES.setdefault(key, built)
 
 

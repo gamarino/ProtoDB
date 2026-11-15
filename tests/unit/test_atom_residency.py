@@ -105,7 +105,7 @@ def test_loaded_shared_atoms_stay_within_the_capacity(capacity):
                 if c.__dict__.get("_loaded") and id(c) not in seen:
                     seen.add(id(c))
                     nxt.append(c)
-                    if c.__dict__.get("context") is space._atoms:
+                    if _shared(space, c.__dict__.get("context")):
                         escaped.append(c)
         frontier = nxt
     assert not escaped, f"{len(escaped)} loaded shared atoms reachable from the cache but not resident"
@@ -335,6 +335,13 @@ def test_cache_atoms_keep_the_inline_values_layout():
     _in_a_fresh_interpreter("_check_inline_values_layout")
 
 
+def _shared(space, context) -> bool:
+    """Whether ``context`` is the space's shared atom cache, directly or through one of its database
+    views (runtime registry Task 8, ruling R197: atoms of a database are bound to its view)."""
+    atoms = space._atoms
+    return context is atoms or any(context is view for view in atoms.views())
+
+
 def _check_inline_values_layout():
     import _testinternalcapi as internal
     space = _space(10**6)
@@ -348,7 +355,7 @@ def _check_inline_values_layout():
         gc.collect()
         return {(type(o).__name__, internal.has_inline_values(o)) for o in gc.get_objects()
                 if isinstance(o, Atom) and type(o) is not DBObject
-                and o.__dict__.get("context") is space._atoms and o.__dict__.get("_loaded")}
+                and _shared(space, o.__dict__.get("context")) and o.__dict__.get("_loaded")}
     twins = layouts()
     assert twins and all(inline for _, inline in twins), sorted(twins)
     space._atoms._unload_all()
@@ -396,7 +403,7 @@ def _check_residency_paths_never_materialize():
 
     def cache_atoms():
         return [o for o in gc.get_objects() if type(o) in (_Row, avl.KeyNode, avl.CountedKeyNode)
-                and _get_context(o) is space._atoms]
+                and _shared(space, _get_context(o))]
     twins = cache_atoms()
     assert len(twins) > 200 and not [o for o in twins if _materialized(o)], "saving or admission materialized a dict"
     with db.new_transaction() as tr:

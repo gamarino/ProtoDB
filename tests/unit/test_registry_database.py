@@ -256,13 +256,12 @@ def test_as_of_read_uses_that_version_list(entries):
     with current:
         assert current.get_root_object("thing").greet() == "extra+base"
     assert db.snapshot_at(db.history()[0]).registry.key == ("reg8_base", "reg8_extra")
-    # Outside any scope, an object read through the space after an as-of read of another list
-    # cannot tell which list it is read under: explicit, never the wrong registry silently.
-    if entries:
-        loose = db.new_transaction()
-        with pytest.raises(ProtoUserError, match="with tr"):
-            loose.get_root_object("thing").greet()
-        loose.abort()
+    # Ruling (a): an as-of read never changes how other code resolves.  Outside any block, an
+    # object (of the old snapshot too) resolves with the database's current binding.
+    loose = db.new_transaction()
+    assert loose.get_root_object("thing").greet() == "extra+base"
+    assert old.get_root_object("thing").greet() == "extra+base"
+    loose.abort()
     space.close()
 
 
@@ -279,8 +278,9 @@ def test_as_of_read_of_the_bound_list_needs_no_scope():
     space.close()
 
 
-def test_history_values_are_as_of_reads():
-    space = _space()
+@CACHES
+def test_history_values_are_as_of_reads(entries):
+    space = _space(atom_cache_entries=entries)
     db = space.new_database("db")
     _install(db, "reg8_base")
     tr = db.new_transaction()
@@ -289,11 +289,51 @@ def test_history_values_are_as_of_reads():
     _install(db, "reg8_extra")
     entry = db.history()[1]                             # the version before the second install
     value = entry.get_mutable("m")
-    with pytest.raises(ProtoUserError, match="with tr"):
-        value.greet()
+    assert value.greet() == "extra+base"                # outside a block: the current binding
     with db.snapshot_at(entry):
-        assert value.greet() == "base"
+        assert value.greet() == "base"                  # inside: that version's list
     space.close()
+
+
+# -- review P3/P4: as-of reads never change the binding nor the fallback (ruling a) ----------------
+
+def test_a_snapshot_never_changes_unscoped_resolution():
+    space = _space()
+    db = space.new_database("db")
+    _install(db, "reg8_base")
+    _put(db, thing=_thing)
+    tr = db.new_transaction()
+    ref = tr.snapshot_ref
+    tr.abort()
+    _install(db, "reg8_extra")
+
+    def unscoped():
+        t = db.new_transaction()
+        try:
+            return t.get_root_object("thing").greet()
+        finally:
+            t.abort()
+
+    assert unscoped() == "extra+base"
+    db.snapshot_at(ref)                                 # only made, nothing read
+    assert unscoped() == "extra+base"
+    space.reload_registry("db")
+    assert unscoped() == "extra+base"
+    space.close()
+
+
+def test_a_pager_on_a_stale_list_keeps_the_mismatch():
+    first, second, db1, db2 = _two_spaces()
+    tr = db2.new_transaction()                          # stale: the database lists reg8_extra now
+    tr.set_root_object("items", tr.new_list().append_last(1))
+    tr.commit()
+    reader = db2.new_transaction()
+    reader.pager("items", page_size=1)                  # builds a Snapshot of the stale root
+    with pytest.raises(ProtoValidationError, match="registry built for modules"):
+        reader.get_root_object("thing").greet()         # the specific error, not a generic one
+    reader.abort()
+    first.close()
+    second.close()
 
 
 # -- the installing transaction -----------------------------------------------------------------------
@@ -331,7 +371,7 @@ def test_run_scopes_its_transaction():
 
 # -- several databases in one space -----------------------------------------------------------------
 
-def test_two_databases_with_different_lists_need_a_scope():
+def test_two_databases_with_different_lists_resolve_by_their_database():
     space = _space()
     a, b = space.new_database("a"), space.new_database("b")
     _install(a, "reg8_base")
@@ -345,10 +385,11 @@ def test_two_databases_with_different_lists_need_a_scope():
         assert ta.get_root_object("thing").greet() == "base"
     with tb:
         assert tb.get_root_object("thing").greet() == "other"
-    loose = a.new_transaction()
-    with pytest.raises(ProtoUserError, match="with tr"):
-        loose.get_root_object("thing").greet()
-    loose.abort()
+    loose_a, loose_b = a.new_transaction(), b.new_transaction()
+    assert loose_a.get_root_object("thing").greet() == "base"       # its database's binding
+    assert loose_b.get_root_object("thing").greet() == "other"
+    loose_a.abort()
+    loose_b.abort()
     space.close()
 
 
@@ -379,3 +420,293 @@ def test_plain_objects_in_a_database_without_modules_are_unchanged():
         DBObject(parents=("reg8.Thing",)).greet
     tr.abort()
     space.close()
+
+
+# -- review P1/P2: a reader block reads only its own space and database (ruling R198) -------------
+
+def _two_databases(other_module):
+    space = _space()
+    a, b = space.new_database("a"), space.new_database("b")
+    _install(a, "reg8_base")
+    _install(b, other_module)
+    _put(a, thing=_thing)
+    return space, a, b
+
+
+def test_an_object_of_another_database_inside_a_block_raises_when_lists_differ():
+    space, a, b = _two_databases("reg8_other")
+    ta = a.new_transaction()
+    obj = ta.get_root_object("thing")
+    tb = b.new_transaction()
+    with pytest.raises(ProtoUserError, match="database 'a' resolved inside a block of database 'b'"), tb:
+        obj.greet()
+    assert obj.greet() == "base"                        # outside the block: its own database
+    ta.abort()
+    space.close()
+
+
+def test_an_object_of_another_database_inside_a_block_resolves_when_lists_match():
+    space, a, b = _two_databases("reg8_base")
+    ta = a.new_transaction()
+    obj = ta.get_root_object("thing")
+    tb = b.new_transaction()
+    with tb:
+        assert obj.greet() == "base"
+    ta.abort()
+    space.close()
+
+
+def test_an_object_of_another_space_ignores_the_block():
+    x, y = _space(), _space()
+    dx, dy = x.new_database("d"), y.new_database("d")
+    _install(dx, "reg8_base")
+    _install(dy, "reg8_other")
+    _put(dx, thing=_thing)
+    tx = dx.new_transaction()
+    obj = tx.get_root_object("thing")
+    ty = dy.new_transaction()
+    with ty:
+        assert obj.greet() == "base"                    # its own space's binding, never the block's
+        assert tx.new_object(parents=("reg8.Thing",)).greet() == "base"
+    tx.abort()
+    x.close()
+    y.close()
+
+
+def _pointer(db, name):
+    tr = db.new_transaction()
+    try:
+        return tr.get_root_object(name).atom_pointer
+    finally:
+        tr.abort()
+
+
+def _undetermined(space, ptr):
+    """The DBObject at ``ptr`` loaded through ``space``'s own shared atom cache, not below a
+    database's tables: what a query result loaded by pointer is (ruling R199).  ``ptr`` must not
+    have been read through ``space`` before."""
+    obj = space._space_load(ptr, DBObject.__type_name__)
+    assert obj.context is space._atoms
+    return obj
+
+
+def test_an_undetermined_database_uses_the_one_bound_list():
+    storage = MemoryStorage()
+    writer = _space(storage)
+    db = writer.new_database("db")
+    _install(db, "reg8_base")
+    _put(db, thing=_thing)
+    reader = _space(storage)
+    reader.open_database("db").new_transaction().abort()            # binds db, reads nothing else
+    assert _undetermined(reader, _pointer(db, "thing")).greet() == "base"
+    writer.close()
+    reader.close()
+
+
+def test_an_undetermined_database_in_a_space_of_several_lists_raises():
+    storage = MemoryStorage()
+    writer = _space(storage)
+    a, b = writer.new_database("a"), writer.new_database("b")
+    _install(a, "reg8_base")
+    _install(b, "reg8_other")
+    _put(a, thing=_thing)
+    reader = _space(storage)
+    ra, rb = reader.open_database("a"), reader.open_database("b")
+    ra.new_transaction().abort()
+    rb.new_transaction().abort()
+    obj = _undetermined(reader, _pointer(a, "thing"))
+    with pytest.raises(ProtoUserError, match="undetermined.*list different modules"):
+        obj.greet()
+    tb = rb.new_transaction()
+    with pytest.raises(ProtoUserError, match="undetermined.*inside a block of database 'b'"), tb:
+        obj.greet()
+    writer.close()
+    reader.close()
+
+
+# -- review Important 3: the transaction's registry is validated once ------------------------------
+
+def test_a_second_inherited_lookup_does_not_revalidate(monkeypatch):
+    space = _space()
+    db = space.new_database("db")
+    _install(db, "reg8_base")
+    _put(db, thing=_thing)
+    tr = db.new_transaction()
+    fresh = tr.new_object(parents=("reg8.Thing",))
+    assert fresh.greet() == "base"
+    calls = []
+    original = type(tr)._installed_names
+    monkeypatch.setattr(type(tr), "_installed_names", lambda self: calls.append(1) or original(self))
+    assert fresh.greet() == "base" and fresh.kind == "thing"
+    assert tr.get_root_object("thing").greet() == "base"
+    assert calls == []
+    tr.install_module("reg8_extra")                     # its own install: the registry changes
+    calls.clear()
+    assert fresh.greet() == "extra+base"
+    assert calls
+    tr.abort()
+    space.close()
+
+
+# -- review minor 1: reader blocks per context -------------------------------------------------------
+
+def test_one_transaction_entered_by_two_threads():
+    space = _space()
+    db = space.new_database("db")
+    _install(db, "reg8_base")
+    _put(db, thing=_thing)
+    tr = db.new_transaction()
+    inside = threading.Barrier(2)
+    errors, seen = [], []
+
+    def body():
+        try:
+            with tr:
+                inside.wait(timeout=10)
+                seen.append(resolution.current_reader() is tr)
+                seen.append(tr.get_root_object("thing").greet())
+                inside.wait(timeout=10)
+            seen.append(resolution.current_reader())
+        except Exception as e:          # reported below
+            errors.append(e)
+
+    workers = [threading.Thread(target=body) for _ in range(2)]
+    for w in workers:
+        w.start()
+    for w in workers:
+        w.join()
+    assert errors == []
+    assert sorted(map(str, seen)) == sorted(map(str, [True, "base", None] * 2))
+    space.close()
+
+
+def test_one_snapshot_entered_by_two_asyncio_tasks():
+    import asyncio
+    space = _space()
+    db = space.new_database("db")
+    _install(db, "reg8_base")
+    _put(db, thing=_thing)
+    snapshot = db.snapshot_at(db.history()[0])
+    order = []
+
+    async def task(name, first_pause, second_pause):
+        with snapshot:
+            order.append((name, "in", resolution.current_reader() is snapshot))
+            await asyncio.sleep(first_pause)
+            order.append((name, snapshot.get_root_object("thing").greet()))
+            await asyncio.sleep(second_pause)
+        order.append((name, "out", resolution.current_reader()))
+
+    async def main():
+        await asyncio.gather(task("a", 0.01, 0.03), task("b", 0.02, 0.0))
+
+    asyncio.run(main())
+    assert ("a", "out", None) in order and ("b", "out", None) in order
+    assert order.index(("b", "out", None)) < order.index(("a", "out", None))   # they interleaved
+    assert all(item[2] is True for item in order if item[1] == "in")
+    space.close()
+
+
+def test_reader_blocks_must_nest():
+    space = _space()
+    db = space.new_database("db")
+    one, two = db.snapshot_at(db.history()[0]), db.snapshot_at(db.history()[0])
+    one.__enter__()
+    two.__enter__()
+    with pytest.raises(ProtoUserError, match="innermost"):
+        one.__exit__(None, None, None)
+    two.__exit__(None, None, None)
+    one.__exit__(None, None, None)
+    assert resolution.current_reader() is None
+    space.close()
+
+
+# -- review minor 2: a reload touches one database only -------------------------------------------
+
+def test_reload_of_one_database_leaves_the_others():
+    from proto_db.registry import registry_for
+    space = _space()
+    a, b = space.new_database("a"), space.new_database("b")
+    for db in (a, b):
+        _install(db, "reg8_base")
+        _put(db, thing=_thing)
+    tb = b.new_transaction()
+    shared = tb.registry
+    tb.abort()
+    reloaded = space.reload_registry("a")
+    assert reloaded is not shared
+    assert registry_for(("reg8_base",), mapping=MAPPING) is shared          # the process cache is unchanged
+    ta, tb = a.new_transaction(), b.new_transaction()
+    assert ta.registry is reloaded and tb.registry is shared
+    assert ta.get_root_object("thing").greet() == "base" and tb.get_root_object("thing").greet() == "base"
+    other = _space(space.storage)
+    other.open_database("a").new_transaction().abort()
+    other.open_database("b").new_transaction().abort()
+    other.reload_registry("a")
+    obj = _undetermined(other, _pointer(a, "thing"))
+    assert obj.greet() == "base"                        # one list, two builds: no error (R200)
+    ta.abort()
+    tb.abort()
+    space.close()
+
+
+# -- review minor 4: the commit's lock step never builds a registry ----------------------------------
+
+def test_the_commit_builds_the_registry_before_its_lock_step(monkeypatch):
+    from proto_db import registry as registry_module
+    from proto_db import transactions
+    storage = MemoryStorage()
+    seed = _space(storage)
+    _install(seed.new_database("db"), "reg8_base")
+    _put(seed.open_database("db"), thing=_thing)
+    # A second space over the storage, with an empty process cache: nothing is built yet.
+    space = _space(storage)
+    db = space.open_database("db")
+    monkeypatch.setattr(registry_module, "_REGISTRIES", {})
+    builds_in_lock = []
+    original_build = registry_module.Registry.build.__func__
+
+    def counting_build(cls, *args, **kwargs):
+        if getattr(registry_module._NO_BUILDS, "depth", 0):
+            builds_in_lock.append(args)
+        return original_build(cls, *args, **kwargs)
+
+    monkeypatch.setattr(registry_module.Registry, "build", classmethod(counting_build))
+    tr = db.new_transaction()
+    loaded = tr.get_root_object("thing")                # never resolved before the commit
+    tr.set_root_object("other", 1)
+    lock_step = transactions.Transaction._build_root
+    seen = []
+
+    def resolving_build_root(self, current, stamp=None):
+        seen.append(loaded.greet())                     # what an index extractor does in a merge
+        return lock_step(self, current, stamp)
+
+    monkeypatch.setattr(transactions.Transaction, "_build_root", resolving_build_root)
+    tr.commit()
+    assert seen == ["base"] and builds_in_lock == []
+    space.close()
+    seed.close()
+
+
+def test_the_lock_step_refuses_to_build():
+    from proto_db.registry import no_builds, registry_for
+    with no_builds():
+        with pytest.raises(ProtoUserError, match="never builds"):
+            registry_for(("reg8_base", "reg8_other"), mapping=MAPPING)
+
+
+def test_a_commit_that_needs_no_registry_ignores_an_unimportable_module():
+    storage = MemoryStorage()
+    good = _space(storage)
+    _install(good.new_database("db"), "reg8_base")
+    broken = _space(storage, mapping=BROKEN)
+    db = broken.open_database("db")
+    tr = db.new_transaction()
+    tr.set_root_object("plain", tr.new_object(x=1))
+    tr.commit()                                         # the prebuild failed; nothing needed it
+    check = db.new_transaction()
+    assert check.get_root_object("plain").x == 1
+    check.abort()
+    good.close()
+    broken.close()
