@@ -613,8 +613,10 @@ class ClusterCoordinator:
             first start it decides on the answers of a ballot round (ruling R78a, module
             docstring "Rejoining").
         fetch_timeout: seconds a peer page request waits for an answer; must be shorter than
-            ``lease_duration - drift_margin`` (default a quarter of it), and a request made
-            under the lease never waits beyond what remains of the lease.
+            ``lease_duration - drift_margin`` (default a quarter of it).  Only a read inside a
+            commit's critical section waits no longer than what remains of its permission and of
+            the lease the node holds; every other read waits the full ``fetch_timeout`` (ruling
+            R212).
         persist_interval: seconds between two passes of the persister (D46).
         persist_lag: seconds the persisted epoch may lag the committed one before this node
             persists a root committed by another node (covers a crashed committer).

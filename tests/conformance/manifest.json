@@ -25508,6 +25508,87 @@
     }
    },
    {
+    "id": "fetched-unknown",
+    "type": "fetched",
+    "file": "cluster/messages/fetched-unknown.frame",
+    "message": {
+     "mpmap": [
+      [
+       {
+        "str": "v"
+       },
+       {
+        "int": "14"
+       }
+      ],
+      [
+       {
+        "str": "type"
+       },
+       {
+        "str": "fetched"
+       }
+      ],
+      [
+       {
+        "str": "from"
+       },
+       {
+        "str": "n1"
+       }
+      ],
+      [
+       {
+        "str": "rid"
+       },
+       {
+        "int": "8"
+       }
+      ],
+      [
+       {
+        "str": "inc"
+       },
+       {
+        "int": "43"
+       }
+      ],
+      [
+       {
+        "str": "segment"
+       },
+       {
+        "bytes": "5eed0000000040008000000000002002"
+       }
+      ],
+      [
+       {
+        "str": "offset"
+       },
+       {
+        "int": "26"
+       }
+      ],
+      [
+       {
+        "str": "data"
+       },
+       {
+        "nil": null
+       }
+      ],
+      [
+       {
+        "str": "unknown"
+       },
+       {
+        "bool": true
+       }
+      ]
+     ]
+    }
+   },
+   {
     "id": "warm",
     "type": "warm",
     "file": "cluster/messages/warm.frame",
