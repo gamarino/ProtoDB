@@ -381,3 +381,72 @@ def test_a_fenced_term_resends_an_outstanding_permit_to_a_retry():
         if pump is not None:
             pump.close()
         h.close()
+
+
+def test_a_fenced_term_resends_its_permit_only_to_a_true_retry():
+    """Re-review 1, N5: while fenced, only an exact O7 retry -- same sender, incarnation, request
+    id and term, the lease still valid -- gets the outstanding permit again.  A new request id,
+    another sender, another incarnation, a higher term, or the exact retry once the lease has
+    expired is refused, each with its reason, and no permit is issued or resent.
+
+    The lease is long (:data:`LONG`), so the fenced ownership thread, which waits for the lease's
+    remainder on the frozen fake clock, does not act on the expiry while the last case runs."""
+    h = Harness("abc", **LONG)
+    pump = None
+    try:
+        a, b = h.nodes["a"], h.nodes["b"]
+        h.own("a")
+        own = a._ownership
+        pump = _Pump(h)
+        _remote_request(h, "a", "b", own.term, rid=60_001)
+        _wait_for(lambda: pump.messages("permit"), "b's permit", a)
+        issued = a.stats()["permits_issued"]
+        _promise_higher(h, own.term, ("b", "c"))
+        h.clock.t = own.lease.valid_until - a._belief / 4   # a renewal due, the lease still valid
+        _poke(a)
+        _wait_for(lambda: own.fenced, "the fencing", a)
+
+        def ask(sender, rid, inc, term):
+            """Deliver one permit request to a; return the answers to it: (permits, refusal reasons)."""
+            h.net.handlers["a"](make_message("permit_req", sender, term=term, rid=rid, inc=inc))
+            a.wait_idle(5.0)
+            _wait_for(lambda: any(to == sender and m["rid"] == rid and m["inc"] == inc
+                                  for to, m in pump.messages("permit") + pump.messages("permit_no")),
+                      f"the answer to {sender} rid {rid}", a)
+            permits = [m for to, m in pump.messages("permit") if to == sender and m["rid"] == rid and m["inc"] == inc]
+            reasons = [m["reason"] for to, m in pump.messages("permit_no")
+                       if to == sender and m["rid"] == rid and m["inc"] == inc]
+            return permits, reasons
+
+        cases = [
+            ("a new request id", ("b", 60_002, b._inc, own.term), "ending"),
+            ("another sender", ("c", 60_001, h.nodes["c"]._inc, own.term), "ending"),
+            ("another incarnation", ("b", 60_001, b._inc + 1, own.term), "ending"),
+            ("a higher term", ("b", 60_003, b._inc, own.term + 1), "not_owner"),
+        ]
+        for what, args, reason in cases:
+            permits, reasons = ask(*args)
+            assert not permits and reasons == [reason], (what, permits, reasons)
+        # The true retry, the lease valid: the first send and the resend, never a refusal.
+        h.net.handlers["a"](make_message("permit_req", "b", term=own.term, rid=60_001, inc=b._inc))
+        a.wait_idle(5.0)
+        _wait_for(lambda: len([m for to, m in pump.messages("permit") if to == "b" and m["rid"] == 60_001]) >= 2,
+                  "the resent permit", a)
+        resent = [m for to, m in pump.messages("permit") if to == "b" and m["rid"] == 60_001]
+        assert len(resent) == 2 and resent[1]["seq"] == resent[0]["seq"], resent
+        def refusals():
+            return [m["reason"] for to, m in pump.messages("permit_no")
+                    if to == "b" and m["rid"] == 60_001 and m["inc"] == b._inc]
+        assert not refusals(), refusals()
+        h.clock.t = own.lease.valid_until + 0.001               # the lease has expired
+        before = len(resent)
+        h.net.handlers["a"](make_message("permit_req", "b", term=own.term, rid=60_001, inc=b._inc))
+        a.wait_idle(5.0)
+        _wait_for(refusals, "the refusal of the retry after expiry", a)
+        after = [m for to, m in pump.messages("permit") if to == "b" and m["rid"] == 60_001]
+        assert len(after) == before and refusals() == ["ending"], (after, refusals())
+        assert a.stats()["permits_issued"] == issued, "a fenced term issued a new permit"
+    finally:
+        if pump is not None:
+            pump.close()
+        h.close()

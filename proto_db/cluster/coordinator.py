@@ -533,8 +533,8 @@ class _Ownership:
 
     ``fenced``: a lost renewal proved that a majority will never renew this term (ruling R149):
     the term issues nothing new and ends once its pipeline is empty.  ``renew_after``: after any
-    other lost renewal, the time on the coordinator's clock before which it is not renewed
-    again (``None`` once a renewal won)."""
+    other renewal round that was not won (lost, or left pending: ruling R149a), the time on the
+    coordinator's clock before which it is not renewed again (``None`` once a renewal won)."""
 
     def __init__(self, lease: Lease, base: tuple, committed: bool, now: float):
         self.lease = lease
@@ -3189,7 +3189,10 @@ class ClusterCoordinator:
                 # A retried request whose permit is outstanding (it, or the permit, was lost;
                 # review M6; rule O7 per entry): send the same permit again -- never a second
                 # one -- also while the term is fenced (R149), so that permit can still end by
-                # its done (RENEW-BACKOFF review M1).
+                # its done (RENEW-BACKOFF review M1).  The resend is safe: it carries the
+                # ``valid`` fixed at issue, and the holder measures it from the first send of
+                # this request (``wait.sent_at + valid``, the D45 argument), never from the
+                # resend.
                 sends = [(sender, out.permit)] if out.permit is not None else []
                 own.last_demand = time.monotonic()
             elif live and own.serving(self._clock()):
@@ -3466,8 +3469,8 @@ class ClusterCoordinator:
             raise
 
     def _own_loop_body(self, own: "_Ownership") -> None:
-        """The loop of :meth:`_own_loop`.  After a lost renewal it renews again only once
-        ``own.renew_after`` has passed, and a fenced term is never renewed: it ends ("fenced")
+        """The loop of :meth:`_own_loop`.  After a renewal round that was not won it renews
+        again only once ``own.renew_after`` has passed, and a fenced term is never renewed: it ends ("fenced")
         when its pipeline is empty (ruling R149, issue #1)."""
         idle = self._duration / 4
         while True:
