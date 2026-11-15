@@ -482,12 +482,13 @@ the container class of an extension has no instances: the receiver is a ``DBObje
        try:
            Partner.display_name(tr.get_root_object("dora"))
        except TypeError as error:
-           print("TypeError:", error)
+           # The wording after the colon differs between Python versions; its head does not.
+           print("TypeError:", str(error).split(":")[0], "- the receiver is not a Partner")
 
 .. code-block:: text
    :caption: Output
 
-   TypeError: super(type, obj): obj (instance of DBObject) is not an instance or subtype of type (Partner).
+   TypeError: super(type, obj) - the receiver is not a Partner
 
 ``_super()`` instead reads the code object of the method that calls it, which the registry indexed to its
 extension when the module was loaded, and continues from that extension's position in the receiver's

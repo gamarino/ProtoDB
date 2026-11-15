@@ -304,10 +304,10 @@ def _space_with_an_over_limit_record(path: str) -> None:
     real_append = storage._append
     marker = msgpack.packb(_PLACEHOLDER, use_bin_type=True)
 
-    def append(kind, payload):
+    def append(kind, payload, *rest):
         if marker in payload:
             payload = payload.replace(marker, b"\x91" * (MAX_VALUE_DEPTH + 1) + b"\x01")
-        return real_append(kind, payload)
+        return real_append(kind, payload, *rest)
     storage._append = append
     space = ObjectSpace(storage)
     with space.new_database("d").new_transaction() as tr:
