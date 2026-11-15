@@ -52,6 +52,15 @@ process that reads it.
 **A module list kept in an ordinary root.** It is a read-modify-write: two installs conflict and one retries
 (tutorial, section 4). A merge that takes the last writer would lose an install.
 
+**Ties in the load order broken by installation order.** Modules are loaded dependencies first; two
+modules that do not depend on each other need a tie-break, and the persisted list's order is at hand. It
+fails the fourth requirement silently: the list's order is the commit order of the installs, so two
+databases that installed the same modules in different orders, or two concurrent installs that landed in
+either order, would chain the same extensions differently, and the method that wins would depend on which
+commit came first. The tie-break is the module name in code-point order instead (R253, R254), with ``base``
+explicitly first (R255): the registry becomes a function of the set of installed modules, which every
+language can compute from the database alone (protoBaseST and the semantic catalog need exactly that).
+
 **Python's** ``super()`` **for the next definition.** It needs ``self`` to be an instance of the class whose
 method runs; an extension's container class has no instances, and the receiver is a ``DBObject`` (tutorial,
 section 5).
@@ -91,8 +100,11 @@ Modules and the registry
     functions (methods) and canonical data defaults are definitions; a ``property``, a ``staticmethod``, a
     ``classmethod``, a callable instance, a lambda, a nested class, and a data default holding a database
     object at any depth (R166: a default is shared by every database the process opens) are refused at import
-    with ``ProtoValidationError``. The registry of a module list is built per process, in topological order of
-    the dependencies the code declares, ties broken by installation order, and is immutable once built.
+    with ``ProtoValidationError``. The registry of a module list is built per process and is immutable once built. Its
+    load order is ``base`` first, then dependencies before the modules that need them, ties broken by module
+    name in code-point order (R253-R255): the order of the persisted list, the install history, plays no part
+    (R256), so the registry depends only on the set of installed modules, and one registry is shared per set
+    (R257).
     Module names are process-global: one name maps to one Python module per process (R167). Running the same
     module scope again (a reload) replaces its declaration; two ``module()`` calls in one execution raise
     (R168).
@@ -126,7 +138,8 @@ The base module (R204-R209)
 Installs merge add-if-absent
     At commit the two registry roots are merged against the root current at that moment, never through the
     read set: the list only grows and the catalog only gains names, so the union is always right, two installs
-    never conflict with each other, and the order of the list is the commit order. Reading the roots through
+    never conflict with each other, and the order of the list is the commit order (which is why the load order
+    ignores it, R256). Reading the roots through
     ``installed_modules`` and ``catalog_object`` (and for resolution) never enters the read set;
     ``get_root_object`` of a registry root is an ordinary, recorded read, so a concurrent install makes that
     transaction conflict (R241). A raw ``commit()`` on a
@@ -145,7 +158,7 @@ Which registry resolves an object (R201)
     whole life. A loaded object resolves through the current reader: the transaction of a ``with tr:`` block
     or of ``Database.run``, or the snapshot of ``with snapshot:``. Only when no reader of its space is current
     does it resolve through the space's fallback, and only if every database of the space that lists modules
-    lists the same ones; otherwise ``ProtoUserError``. A transaction or reader of a database that lists no
+    lists the same ones, in any order (R257); otherwise ``ProtoUserError``. A transaction or reader of a database that lists no
     modules decides like any other (R236): it has no registry, so a lookup that reaches a registry name raises
     ``ProtoNotSupportedError`` ("needs a registry"), as in a space with that one database; it never resolves
     through another database's modules. An as-of read

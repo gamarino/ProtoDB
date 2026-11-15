@@ -46,9 +46,12 @@ Declarations
 
 The registry
     :meth:`Registry.build` imports each module (``importlib.import_module(mapping.get(name,
-    name))``) in the order given, reads the declarations, and orders the modules topologically
-    over the dependencies the code declares, ties broken by the position in the list given (the
-    installation order, spec 14 item 2).  A built :class:`Registry` is immutable, so any number
+    name))``) in the order given, reads the declarations, and computes the **load order**
+    (rulings R253-R255): ``base`` first, then, repeatedly, the module whose name is smallest in
+    code-point order among those whose declared dependencies are all placed.  The load order is
+    a function of the module **set** and the code's dependencies: the position in the list given
+    (the installation order) plays no part, so two databases that installed the same modules in
+    different orders compose the same registry.  A built :class:`Registry` is immutable, so any number
     of threads may read it.  For each registry name it keeps the **chain** of extensions, newest
     first (the module loaded last first; within one module, the class declared last first), and
     the **parents** of the name: the union of the ``parents=`` its extensions declare, in load
@@ -106,7 +109,7 @@ Persisted state (spec section 3)
     - :data:`MODULES_ROOT` (``__currentModules``) holds a :class:`ModuleList`: the installed
       module names in installation order, each with the dependencies its code declared when it
       was installed (a record of the install; at load time the code's ``depends`` wins, spec 14
-      item 8);
+      item 8).  The order is the install history only: the load order ignores it (ruling R256);
     - :data:`CATALOG_ROOT` (``__catalog``) holds a :class:`Catalog`: registry name to its
       **catalog object** (spec Q1, 14 item 3).  The catalog object of the registry name ``N`` is
       a plain ``DBObject`` whose parents are exactly ``(N,)``, created once, by the install that
@@ -558,7 +561,8 @@ class Registry:
     @classmethod
     def build(cls, module_names: tuple, *, mapping: Mapping | None = None,
               allowed: Container | None = None, imports: bool = True) -> "Registry":
-        """Import the modules ``module_names`` (in installation order) and build their registry.
+        """Import the modules ``module_names`` and build their registry; the list's order (the
+        installation order) does not change the result (the load order, ruling R253).
 
         A non-empty list must start with ``base`` (ruling R205), which has no dependencies;
         otherwise ``ProtoValidationError``.  A listed module the calling thread is still importing
@@ -568,14 +572,7 @@ class Registry:
         that is not already fully imported
         raises :class:`ModulesNotImported` (internal, not a ``ProtoDBError``), naming the modules
         to import first.  The commit uses it under the root lock, where an import may deadlock."""
-        if not isinstance(module_names, tuple):
-            raise ProtoValidationError(
-                f"module_names must be a tuple of module names, not {type(module_names).__name__}")
-        names = _check_names("The module list", module_names)
-        if names and names[0] != BASE:
-            raise ProtoValidationError(
-                f"The module list {list(names)} must start with the module {BASE!r} (ruling R205: it is "
-                f"installed first in every database that installs a module)")
+        names = _check_list(module_names)
         for name in names:
             _check_allowed(name, allowed)
         mapping = {} if mapping is None else mapping
@@ -612,6 +609,20 @@ class Registry:
                         f"Module {name!r} depends on {dependency!r}, which is not installed")
         order = _load_order(names, {name: handles[name].depends for name in names})
         return _assemble(order, declared, sources)
+
+
+def _check_list(module_names) -> tuple:
+    """``module_names`` checked as a module list: a tuple of names, each once, starting with
+    ``base`` when not empty (ruling R205); else ``ProtoValidationError``."""
+    if not isinstance(module_names, tuple):
+        raise ProtoValidationError(
+            f"module_names must be a tuple of module names, not {type(module_names).__name__}")
+    names = _check_names("The module list", module_names)
+    if names and names[0] != BASE:
+        raise ProtoValidationError(
+            f"The module list {list(names)} must start with the module {BASE!r} (ruling R205: it is "
+            f"installed first in every database that installs a module)")
+    return names
 
 
 def _import(name: str, path) -> str:
@@ -688,9 +699,13 @@ def not_fully_imported(names: tuple, mapping: Mapping) -> tuple:
 
 
 def _load_order(names: tuple, depends: dict) -> tuple:
-    """``names`` in topological order over ``depends``, ties broken by the position in ``names``."""
-    placed, order = set(), []
-    pending = list(names)
+    """``names`` in load order (rulings R253-R255): ``base`` first when listed (it has no
+    dependencies), then, repeatedly, the smallest name in code-point order (Python's ``str``
+    order, no locale) among the modules whose ``depends`` are all placed.  The order of
+    ``names`` plays no part."""
+    order = [BASE] if BASE in names else []
+    placed = set(order)
+    pending = sorted(name for name in names if name != BASE)
     while pending:
         ready = next((name for name in pending if all(d in placed for d in depends[name])), None)
         if ready is None:
@@ -801,17 +816,26 @@ def no_builds():
         _NO_BUILDS.depth = depth
 
 
+def _cache_key(names: tuple, mapping: Mapping) -> tuple:
+    """The process-cache key of the module list ``names``: its **set** of names, each with the
+    import path it maps to, in code-point order (ruling R257: the load order, and so the
+    registry, does not depend on the list's order)."""
+    return tuple(sorted((name, _path(name, mapping)) for name in names))
+
+
 def registry_for(module_names: tuple, *, mapping: Mapping | None = None,
                  allowed: Container | None = None) -> Registry:
-    """The registry of the module list ``module_names`` (installation order) in this process.
+    """The registry of the module list ``module_names`` in this process.
 
-    Registries are cached per process by the **content** of the list (the ordered names) and
-    the import path each name maps to (spec 14 item 4; ruling R192): every transaction, snapshot
-    and space whose database lists the same modules, imported from the same Python modules, gets
-    the same :class:`Registry` object, so the resolution caches keyed by the registry are shared.
+    Registries are cached per process by the **set** of listed names and the import path each
+    name maps to (spec 14 item 4; rulings R192, R257): every transaction, snapshot and space whose
+    database lists the same modules, in any installation order, imported from the same Python
+    modules, gets the same :class:`Registry` object, so the resolution caches keyed by the
+    registry are shared.  The list itself is checked on every call (``base`` first, each name
+    once, ruling R205).
     ``allowed`` is checked on every call, cached or not.  The build imports, so no lock is held
     during it; two threads that race build twice and keep the first one published.  The cache
-    holds one registry per distinct list and mapping the process has used: lists only grow by
+    holds one registry per distinct set and mapping the process has used: lists only grow by
     installs, so it is bounded by them.  ``ObjectSpace.reload_registry`` builds a registry of its
     own (:meth:`Registry.build`) and never replaces an entry here (ruling R200).
 
@@ -820,11 +844,9 @@ def registry_for(module_names: tuple, *, mapping: Mapping | None = None,
     error again without importing (Python does not cache failed imports, and a commit tries to
     build before its lock step), until ``ObjectSpace.reload_registry`` forgets it.  Inside
     :func:`no_builds` such a list raises that error, never a generic refusal."""
-    if not isinstance(module_names, tuple):
-        raise ProtoValidationError(
-            f"module_names must be a tuple of module names, not {type(module_names).__name__}")
+    _check_list(module_names)
     mapping = {} if mapping is None else mapping
-    key = (module_names, tuple(_path(name, mapping) for name in module_names))
+    key = _cache_key(module_names, mapping)
     with _REGISTRIES_LOCK:
         found = _REGISTRIES.get(key)
         failed = _FAILED.get(key)
@@ -861,7 +883,7 @@ def forget_failure(module_names: tuple, mapping: Mapping | None = None) -> None:
     """Let :func:`registry_for` try to build ``module_names`` again (``ObjectSpace.reload_registry``)."""
     mapping = {} if mapping is None else mapping
     with _REGISTRIES_LOCK:
-        _FAILED.pop((module_names, tuple(_path(name, mapping) for name in module_names)), None)
+        _FAILED.pop(_cache_key(module_names, mapping), None)
 
 
 def current_registry() -> "Registry | None":

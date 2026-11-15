@@ -69,7 +69,7 @@ The registry of a database (runtime registry, Task 8)
     transaction's registry (inside a block of another database whose list differs it raises); an
     object read through the space's shared atom cache belongs to no database and resolves with
     the current reader (``with tr:``, ``Database.run``, ``with snapshot:``), else, when no reader
-    of the space is current, with the space's one distinct non-empty list, else raises
+    of the space is current, with the space's one distinct non-empty module set, else raises
     (:class:`_SpaceRegistries`).  A transaction or reader whose database lists no modules gives no
     registry, never another database's (ruling R236).
 
@@ -808,7 +808,8 @@ class _SpaceRegistries:
 
     The fallback (:meth:`fallback`)
         The one distinct non-empty list the space bound (a database that lists no modules is
-        ignored); several lists raise ``ProtoUserError`` (resolve inside a transaction or a
+        ignored; two lists of the same set of modules, installed in different orders, are one,
+        ruling R257: they compose the same registry); several lists raise ``ProtoUserError`` (resolve inside a transaction or a
         block of the intended database).
 
     Thread-safe; ``_lock`` is never held while a registry is built."""
@@ -952,7 +953,8 @@ class _SpaceRegistries:
         for name in sorted(stale):              # the specific error first (review minor 3)
             if name in bound:
                 raise _mismatch(name, bound[name].names, stale[name])
-        lists = {binding.names for binding in bound.values()}
+        # Two orders of one set are one list: the registry depends on the set (ruling R257).
+        lists = {frozenset(binding.names) for binding in bound.values()}
         if not lists:
             found = None
         elif len(lists) > 1:

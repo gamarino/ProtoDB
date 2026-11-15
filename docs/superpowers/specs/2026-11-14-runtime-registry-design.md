@@ -381,6 +381,9 @@ The reference must be **smaller than the string**, or nothing is saved:
    Section 3 has the details.
 2. **Load-order ties.** The topological sort breaks ties by installation order, the order persisted in
    `__currentModules`. Every process therefore resolves a chain the same way.
+   **Superseded by ruling R253 (2026-11-15):** ties are broken by module name in code-point order, `base`
+   first; the persisted order is the install history only, so the registry is a function of the module set
+   (`docs/decisions.md`, D62).
 3. **`__catalog` writes.** `install_module` adds, by add-if-absent at commit, a catalog class object for each
    registry name that the module's extensions introduce. The catalog object's data is then ordinary application
    data, written by normal transactions under normal conflict rules. Resolving a registry name that has no catalog
@@ -388,7 +391,7 @@ The reference must be **smaller than the string**, or nothing is saved:
 4. **Registry roots and the read set.** Reading `__currentModules` or `__catalog` for resolution does not enter the
    read set, so installs never conflict with ordinary work. This is safe because installs are additive (decision 4):
    a transaction that resolved with the older list committed a state that the older list described.
-   - The process's registry is keyed by the **content** of the module list (the ordered names), not by the root's
+   - The process's registry is keyed by the **content** of the module list (as built: the set of names with their import paths, ruling R257), not by the root's
      pointer. An add-if-absent merge then never makes the installing process mismatch itself.
    - The private write path for `__` roots is internal to `proto_db.registry`.
 5. **Symbols and strings.** A `Symbol` is not a `str`, is never equal to one and does not hash like one, matching

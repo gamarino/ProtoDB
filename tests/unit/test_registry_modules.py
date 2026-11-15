@@ -47,13 +47,15 @@ def modules_of(chain):
 
 # -- load order ---------------------------------------------------------------------------------
 
-def test_topological_order_with_install_order_ties():
+def test_topological_order_with_name_order_ties():
     # Dependencies first, whatever the installation order.
     assert build("reg_crm", "reg_contacts", "reg_base").key == (BASE, "reg_base", "reg_contacts", "reg_crm")
-    # reg_contacts and reg_notes both depend on reg_base only: the installation order decides.
-    assert build("reg_notes", "reg_contacts", "reg_base").key == (BASE, "reg_base", "reg_notes", "reg_contacts")
+    # reg_contacts and reg_notes both depend on reg_base only: the smaller name comes first, whatever
+    # the installation order (ruling R253; tests/unit/test_registry_load_order.py).
+    assert build("reg_notes", "reg_contacts", "reg_base").key == (BASE, "reg_base", "reg_contacts", "reg_notes")
     assert build("reg_contacts", "reg_notes", "reg_base").key == (BASE, "reg_base", "reg_contacts", "reg_notes")
-    # A later-installed module with no dependency still comes after an earlier one that is ready.
+    # Among the ready modules the smallest name is placed next: reg_crm (ready once reg_contacts is
+    # placed) comes before reg_notes.
     assert build("reg_base", "reg_crm", "reg_contacts", "reg_notes").key == (
         BASE, "reg_base", "reg_contacts", "reg_crm", "reg_notes")
 
@@ -121,10 +123,11 @@ def test_extension_is_immutable():
 
 
 def test_registry_name_parents_union():
-    registry = build("reg_notes", "reg_contacts", "reg_base")
-    # Load order reg_base, reg_notes, reg_contacts: notes' parents first, then the new one of contacts.
-    # Each ends with base, the implicit last parent of every other registry name (ruling R204).
-    assert registry.parents_of("reg.Partner") == ("mail.Activity", "mail.Thread", BASE)
+    # Load order reg_base, reg_contacts, reg_notes whatever the installation order (ruling R253):
+    # contacts' parents first, then the new one of notes.  Each ends with base, the implicit last
+    # parent of every other registry name (ruling R204).
+    assert build("reg_notes", "reg_contacts", "reg_base").parents_of("reg.Partner") == (
+        "mail.Thread", "mail.Activity", BASE)
     registry = build("reg_contacts", "reg_notes", "reg_base")
     assert registry.parents_of("reg.Partner") == ("mail.Thread", "mail.Activity", BASE)
     assert registry.parents_of("reg.Contact") == ("reg.Partner", BASE)
@@ -465,4 +468,4 @@ def test_concurrent_builds_agree():
     for thread in threads:
         thread.join()
     assert errors == []
-    assert set(keys) == {(BASE, "reg_base", "reg_notes", "reg_contacts", "reg_crm")}
+    assert set(keys) == {(BASE, "reg_base", "reg_contacts", "reg_crm", "reg_notes")}

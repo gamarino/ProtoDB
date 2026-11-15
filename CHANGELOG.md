@@ -65,6 +65,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     (another writer's) is read as if `base` preceded it, and the next install writes it with `base` first;
     `format-spec.rst` states it normatively (writers SHOULD put `base` first, readers MUST treat it as first). Catalog updates follow normal conflict rules
     (the first updater wins) and reach only objects created after them.
+  - The load order is a function of the set of installed modules (rulings R253-R257): `base` first, then each
+    module after the modules it depends on, ties broken by module name in code-point order (no locale). The
+    persisted list's order is the install history only, so two databases that installed the same modules in
+    different orders, or whose concurrent installs committed in either order, compose the same registry (same
+    chains, parents unions, linearizations and results); `format-spec.rst` states it normatively (MUST). The
+    process cache shares one registry per set of modules, and a space's fallback treats two orders of one set as
+    one list.
   - `ObjectSpace(modules_mapping=..., modules_allowed=...)` and `ObjectSpace.reload_registry(database_name)`,
     which invalidates every registry of that database cached in the space (later snapshots and installing
     transactions build fresh too). When
