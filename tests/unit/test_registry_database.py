@@ -422,6 +422,44 @@ def test_plain_objects_in_a_database_without_modules_are_unchanged():
     space.close()
 
 
+def test_a_database_without_modules_never_resolves_through_another_databases_registry():
+    """Final review I2 (ruling R236), probes p2 and p3: a transaction, a snapshot or a reader of a
+    database that lists no modules resolves with no registry (data only, as a lone such database
+    does), whatever the other databases of the space list; the space's single-list fallback
+    applies only when no reader of the space is current."""
+    space = _space()
+    a, b, c = space.new_database("a"), space.new_database("b"), space.new_database("c")
+    _install(a, "reg8_base")
+    _put(b, thing=_thing, plain=lambda tr: tr.new_object(parents=(tr.new_object(n=1),)))
+    for third in (None, "reg8_other"):          # c lists nothing, then a module unlike a's
+        if third is not None:
+            _install(c, third)
+        with b.new_transaction() as tr:
+            with pytest.raises(ProtoNotSupportedError, match="needs a registry"):
+                tr.new_object(parents=("reg8.Thing",)).greet          # its own object
+            with pytest.raises(ProtoNotSupportedError, match="needs a registry"):
+                tr.get_root_object("thing").greet                    # a loaded one
+            assert tr.get_root_object("plain").n == 1 and tr.registry is None     # data still resolves
+        loose = b.new_transaction()                                  # its object, outside any block
+        with pytest.raises(ProtoNotSupportedError, match="needs a registry"):
+            loose.new_object(parents=("reg8.Thing",)).greet
+        with a.new_transaction():                                    # inside another database's block
+            with pytest.raises(ProtoNotSupportedError, match="needs a registry"):
+                loose.new_object(parents=("reg8.Thing",)).greet
+        snapshot = b.snapshot_at(loose.snapshot_ref)
+        loaded = loose.get_root_object("thing")
+        with snapshot:
+            with pytest.raises(ProtoNotSupportedError, match="needs a registry"):
+                snapshot.get_root_object("thing").greet
+        loose.abort()
+        with using(Registry.build((BASE, "reg8_base"), mapping=MAPPING)):    # the test hook still applies
+            with b.new_transaction() as tr:
+                assert tr.new_object(parents=("reg8.Thing",)).greet() == "base"
+    with a.new_transaction():
+        assert loaded.greet() == "base"         # a loaded object: the reader of a decides (R201)
+    space.close()
+
+
 # -- review P1/P2: a reader block reads only its own space and database (ruling R198) -------------
 
 def _two_databases(other_module):
@@ -815,7 +853,9 @@ def test_a_plain_database_changes_nothing():
     ta, mine, loaded = check()
     tc = c.new_transaction()
     with tc:
-        assert mine.greet() == "base" and loaded.greet() == "base"
+        assert mine.greet() == "base"                   # an object of a's transaction: it decides
+        with pytest.raises(ProtoNotSupportedError, match="needs a registry"):
+            loaded.greet()                              # a loaded object: the reader c decides (R236)
     ta.abort()
     space.close()
 

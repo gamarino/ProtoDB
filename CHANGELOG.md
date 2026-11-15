@@ -49,7 +49,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     space has seen the new list, and then raises the same mismatch. A listed module that cannot be imported
     raises `ProtoNotSupportedError` at the first lookup that needs it, and is remembered until
     `reload_registry`; a failed reload is not remembered, so the next lookup tries the import once more. As-of
-    reads (`with snapshot:`) resolve with the modules of their version.
+    reads (`with snapshot:`) resolve with the modules of their version. A transaction or reader of a database that
+    lists no modules resolves with no registry (a lookup that reaches a registry name raises "needs a
+    registry"), never through another database's modules; the space's single-list fallback applies only when
+    no reader of the space is current.
   - Format: `FORMAT_VERSION` 5 (`FEATURE_VERSIONS`: `parents`, `registry`); a space that uses neither keeps
     writing version 4, and a reader of format 4 refuses version-5 segments and roots with
     `ProtoNotSupportedError`. The cluster `PROTOCOL_VERSION` is 14, and an acceptor log that holds a root of

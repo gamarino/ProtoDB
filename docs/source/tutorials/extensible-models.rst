@@ -965,7 +965,10 @@ were loaded:
 * a loaded object resolves through the current **reader**: the transaction of a ``with tr:`` block or of
   ``Database.run``, or the snapshot of a ``with snapshot:`` block;
 * outside any reader, only if every database of the space that lists modules lists the same ones; otherwise
-  the lookup raises ``ProtoUserError`` and asks for a block of the intended database.
+  the lookup raises ``ProtoUserError`` and asks for a block of the intended database;
+* a transaction or reader of a database that lists no modules decides too: it has no registry, so a lookup
+  that reaches a registry name raises ``ProtoNotSupportedError`` ("needs a registry"), whatever the other
+  databases of the space list. Own attributes and object parents resolve as always.
 
 10. The versioned entity
 ------------------------

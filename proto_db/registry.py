@@ -161,8 +161,8 @@ The registry of a database (Task 8)
 
 The current registry (tests)
     :func:`using` makes a registry current for a block: resolution falls back on it for an object
-    whose transaction, and whose reader, give none (its database lists no modules, or it has no
-    transaction).  It is a :mod:`contextvars` variable, not a
+    whose transaction, or whose reader, gives none (its database lists no modules, ruling R236), or
+    that has neither a transaction nor a reader nor a space fallback.  It is a :mod:`contextvars` variable, not a
     thread-local (ruling R169): it follows the code across ``asyncio`` tasks and is restored on
     exit even when ``using`` blocks nest.  A new thread starts from an empty context, unless the
     interpreter copies the starting thread's context into it (``sys.flags.thread_inherit_context``,

@@ -68,8 +68,10 @@ The registry of a database (runtime registry, Task 8)
     never load order or cache state (ruling R201): an object of a transaction resolves with that
     transaction's registry (inside a block of another database whose list differs it raises); an
     object read through the space's shared atom cache belongs to no database and resolves with
-    the current reader (``with tr:``, ``Database.run``, ``with snapshot:``), else, outside any
-    block, with the space's one distinct non-empty list, else raises (:class:`_SpaceRegistries`).
+    the current reader (``with tr:``, ``Database.run``, ``with snapshot:``), else, when no reader
+    of the space is current, with the space's one distinct non-empty list, else raises
+    (:class:`_SpaceRegistries`).  A transaction or reader whose database lists no modules gives no
+    registry, never another database's (ruling R236).
 
 Mutable cells (D11, D35)
     The mutable table is a second namespace beside the roots: ``new_mutable``,
@@ -803,7 +805,9 @@ class _SpaceRegistries:
         the atom cache off) resolves with that transaction's registry.  A loaded object (read
         through the space's shared atom cache, or a space-level context) belongs to no database:
         it resolves with the current reader (``with tr:``, ``Database.run``, ``with snapshot:``)
-        of its space; outside any reader, with :meth:`fallback`.
+        of its space; only when no reader of the space is current, with :meth:`fallback`.  A
+        transaction or reader of a database that lists no modules gives no registry (ruling R236):
+        it never falls through to another database's list nor to the fallback.
 
     The fallback (:meth:`fallback`)
         The one distinct non-empty list the space bound (a database that lists no modules is

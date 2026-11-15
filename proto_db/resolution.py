@@ -53,10 +53,16 @@ The registry of an object (Task 8, ruling R201)
     2. for any other object (a loaded one, read through the space's shared atom cache or a
        space-level context, which records no database): the **reader** of the running code
        (:func:`current_reader`: the transaction of a ``with tr:`` block or of ``Database.run``,
-       or the snapshot of a ``with snapshot:`` block) when it is of the object's space; outside
-       any reader, the space's fallback: its one distinct non-empty bound list, else
-       ``ProtoUserError``;
+       or the snapshot of a ``with snapshot:`` block) when it is of the object's space; only
+       when no reader of the object's space is current, the space's fallback: its one distinct
+       non-empty bound list, else ``ProtoUserError``;
     3. :func:`proto_db.registry.using` (tests), when the above give none.
+
+    A transaction or reader whose database lists no modules decides as any other (ruling R236):
+    it gives no registry, so a lookup that reaches a registry name raises "needs a registry"
+    (unless :func:`~proto_db.registry.using` makes one current), as in a space with that one
+    database; it never falls through to another database's registry nor to the space's
+    fallback.  Own attributes and object parents resolve as always.
 
     An object of a transaction keeps that transaction's registry for life: after the
     transaction ended (committed or aborted), after a later install of its database (also by
@@ -68,8 +74,7 @@ The registry of an object (Task 8, ruling R201)
     the committing thread, a group-commit leader or a cluster round leader) resolves with the
     transaction being built as the reader.
 
-    A source whose database lists no modules has no registry and passes to the next one.  The
-    registry is looked up only when the linearization has a registry-name node: one computed
+    The registry is looked up only when the linearization has a registry-name node: one computed
     without a registry shows whether it has any (its names), and one with none is the same
     under every registry.  So reading own attributes, or inheriting along object parents only,
     never builds a registry (an unimportable listed module raises only at a lookup that needs
@@ -259,8 +264,10 @@ def registry_of(obj):
     ``context``) resolves with that transaction's registry, and raises inside a block of another
     database of the space whose list differs.  Any other object (loaded through the space's
     shared atom cache or a space-level context, or never bound) resolves with the current
-    reader of its space, else with its space's fallback (one distinct bound list), else
-    :func:`proto_db.registry.using` (tests).  Building it may import modules and raise."""
+    reader of its space, else, when no reader of its space is current, with its space's fallback
+    (one distinct bound list).  A transaction or reader whose database lists no modules gives no
+    registry, never another database's (ruling R236).  :func:`proto_db.registry.using` (tests)
+    applies when these give none.  Building it may import modules and raise."""
     context = obj.context
     link = _READER.get()
     reader = None if link is None else link[0]
@@ -268,13 +275,13 @@ def registry_of(obj):
         if reader is not None and reader is not context:
             context._check_reader(reader)
         found = context._resolution_registry()
-        if found is not None:
-            return found                # else: its database lists no modules, as a loaded object
+        # A database that lists no modules decides too (ruling R236): no registry, never another
+        # database's; only the test hook remains.
+        return found if found is not None else _CURRENT_REGISTRY.get()
     space = getattr(context, "_space_registries", None)
     if reader is not None and (space is None or space is reader._reader_space):
         found = reader._reader_registry()
-        if found is not None:
-            return found
+        return found if found is not None else _CURRENT_REGISTRY.get()
     if space is not None:
         found = space.fallback()
         if found is not None:
@@ -381,7 +388,9 @@ def _chain(name: str, registry) -> tuple:
     """The extensions of the registry name ``name`` that a lookup reached, newest first (``()``
     for a name no module extends: an empty node)."""
     if registry is None:
-        raise ProtoNotSupportedError(f"registry name {name!r} needs a registry")
+        raise ProtoNotSupportedError(
+            f"registry name {name!r} needs a registry: the database of the resolving transaction or reader "
+            f"lists no modules, or none is current")
     return registry.chain(name)
 
 

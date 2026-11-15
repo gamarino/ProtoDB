@@ -133,8 +133,12 @@ Which registry resolves an object (R201)
     The code doing the resolving decides, never the order in which records were loaded or the state of a
     cache. An object created or derived in a transaction resolves through that transaction's registry for its
     whole life. A loaded object resolves through the current reader: the transaction of a ``with tr:`` block
-    or of ``Database.run``, or the snapshot of ``with snapshot:``. Outside any reader it resolves only if every
-    database of the space that lists modules lists the same ones; otherwise ``ProtoUserError``. An as-of read
+    or of ``Database.run``, or the snapshot of ``with snapshot:``. Only when no reader of its space is current
+    does it resolve through the space's fallback, and only if every database of the space that lists modules
+    lists the same ones; otherwise ``ProtoUserError``. A transaction or reader of a database that lists no
+    modules decides like any other (R236): it has no registry, so a lookup that reaches a registry name raises
+    ``ProtoNotSupportedError`` ("needs a registry"), as in a space with that one database; it never resolves
+    through another database's modules. An as-of read
     resolves with the list of its version and never changes how other code resolves.
 
 A mismatch is an error (Q2)
