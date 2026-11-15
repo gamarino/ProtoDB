@@ -1223,3 +1223,36 @@ def test_a_remembered_failure_says_how_to_retry(monkeypatch):
         db.new_transaction().registry
     good.close()
     broken.close()
+
+
+def test_an_import_deadlock_is_not_remembered(monkeypatch):
+    """Final re-review O1: an import that fails with importlib's deadlock error (two threads
+    importing modules that import each other) is transient.  It is raised, but not remembered
+    (R202 covers modules that cannot be loaded), so the next lookup imports again."""
+    import importlib
+    from importlib._bootstrap import _DeadlockError
+    from proto_db import registry as registry_module
+    storage = MemoryStorage()
+    good = _space(storage)
+    _install(good.new_database("db"), "reg8_base")
+    other = _space(storage)
+    db = other.open_database("db")
+    monkeypatch.setattr(registry_module, "_FAILED", {})
+    monkeypatch.setattr(registry_module, "_REGISTRIES", {})
+    real = importlib.import_module
+    calls = []
+
+    def flaky(path, *a, **k):
+        calls.append(path)
+        if len(calls) == 1:
+            raise _DeadlockError(f"deadlock detected by _ModuleLock({path!r})")
+        return real(path, *a, **k)
+
+    monkeypatch.setattr(registry_module.importlib, "import_module", flaky)
+    with pytest.raises(ProtoNotSupportedError, match="deadlock") as raised:
+        db.new_transaction().registry
+    assert not getattr(raised.value, "remembered", False)
+    assert db.new_transaction().registry is not None           # imported again, and built
+    assert len(calls) >= 2
+    good.close()
+    other.close()

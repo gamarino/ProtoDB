@@ -860,8 +860,9 @@ class _SpaceRegistries:
         try:
             built = self.build_fresh(database, names)
         except ProtoNotSupportedError as e:
-            with self._lock:
-                own.setdefault(names, str(e))
+            if not _registry.is_transient(e):
+                with self._lock:
+                    own.setdefault(names, str(e))
             raise
         with self._lock:
             return own.setdefault(names, built)

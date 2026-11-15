@@ -622,8 +622,24 @@ def _import(name: str, path) -> str:
         e.add_note(f"while importing {path!r} for registry module {name!r}")
         raise
     except Exception as e:
-        raise ProtoNotSupportedError(f"Module {name!r} cannot be imported from {path!r}: {e}") from e
+        error = ProtoNotSupportedError(f"Module {name!r} cannot be imported from {path!r}: {e}")
+        # importlib's deadlock error (two threads importing modules that import each other) is
+        # transient: raised, never remembered (R202 covers modules that cannot be loaded).
+        error.transient = type(e).__name__ == "_DeadlockError"
+        raise error from e
     return imported.__name__
+
+
+def is_transient(error: BaseException) -> bool:
+    """True when ``error``, or an error it was raised from, is a transient import failure
+    (:func:`_import`): a failure that must not be remembered by ruling R202."""
+    seen = set()
+    while error is not None and id(error) not in seen:
+        if getattr(error, "transient", False):
+            return True
+        seen.add(id(error))
+        error = error.__cause__ or error.__context__
+    return False
 
 
 class ModulesNotImported(Exception):
@@ -824,8 +840,9 @@ def registry_for(module_names: tuple, *, mapping: Mapping | None = None,
     try:
         built = Registry.build(module_names, mapping=mapping, allowed=allowed)
     except ProtoNotSupportedError as e:
-        with _REGISTRIES_LOCK:
-            _FAILED[key] = str(e)
+        if not is_transient(e):
+            with _REGISTRIES_LOCK:
+                _FAILED[key] = str(e)
         raise
     with _REGISTRIES_LOCK:
         return _REGISTRIES.setdefault(key, built)

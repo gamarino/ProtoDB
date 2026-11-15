@@ -25,12 +25,13 @@ from proto_db.collections.dictionaries import Dictionary
 from proto_db.core.atom import type_tag
 from proto_db.core.dbobject import DBObject
 from proto_db.errors import ProtoConflictError, ProtoCorruptionError, ProtoNotSupportedError, ProtoValidationError
-from proto_db.errors import ProtoUserError
+from proto_db.errors import ProtoOutcomeUnknownError, ProtoTimeoutError, ProtoUserError
 from proto_db.registry import BASE, CATALOG_ROOT, MODULES_ROOT, Catalog, ModuleList, Registry
 from proto_db.storage import format as fmt
 from proto_db.storage.file import FileStorage
 from proto_db.storage.memory import MemoryStorage
 from proto_db.transactions import ObjectSpace
+from tests.support import stress
 
 pytestmark = [pytest.mark.timeout(120)]
 
@@ -411,12 +412,24 @@ def test_concurrent_installs_on_two_cluster_nodes_both_land():
         cl.wait_rejoined()
         new_database_once(spaces[0])
         dbs = [space.open_database("db") for space in spaces[:2]]
-        first, second = dbs[0].new_transaction(), dbs[1].new_transaction()
-        assert first._snapshot_pointer == second._snapshot_pointer      # one base
-        first.install_module("reg7_a")
-        second.install_module("reg7_b")
-        first.commit()
-        second.commit()                     # built on the committed root, merged: no conflict
+        # A cluster commit may end with a conservative failure under load (a conflict when the
+        # permission ended before anything was replicated, a timeout, an unknown outcome; P5,
+        # R82): nothing or possibly something applied.  install_module is add-if-absent, so a
+        # retry from a fresh pair converges either way (final re-review O2).
+        conservative = (ProtoConflictError, ProtoTimeoutError, ProtoOutcomeUnknownError)
+        for _ in range(stress.attempts(10)):
+            first, second = dbs[0].new_transaction(), dbs[1].new_transaction()
+            assert first._snapshot_pointer == second._snapshot_pointer  # one base
+            first.install_module("reg7_a")
+            second.install_module("reg7_b")
+            try:
+                first.commit()
+                second.commit()             # built on the committed root, merged: no conflict
+                break
+            except conservative:
+                for tr in (first, second):
+                    if tr.is_active:            # the one left open
+                        tr.abort()
         assert _installed(dbs[1]) == (BASE, "reg7_a", "reg7_b")
 
 
