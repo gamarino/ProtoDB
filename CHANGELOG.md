@@ -13,6 +13,78 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   outstanding permission end, and releases its lease (new stat `terms_fenced`); after any other renewal that
   fails, including one a silent member leaves unanswered, it waits for the refusals' `remaining`, at least
   `request_timeout / 4`, before renewing again (D50 amendment, rulings R149 and R149a).
+- **The runtime registry** (format 5; decision D62; tutorial `docs/source/tutorials/extensible-models.rst`, design
+  chapter `docs/source/design-guide/registry.rst`). Additive: a `DBObject` without parents, in a database that
+  never installs a module, keeps today's API, bytes and behaviour, with one breaking change for code that
+  stored a field named `parents` (below).
+  - `DBObject` gains parents (`DBObject(parents=(...))`, `o.parents`, `o.with_parents(...)`): other `DBObject`s or
+    registry names (non-empty `str`), persisted as the atom envelope key `"p"`, the format-5 feature `parents`; an
+    object without parents writes the format-4 record byte for byte. `parents` and `with_parents` are no longer
+    field names. A record written before that holds a field of either name still loads, keeps the field
+    readable (`o["parents"]`) and `with_` carries it over unchanged: it is never refused (ruling R157).
+  - **Breaking change: the keyword `parents=` now sets resolution parents.** `DBObject(parents=...)` and
+    `tr.new_object(parents=...)` used to store a field named `parents`; they now set the object's parents
+    (ruling R158). A tuple or list of `DBObject`s and non-empty strings is accepted silently: the new object then
+    inherits every attribute it does not set from those objects (`kid.surname` returns the mother's), has no
+    field `parents` (`has_defined_attr("parents")` is False), and an index on `parents` finds nothing. Any other
+    value (a single string or object, a dict, a list holding numbers) is refused with `ProtoValidationError`, as
+    are `o.with_(parents=...)` and the keyword `with_parents=` in the constructor and in `with_`. **Migration:**
+    before upgrading, rename such a field in the code that writes it (for example to `parent_records`); records
+    already stored keep their field and load unchanged (R157), and `o["parents"]` reads it.
+  - Resolution (`proto_db.resolution`): `o.x` and `o["x"]` read own attributes, then the C3 linearization of the
+    parents, registry names included (their extension chains, newest module first); a miss is still `None`
+    (R150), and `"x" in o` tells an inherited or explicit `None` from a miss. `o["oid"]`, `o["with_"]` and the
+    other API names raise `ProtoAttributeNameError` (new, exported from `proto_db`), a `ProtoValidationError`
+    that is also a `KeyError`, so a mapping-first consumer such as a Django template (`{{ obj.oid }}` tries
+    `obj["oid"]` first) falls back to attribute access as it did when `DBObject` was not subscriptable. `DBObject` now defines `__getitem__`, `__contains__`,
+    `__setitem__` and `__delitem__` (both raise `ProtoUserError`), and sets `__iter__ = None` (it stays
+    non-iterable). A mixin listed after `DBObject` in a subclass's bases no longer provides any of these, and
+    `%`-formatting with a `DBObject` as the mapping (`"%(n)s" % o`) now formats instead of raising `TypeError`.
+    `has_defined_attr`, index keys and query paths read own attributes only, as before.
+  - Modules (`proto_db.registry`): `module(name, depends=...)` and `@handle.extends(registry_name, parents=...)`
+    declare extensions whose plain functions are methods and whose other attributes are canonical data
+    defaults; a property, staticmethod, classmethod, callable instance, lambda, nested class or a default holding
+    a database object is refused at import (`ProtoValidationError`). `self._super()` reaches the next definition
+    with the same `self` (a miss is `None`; refused outside a registry method and in generators, allowed in
+    coroutine methods). A method wrapped by a `functools.wraps` decorator is indexed by the function it wraps, so
+    one decorator may wrap many methods and `_super()` works in the wrapped body. A `DBObject` subclass whose
+    Python member hides a definition of a registry name its objects reach is refused (`ProtoValidationError`) at
+    the first resolution of such an object through that registry, including `name in o` and `o[name]` of the
+    member; plain attribute access of the member involves no resolution. A registry name no module
+    extends is an empty node; `Registry.unknown_names` lists such
+    names. Registry module names are process-global (one name, one Python module per process). A lookup made by a
+    module's import-time code through the registry of a database that lists that module raises
+    `ModulesBeingImported` (a `ProtoUserError`) and caches nothing; an import-time commit still succeeds.
+  - `Transaction.install_module`, `installed_modules`, `registry`, `catalog_object` and `set_catalog_object`
+    (`installed_modules` and `catalog_object` never enter the read set; `get_root_object` of a registry root
+    does, so a concurrent install makes that transaction conflict);
+    the roots `__currentModules` and `__catalog` (format-5 feature `registry`, built-in type aliases 22 and 23),
+    merged add-if-absent at commit, so concurrent installs never conflict with each other. Installing is
+    permanent. The module `base` (`proto_db.modules.base`, with `read_data_file`) is installed first,
+    implicitly, and is the last parent of every registry name. A persisted list that does not start with `base`
+    (another writer's) is read as if `base` preceded it, and the next install writes it with `base` first;
+    `format-spec.rst` states it normatively (writers SHOULD put `base` first, readers MUST treat it as first). Catalog updates follow normal conflict rules
+    (the first updater wins) and reach only objects created after them.
+  - `ObjectSpace(modules_mapping=..., modules_allowed=...)` and `ObjectSpace.reload_registry(database_name)`,
+    which invalidates every registry of that database cached in the space (later snapshots and installing
+    transactions build fresh too). When
+    another process installs a module, a space bound to the older list raises `ProtoValidationError` at the
+    next registry lookup inside one of its transactions on the new list (no automatic rebuild; a snapshot
+    resolves with its own version's list and never mismatches).
+    A loaded object resolved outside any block keeps using the space's bound list until a transaction of the
+    space has seen the new list, and then raises the same mismatch. A listed module that cannot be imported
+    raises `ProtoNotSupportedError` at the first lookup that needs it, and is remembered until
+    `reload_registry`; a failed reload is not remembered, so the next lookup tries the import once more. As-of
+    reads (`with snapshot:`) resolve with the modules of their version. A transaction or reader of a database that
+    lists no modules resolves with no registry (a lookup that reaches a registry name raises "needs a
+    registry"), never through another database's modules; the space's single-list fallback applies only when
+    no reader of the space is current.
+  - Format: `FORMAT_VERSION` 5 (`FEATURE_VERSIONS`: `parents`, `registry`); a space that uses neither keeps
+    writing version 4, and a reader of format 4 refuses version-5 segments and roots with
+    `ProtoNotSupportedError`. The cluster `PROTOCOL_VERSION` is 14, and an acceptor log that holds a root of
+    format 5 has log format 3. `remove_root_object` refuses `__` roots, which only the registry writes. The
+    conformance vectors gained `parents/` and `registry/`; `format-spec.rst` publishes the additions, and states
+    that symbol references were measured and deferred (`docs/superpowers/2026-11-14-symbol-measurement.md`).
 - `proto_db.__version__` reports the package version; in 2.0.0rc3 it still said `2.0.0.dev0`.
 - `CloudStorage.publish_root` reports a write refused by its precondition as `ProtoConflictError`, which
   `Database.run` retries, when the object store declares that its refusals are definitive

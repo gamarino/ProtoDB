@@ -143,8 +143,9 @@ def test_builtin_type_aliases_are_pinned():
         "proto_db.indexing.Index", "proto_db.indexing.keyed.KeyGroupIndex", "proto_db.indexing.EqualityIndex",
         "proto_db.indexing.RangeIndex", "proto_db.indexing.VectorIndex", "proto_db.transactions.SpaceRoot",
         "proto_db.transactions.DatabaseRoot", "proto_db.core.dbobject.DBObject", "proto_db.avl._Node",
-        "proto_db.avl.CountedKeyNode")
+        "proto_db.avl.CountedKeyNode", "proto_db.registry.ModuleList", "proto_db.registry.Catalog")
     assert type_tag("proto_db.avl.CountedKeyNode") == 21
+    assert type_tag("proto_db.registry.ModuleList") == 22 and type_tag("proto_db.registry.Catalog") == 23
     assert type_tag("tests.names.Declared") == "tests.names.Declared"
 
 

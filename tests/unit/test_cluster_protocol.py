@@ -8,11 +8,11 @@ import pytest
 from proto_db.cluster.protocol import (MAX_FRAME_BYTES, PROTOCOL_VERSION, ClusterProtocolError,
                                        FrameDecoder, decode_labeled_root, decode_message, decode_root, encode_frame,
                                        encode_root, make_message)
-from proto_db.storage.format import FORMAT_VERSION, RootRecord
+from proto_db.storage.format import WRITE_FORMAT_VERSION, RootRecord
 
 
 def _record(epoch=3):
-    return RootRecord(FORMAT_VERSION, uuid.uuid4(), 64, epoch)
+    return RootRecord(WRITE_FORMAT_VERSION, uuid.uuid4(), 64, epoch)
 
 
 def test_every_message_carries_the_protocol_version_and_sender():
@@ -103,7 +103,7 @@ def test_replicate_no_longer_carries_pred_committed():
     """Protocol 13 (D55, V2'): the flag-driven catch-up is gone from the wire."""
     from proto_db.cluster.protocol import MESSAGE_TYPES
     assert "pred_committed" not in MESSAGE_TYPES["replicate"]
-    assert PROTOCOL_VERSION == 13
+    assert PROTOCOL_VERSION == 14
 
 
 def test_release_fairness_hints_are_typed():

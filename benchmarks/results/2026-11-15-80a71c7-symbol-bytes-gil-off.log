@@ -1,0 +1,51 @@
+objects written: {'partners': 1500, 'products': 600, 'orders': 2000, 'order_lines': 9864} (total 13964); read back: {'partners': 1500, 'products': 600, 'orders': 2000, 'order_lines': 9864}; sample mismatches: 0
+segments: 1, records: 54360, sha256 of the segments: 5fc2f756aa2bb8d2c08302e67862423d023942d7e1c7ef14c60ade4a2be9d77e
+records per type tag: {"3": {"records": 6, "bytes": 300}, "6": {"records": 6066, "bytes": 755737}, "18": {"records": 2022, "bytes": 478790}, "0": {"records": 30280, "bytes": 4942713}, "17": {"records": 2022, "bytes": 171866}, "19": {"records": 13964, "bytes": 5044010}}
+strings (names): 395706 total, 65 distinct, 3149740 inline bytes; len>=8: 133664 total, 37 distinct, 1617714 B; len>=16: 2000 total, 1 distinct, 34000 B; len>=24: 0 total, 0 distinct, 0 B
+strings (values): 110820 total, 13942 distinct, 1292836 inline bytes; len>=8: 44077 total, 8869 distinct, 878185 B; len>=16: 18752 total, 4723 distinct, 593883 B; len>=24: 14692 total, 2788 distinct, 510713 B
+strings (dbobject_names): 181668 total, 50 distinct, 1875528 inline bytes; len>=8: 125576 total, 33 distinct, 1534812 B; len>=16: 2000 total, 1 distinct, 34000 B; len>=24: 0 total, 0 distinct, 0 B
+strings (dbobject_values): 80540 total, 13938 distinct, 1080962 inline bytes; len>=8: 41408 total, 8867 distinct, 853522 B; len>=16: 18752 total, 4723 distinct, 593883 B; len>=24: 14692 total, 2788 distinct, 510713 B
+compressor: zstd 1.5.7 (level 3)
+(a) inline: 11393442 B   (c) whole segments: 2420928 B   (c) 64 KiB blocks: 2799544 B
+       ref      kinds   L distinct saved_names saved_vals       (b)   table (d) whole (d) block d/c block
+     c1/16 name+value   8     4355           0     275099  11386511  268168   2607665   2999701    1.0715
+     c1/16       name   8        0           0          0  11393442       0   2420928   2799544    1.0000
+     c1/16      value   8     4355           0     275099  11386511  268168   2607665   2999701    1.0715
+     c1/16 name+value  16     4355           0     275099  11386511  268168   2607665   2999701    1.0715
+     c1/16       name  16        0           0          0  11393442       0   2420928   2799544    1.0000
+     c1/16      value  16     4355           0     275099  11386511  268168   2607665   2999701    1.0715
+     c1/16 name+value  24     2788           0     260949  11313559  181066   2534385   2929171    1.0463
+     c1/16       name  24        0           0          0  11393442       0   2420928   2799544    1.0000
+     c1/16      value  24     2788           0     260949  11313559  181066   2534385   2929171    1.0463
+      c1/8 name+value   8     8881      414738     481492  10910061  412849   2641249   2927032    1.0455
+      c1/8       name   8       30      414738          0  10979896    1192   2417490   2789997    0.9966
+      c1/8      value   8     8851           0     481492  11323633  411683   2647279   2946247    1.0524
+      c1/8 name+value  16     4724       16000     425115  11201522  249195   2533229   2840046    1.0145
+      c1/8       name  16        1       16000          0  11377511      69   2421024   2801573    1.0007
+      c1/8      value  16     4723           0     425115  11217479  249152   2533563   2841390    1.0149
+      c1/8 name+value  24     2788           0     378485  11173719  158762   2479901   2796999    0.9991
+      c1/8       name  24        0           0          0  11393442       0   2420928   2799544    1.0000
+      c1/8      value  24     2788           0     378485  11173719  158762   2479901   2796999    0.9991
+ tagged/16 name+value   8     2788           0     158105  11416403  181066   2538383   2936715    1.0490
+ tagged/16       name   8        0           0          0  11393442       0   2420928   2799544    1.0000
+ tagged/16      value   8     2788           0     158105  11416403  181066   2538383   2936715    1.0490
+ tagged/16 name+value  16     2788           0     158105  11416403  181066   2538383   2936715    1.0490
+ tagged/16       name  16        0           0          0  11393442       0   2420928   2799544    1.0000
+ tagged/16      value  16     2788           0     158105  11416403  181066   2538383   2936715    1.0490
+ tagged/16 name+value  24     2788           0     158105  11416403  181066   2538383   2936715    1.0490
+ tagged/16       name  24        0           0          0  11393442       0   2420928   2799544    1.0000
+ tagged/16      value  24     2788           0     158105  11416403  181066   2538383   2936715    1.0490
+     seq/2 name+value   8     8906     1216722     745954   9791054  360288   2475489   2631776    0.9401
+     seq/2       name   8       37     1216722          0  10177935    1215   2388202   2719828    0.9715
+     seq/2      value   8     8869           0     745954  11006587  359099   2508852   2706816    0.9669
+     seq/2 name+value  16     4724       28000     537627  11048666  220851   2455585   2692810    0.9619
+     seq/2       name  16        1       28000          0  11365505      63   2420656   2801430    1.0007
+     seq/2      value  16     4723           0     537627  11076629  220814   2455512   2695461    0.9628
+     seq/2 name+value  24     2788           0     466637  11068839  142034   2430133   2684365    0.9589
+     seq/2       name  24        0           0          0  11393442       0   2420928   2799544    1.0000
+     seq/2      value  24     2788           0     466637  11068839  142034   2430133   2684365    0.9589
+OK
+
+real	0m58,289s
+user	0m49,006s
+sys	0m3,388s

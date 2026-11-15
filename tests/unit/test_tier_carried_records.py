@@ -21,7 +21,7 @@ import pytest
 from proto_db.core.atom import AtomPointer
 from proto_db import errors
 from proto_db.storage import tiered
-from proto_db.storage.format import FORMAT_VERSION, RecordKind, RootRecord, encode_record, encode_segment_header
+from proto_db.storage.format import WRITE_FORMAT_VERSION, RecordKind, RootRecord, encode_record, encode_segment_header
 from proto_db.storage.logfile import read_log
 from tests.support.fake_object_store import FakeObjectStore
 from tests.support.power_loss import PowerLoss
@@ -56,7 +56,7 @@ def _carried(path, segment, payloads, start=None):
 
 def _root(records):
     raw, offset, _ = records[-1]
-    return RootRecord(FORMAT_VERSION, uuid.UUID(bytes=raw), offset, 9)
+    return RootRecord(WRITE_FORMAT_VERSION, uuid.UUID(bytes=raw), offset, 9)
 
 
 def _ptrs(records):

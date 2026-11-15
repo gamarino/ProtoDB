@@ -93,14 +93,14 @@ def as_plan(source) -> QueryPlan:
     """The plan of ``source``: a QueryPlan, a Queryable (its ``plan()``) or a collection (a scan)."""
     if isinstance(source, QueryPlan):
         return source
-    plan = getattr(source, "plan", None)
-    if callable(plan) and not isinstance(source, Atom):
-        built = plan()
+    # The Python type is asked whether ``source`` has these protocol methods, never the value: a
+    # DBObject would answer through resolution over its parents (application data and extensions).
+    if callable(getattr(type(source), "plan", None)) and not isinstance(source, Atom):
+        built = source.plan()
         if isinstance(built, QueryPlan):
             return built
-    as_query_plan = getattr(source, "as_query_plan", None)
-    if callable(as_query_plan):
-        return as_query_plan()
+    if callable(getattr(type(source), "as_query_plan", None)):
+        return source.as_query_plan()
     raise ProtoValidationError(f"Expected a QueryPlan, a Queryable or a collection, not {type(source).__name__}")
 
 

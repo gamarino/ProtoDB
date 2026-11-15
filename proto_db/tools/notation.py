@@ -3,9 +3,10 @@
 A *value description* is a one-key JSON object naming the value's kind: ``{"int": "7"}``,
 ``{"str": "a"}``, ``{"datetime": [...]}``, ``{"ref": {...}}``... (:func:`describe`).  A database
 is described by :func:`describe_database`: its roots in name order (records as ``object`` with
-their attributes sorted by name, collections as ``collection`` with their elements or items in
-the collection's own order, atoms of a type this process has no class for as ``opaque``), its
-mutables, its indexes and its origin.  :mod:`proto_db.tools.verify` prints it; the conformance
+their attributes sorted by name and, for a record with parents, its ``parents`` in order,
+collections as ``collection`` with their elements or items in the collection's own order, the
+runtime registry's roots as ``registry`` with their fields, atoms of a type this process has no
+class for as ``opaque``), its mutables, its indexes and its origin.  :mod:`proto_db.tools.verify` prints it; the conformance
 manifest holds it for the vector spaces.
 """
 from __future__ import annotations
@@ -20,8 +21,9 @@ from ..collections.dictionaries import Dictionary, RepeatedKeysDictionary
 from ..collections.hash_dictionaries import HashDictionary
 from ..collections.lists import List
 from ..collections.sets import CountedSet, Set
-from ..core.atom import Atom, OpaqueAtom
+from ..core.atom import _ABSENT, Atom, OpaqueAtom
 from ..core.dbobject import DBObject
+from ..registry import Catalog, ModuleList
 from ..values import MISSING, FrozenDict, FrozenList, MutableObject
 
 __all__ = ["describe", "describe_object", "describe_database"]
@@ -124,6 +126,8 @@ def _shape(o) -> tuple:
         return _with_attrs("object", o)
     if isinstance(o, OpaqueAtom):
         return _with_attrs("opaque", o)
+    if isinstance(o, (ModuleList, Catalog)):
+        return _with_attrs("registry", o)
     if isinstance(o, (List, Set)):
         elements = list(o.elements())
         out = [None] * len(elements)
@@ -150,7 +154,14 @@ def _shape(o) -> tuple:
 
 
 def _with_attrs(kind: str, o) -> tuple:
-    return _pairs({kind: type(o).__type_name__}, "attrs", sorted(o._state().items()), keys_described=False)
+    head, children = _pairs({kind: type(o).__type_name__}, "attrs", sorted(o._state().items()),
+                            keys_described=False)
+    parents = o._probe("_parents")
+    if parents is not _ABSENT:
+        out = [None] * len(parents)
+        head["parents"] = out                       # in order: records and registry names
+        children.extend((p, out, i) for i, p in enumerate(parents))
+    return head, children
 
 
 def _pairs(head: dict, field: str, pairs, keys_described: bool = True) -> tuple:

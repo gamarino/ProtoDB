@@ -39,6 +39,17 @@ class ProtoValidationError(ProtoDBError):
     default_code = VALIDATION_ERROR
 
 
+class ProtoAttributeNameError(ProtoValidationError, KeyError):
+    """``o[name]`` on a :class:`~proto_db.core.dbobject.DBObject` with a name that is not an
+    attribute name: an API name (``oid``, ``context``, ``parents``, ``with_``, ...) or one starting
+    with ``_`` (runtime registry, ruling R238).  It is also a ``KeyError``, so code that tries the
+    mapping protocol first and falls back to attribute access on ``KeyError`` (a Django template's
+    ``{{ obj.oid }}``) reads the attribute.  Its message is the plain message, not
+    ``KeyError``'s quoted form."""
+
+    __str__ = Exception.__str__
+
+
 class ProtoReferenceError(ProtoValidationError):
     """A snapshot reference or pager token that is malformed or names another database (D56, R99).
 

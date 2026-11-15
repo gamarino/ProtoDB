@@ -20,7 +20,7 @@ import pytest
 from proto_db.cluster.protocol import encode_ranges, encode_root, make_message
 from proto_db.core.atom import AtomPointer
 from proto_db.errors import ProtoConflictError, ProtoOutcomeUnknownError, ProtoTimeoutError
-from proto_db.storage.format import FORMAT_VERSION, RootRecord
+from proto_db.storage.format import WRITE_FORMAT_VERSION, RootRecord
 from tests.support import stress
 from tests.support.tiered_cluster import RUN_KW, TieredCluster, incr
 
@@ -128,7 +128,7 @@ def test_a_voter_refuses_a_root_whose_records_lack_their_copies(tmp_path):
             orig = n1.transport.send
             n1.transport.send = lambda to, msg: sent.append(msg) if msg["type"] == "ack" else orig(to, msg)
             base = permission.root
-            new = RootRecord(FORMAT_VERSION, base.segment, base.offset + 1, base.epoch + 1)
+            new = RootRecord(WRITE_FORMAT_VERSION, base.segment, base.offset + 1, base.epoch + 1)
             ranges = encode_ranges([(base.segment, base.offset, base.offset + 1)])
 
             def replicate(rid, copies):

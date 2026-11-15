@@ -26,7 +26,7 @@ from proto_db.cluster.rootlog import RootsLog
 from proto_db.errors import ProtoCorruptionError, ProtoLockingError, secondary_errors
 from proto_db.storage import tiered as tiered_module
 from proto_db.storage.file import FileStorage
-from proto_db.storage.format import FORMAT_VERSION, RECORD_HEADER_SIZE, RootRecord, encode_record
+from proto_db.storage.format import WRITE_FORMAT_VERSION, RECORD_HEADER_SIZE, RootRecord, encode_record
 from proto_db.storage.tiered import RANGES_LOG, TieredStorage
 from tests.support.fake_object_store import FakeObjectStore
 
@@ -38,7 +38,7 @@ REAL_WRITE = os.write
 
 
 def rec(i: int) -> RootRecord:
-    return RootRecord(FORMAT_VERSION, uuid.UUID(int=i), 64, i)
+    return RootRecord(WRITE_FORMAT_VERSION, uuid.UUID(int=i), 64, i)
 
 
 # -- same process -----------------------------------------------------------------------------

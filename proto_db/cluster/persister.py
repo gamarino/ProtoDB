@@ -199,7 +199,7 @@ class PlainTier:
         if record is None:
             return None
         label, epoch, _ = cluster_fields(self.storage, record)
-        return label, RootRecord(WRITE_FORMAT_VERSION, record.segment, record.offset, epoch)
+        return label, RootRecord(record.version, record.segment, record.offset, epoch)
 
     def persist(self, label: int, record: RootRecord) -> bool:
         """Publish ``record`` as the storage root by compare-and-swap on the storage epoch,
@@ -209,11 +209,16 @@ class PlainTier:
             current = self.storage.read_root()
             if current is not None:
                 current_label, current_epoch, _ = cluster_fields(self.storage, current)
-                persisted = RootRecord(WRITE_FORMAT_VERSION, current.segment, current.offset, current_epoch)
-                if compare_roots(current_label, persisted, label, record) >= 0:
+                persisted = RootRecord(current.version, current.segment, current.offset, current_epoch)
+                order = compare_roots(current_label, persisted, label, record)
+                # The same root held at a lower version is published again at the root's own.
+                if order > 0 or (order == 0 and current.version >= record.version):
                     return False
             try:
-                self.storage.publish_root(record.pointer, current.epoch if current is not None else 0)
+                # The committer's version reaches the storage root (review I2); a root of the
+                # base version needs no hint, so storages of any revision of the contract work.
+                hint = {"version": record.version} if record.version > WRITE_FORMAT_VERSION else {}
+                self.storage.publish_root(record.pointer, current.epoch if current is not None else 0, **hint)
                 return True
             except ProtoConflictError:
                 continue            # another node persisted meanwhile: read again

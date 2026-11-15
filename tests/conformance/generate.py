@@ -411,16 +411,17 @@ def gen_invalid(manifest):
          None),
         ("record-bad-kind", "record", _reframe_kind(record, 3), "kind 3 is not defined", "corruption", None),
     ]
-    root = fmt.encode_root(fmt.RootRecord(fmt.FORMAT_VERSION, PTR_SEGMENT, 26, 1))
+    root = fmt.encode_root(fmt.RootRecord(fmt.WRITE_FORMAT_VERSION, PTR_SEGMENT, 26, 1))
+    unknown = fmt.FORMAT_VERSION + 1           # the first version this revision does not read
     bad_root = bytearray(root)
     bad_root[-1] ^= 0x01
     out += [
         ("root-crc", "root", bytes(bad_root), "root CRC mismatch", "corruption", None),
-        ("root-version-5", "root", fmt.encode_root(fmt.RootRecord(5, PTR_SEGMENT, 26, 1)),
+        (f"root-version-{unknown}", "root", fmt.encode_root(fmt.RootRecord(unknown, PTR_SEGMENT, 26, 1)),
          "a root record of an unknown version", "not_supported", None),
         ("segment-bad-magic", "segment", b"PDB2SEX\0" + (4).to_bytes(2, "little") + seg, "another magic",
          "corruption", None),
-        ("segment-version-5", "segment", fmt.SEGMENT_MAGIC + (5).to_bytes(2, "little") + seg,
+        (f"segment-version-{unknown}", "segment", fmt.SEGMENT_MAGIC + unknown.to_bytes(2, "little") + seg,
          "a segment of an unknown version", "not_supported", None),
     ]
     oid = uuid.UUID(int=1).bytes
@@ -446,9 +447,10 @@ def gen_invalid(manifest):
     ]
     out += [(i, "atom", _pack(payload), note, "corruption", {"type": t}) for i, payload, t, note in atoms]
     header = logfile.encode_header(rootlog.LOG_KIND)
-    entry = rootlog._payload(1, 7, fmt.RootRecord(fmt.FORMAT_VERSION, PTR_SEGMENT, 26, 3))
+    entry = rootlog._payload(1, 7, fmt.RootRecord(fmt.WRITE_FORMAT_VERSION, PTR_SEGMENT, 26, 3))
     out += [
-        ("log-version-3", "log", fmt_log_header(3, rootlog.LOG_KIND) + logfile.encode_frame(entry),
+        (f"log-version-{logfile.LOG_FORMAT_VERSION + 1}", "log",
+         fmt_log_header(logfile.LOG_FORMAT_VERSION + 1, rootlog.LOG_KIND) + logfile.encode_frame(entry),
          "a log of another format version", "not_supported", {"kind": "ROOT"}),
         ("log-kind-mismatch", "log", logfile.encode_header(tiered.MANIFEST_KIND) + logfile.encode_frame(seg),
          "a SEGS log opened as ROOT", "corruption", {"kind": "ROOT"}),
@@ -456,7 +458,7 @@ def gen_invalid(manifest):
          "a damaged frame followed by a valid one: mid-log corruption, never a torn tail", "corruption",
          {"kind": "ROOT"}),
     ]
-    other = fmt.RootRecord(fmt.FORMAT_VERSION, PTR_SEGMENT, 90, 3)
+    other = fmt.RootRecord(fmt.WRITE_FORMAT_VERSION, PTR_SEGMENT, 90, 3)
     replica = rootlog.encode_replica_entry(7, other, 1, None, [], [], accepted=True)
     bad_flags = bytearray(replica)
     bad_flags[1] |= 0x02
@@ -659,13 +661,19 @@ def _records(path: Path) -> list:
         if kind == fmt.RecordKind.ATOM:
             p = msgpack.unpackb(payload, raw=False)
             state = codec.decode_state(p["s"], stub)
+            parents = codec.decode_value(p["p"], stub) if "p" in p else None
             try:
-                again = _pack({"t": p["t"], "oid": p["oid"], "s": codec.encode_state(state, saved_pointer)})
+                envelope = {"t": p["t"], "oid": p["oid"], "s": codec.encode_state(state, saved_pointer)}
+                if parents is not None:
+                    envelope["p"] = codec.encode_value(parents, saved_pointer)
+                again = _pack(envelope)
             except ProtoValidationError:          # a format-3 map key form: read, never written again
                 again = None
             entry.update({"tag": p["t"], "type": type_name_of(p["t"]), "oid": p["oid"].hex(),
-                          "state": [[k, typed.describe(v)] for k, v in state.items()],
-                          "canonical": again == payload, "rewritable": again is not None})
+                          "state": [[k, typed.describe(v)] for k, v in state.items()]})
+            if parents is not None:
+                entry["parents"] = [typed.describe(v) for v in parents]
+            entry.update({"canonical": again == payload, "rewritable": again is not None})
         out.append(entry)
         pos += size
     return out
@@ -676,12 +684,14 @@ def gen_database(manifest):
         manifest["database"] = _write_space("database", [_fill_first, _fill_second])
 
 
-def _write_space(directory: str, fills: list) -> dict:
+def _write_space(directory: str, fills: list, segments_expected: int = 1, **space_kw) -> dict:
     """A file-storage space under ``vectors/<directory>`` holding the database ``db`` written by
-    ``fills`` (one transaction each), and its manifest entry."""
+    ``fills`` (one transaction each), and its manifest entry.  A space of one segment is listed
+    by ``segment``, ``format`` and ``records``; a space of several by ``segments``, a list of
+    those three, in the order they were written (by format version, then name)."""
     target = VECTORS / directory
     shutil.rmtree(target, ignore_errors=True)
-    space = ObjectSpace(FileStorage(str(target)))
+    space = ObjectSpace(FileStorage(str(target)), **space_kw)
     db = space.new_database("db")
     for fill in fills:
         db.run(fill)
@@ -689,18 +699,23 @@ def _write_space(directory: str, fills: list) -> dict:
     for name in os.listdir(target):
         if not (name == "space.root" or name.endswith(".seg")):
             os.remove(target / name)                 # the lock file: no data
-    segments = sorted(n for n in os.listdir(target) if n.endswith(".seg"))
-    assert len(segments) == 1, segments
+    def version(name):
+        return int.from_bytes((target / name).read_bytes()[8:10], "little")
+    segments = sorted((n for n in os.listdir(target) if n.endswith(".seg")), key=lambda n: (version(n), n))
+    assert len(segments) == segments_expected, segments
     root = fmt.decode_root((target / "space.root").read_bytes())
-    return {
-        "dir": directory,
-        "segment": segments[0],
-        "format": int.from_bytes((target / segments[0]).read_bytes()[8:10], "little"),
-        "root": {"version": int(msgpack.unpackb((target / "space.root").read_bytes()[4:])["version"]),
-                 "segment": root.segment.hex, "offset": root.offset, "epoch": root.epoch},
-        "records": _records(target / segments[0]),
-        "contents": _contents(target),
-    }
+    listed = [{"segment": name, "format": version(name), "records": _records(target / name)} for name in segments]
+    entry = {"dir": directory}
+    if segments_expected == 1:
+        entry.update(segment=listed[0]["segment"], format=listed[0]["format"])
+    else:
+        entry["segments"] = listed
+    entry["root"] = {"version": int(msgpack.unpackb((target / "space.root").read_bytes()[4:])["version"]),
+                     "segment": root.segment.hex, "offset": root.offset, "epoch": root.epoch}
+    if segments_expected == 1:
+        entry["records"] = listed[0]["records"]
+    entry["contents"] = _contents(target)
+    return entry
 
 
 # -- a database as format 3 wrote it ------------------------------------------------------------
@@ -888,6 +903,59 @@ def gen_polyglot_database(manifest):
     manifest["polyglot_database"] = entry
 
 
+#: The registry name the parents vector names as a parent (a plain string, spec Q6).
+PARENTS_NAME = "acme.sales.Order"
+
+
+def _fill_parents_first(tx):
+    tx.set_root_object("base", DBObject(kind="base", rate=Decimal("0.21")))
+
+
+def _fill_parents_second(tx):
+    """Records with parents: a saved parent, an unsaved one (saved with its child, once) and a
+    registry name; and a record whose only parent is a registry name."""
+    mixin = DBObject(kind="mixin")
+    tx.set_root_object("order", DBObject(parents=(tx.get_root_object("base"), mixin, PARENTS_NAME), number=7))
+    tx.set_root_object("named", DBObject(parents=(PARENTS_NAME,), number=8))
+
+
+def gen_parents_database(manifest):
+    """A space using the format-5 feature ``parents``: its first segment is format 4 (records
+    without parents), and the first record with parents opens a format-5 segment (R151)."""
+    with _Deterministic(0x5000):
+        entry = _write_space("parents", [_fill_parents_first, _fill_parents_second], segments_expected=2)
+    entry["registry_name"] = PARENTS_NAME
+    manifest["parents_database"] = entry
+
+
+def _fill_registry_first(tx):
+    tx.set_root_object("plain", DBObject(n=1))
+
+
+def _fill_registry_second(tx):
+    """Install a module and its dependency (and, first, the module ``base``): the module list, the
+    catalog and its objects."""
+    tx.install_module(REGISTRY_MODULE)
+
+
+#: The module the registry vector installs; it depends on ``conformance.base``.
+REGISTRY_MODULE = "conformance.sales"
+
+
+def gen_registry_database(manifest):
+    """A space using the format-5 feature ``registry``: a format-4 segment, then the format-5
+    segment the install's first record opened (R151): the catalog objects (records with parents),
+    the ``ModuleList`` and the ``Catalog`` (records of the registry's built-in types)."""
+    from tests.conformance.registry_fixture import MAPPING
+    with _Deterministic(0x6000):
+        entry = _write_space("registry", [_fill_registry_first, _fill_registry_second], segments_expected=2,
+                             modules_mapping=MAPPING)
+    # The module base is installed first, implicitly (ruling R205); it introduces the name base.
+    entry["installed"] = ["base", "conformance.base", REGISTRY_MODULE]
+    entry["catalog_names"] = ["acme.Partner", "acme.sales.Order", "base"]
+    manifest["registry_database"] = entry
+
+
 def gen_legacy_database(manifest):
     """A format-3 space: format-3 segment and root, a DatabaseRoot without ``origin``, a
     key-group and a vector index without ``member_tokens`` (plain KeyNode trees, format-3
@@ -895,8 +963,6 @@ def gen_legacy_database(manifest):
     3 allowed (zone datetimes, NaNs twice), and an application record and reference spelled by
     an alias."""
     from proto_db.core import atom as atom_module
-    from proto_db.storage import file as file_module
-    import proto_db.transactions as tx_module
     from proto_db.transactions import DatabaseRoot
     real_tag = atom_module.type_tag
 
@@ -919,7 +985,7 @@ def gen_legacy_database(manifest):
                mock.patch.object(codec, "check_map_keys", any_keys),
                mock.patch.object(values_module, "check_map_keys", any_keys),
                mock.patch.object(DatabaseRoot, "__init__", no_origin)]
-    patches += [mock.patch.object(m, "WRITE_FORMAT_VERSION", 3) for m in (fmt, file_module, tx_module)]
+    patches.append(mock.patch.object(fmt, "WRITE_FORMAT_VERSION", 3))   # read at call time by every writer
     with _Deterministic(0x3000):
         for p in patches:
             p.start()
@@ -972,7 +1038,7 @@ def describe_database(tx) -> dict:
 def gen_framing(manifest):
     atom = _pack({"t": 19, "oid": uuid.UUID("00112233445566778899aabbccddeeff").bytes, "s": {"a": 1}})
     blob = b"opaque bytes"
-    root = fmt.RootRecord(fmt.FORMAT_VERSION, PTR_SEGMENT, 26, 7)
+    root = fmt.RootRecord(fmt.WRITE_FORMAT_VERSION, PTR_SEGMENT, 26, 7)
     root_v2 = msgpack.packb({"version": 2, "segment": PTR_SEGMENT.bytes, "offset": 26, "epoch": 7},
                             use_bin_type=True)
     root_v3 = msgpack.packb({"version": 3, "segment": PTR_SEGMENT.bytes, "offset": 26, "epoch": 7},
@@ -980,7 +1046,7 @@ def gen_framing(manifest):
     import zlib
     manifest["framing"] = {
         "segment_header": {"file": _write("framing/segment-header.bin", fmt.encode_segment_header(PTR_SEGMENT)),
-                           "segment": PTR_SEGMENT.hex, "version": fmt.FORMAT_VERSION},
+                           "segment": PTR_SEGMENT.hex, "version": fmt.WRITE_FORMAT_VERSION},
         "segment_header_v3": {"file": _write("framing/segment-header-v3.bin", fmt.SEGMENT_MAGIC
                                              + (3).to_bytes(2, "little") + PTR_SEGMENT.bytes),
                               "segment": PTR_SEGMENT.hex, "version": 3, "note": "format 3: still read"},
@@ -992,7 +1058,7 @@ def gen_framing(manifest):
         "blob_record": {"file": _write("framing/blob.record", fmt.encode_record(fmt.RecordKind.BLOB, blob)),
                         "kind": 2, "payload_hex": blob.hex()},
         "root": {"file": _write("framing/space.root", fmt.encode_root(root)),
-                 "fields": {"version": fmt.FORMAT_VERSION, "segment": PTR_SEGMENT.hex, "offset": 26, "epoch": 7}},
+                 "fields": {"version": fmt.WRITE_FORMAT_VERSION, "segment": PTR_SEGMENT.hex, "offset": 26, "epoch": 7}},
         "root_v2": {"file": _write("framing/space-v2.root", zlib.crc32(root_v2).to_bytes(4, "little") + root_v2),
                     "fields": {"version": 2, "segment": PTR_SEGMENT.hex, "offset": 26, "epoch": 7},
                     "note": "a format-2 root record is read as a current one"},
@@ -1001,10 +1067,10 @@ def gen_framing(manifest):
                     "note": "a format-3 root record is read as a current one"},
         "cloud_root": {"file": _write("framing/cloud-space.root", cloud._encode_root_object(
                            root, [(PTR_SEGMENT, 10, 6), (PTR_SEGMENT, 0, 5)])),
-                       "fields": {"version": fmt.FORMAT_VERSION, "segment": PTR_SEGMENT.hex, "offset": 26, "epoch": 7},
+                       "fields": {"version": fmt.WRITE_FORMAT_VERSION, "segment": PTR_SEGMENT.hex, "offset": 26, "epoch": 7},
                        "recent": [[PTR_SEGMENT.hex, 10, 6], [PTR_SEGMENT.hex, 0, 5]]},
         "tiered_root": {"file": _write("framing/tiered-space.root", tiered._encode_root_object(root, 9)),
-                        "fields": {"version": fmt.FORMAT_VERSION, "segment": PTR_SEGMENT.hex, "offset": 26, "epoch": 7},
+                        "fields": {"version": fmt.WRITE_FORMAT_VERSION, "segment": PTR_SEGMENT.hex, "offset": 26, "epoch": 7},
                         "term": 9},
     }
 
@@ -1037,7 +1103,7 @@ def _cluster_commit(directory: Path):
         size = fmt.record_size(data[pos:pos + fmt.RECORD_HEADER_SIZE])
         records.append([ptr.segment.bytes, pos, data[pos:pos + size]])
         pos += size
-    return base, fmt.RootRecord(fmt.FORMAT_VERSION, ptr.segment, ptr.offset, base.epoch + 1), records, data
+    return base, fmt.RootRecord(fmt.WRITE_FORMAT_VERSION, ptr.segment, ptr.offset, base.epoch + 1), records, data
 
 
 def gen_cluster(manifest):
@@ -1078,6 +1144,17 @@ def gen_cluster(manifest):
     ranges_payload = tiered.TieredStorage._ranges_payload((root.segment, root.offset), (7, root.epoch), ranges)
     ranges_log = logfile.encode_header(tiered.RANGES_KIND) + logfile.encode_frame(ranges_payload)
     segs_log = logfile.encode_header(tiered.MANIFEST_KIND) + logfile.encode_frame(seg_uuid.bytes)
+    # A root of storage format 5 (a space holding format-5 data): versioned entries (kind 7) in a
+    # log of format 3; a reader of log format 2 refuses it at the header, of entry kinds 1-6 at
+    # the entry.
+    root_v5 = fmt.RootRecord(fmt.FORMAT_VERSION, root.segment, root.offset, root.epoch)
+    v5_entries = [
+        ("accepted-v5", rootlog._payload(1, 7, root_v5),
+         {"kind": 1, "label": 7, "root": root_desc(root), "version": fmt.FORMAT_VERSION}),
+        ("committed-v5", rootlog._payload(2, 7, root_v5),
+         {"kind": 2, "label": 7, "root": root_desc(root), "version": fmt.FORMAT_VERSION}),
+    ]
+    log_v5 = logfile.log_contents(rootlog.LOG_KIND, [p for _, p, _ in v5_entries], rootlog.VERSIONED_LOG_VERSION)
 
     manifest["cluster"] = {
         "segment": {"file": seg_file, "records": _records(VECTORS / seg_file)},
@@ -1087,6 +1164,13 @@ def gen_cluster(manifest):
             "base": root_desc(base), "root": root_desc(root), "label": 7,
             "loaded": {"accepted": [7, root_desc(root)], "committed": [7, root_desc(root)], "promised": 7,
                        "top": 7, "empty": False},
+        },
+        "roots_log_v5": {
+            "file": _write("cluster/roots-v5.log", log_v5), "kind": "ROOT",
+            "log_version": rootlog.VERSIONED_LOG_VERSION, "entry_kind": rootlog.VERSIONED_KIND,
+            "entries": [{"name": n, "size": len(p), "fields": f} for n, p, f in v5_entries],
+            "loaded": {"accepted": [7, root_desc(root)], "committed": [7, root_desc(root)],
+                       "version": fmt.FORMAT_VERSION},
         },
         "roots_log_torn": {
             "file": _write("cluster/roots-torn.log", torn), "kind": "ROOT", "valid_end": len(log) - len(last),
@@ -1162,6 +1246,8 @@ def main():
     gen_database(manifest)
     gen_legacy_database(manifest)
     gen_polyglot_database(manifest)
+    gen_parents_database(manifest)
+    gen_registry_database(manifest)
     gen_cluster(manifest)
     MANIFEST.write_text(json.dumps(manifest, indent=1, ensure_ascii=False) + "\n")
     PINS.write_text(pin_lines())

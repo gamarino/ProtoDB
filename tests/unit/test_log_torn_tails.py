@@ -26,7 +26,7 @@ import pytest
 from proto_db.cluster.rootlog import RootsLog
 from proto_db.errors import ProtoCorruptionError, ProtoNotSupportedError, ProtoUnexpectedError
 from proto_db.storage import logfile
-from proto_db.storage.format import FORMAT_VERSION, SEGMENT_HEADER_SIZE, RootRecord
+from proto_db.storage.format import WRITE_FORMAT_VERSION, SEGMENT_HEADER_SIZE, RootRecord
 from proto_db.storage.tiered import MANIFEST, RANGES_LOG, ROOTS_LOG, TieredStorage
 from tests.support.fake_object_store import FakeObjectStore
 
@@ -41,7 +41,7 @@ KW = dict(durability="fsync", ship_interval=0.0, backoff=(0.0, 0.0), retries=0)
 
 
 def rec(i: int) -> RootRecord:
-    return RootRecord(FORMAT_VERSION, uuid.UUID(int=i), 64, i)
+    return RootRecord(WRITE_FORMAT_VERSION, uuid.UUID(int=i), 64, i)
 
 
 def _tear_next_write(monkeypatch, get_fd, keep: int = 7):
@@ -255,14 +255,14 @@ def test_a_sigkilled_writer_leaves_torn_tails_that_the_next_open_trims(tmp_path)
     child = textwrap.dedent(f"""
         import os, signal, sys, uuid
         sys.path.insert(0, {ROOT!r})
-        from proto_db.storage.format import FORMAT_VERSION, RootRecord, encode_record
+        from proto_db.storage.format import WRITE_FORMAT_VERSION, RootRecord, encode_record
         from proto_db.storage.logfile import encode_frame
         from proto_db.storage.tiered import TieredStorage
         from tests.support.fake_object_store import FakeObjectStore
         s = TieredStorage({path!r}, FakeObjectStore(), durability="fsync")
         ptr = s.push_atom({{"i": 1}})
         s.flush()
-        rec = RootRecord(FORMAT_VERSION, uuid.UUID(int=1), 64, 1)
+        rec = RootRecord(WRITE_FORMAT_VERSION, uuid.UUID(int=1), 64, 1)
         s.store_commit([], rec, 1, [(uuid.UUID(int=9), 64, 96)])
         s.log_root("accepted", 1, rec)
         frame = encode_frame(b"y" * 41)

@@ -4,7 +4,7 @@ import uuid
 import pytest
 
 from proto_db.cluster.lease import FencingToken, Lease, LeaseAttempt, PeerGrants, majority
-from proto_db.storage.format import FORMAT_VERSION, RootRecord
+from proto_db.storage.format import WRITE_FORMAT_VERSION, RootRecord
 
 
 class FakeClock:
@@ -140,7 +140,7 @@ def test_startup_grace_refuses_every_grant_for_its_duration():
 # -- LeaseAttempt -----------------------------------------------------------------------------
 
 def _rec(epoch):
-    return RootRecord(FORMAT_VERSION, uuid.UUID(int=epoch), 64, epoch)
+    return RootRecord(WRITE_FORMAT_VERSION, uuid.UUID(int=epoch), 64, epoch)
 
 
 def _attempt(n=3, sent=10.0, duration=1.0, margin=0.1):

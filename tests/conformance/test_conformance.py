@@ -214,7 +214,7 @@ def test_root_records():
     for name in ("root_v3", "root_v2"):
         legacy = framing[name]
         record = fmt.decode_root(_bytes(legacy["file"]))
-        assert _root_fields(record) == dict(legacy["fields"], version=fmt.FORMAT_VERSION)   # read as current
+        assert _root_fields(record) == dict(legacy["fields"], version=fmt.WRITE_FORMAT_VERSION)   # read as current
 
     vector = framing["cloud_root"]
     record, recent = cloud._decode_root_object(_bytes(vector["file"]))
@@ -243,14 +243,20 @@ def _check_segment(rel: str, records: list) -> None:
         size = fmt.record_size(data[pos:pos + fmt.RECORD_HEADER_SIZE])
         assert (int(kind), size) == (entry["kind"], entry["size"])
         envelope = msgpack.unpackb(payload, raw=False)
-        assert list(envelope) == ["t", "oid", "s"]
+        # The parents (format 5, feature "parents") are the envelope key "p", after "s".
+        assert list(envelope) == ["t", "oid", "s"] + (["p"] if "parents" in entry else [])
         assert envelope["t"] == entry["tag"] and type_name_of(entry["tag"]) == entry["type"]
         assert envelope["oid"].hex() == entry["oid"]
         state = codec.decode_state(envelope["s"], stub)
         assert [[k, typed.describe(v)] for k, v in state.items()] == entry["state"]
+        parents = codec.decode_value(envelope["p"], stub) if "p" in envelope else None
+        if parents is not None:
+            assert type(parents) is tuple and [typed.describe(v) for v in parents] == entry["parents"]
         if entry["rewritable"]:
-            again = _pack({"t": envelope["t"], "oid": envelope["oid"],
-                           "s": codec.encode_state(state, saved_pointer)})
+            written = {"t": envelope["t"], "oid": envelope["oid"], "s": codec.encode_state(state, saved_pointer)}
+            if parents is not None:
+                written["p"] = codec.encode_value(parents, saved_pointer)
+            again = _pack(written)
             # Records of the current format re-encode byte for byte; a legacy record (an alias, a
             # format-3 zone datetime or token) decodes to the listed state and re-encodes canonically.
             assert (again == payload) is entry["canonical"]
@@ -274,8 +280,89 @@ def test_database_segment(name):
         assert not all(r["rewritable"] for r in db["records"])      # the format-3 maps are there
 
 
+def test_parents_database_segments():
+    """A format-4 segment, then the format-5 segment the first record with parents opened (R151)."""
+    db = MANIFEST["parents_database"]
+    assert [s["format"] for s in db["segments"]] == [4, 5]
+    for segment in db["segments"]:
+        _check_segment(f"{db['dir']}/{segment['segment']}", segment["records"])
+        assert int.from_bytes(_bytes(f"{db['dir']}/{segment['segment']}")[8:10], "little") == segment["format"]
+        assert all(r["canonical"] for r in segment["records"])
+    first, second = db["segments"]
+    assert not any("parents" in r for r in first["records"])
+    assert "parents" in second["records"][[r["offset"] for r in second["records"]].index(26)]
+    with_parents = [r for r in second["records"] if "parents" in r]
+    name = {"str": db["registry_name"]}
+    assert [r["parents"][-1] for r in with_parents] == [name, name]
+    assert sorted(len(r["parents"]) for r in with_parents) == [1, 3]
+    root = fmt.decode_root(_bytes(f"{db['dir']}/space.root"))
+    assert root.version == 5 and db["root"]["version"] == 5
+    assert fmt.encode_root(root) == _bytes(f"{db['dir']}/space.root")
+
+
+def test_parents_database_contents_through_the_public_api(tmp_path):
+    db = MANIFEST["parents_database"]
+    work = tmp_path / "db"
+    shutil.copytree(HERE / "vectors" / db["dir"], work)
+    space = ObjectSpace(FileStorage(str(work)))
+    try:
+        assert space.open_database("db").run(describe_database) == db["contents"]
+
+        def check(tx):
+            order = tx.get_root_object("order")
+            base, mixin, name = order.parents
+            assert base == tx.get_root_object("base") and base.kind == "base"
+            assert mixin.kind == "mixin" and name == db["registry_name"] and order.number == 7
+            assert tx.get_root_object("named").parents == (db["registry_name"],)
+        space.open_database("db").run(check)
+    finally:
+        space.close()
+
+
+def test_registry_database_segments():
+    """A format-4 segment, then the format-5 segment the install's first record opened (R151): the
+    catalog objects (feature ``parents``), the module list and the catalog (feature ``registry``)."""
+    db = MANIFEST["registry_database"]
+    assert [s["format"] for s in db["segments"]] == [4, 5]
+    for segment in db["segments"]:
+        _check_segment(f"{db['dir']}/{segment['segment']}", segment["records"])
+        assert int.from_bytes(_bytes(f"{db['dir']}/{segment['segment']}")[8:10], "little") == segment["format"]
+        assert all(r["canonical"] for r in segment["records"])
+    first, second = db["segments"]
+    registry_types = set(fmt.REGISTRY_TYPES)
+    assert not any(r.get("type") in registry_types or "parents" in r for r in first["records"])
+    assert "parents" in second["records"][0]           # the install's first record opened the segment
+    assert registry_types <= {r.get("type") for r in second["records"]}
+    for record in second["records"]:
+        if record.get("type") in registry_types:
+            assert record["tag"] == fmt.REGISTRY_TYPES[record["type"]] and "parents" not in record
+    catalog_objects = [r for r in second["records"] if "parents" in r]
+    assert sorted(r["parents"][0]["str"] for r in catalog_objects) == db["catalog_names"]
+    root = fmt.decode_root(_bytes(f"{db['dir']}/space.root"))
+    assert root.version == 5 and db["root"]["version"] == 5
+
+
+def test_registry_database_contents_through_the_public_api(tmp_path):
+    from tests.conformance.registry_fixture import MAPPING
+    db = MANIFEST["registry_database"]
+    work = tmp_path / "db"
+    shutil.copytree(HERE / "vectors" / db["dir"], work)
+    space = ObjectSpace(FileStorage(str(work)), modules_mapping=MAPPING)
+    try:
+        assert space.open_database("db").run(describe_database) == db["contents"]
+
+        def check(tx):
+            assert tx.installed_modules() == tuple(db["installed"])
+            for name in db["catalog_names"]:
+                assert tx.catalog_object(name).parents == (name,)
+        space.open_database("db").run(check)
+    finally:
+        space.close()
+
+
 def test_every_persistable_builtin_type_appears():
     seen = {r["type"] for r in MANIFEST["database"]["records"] + MANIFEST["cluster"]["segment"]["records"]}
+    seen |= {r["type"] for r in MANIFEST["registry_database"]["segments"][1]["records"]}
     abstract = {"proto_db.collections.IndexedCollection", "proto_db.collections.sets._HashBuckets",
                 "proto_db.indexing.Index", "proto_db.indexing.keyed.KeyGroupIndex", "proto_db.avl._Node"}
     assert set(BUILTIN_TYPE_ALIASES) - abstract <= seen
@@ -287,7 +374,7 @@ def test_database_root(name):
     db = MANIFEST[name]
     data = _bytes(f"{db['dir']}/space.root")
     record = fmt.decode_root(data)
-    assert _root_fields(record) == dict(db["root"], version=fmt.FORMAT_VERSION)
+    assert _root_fields(record) == dict(db["root"], version=fmt.WRITE_FORMAT_VERSION)
     assert msgpack.unpackb(data[4:])["version"] == db["root"]["version"]
     if name != "legacy_database":
         assert fmt.encode_root(record) == data
@@ -426,21 +513,42 @@ def test_a_format_3_index_is_rebuilt_at_its_first_change(tmp_path):
 
 def test_cluster_segment():
     _check_segment(MANIFEST["cluster"]["segment"]["file"], MANIFEST["cluster"]["segment"]["records"])
-    assert _bytes(MANIFEST["cluster"]["segment"]["file"])[8:10] == fmt.FORMAT_VERSION.to_bytes(2, "little")
+    assert _bytes(MANIFEST["cluster"]["segment"]["file"])[8:10] == fmt.WRITE_FORMAT_VERSION.to_bytes(2, "little")
 
 
 def _log(vector: dict, kind: bytes) -> list:
     data = _bytes(vector["file"])
-    assert data[:logfile.HEADER_SIZE] == logfile.encode_header(kind)
+    version = vector.get("log_version", logfile.LOG_WRITE_VERSION)
+    assert data[:logfile.HEADER_SIZE] == logfile.encode_header(kind, version)
     result = logfile.scan(data, kind, vector["file"])
     assert not result.torn and result.valid_end == len(data)
-    assert logfile.log_contents(kind, result.payloads) == data
+    assert logfile.log_contents(kind, result.payloads, version) == data
     return result.payloads
 
 
-def _root(desc):
-    return None if desc is None else fmt.RootRecord(fmt.FORMAT_VERSION, uuid.UUID(hex=desc["segment"]),
+def _root(desc, version=fmt.WRITE_FORMAT_VERSION):
+    return None if desc is None else fmt.RootRecord(version, uuid.UUID(hex=desc["segment"]),
                                                     desc["offset"], desc["epoch"])
+
+
+def test_roots_log_of_a_format_5_space():
+    """Roots of storage format 5 ride in versioned entries (kind 7) of a log of format 3, read
+    back at version 5; a reader that knows only kinds 1-6 refuses the entries, and a reader of
+    log format 2 refuses the file at its header."""
+    vector = MANIFEST["cluster"]["roots_log_v5"]
+    assert vector["log_version"] == rootlog.VERSIONED_LOG_VERSION == 3
+    payloads = _log(vector, rootlog.LOG_KIND)
+    assert [len(p) for p in payloads] == [e["size"] for e in vector["entries"]]
+    for entry, payload in zip(vector["entries"], payloads):
+        fields = entry["fields"]
+        assert payload[0] == vector["entry_kind"] == rootlog.VERSIONED_KIND, entry["name"]
+        assert int.from_bytes(payload[1:3], "little") == fields["version"]
+        assert payload[3:] == rootlog._payload(fields["kind"], fields["label"], _root(fields["root"]))
+        assert rootlog._payload(fields["kind"], fields["label"], _root(fields["root"], fields["version"])) == payload
+    loaded = rootlog._decode(payloads, vector["file"])
+    version = vector["loaded"]["version"]
+    assert loaded.accepted == (7, _root(vector["loaded"]["accepted"][1])) and loaded.accepted[1].version == version
+    assert loaded.committed[1].version == version
 
 
 def test_roots_log():

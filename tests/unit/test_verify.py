@@ -60,6 +60,38 @@ def test_the_polyglot_space_verifies_with_its_opaque_atom(tmp_path, capsys):
     assert dump["opaque_types"] == ["polyglot.st.Order"]
 
 
+def test_the_parents_space_verifies_and_walks_parents(tmp_path, capsys):
+    vector = MANIFEST["parents_database"]
+    code, dump = _run(_copy("parents", tmp_path), tmp_path)
+    assert code == 0, capsys.readouterr().err
+    assert dump["databases"]["db"] == vector["contents"]
+    assert dump["root"]["version"] == 5
+    # The walk follows the parents (the envelope key "p") as it follows the state's references:
+    # it decodes exactly the records reachable from the root through both, the "mixin" record
+    # only through a parent.
+    records = {(s["segment"][:-4], r["offset"]): r for s in vector["segments"] for r in s["records"]}
+
+    def refs(data):
+        if isinstance(data, dict):
+            if set(data) == {"ref"}:
+                yield data["ref"]["segment"], data["ref"]["offset"]
+            for v in data.values():
+                yield from refs(v)
+        elif isinstance(data, list):
+            for v in data:
+                yield from refs(v)
+    reachable, pending = set(), [(vector["root"]["segment"], vector["root"]["offset"])]
+    while pending:
+        ptr = pending.pop()
+        if ptr not in reachable:
+            reachable.add(ptr)
+            pending.extend(refs([records[ptr]["state"], records[ptr].get("parents", [])]))
+    via_parents_only = set(refs([r.get("parents", []) for r in records.values()])) - \
+        set(refs([r["state"] for r in records.values()]))
+    assert via_parents_only and via_parents_only <= reachable
+    assert dump["atoms"] == len(reachable)
+
+
 def test_a_space_this_repository_writes_verifies(tmp_path, capsys):
     path = tmp_path / "own"
     space = ObjectSpace(FileStorage(str(path)))

@@ -91,6 +91,7 @@ first if you read only one.
    design-guide/residency
    design-guide/history-links
    design-guide/modelling
+   design-guide/registry
    design-guide/referential-integrity
    design-guide/pager-and-rank
    design-guide/glossary

@@ -21,7 +21,7 @@ import pytest
 from proto_db.cluster.coordinator import ClusterCoordinator
 from proto_db.cluster.lease import Lease
 from proto_db.errors import ProtoCorruptionError, ProtoOutcomeUnknownError
-from proto_db.storage.format import FORMAT_VERSION, RootRecord
+from proto_db.storage.format import WRITE_FORMAT_VERSION, RootRecord
 from proto_db.storage.memory import MemoryStorage
 from tests.support.cluster import Cluster, MemoryTier
 from tests.support.manual_cluster import D, GRACE, MARGIN, Harness, rec
@@ -84,8 +84,8 @@ class _NoPersisted:
 
 def test_x1_guard_a_base_older_than_the_known_committed_root_is_refused():
     from proto_db.transactions import _lease_base
-    old = RootRecord(FORMAT_VERSION, uuid.uuid4(), 64, 2)
-    newer = RootRecord(FORMAT_VERSION, uuid.uuid4(), 64, 3)
+    old = RootRecord(WRITE_FORMAT_VERSION, uuid.uuid4(), 64, 2)
+    newer = RootRecord(WRITE_FORMAT_VERSION, uuid.uuid4(), 64, 3)
     lease = Lease(term=3 * 4096, acquired_at=0.0, valid_until=1e9, root=old, root_certain=True,
                   clock=lambda: 0.0, root_term=4096)
     with pytest.raises(ProtoCorruptionError, match="below the committed root"):
@@ -98,8 +98,8 @@ def test_x1_guard_a_holder_overtaken_by_a_later_term_acquires_again_instead_of_r
     than the lease) may meanwhile have learnt a root committed under a later term.  That is a
     superseded lease, not a protocol violation: the base check asks for a new lease."""
     from proto_db.transactions import _lease_base
-    old = RootRecord(FORMAT_VERSION, uuid.uuid4(), 64, 2)
-    newer = RootRecord(FORMAT_VERSION, uuid.uuid4(), 64, 3)
+    old = RootRecord(WRITE_FORMAT_VERSION, uuid.uuid4(), 64, 2)
+    newer = RootRecord(WRITE_FORMAT_VERSION, uuid.uuid4(), 64, 3)
     lease = Lease(term=3 * 4096, acquired_at=0.0, valid_until=1e9, root=old, root_certain=True,
                   clock=lambda: 0.0, root_term=4096)
     assert _lease_base(_Stub((True, newer, 5 * 4096)), None, lease) is None

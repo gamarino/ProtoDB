@@ -135,6 +135,7 @@ from typing import Optional
 import msgpack
 
 from ..errors import ProtoCorruptionError
+from ..storage import format as _format
 from ..storage.format import WRITE_FORMAT_VERSION, RootRecord
 
 __all__ = ["PROTOCOL_VERSION", "MAX_FRAME_BYTES", "CHUNK_BYTES", "MAX_RECORD_BYTES", "MESSAGE_TYPES",
@@ -166,7 +167,14 @@ __all__ = ["PROTOCOL_VERSION", "MAX_FRAME_BYTES", "CHUNK_BYTES", "MAX_RECORD_BYT
 #: 13: pipelined permissions (Task 8.3k, D55): the ``store`` and ``propose`` messages,
 #: ``permit.after``; ``replicate`` loses ``pred_committed`` (voters accept a same-term root only
 #: by extension of what they hold, rule V2').
-PROTOCOL_VERSION = 13
+#: 14: the records carried by ``replicate``, ``records``, ``store``, ``warm`` and ``fetched`` may
+#: be format-5 records (the feature ``parents``, ruling R151).  The message layout is unchanged;
+#: what changes is what a record may hold and what a receiver must do with it: a receiver that
+#: writes records into a segment file it did not create writes the header version of the
+#: segment's first record (the highest version when it lacks that record).  A protocol-13 node
+#: would write a version-4 header over format-5 records and read them as format 4, so the two
+#: versions must not exchange messages.
+PROTOCOL_VERSION = 14
 #: Largest accepted frame payload, in bytes (a replicate message carries a commit's records).
 MAX_FRAME_BYTES = 64 * 1024 * 1024
 #: Record bytes a replication puts in one frame at most (a single record may fill one alone).
@@ -345,25 +353,38 @@ class FrameDecoder:
 
 def encode_root(record: Optional[RootRecord], *, known: bool, term: int = 0):
     """Wire form of a root: ``None`` (unknown), ``[0, None, None, term]`` (known empty space)
-    or ``[epoch, segment UUID bytes, offset, term]``; ``term`` is the root's label (D46)."""
+    or ``[epoch, segment UUID bytes, offset, term]``; ``term`` is the root's label (D46).  A
+    root of a format version above :data:`~proto_db.storage.format.WRITE_FORMAT_VERSION` adds
+    its version as a fifth element (protocol 14), so the version a committer gave the root
+    reaches every acceptor and the persisted root; a root of the base version keeps the
+    four-element form."""
     if not known:
         return None
     if record is None:
         return [0, None, None, term]
+    if record.version > WRITE_FORMAT_VERSION:
+        return [record.epoch, record.segment.bytes, record.offset, term, record.version]
     return [record.epoch, record.segment.bytes, record.offset, term]
 
 
 def decode_labeled_root(value) -> tuple:
     """Inverse of :func:`encode_root`: ``(known, RootRecord or None, term)``.
 
-    A three-element value (no term) is accepted with term ``0``.
+    A three-element value (no term) is accepted with term ``0``; a five-element one carries the
+    root's format version, which must be one this version reads (``ClusterProtocolError``
+    otherwise: the message is dropped, never read as another version).
     """
     if value is None:
         return False, None, 0
-    if not isinstance(value, (list, tuple)) or len(value) not in (3, 4):
+    if not isinstance(value, (list, tuple)) or len(value) not in (3, 4, 5):
         raise ClusterProtocolError(f"Malformed root {value!r}")
     epoch, segment, offset = value[:3]
-    term = value[3] if len(value) == 4 else 0
+    term = value[3] if len(value) >= 4 else 0
+    version = value[4] if len(value) == 5 else WRITE_FORMAT_VERSION
+    if type(version) is not int or version <= WRITE_FORMAT_VERSION and len(value) == 5:
+        raise ClusterProtocolError(f"Malformed root format version {value!r}")
+    if version not in _format.READABLE_FORMAT_VERSIONS:
+        raise ClusterProtocolError(f"A root of format version {version}, which this version does not read")
     if type(epoch) is not int or epoch < 0 or type(term) is not int or term < 0:
         raise ClusterProtocolError(f"Malformed root epoch or term {value!r}")
     if epoch == 0:
@@ -372,7 +393,7 @@ def decode_labeled_root(value) -> tuple:
         return True, None, term
     if not isinstance(segment, bytes) or len(segment) != 16 or type(offset) is not int or offset < 0:
         raise ClusterProtocolError(f"Malformed root pointer {value!r}")
-    return True, RootRecord(WRITE_FORMAT_VERSION, uuid.UUID(bytes=segment), offset, epoch), term
+    return True, RootRecord(version, uuid.UUID(bytes=segment), offset, epoch), term
 
 
 def decode_root(value) -> tuple:
