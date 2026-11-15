@@ -37,7 +37,7 @@ pytestmark = [pytest.mark.timeout(120)]
 _PACKAGE = "tests.unit.registry_modules"
 _FIXTURES = ("reg7_base", "reg7_contacts", "reg7_crm", "reg7_a", "reg7_b", "reg7_c", "reg7_d",
              "reg7_cyc_x", "reg7_cyc_y", "reg7_y", "reg7_importcommit", "reg7_peek", "reg7_peekcommit",
-             "reg7_selfinstall")
+             "reg7_selfinstall", "reg7_halfcommit", "reg7_halfresolve")
 MAPPING = {name: f"{_PACKAGE}.{name}" for name in _FIXTURES}
 
 
@@ -443,7 +443,8 @@ def driver():
     reg7_driver.go.clear()
     yield reg7_driver
     reg7_driver.db = reg7_driver.tr = reg7_driver.committing = reg7_driver.selfinstall = None
-    del reg7_driver.peeked[:], reg7_driver.seen[:], reg7_driver.selfinstall_errors[:]
+    reg7_driver.half = None
+    del reg7_driver.peeked[:], reg7_driver.seen[:], reg7_driver.selfinstall_errors[:], reg7_driver.half_seen[:]
 
 
 def test_an_import_whose_code_commits_never_deadlocks_a_commit_that_needs_the_module(tmp_path, monkeypatch,
@@ -530,6 +531,55 @@ def test_install_module_refuses_a_module_this_thread_is_still_importing(db, driv
     tr.install_module("reg7_selfinstall")       # imported now: every extension is planned
     assert tr.catalog_object("reg7.SelfFirst") is not None and tr.catalog_object("reg7.SelfSecond") is not None
     tr.abort()
+
+
+def _open_listing(tmp_path, module_name):
+    """A file-storage space whose database ``db`` lists ``module_name``, installed by another
+    process, so this process has not imported it (final review C1)."""
+    path = str(tmp_path / "space")
+    first = _space(FileStorage(path))
+    first.new_database("db")
+    first.close()
+    _install_in_another_process(path, module_name)
+    space = _space(FileStorage(path))
+    return space, space.open_database("db")
+
+
+def test_an_import_time_commit_never_caches_a_half_declared_registry(tmp_path, driver):
+    """Final review C1 (ruling R234), probe p7: the import-time code of a listed module commits
+    between its two extensions.  The commit's prebuild used to build the list's registry from the
+    first extension only and cache it for the process: ``late`` then read ``None`` forever.  The
+    build is refused (the commit itself succeeds), and nothing is cached."""
+    space, db = _open_listing(tmp_path, "reg7_halfcommit")
+    try:
+        driver.half = db
+        importlib.import_module(MAPPING["reg7_halfcommit"])
+        assert driver.half_seen == ["committed"]            # the import-time commit landed
+        with db.new_transaction() as tr:
+            assert tr.get_root_object("seeded") == 1
+            obj = tr.new_object(parents=("reg7.Half",))
+            assert (obj.early, obj.late) == ("early", "late")
+    finally:
+        space.close()
+
+
+def test_an_import_time_resolution_is_refused_and_caches_nothing(tmp_path, driver):
+    """Final review C1 (ruling R234), probe p6: a lookup through the registry of a database that
+    lists a module, made by that module's import-time code, raises ``ProtoUserError`` naming the
+    module; after the import a lookup builds the full registry."""
+    space, db = _open_listing(tmp_path, "reg7_halfresolve")
+    try:
+        driver.half = db
+        importlib.import_module(MAPPING["reg7_halfresolve"])
+        assert len(driver.half_seen) == 1
+        error = driver.half_seen[0]
+        assert isinstance(error, ProtoUserError), error
+        assert "'reg7_halfresolve'" in str(error) and "import-time code" in str(error)
+        with db.new_transaction() as tr:
+            obj = tr.new_object(parents=("reg7.HalfResolve",))
+            assert (obj.early, obj.late) == ("early", "late")
+    finally:
+        space.close()
 
 
 def test_an_install_that_adds_nothing_ignores_another_threads_import(db, monkeypatch, driver):

@@ -2790,6 +2790,8 @@ class Transaction:
                 self._space_registries.registry(self._database.name, binding)
             except ProtoNotSupportedError:
                 pass                # remembered by registry_for (R202), raised where resolution needs it
+            except _registry.ModulesBeingImported:
+                pass                # this thread is importing a listed module: nothing built (R234)
 
     def catalog_object(self, registry_name: str) -> Optional[DBObject]:
         """The catalog object of ``registry_name`` as this transaction sees it (its own update or
@@ -2910,9 +2912,12 @@ class Transaction:
         space = self._database.space
         try:
             _registry.Registry.build(names, mapping=space.modules_mapping, allowed=space.modules_allowed)
+        except _registry.ModulesBeingImported as e:
+            unfinished = e.names
         except ProtoDBError as e:
             raise self._union_conflict(names, e) from e
-        unfinished = _registry.not_fully_imported(names, space.modules_mapping)
+        else:
+            unfinished = _registry.not_fully_imported(names, space.modules_mapping)
         if unfinished:
             concurrent = [name for name in unfinished if name not in self._own_modules]
             if len(concurrent) == len(unfinished):

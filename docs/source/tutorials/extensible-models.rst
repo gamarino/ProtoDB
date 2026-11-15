@@ -401,7 +401,9 @@ set either, so an install never makes ordinary work conflict. On a storage whose
 (``CloudStorage`` shared by several processes) a commit that installs can still lose the root's
 compare-and-swap, like any commit; it then raises ``ProtoConflictError`` and ``Database.run`` retries it,
 merging onto the winner. No module is ever imported while the root lock is held: a module's import-time code
-may itself commit.
+may itself commit. It must not resolve registry objects of a database that lists the module being imported:
+that lookup raises ``ModulesBeingImported`` (a ``ProtoUserError``) and nothing is cached, so the first lookup
+after the import sees the whole module.
 
 5. A second module extends the first, with ``_super``
 -----------------------------------------------------

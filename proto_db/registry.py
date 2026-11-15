@@ -140,7 +140,12 @@ Installing and the commit (spec section 7, 14 items 3 and 4)
     modules a concurrent commit installed is a retryable ``ProtoConflictError`` naming them; a
     retry installs on the list as it is then, and ``install_module`` states the real refusal.
     ``install_module`` refuses a module the calling thread is still importing
-    (``ProtoUserError``): its declarations so far are not the module's.  Reading the registry roots for resolution
+    (``ProtoUserError``): its declarations so far are not the module's.  For the same reason a build
+    of a list naming a module the calling thread is still importing is refused,
+    :class:`ModulesBeingImported` (ruling R234): import-time code may commit (the commit's prebuild
+    keeps the error, the commit succeeds), but it must not resolve registry objects of a database
+    that lists the module; nothing is cached, so the first lookup after the import builds the whole
+    registry.  Reading the registry roots for resolution
     (``installed_modules``, ``catalog_object``) never enters the read set: installs are additive,
     so a transaction that resolved with the older list committed a state that list described.
 
@@ -179,7 +184,7 @@ from .errors import (ProtoConflictError, ProtoCorruptionError, ProtoDBError, Pro
 from . import resolution as _resolution
 from .values import canonical, check_text, is_atom
 
-__all__ = ["module", "ModuleHandle", "Extension", "Registry", "METHOD", "DATA", "using",
+__all__ = ["module", "ModuleHandle", "Extension", "Registry", "METHOD", "DATA", "using", "ModulesBeingImported",
            "current_registry", "registry_for", "no_builds", "ModuleList", "Catalog", "MODULES_ROOT", "CATALOG_ROOT"]
 
 #: The root holding the installed modules (a :class:`ModuleList`).
@@ -535,7 +540,10 @@ class Registry:
         """Import the modules ``module_names`` (in installation order) and build their registry.
 
         A non-empty list must start with ``base`` (ruling R205), which has no dependencies;
-        otherwise ``ProtoValidationError``.  With ``imports=False`` nothing is imported: a module
+        otherwise ``ProtoValidationError``.  A listed module the calling thread is still importing
+        (its import-time code resolved or committed through this list) is
+        :class:`ModulesBeingImported`, a ``ProtoUserError``, and nothing is built (ruling R234).
+        With ``imports=False`` nothing is imported: a module
         that is not already fully imported
         raises :class:`ModulesNotImported` (internal, not a ``ProtoDBError``), naming the modules
         to import first.  The commit uses it under the root lock, where an import may deadlock."""
@@ -552,6 +560,12 @@ class Registry:
         mapping = {} if mapping is None else mapping
         if imports:
             sources = {name: _import(name, _path(name, mapping)) for name in names}
+            # ``import_module`` returns a module this very thread is still importing (another
+            # thread's import is waited for): its declarations so far are not the module's, and a
+            # registry built from them would be cached with half a module (final review C1).
+            unfinished = being_imported(names, mapping)
+            if unfinished:
+                raise ModulesBeingImported(unfinished)
         else:
             sources = {name: _imported(_path(name, mapping)) for name in names}
             missing = tuple(name for name in names if sources[name] is None)
@@ -598,6 +612,20 @@ class ModulesNotImported(Exception):
 
     def __init__(self, names: tuple):
         super().__init__(f"Modules not imported yet: {', '.join(names)}")
+        self.names = names
+
+
+class ModulesBeingImported(ProtoUserError):
+    """:meth:`Registry.build` was asked to import modules that the calling thread is still
+    importing (``names``): a module's import-time code resolved, or committed, through the
+    registry of a database that lists it (ruling R234).  Nothing is built nor cached; a lookup
+    made after the import finished builds the registry normally."""
+
+    def __init__(self, names: tuple):
+        super().__init__(
+            f"Module(s) {', '.join(map(repr, names))} are still being imported by this thread: a module's "
+            f"import-time code must not resolve registry objects of a database that lists it (nor commit an "
+            f"install whose list needs it); nothing was built, and a lookup after the import builds the registry")
         self.names = names
 
 

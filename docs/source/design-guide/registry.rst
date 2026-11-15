@@ -121,7 +121,11 @@ Installs merge add-if-absent
     storage whose root lock is not global (``CloudStorage`` across processes) can still lose the root's
     compare-and-swap like any commit; it raises ``ProtoConflictError`` and ``Database.run`` retries it. No
     module is ever imported under a lock: a module's import-time code may itself commit, and would wait for
-    the lock its importer holds.
+    the lock its importer holds. That code must not resolve registry objects of a database that lists the
+    module being imported, though: its declarations so far are half the module, so the build of that list's
+    registry raises ``ModulesBeingImported`` (a ``ProtoUserError`` naming the module) and caches nothing; an
+    import-time commit still succeeds, and the first lookup after the import builds the whole registry
+    (R234).
 
 Which registry resolves an object (R201)
     The code doing the resolving decides, never the order in which records were loaded or the state of a

@@ -30,7 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     a database object is refused at import (`ProtoValidationError`). `self._super()` reaches the next definition
     with the same `self` (a miss is `None`; refused outside a registry method and in generators, allowed in
     coroutine methods). A registry name no module extends is an empty node; `Registry.unknown_names` lists such
-    names. Registry module names are process-global (one name, one Python module per process).
+    names. Registry module names are process-global (one name, one Python module per process). A lookup made by a
+    module's import-time code through the registry of a database that lists that module raises
+    `ModulesBeingImported` (a `ProtoUserError`) and caches nothing; an import-time commit still succeeds.
   - `Transaction.install_module`, `installed_modules`, `registry`, `catalog_object` and `set_catalog_object`;
     the roots `__currentModules` and `__catalog` (format-5 feature `registry`, built-in type aliases 22 and 23),
     merged add-if-absent at commit, so concurrent installs never conflict with each other. Installing is

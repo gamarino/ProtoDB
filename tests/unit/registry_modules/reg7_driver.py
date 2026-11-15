@@ -14,3 +14,6 @@ seen = []
 #: ``reg7_selfinstall``: a transaction its import-time code installs it into, and what that raised.
 selfinstall = None
 selfinstall_errors = []
+#: ``reg7_halfcommit`` and ``reg7_halfresolve``: the database their import-time code uses, and what it saw.
+half = None
+half_seen = []
