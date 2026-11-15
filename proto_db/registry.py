@@ -58,6 +58,23 @@ The registry
     empty node for resolution (no definitions, no parents), so a misspelt parent name is not an
     error there; :meth:`Registry.unknown_names` lists such names, for tooling to flag typos.
 
+The module ``base`` (rulings R204, R205, R207)
+    :mod:`proto_db.modules.base` declares the registry module ``base`` (the default mapping maps
+    the name ``base`` to it; a runtime's ``mapping`` may point it elsewhere).  It has no
+    dependencies and extends the registry name ``base``.  A non-empty module list must start
+    with ``base`` (:meth:`Registry.build` refuses any other with ``ProtoValidationError``, and a
+    ``base`` that declares dependencies likewise), and ``install_module`` adds it first, by the
+    same add-if-absent merge, to a database whose list lacks it; a database that never installs a
+    module has no ``base``.  ``base`` is allowed whatever the runtime's ``allowed`` set.  In a
+    registry that has it, every other registry name -- extended or not -- has ``base`` as its
+    implicit last parent (:meth:`Registry.parents_of`; a ``base`` named among ``parents=`` is
+    placed last too), so C3 places the ``base`` node after every other registry name: an object
+    whose parents reach any registry name finds ``base``'s definitions last, a module's
+    definition of the same name shadows it, and ``_super()`` from a module method reaches it.
+    An object with no registry-name parent never reaches ``base``.  An object that lists
+    ``base`` explicitly before another registry name has no C3 order (``ProtoValidationError``);
+    a module that gives the name ``base`` parents makes a registry-name parent cycle.
+
 Errors (all explicit)
     - a module outside ``allowed``, a repeated or invalid name, a dependency cycle, a cycle of
       registry-name parents: ``ProtoValidationError``;
@@ -91,7 +108,8 @@ Persisted state (spec section 3)
 
 Installing and the commit (spec section 7, 14 items 3 and 4)
     ``Transaction.install_module(name)`` imports the module to learn its ``depends``
-    (:func:`install_plan`), adds the modules the list lacks, dependencies first, and a catalog
+    (:func:`install_plan`), adds the modules the list lacks (``base`` first when the list lacks
+    it, then the dependencies before the module that needs them), and a catalog
     object for each registry name that has none; it builds the resulting list's registry once
     to refuse a list that could never be loaded.  Nothing of a refused install stays pending.
     At commit both roots merge **add-if-absent against the root current at commit time**
@@ -160,6 +178,10 @@ __all__ = ["module", "ModuleHandle", "Extension", "Registry", "METHOD", "DATA", 
 MODULES_ROOT = "__currentModules"
 #: The root holding the catalog objects by registry name (a :class:`Catalog`; spec Q5).
 CATALOG_ROOT = "__catalog"
+#: The registry module ``base``, and the registry name it extends (rulings R204, R205).
+BASE = "base"
+#: The import path of a module name a runtime's ``mapping`` does not map (otherwise the name itself).
+_DEFAULT_PATHS = types.MappingProxyType({BASE: "proto_db.modules.base"})
 _REGISTRY_FEATURE = frozenset({"registry"})
 
 #: The kinds of a definition.
@@ -214,6 +236,19 @@ def _check_names(what: str, names, *, exclude: str | None = None, itself: str = 
     if exclude is not None and exclude in seen:
         raise ProtoValidationError(itself)
     return tuple(names)
+
+
+def _path(name: str, mapping: Mapping) -> str:
+    """The import path of the registry module ``name``: the runtime's ``mapping``, else the
+    default (``base`` is :mod:`proto_db.modules.base`), else the name itself."""
+    return mapping.get(name, _DEFAULT_PATHS.get(name, name))
+
+
+def _check_allowed(name: str, allowed: Container | None) -> None:
+    """``ProtoValidationError`` for a module outside ``allowed``; ``base`` is always allowed
+    (ruling R207: every database that installs a module has it)."""
+    if allowed is not None and name != BASE and name not in allowed:
+        raise ProtoValidationError(f"Module {name!r} is not allowed by this runtime's configuration")
 
 
 def _caller_module(depth: int = 2) -> str | None:
@@ -424,10 +459,12 @@ class Registry:
     """The registry of a module list, in memory: its definitions are immutable once built (see the
     module docstring); it carries only an internal, idempotent memo of checks already passed."""
 
-    __slots__ = ("key", "extensions", "_chains", "_parents", "_codes", "_checked")
+    __slots__ = ("key", "extensions", "_chains", "_parents", "_codes", "_checked", "_sources")
 
-    def __init__(self, key, extensions, chains, parents, codes):
+    def __init__(self, key, extensions, chains, parents, codes, sources=None):
         osa = object.__setattr__
+        #: The Python module that declared each registry module, by name (``read_data_file``).
+        osa(self, "_sources", types.MappingProxyType(dict(sources or {})))
         #: The module names in load order.
         osa(self, "key", key)
         #: Every extension, in load order (by module, then by declaration).
@@ -454,8 +491,18 @@ class Registry:
 
     def parents_of(self, registry_name: str) -> tuple:
         """The registry-name parents of ``registry_name``: the union of its extensions'
-        ``parents=``, in load order, each once."""
-        return self._parents.get(registry_name, ())
+        ``parents=``, in load order, each once, then ``base`` (ruling R204: when the registry
+        has the module ``base``, every other registry name, extended or not, has it as its
+        implicit last parent; ``base`` named among ``parents=`` is placed there too)."""
+        found = self._parents.get(registry_name)
+        if found is not None:
+            return found
+        return (BASE,) if registry_name != BASE and BASE in self.key else ()
+
+    def source_of(self, module_name: str) -> str | None:
+        """The name of the Python module that declared the registry module ``module_name``, or
+        ``None`` when the registry does not contain it."""
+        return self._sources.get(module_name)
 
     def unknown_names(self, names) -> tuple:
         """The names among ``names`` (registry names, in the order given, each once) that no module
@@ -473,21 +520,26 @@ class Registry:
               allowed: Container | None = None, imports: bool = True) -> "Registry":
         """Import the modules ``module_names`` (in installation order) and build their registry.
 
-        With ``imports=False`` nothing is imported: a module that is not already fully imported
+        A non-empty list must start with ``base`` (ruling R205), which has no dependencies;
+        otherwise ``ProtoValidationError``.  With ``imports=False`` nothing is imported: a module
+        that is not already fully imported
         raises :class:`ModulesNotImported` (internal, not a ``ProtoDBError``), naming the modules
         to import first.  The commit uses it under the root lock, where an import may deadlock."""
         if not isinstance(module_names, tuple):
             raise ProtoValidationError(
                 f"module_names must be a tuple of module names, not {type(module_names).__name__}")
         names = _check_names("The module list", module_names)
+        if names and names[0] != BASE:
+            raise ProtoValidationError(
+                f"The module list {list(names)} must start with the module {BASE!r} (ruling R205: it is "
+                f"installed first in every database that installs a module)")
         for name in names:
-            if allowed is not None and name not in allowed:
-                raise ProtoValidationError(f"Module {name!r} is not allowed by this runtime's configuration")
+            _check_allowed(name, allowed)
         mapping = {} if mapping is None else mapping
         if imports:
-            sources = {name: _import(name, mapping.get(name, name)) for name in names}
+            sources = {name: _import(name, _path(name, mapping)) for name in names}
         else:
-            sources = {name: _imported(mapping.get(name, name)) for name in names}
+            sources = {name: _imported(_path(name, mapping)) for name in names}
             missing = tuple(name for name in names if sources[name] is None)
             if missing:
                 raise ModulesNotImported(missing)
@@ -501,12 +553,16 @@ class Registry:
                 raise ProtoNotSupportedError(
                     f"Module {name!r}: the Python module {sources[name]!r} declares no registry module "
                     f"named {name!r}")
+            if name == BASE and handle.depends:
+                raise ProtoValidationError(
+                    f"Module {BASE!r} has no dependencies; the Python module {handle.source!r} declares "
+                    f"{list(handle.depends)}")
             for dependency in handle.depends:
                 if dependency not in handles:
                     raise ProtoNotSupportedError(
                         f"Module {name!r} depends on {dependency!r}, which is not installed")
         order = _load_order(names, {name: handles[name].depends for name in names})
-        return _assemble(order, declared)
+        return _assemble(order, declared, sources)
 
 
 def _import(name: str, path) -> str:
@@ -542,14 +598,14 @@ def _imported(path) -> str | None:
 
 def being_imported(names: tuple, mapping: Mapping) -> tuple:
     """The modules of ``names`` (each once) whose import has started and not finished."""
-    found = (sys.modules.get(mapping.get(name, name)) for name in dict.fromkeys(names))
+    found = (sys.modules.get(_path(name, mapping)) for name in dict.fromkeys(names))
     return tuple(name for name, module in zip(dict.fromkeys(names), found)
                  if module is not None and getattr(getattr(module, "__spec__", None), "_initializing", False))
 
 
 def not_fully_imported(names: tuple, mapping: Mapping) -> tuple:
     """The modules of ``names`` (each once) that are not imported, or whose import has not finished."""
-    return tuple(name for name in dict.fromkeys(names) if _imported(mapping.get(name, name)) is None)
+    return tuple(name for name in dict.fromkeys(names) if _imported(_path(name, mapping)) is None)
 
 
 def _load_order(names: tuple, depends: dict) -> tuple:
@@ -591,7 +647,7 @@ def _cycle(nodes, edges: dict) -> list | None:
     return None
 
 
-def _assemble(order: tuple, declared: dict) -> Registry:
+def _assemble(order: tuple, declared: dict, sources: Mapping | None = None) -> Registry:
     by_name: dict[str, list] = {}
     for name in order:
         for item in declared.get(name, ()):
@@ -606,6 +662,9 @@ def _assemble(order: tuple, declared: dict) -> Registry:
         union = {}
         for _, item in items:
             union.update(dict.fromkeys(item.parents))
+        if BASE in order and registry_name != BASE:
+            union.pop(BASE, None)
+            union[BASE] = None              # the implicit last parent (ruling R204)
         parents[registry_name] = tuple(union)
     extensions = []
     for name in order:
@@ -626,7 +685,7 @@ def _assemble(order: tuple, declared: dict) -> Registry:
                     seen[key] = here
                 codes[value.__code__] = extension
     _check_parent_cycles(parents)
-    return Registry(order, tuple(extensions), chains, parents, codes)
+    return Registry(order, tuple(extensions), chains, parents, codes, sources)
 
 
 def _check_parent_cycles(parents: dict) -> None:
@@ -684,14 +743,13 @@ def registry_for(module_names: tuple, *, mapping: Mapping | None = None,
         raise ProtoValidationError(
             f"module_names must be a tuple of module names, not {type(module_names).__name__}")
     mapping = {} if mapping is None else mapping
-    key = (module_names, tuple(mapping.get(name, name) for name in module_names))
+    key = (module_names, tuple(_path(name, mapping) for name in module_names))
     with _REGISTRIES_LOCK:
         found = _REGISTRIES.get(key)
         failed = _FAILED.get(key)
     if found is not None:
         for name in module_names:
-            if allowed is not None and name not in allowed:
-                raise ProtoValidationError(f"Module {name!r} is not allowed by this runtime's configuration")
+            _check_allowed(name, allowed)
         return found
     if failed is not None:
         error = ProtoNotSupportedError(f"{failed} (this failure is remembered for this module list in this process)")
@@ -715,7 +773,7 @@ def forget_failure(module_names: tuple, mapping: Mapping | None = None) -> None:
     """Let :func:`registry_for` try to build ``module_names`` again (``ObjectSpace.reload_registry``)."""
     mapping = {} if mapping is None else mapping
     with _REGISTRIES_LOCK:
-        _FAILED.pop((module_names, tuple(mapping.get(name, name) for name in module_names)), None)
+        _FAILED.pop((module_names, tuple(_path(name, mapping) for name in module_names)), None)
 
 
 def current_registry() -> "Registry | None":
@@ -892,7 +950,8 @@ def merged_catalog(current: Catalog | None, additions: Mapping, handed_out, cont
 
 
 def install_plan(name: str, installed: tuple, mapping: Mapping, allowed: Container | None) -> tuple:
-    """``(additions, introduced)`` for installing ``name`` over the list ``installed``.
+    """``(additions, introduced)`` for installing ``name`` over the list ``installed``; ``base``
+    comes first in ``additions`` when ``installed`` lacks it (ruling R205).
 
     The modules reachable from ``name`` through the ``depends`` their code declares are imported
     (spec 14 item 8).  ``additions`` are the ``(name, depends)`` pairs of those not in
@@ -914,8 +973,15 @@ def install_plan(name: str, installed: tuple, mapping: Mapping, allowed: Contain
         path.append(module_name)
         stack.append(iter(handle.depends))
 
-    enter(name)
-    while stack:
+    # ``base`` is installed first, before anything else, when the list lacks it (ruling R205).
+    roots = [name] if BASE in present or name == BASE else [BASE, name]
+    enter(roots.pop(0))
+    while stack or roots:
+        if not stack:
+            if roots[0] not in state:
+                enter(roots[0])
+            roots.pop(0)
+            continue
         child = next((d for d in stack[-1] if state.get(d) != 2), None)
         if child is None:
             done = path.pop()
@@ -936,9 +1002,8 @@ def install_plan(name: str, installed: tuple, mapping: Mapping, allowed: Contain
 def _declaration(name: str, mapping: Mapping, allowed: Container | None) -> ModuleHandle:
     """The declaration of the module ``name``, imported through ``mapping``; refused outside
     ``allowed`` (see :func:`install_plan`)."""
-    if allowed is not None and name not in allowed:
-        raise ProtoValidationError(f"Module {name!r} is not allowed by this runtime's configuration")
-    source = _import(name, mapping.get(name, name))
+    _check_allowed(name, allowed)
+    source = _import(name, _path(name, mapping))
     with _LOCK:
         handle = _DECLARATIONS.get(name)
     if handle is None or handle.source != source:

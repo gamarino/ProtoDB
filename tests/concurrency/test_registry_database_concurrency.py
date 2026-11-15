@@ -15,6 +15,7 @@ import pytest
 
 from proto_db import registry as registry_module
 from proto_db.storage.memory import MemoryStorage
+from proto_db.registry import BASE
 from proto_db.transactions import ObjectSpace
 from tests.concurrency.harness import report, run_threads
 
@@ -77,7 +78,7 @@ def test_reload_racing_with_resolutions():
     def reloader():
         reloads = 0
         while not stop.is_set() and reloads < ROUNDS * 4:
-            assert space.reload_registry("db").key == ("reg8_base", "reg8_extra")
+            assert space.reload_registry("db").key == (BASE, "reg8_base", "reg8_extra")
             reloads += 1
 
     def resolvers_then_stop():

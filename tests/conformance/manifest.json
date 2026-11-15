@@ -22486,10 +22486,26 @@
      {
       "offset": 26,
       "kind": 1,
-      "size": 66,
+      "size": 58,
       "tag": 19,
       "type": "proto_db.core.dbobject.DBObject",
       "oid": "5eed0000000040008000000000006013",
+      "state": [],
+      "parents": [
+       {
+        "str": "base"
+       }
+      ],
+      "canonical": true,
+      "rewritable": true
+     },
+     {
+      "offset": 84,
+      "kind": 1,
+      "size": 66,
+      "tag": 19,
+      "type": "proto_db.core.dbobject.DBObject",
+      "oid": "5eed0000000040008000000000006015",
       "state": [],
       "parents": [
        {
@@ -22500,12 +22516,12 @@
       "rewritable": true
      },
      {
-      "offset": 92,
+      "offset": 150,
       "kind": 1,
       "size": 70,
       "tag": 19,
       "type": "proto_db.core.dbobject.DBObject",
-      "oid": "5eed0000000040008000000000006015",
+      "oid": "5eed0000000040008000000000006016",
       "state": [],
       "parents": [
        {
@@ -22516,17 +22532,27 @@
       "rewritable": true
      },
      {
-      "offset": 162,
+      "offset": 220,
       "kind": 1,
-      "size": 139,
+      "size": 158,
       "tag": 22,
       "type": "proto_db.registry.ModuleList",
-      "oid": "5eed0000000040008000000000006016",
+      "oid": "5eed0000000040008000000000006017",
       "state": [
        [
         "modules",
         {
          "tuple": [
+          {
+           "tuple": [
+            {
+             "str": "base"
+            },
+            {
+             "tuple": []
+            }
+           ]
+          },
           {
            "tuple": [
             {
@@ -22559,17 +22585,17 @@
       "rewritable": true
      },
      {
-      "offset": 301,
+      "offset": 378,
       "kind": 1,
-      "size": 126,
+      "size": 122,
       "tag": 0,
       "type": "proto_db.avl.KeyNode",
-      "oid": "5eed0000000040008000000000006019",
+      "oid": "5eed000000004000800000000000601a",
       "state": [
        [
         "key",
         {
-         "str": "acme.sales.Order"
+         "str": "acme.Partner"
         }
        ],
        [
@@ -22577,7 +22603,7 @@
         {
          "ref": {
           "segment": "5eed0000000040008000000000006014",
-          "offset": 92,
+          "offset": 84,
           "type": "proto_db.core.dbobject.DBObject"
          }
         }
@@ -22611,17 +22637,17 @@
       "rewritable": true
      },
      {
-      "offset": 427,
+      "offset": 500,
       "kind": 1,
-      "size": 150,
+      "size": 114,
       "tag": 0,
       "type": "proto_db.avl.KeyNode",
-      "oid": "5eed000000004000800000000000601a",
+      "oid": "5eed000000004000800000000000601b",
       "state": [
        [
         "key",
         {
-         "str": "acme.Partner"
+         "str": "base"
         }
        ],
        [
@@ -22643,9 +22669,65 @@
        [
         "right",
         {
+         "nil": null
+        }
+       ],
+       [
+        "height",
+        {
+         "int": "1"
+        }
+       ],
+       [
+        "count",
+        {
+         "int": "1"
+        }
+       ]
+      ],
+      "canonical": true,
+      "rewritable": true
+     },
+     {
+      "offset": 614,
+      "kind": 1,
+      "size": 183,
+      "tag": 0,
+      "type": "proto_db.avl.KeyNode",
+      "oid": "5eed000000004000800000000000601c",
+      "state": [
+       [
+        "key",
+        {
+         "str": "acme.sales.Order"
+        }
+       ],
+       [
+        "value",
+        {
          "ref": {
           "segment": "5eed0000000040008000000000006014",
-          "offset": 301,
+          "offset": 150,
+          "type": "proto_db.core.dbobject.DBObject"
+         }
+        }
+       ],
+       [
+        "left",
+        {
+         "ref": {
+          "segment": "5eed0000000040008000000000006014",
+          "offset": 378,
+          "type": "proto_db.avl.KeyNode"
+         }
+        }
+       ],
+       [
+        "right",
+        {
+         "ref": {
+          "segment": "5eed0000000040008000000000006014",
+          "offset": 500,
           "type": "proto_db.avl.KeyNode"
          }
         }
@@ -22659,7 +22741,7 @@
        [
         "count",
         {
-         "int": "2"
+         "int": "3"
         }
        ]
       ],
@@ -22667,12 +22749,12 @@
       "rewritable": true
      },
      {
-      "offset": 577,
+      "offset": 797,
       "kind": 1,
       "size": 50,
       "tag": 3,
       "type": "proto_db.collections.IndexSet",
-      "oid": "5eed000000004000800000000000601b",
+      "oid": "5eed000000004000800000000000601d",
       "state": [
        [
         "root",
@@ -22685,19 +22767,19 @@
       "rewritable": true
      },
      {
-      "offset": 627,
+      "offset": 847,
       "kind": 1,
       "size": 122,
       "tag": 6,
       "type": "proto_db.collections.Dictionary",
-      "oid": "5eed000000004000800000000000601c",
+      "oid": "5eed000000004000800000000000601e",
       "state": [
        [
         "root",
         {
          "ref": {
           "segment": "5eed0000000040008000000000006014",
-          "offset": 427,
+          "offset": 614,
           "type": "proto_db.avl.KeyNode"
          }
         }
@@ -22705,7 +22787,7 @@
        [
         "count",
         {
-         "int": "2"
+         "int": "3"
         }
        ],
        [
@@ -22713,7 +22795,7 @@
         {
          "ref": {
           "segment": "5eed0000000040008000000000006014",
-          "offset": 577,
+          "offset": 797,
           "type": "proto_db.collections.IndexSet"
          }
         }
@@ -22723,19 +22805,19 @@
       "rewritable": true
      },
      {
-      "offset": 749,
+      "offset": 969,
       "kind": 1,
       "size": 81,
       "tag": 23,
       "type": "proto_db.registry.Catalog",
-      "oid": "5eed0000000040008000000000006017",
+      "oid": "5eed0000000040008000000000006018",
       "state": [
        [
         "entries",
         {
          "ref": {
           "segment": "5eed0000000040008000000000006014",
-          "offset": 627,
+          "offset": 847,
           "type": "proto_db.collections.Dictionary"
          }
         }
@@ -22745,12 +22827,12 @@
       "rewritable": true
      },
      {
-      "offset": 830,
+      "offset": 1050,
       "kind": 1,
       "size": 121,
       "tag": 0,
       "type": "proto_db.avl.KeyNode",
-      "oid": "5eed000000004000800000000000601d",
+      "oid": "5eed000000004000800000000000601f",
       "state": [
        [
         "key",
@@ -22763,7 +22845,7 @@
         {
          "ref": {
           "segment": "5eed0000000040008000000000006014",
-          "offset": 749,
+          "offset": 969,
           "type": "proto_db.registry.Catalog"
          }
         }
@@ -22797,12 +22879,12 @@
       "rewritable": true
      },
      {
-      "offset": 951,
+      "offset": 1171,
       "kind": 1,
       "size": 117,
       "tag": 0,
       "type": "proto_db.avl.KeyNode",
-      "oid": "5eed000000004000800000000000601e",
+      "oid": "5eed0000000040008000000000006020",
       "state": [
        [
         "key",
@@ -22849,12 +22931,12 @@
       "rewritable": true
      },
      {
-      "offset": 1068,
+      "offset": 1288,
       "kind": 1,
       "size": 183,
       "tag": 0,
       "type": "proto_db.avl.KeyNode",
-      "oid": "5eed000000004000800000000000601f",
+      "oid": "5eed0000000040008000000000006021",
       "state": [
        [
         "key",
@@ -22867,7 +22949,7 @@
         {
          "ref": {
           "segment": "5eed0000000040008000000000006014",
-          "offset": 162,
+          "offset": 220,
           "type": "proto_db.registry.ModuleList"
          }
         }
@@ -22877,7 +22959,7 @@
         {
          "ref": {
           "segment": "5eed0000000040008000000000006014",
-          "offset": 830,
+          "offset": 1050,
           "type": "proto_db.avl.KeyNode"
          }
         }
@@ -22887,7 +22969,7 @@
         {
          "ref": {
           "segment": "5eed0000000040008000000000006014",
-          "offset": 951,
+          "offset": 1171,
           "type": "proto_db.avl.KeyNode"
          }
         }
@@ -22909,19 +22991,19 @@
       "rewritable": true
      },
      {
-      "offset": 1251,
+      "offset": 1471,
       "kind": 1,
       "size": 120,
       "tag": 6,
       "type": "proto_db.collections.Dictionary",
-      "oid": "5eed0000000040008000000000006020",
+      "oid": "5eed0000000040008000000000006022",
       "state": [
        [
         "root",
         {
          "ref": {
           "segment": "5eed0000000040008000000000006014",
-          "offset": 1068,
+          "offset": 1288,
           "type": "proto_db.avl.KeyNode"
          }
         }
@@ -22947,19 +23029,19 @@
       "rewritable": true
      },
      {
-      "offset": 1371,
+      "offset": 1591,
       "kind": 1,
       "size": 231,
       "tag": 18,
       "type": "proto_db.transactions.DatabaseRoot",
-      "oid": "5eed0000000040008000000000006018",
+      "oid": "5eed0000000040008000000000006019",
       "state": [
        [
         "objects",
         {
          "ref": {
           "segment": "5eed0000000040008000000000006014",
-          "offset": 1251,
+          "offset": 1471,
           "type": "proto_db.collections.Dictionary"
          }
         }
@@ -23021,12 +23103,12 @@
       "rewritable": true
      },
      {
-      "offset": 1602,
+      "offset": 1822,
       "kind": 1,
       "size": 114,
       "tag": 0,
       "type": "proto_db.avl.KeyNode",
-      "oid": "5eed0000000040008000000000006021",
+      "oid": "5eed0000000040008000000000006023",
       "state": [
        [
         "key",
@@ -23039,7 +23121,7 @@
         {
          "ref": {
           "segment": "5eed0000000040008000000000006014",
-          "offset": 1371,
+          "offset": 1591,
           "type": "proto_db.transactions.DatabaseRoot"
          }
         }
@@ -23073,19 +23155,19 @@
       "rewritable": true
      },
      {
-      "offset": 1716,
+      "offset": 1936,
       "kind": 1,
       "size": 122,
       "tag": 6,
       "type": "proto_db.collections.Dictionary",
-      "oid": "5eed0000000040008000000000006022",
+      "oid": "5eed0000000040008000000000006024",
       "state": [
        [
         "root",
         {
          "ref": {
           "segment": "5eed0000000040008000000000006014",
-          "offset": 1602,
+          "offset": 1822,
           "type": "proto_db.avl.KeyNode"
          }
         }
@@ -23111,19 +23193,19 @@
       "rewritable": true
      },
      {
-      "offset": 1838,
+      "offset": 2058,
       "kind": 1,
       "size": 83,
       "tag": 17,
       "type": "proto_db.transactions.SpaceRoot",
-      "oid": "5eed0000000040008000000000006023",
+      "oid": "5eed0000000040008000000000006025",
       "state": [
        [
         "databases",
         {
          "ref": {
           "segment": "5eed0000000040008000000000006014",
-          "offset": 1716,
+          "offset": 1936,
           "type": "proto_db.collections.Dictionary"
          }
         }
@@ -23138,7 +23220,7 @@
   "root": {
    "version": 5,
    "segment": "5eed0000000040008000000000006014",
-   "offset": 1838,
+   "offset": 2058,
    "epoch": 3
   },
   "contents": {
@@ -23180,6 +23262,20 @@
              }
             ]
            }
+          ],
+          [
+           {
+            "str": "base"
+           },
+           {
+            "object": "proto_db.core.dbobject.DBObject",
+            "attrs": [],
+            "parents": [
+             {
+              "str": "base"
+             }
+            ]
+           }
           ]
          ]
         }
@@ -23196,6 +23292,16 @@
         "modules",
         {
          "tuple": [
+          {
+           "tuple": [
+            {
+             "str": "base"
+            },
+            {
+             "tuple": []
+            }
+           ]
+          },
           {
            "tuple": [
             {
@@ -23248,12 +23354,14 @@
    }
   },
   "installed": [
+   "base",
    "conformance.base",
    "conformance.sales"
   ],
   "catalog_names": [
    "acme.Partner",
-   "acme.sales.Order"
+   "acme.sales.Order",
+   "base"
   ]
  },
  "cluster": {

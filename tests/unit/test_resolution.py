@@ -358,6 +358,21 @@ def test_two_stubs_of_one_oid_are_one_node_the_first_reachable():
     assert o.who == "d1" and o.only1 == 1 and o.only2 is None and "only2" not in o
 
 
+def test_one_parent_listing_two_records_of_one_oid_is_one_node():
+    """R159, one parent: records written by another writer may list two records of one oid
+    (different pointers pass the load check); the linearization holds that node once, the
+    first one listed (Task 9 plant ``c3_drops_duplicate_check``)."""
+    rec = _Records()
+    rec.put(1, 0xD, {"who": "d1", "only1": 1})
+    rec.put(2, 0xD, {"who": "d2", "only2": 2})          # another record of the same oid
+    rec.put(5, 0x0, {}, [rec.ref(1), rec.ref(2)])
+    o = DirectContext(rec).load(rec.ptr(5), DBOBJECT)
+    lin = o._linearization()
+    assert [n.oid.int for n in lin] == [0x0, 0xD]
+    assert lin[1].atom_pointer == rec.ptr(1)
+    assert o.who == "d1" and o.only2 is None and "only2" not in o
+
+
 def test_a_parent_cycle_in_records_is_corruption():
     """R160: possible only in another writer's records; raised naming the oids."""
     rec = _Records()

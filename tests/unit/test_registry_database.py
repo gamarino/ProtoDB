@@ -19,7 +19,7 @@ import pytest
 from proto_db import resolution
 from proto_db.core.dbobject import DBObject
 from proto_db.errors import ProtoNotSupportedError, ProtoUserError, ProtoValidationError
-from proto_db.registry import Registry, using
+from proto_db.registry import BASE, Registry, using
 from proto_db.storage.memory import MemoryStorage
 from proto_db.transactions import ObjectSpace
 
@@ -65,13 +65,13 @@ def test_registry_built_from_the_database_list(entries):
     _put(db, thing=_thing)
     first, second = db.new_transaction(), db.new_transaction()
     assert isinstance(first.registry, Registry)
-    assert first.registry.key == ("reg8_base",)
+    assert first.registry.key == (BASE, "reg8_base",)
     assert second.registry is first.registry            # one registry per list per process
     fresh = first.new_object(parents=("reg8.Thing",))
     assert fresh.kind == "thing" and fresh.greet() == "base"
     loaded = first.get_root_object("thing")             # the space's shared atom cache, or first
     assert loaded.greet() == "base" and loaded["kind"] == "thing" and "greet" in loaded
-    assert resolution.linearize(loaded) == (loaded, "reg8.Thing")
+    assert resolution.linearize(loaded) == (loaded, "reg8.Thing", BASE)
     first.abort()
     second.abort()
     other = _space(MemoryStorage())
@@ -126,7 +126,7 @@ def test_the_database_registry_wins_over_using():
     db = space.new_database("db")
     _install(db, "reg8_base")
     tr = db.new_transaction()
-    with using(Registry.build(("reg8_other",), mapping=MAPPING)):
+    with using(Registry.build((BASE, "reg8_other"), mapping=MAPPING)):
         assert tr.new_object(parents=("reg8.Thing",)).greet() == "base"
     tr.abort()
     space.close()
@@ -151,7 +151,8 @@ def _two_spaces():
 
 def test_mismatch_raises_after_a_foreign_install():
     first, second, db1, db2 = _two_spaces()
-    message = r"registry built for modules \['reg8_base'\] but the database lists \['reg8_base', 'reg8_extra'\]"
+    message = (r"registry built for modules \['base', 'reg8_base'\] but the database lists "
+               r"\['base', 'reg8_base', 'reg8_extra'\]")
     tr = db2.new_transaction()
     with pytest.raises(ProtoValidationError, match=message):
         tr.registry
@@ -169,7 +170,7 @@ def test_mismatch_raises_after_a_foreign_install():
     again.abort()
     # The installing space never mismatches itself.
     mine = db1.new_transaction()
-    assert mine.registry.key == ("reg8_base", "reg8_extra")
+    assert mine.registry.key == (BASE, "reg8_base", "reg8_extra")
     assert mine.get_root_object("thing").greet() == "extra+base"
     mine.abort()
     first.close()
@@ -179,7 +180,7 @@ def test_mismatch_raises_after_a_foreign_install():
 def test_reload_registry_clears_the_mismatch():
     first, second, db1, db2 = _two_spaces()
     reloaded = second.reload_registry("db")
-    assert reloaded.key == ("reg8_base", "reg8_extra")
+    assert reloaded.key == (BASE, "reg8_base", "reg8_extra")
     tr = db2.new_transaction()
     assert tr.registry is reloaded
     assert tr.get_root_object("thing").greet() == "extra+base"
@@ -248,14 +249,14 @@ def test_as_of_read_uses_that_version_list(entries):
     tr.abort()
     _install(db, "reg8_extra")
     old = db.snapshot_at(old_ref)
-    assert old.registry.key == ("reg8_base",)
+    assert old.registry.key == (BASE, "reg8_base",)
     with old:
         assert old.get_root_object("thing").greet() == "base"
     current = db.new_transaction()
-    assert current.registry.key == ("reg8_base", "reg8_extra")
+    assert current.registry.key == (BASE, "reg8_base", "reg8_extra")
     with current:
         assert current.get_root_object("thing").greet() == "extra+base"
-    assert db.snapshot_at(db.history()[0]).registry.key == ("reg8_base", "reg8_extra")
+    assert db.snapshot_at(db.history()[0]).registry.key == (BASE, "reg8_base", "reg8_extra")
     # Ruling (a): an as-of read never changes how other code resolves.  Outside any block, an
     # object (of the old snapshot too) resolves with the database's current binding.
     loose = db.new_transaction()
@@ -345,15 +346,15 @@ def test_installing_transaction_sees_its_module():
     _put(db, thing=_thing)
     installer, bystander = db.new_transaction(), db.new_transaction()
     installer.install_module("reg8_extra")
-    assert installer.registry.key == ("reg8_base", "reg8_extra")
+    assert installer.registry.key == (BASE, "reg8_base", "reg8_extra")
     assert installer.new_object(parents=("reg8.Thing",)).greet() == "extra+base"
     with installer:
         assert installer.get_root_object("thing").greet() == "extra+base"
         assert bystander.new_object(parents=("reg8.Thing",)).greet() == "base"
-    assert bystander.registry.key == ("reg8_base",)
+    assert bystander.registry.key == (BASE, "reg8_base",)
     bystander.abort()
     after = db.new_transaction()
-    assert after.registry.key == ("reg8_base", "reg8_extra")      # the installer's space rebinds
+    assert after.registry.key == (BASE, "reg8_base", "reg8_extra")      # the installer's space rebinds
     assert after.get_root_object("thing").greet() == "extra+base"
     after.abort()
     space.close()
@@ -643,7 +644,7 @@ def test_reload_of_one_database_leaves_the_others():
     tb.abort()
     reloaded = space.reload_registry("a")
     assert reloaded is not shared
-    assert registry_for(("reg8_base",), mapping=MAPPING) is shared          # the process cache is unchanged
+    assert registry_for((BASE, "reg8_base"), mapping=MAPPING) is shared          # the process cache is unchanged
     ta, tb = a.new_transaction(), b.new_transaction()
     assert ta.registry is reloaded and tb.registry is shared
     assert ta.get_root_object("thing").greet() == "base" and tb.get_root_object("thing").greet() == "base"
@@ -701,7 +702,7 @@ def test_the_lock_step_refuses_to_build():
     from proto_db.registry import no_builds, registry_for
     with no_builds():
         with pytest.raises(ProtoUserError, match="never builds"):
-            registry_for(("reg8_base", "reg8_other"), mapping=MAPPING)
+            registry_for((BASE, "reg8_base", "reg8_other"), mapping=MAPPING)
 
 
 def test_a_commit_that_needs_no_registry_ignores_an_unimportable_module():

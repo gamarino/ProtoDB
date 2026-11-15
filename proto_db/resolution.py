@@ -28,8 +28,11 @@ Registry names
     A lookup that reaches a name node without a registry raises ``ProtoNotSupportedError``
     ("registry name X needs a registry"); loading an object and an own or earlier hit never do.
     A name no module of the registry extends is an **empty node** (controller ruling, replacing
-    R171): it contributes no definition, has no parents, and the lookup goes on past it, so a
-    miss stays ``None`` (R150).  A misspelt name is therefore silent here; the mitigation is
+    R171): it contributes no definition, has no parents other than ``base`` (below), and the
+    lookup goes on past it, so a miss stays ``None`` (R150).  In a registry that has the module
+    ``base``, every other registry name has ``base`` as its implicit last parent (ruling R204,
+    :meth:`~proto_db.registry.Registry.parents_of`), so ``base``'s definitions are found last
+    from any registry name, and never from an object with no registry-name parent.  A misspelt name is therefore silent here; the mitigation is
     :meth:`proto_db.registry.Registry.unknown_names`, which tooling and tests use to flag names
     no module extends.
 

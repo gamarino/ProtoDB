@@ -26,7 +26,7 @@ from proto_db.core.atom import type_tag
 from proto_db.core.dbobject import DBObject
 from proto_db.errors import ProtoConflictError, ProtoCorruptionError, ProtoNotSupportedError, ProtoValidationError
 from proto_db.errors import ProtoUserError
-from proto_db.registry import CATALOG_ROOT, MODULES_ROOT, Catalog, ModuleList, Registry
+from proto_db.registry import BASE, CATALOG_ROOT, MODULES_ROOT, Catalog, ModuleList, Registry
 from proto_db.storage import format as fmt
 from proto_db.storage.file import FileStorage
 from proto_db.storage.memory import MemoryStorage
@@ -79,11 +79,11 @@ def test_install_adds_module_and_deps(db):
     assert tr.installed_modules() == ()
     tr.install_module("reg7_crm")
     # Dependencies first, in dependency order; visible to the installing transaction at once.
-    assert tr.installed_modules() == ("reg7_base", "reg7_contacts", "reg7_crm")
+    assert tr.installed_modules() == (BASE, "reg7_base", "reg7_contacts", "reg7_crm")
     tr.commit()
-    assert _installed(db) == ("reg7_base", "reg7_contacts", "reg7_crm")
+    assert _installed(db) == (BASE, "reg7_base", "reg7_contacts", "reg7_crm")
     # The persisted list records each module's declared dependencies (spec section 3).
-    assert _module_list(db).entries() == (("reg7_base", ()), ("reg7_contacts", ("reg7_base",)),
+    assert _module_list(db).entries() == ((BASE, ()), ("reg7_base", ()), ("reg7_contacts", ("reg7_base",)),
                                          ("reg7_crm", ("reg7_contacts",)))
 
 
@@ -92,7 +92,7 @@ def test_install_is_idempotent(db):
     tr.install_module("reg7_contacts")
     tr.install_module("reg7_contacts")
     tr.install_module("reg7_base")
-    assert tr.installed_modules() == ("reg7_base", "reg7_contacts")
+    assert tr.installed_modules() == (BASE, "reg7_base", "reg7_contacts")
     tr.commit()
     before = _versions(db)
     tr = db.new_transaction()
@@ -103,7 +103,7 @@ def test_install_is_idempotent(db):
     tr = db.new_transaction()
     tr.install_module("reg7_crm")           # only the missing module is added, after the others
     tr.commit()
-    assert _installed(db) == ("reg7_base", "reg7_contacts", "reg7_crm")
+    assert _installed(db) == (BASE, "reg7_base", "reg7_contacts", "reg7_crm")
 
 
 def test_concurrent_installs_both_land(db):
@@ -112,7 +112,7 @@ def test_concurrent_installs_both_land(db):
     second.install_module("reg7_b")
     first.commit()
     second.commit()                         # no conflict: merged against the current root
-    assert _installed(db) == ("reg7_a", "reg7_b")       # commit order
+    assert _installed(db) == (BASE, "reg7_a", "reg7_b")       # commit order
     tr = db.new_transaction()
     try:
         for name in ("reg7.Only_a", "reg7.Only_b", "reg7.Shared"):
@@ -127,7 +127,7 @@ def test_concurrent_installs_of_one_module_land_once(db):
     second.install_module("reg7_contacts")
     first.commit()
     second.commit()
-    assert _installed(db) == ("reg7_base", "reg7_contacts", "reg7_crm")
+    assert _installed(db) == (BASE, "reg7_base", "reg7_contacts", "reg7_crm")
 
 
 def test_reading_modules_does_not_conflict_with_ordinary_writes(db):
@@ -135,7 +135,7 @@ def test_reading_modules_does_not_conflict_with_ordinary_writes(db):
     seed.install_module("reg7_base")
     seed.commit()
     reader = db.new_transaction()
-    assert reader.installed_modules() == ("reg7_base",)
+    assert reader.installed_modules() == (BASE, "reg7_base")
     assert reader.catalog_object("reg7.Partner") is not None
     assert reader.catalog_object("reg7.Contact") is None
     reader.set_root_object("x", 1)
@@ -146,7 +146,7 @@ def test_reading_modules_does_not_conflict_with_ordinary_writes(db):
     tr = db.new_transaction()
     try:
         assert tr.get_root_object("x") == 1
-        assert tr.installed_modules() == ("reg7_base", "reg7_contacts", "reg7_crm")
+        assert tr.installed_modules() == (BASE, "reg7_base", "reg7_contacts", "reg7_crm")
     finally:
         tr.abort()
     # The other way round: an installer whose base moved because of ordinary work commits too.
@@ -272,7 +272,7 @@ def test_union_that_cannot_be_built_is_refused_at_commit(db):
     # Review N-4: the union is unbuildable only because of the concurrent install: retryable, naming it.
     with pytest.raises(ProtoConflictError, match="concurrently installed 'reg7_cyc_x'.*cycle"):
         second.commit()
-    assert _installed(db) == ("reg7_cyc_x",)
+    assert _installed(db) == (BASE, "reg7_cyc_x")
     # Retried, the install sees the list as it is now and states the real refusal.
     with pytest.raises(ProtoValidationError, match="cycle"):
         db.run(lambda tr: tr.install_module("reg7_cyc_y"))
@@ -310,8 +310,8 @@ def test_catalog_object_created_for_new_registry_names(db):
         assert tr.catalog_object("reg7.Lead").oid == pending.oid
         assert tr.catalog_object("reg7.Partner").oid == catalog["reg7.Partner"].oid
         assert tr.catalog_object("reg7.Only_a") is not None
-        assert tr._objects.get_at(CATALOG_ROOT).names() == (
-            "reg7.Contact", "reg7.Lead", "reg7.Only_a", "reg7.Partner", "reg7.Shared")
+        assert tr._objects.get_at(CATALOG_ROOT).names() == (     # base introduces the name base
+            BASE, "reg7.Contact", "reg7.Lead", "reg7.Only_a", "reg7.Partner", "reg7.Shared")
     finally:
         tr.abort()
 
@@ -348,7 +348,7 @@ def test_a_handed_out_catalog_object_never_silently_loses(db):
     tr = db.new_transaction()
     try:
         assert tr.catalog_object("reg7.Only_b").oid == kept
-        assert tr.installed_modules() == ("reg7_a", "reg7_b")
+        assert tr.installed_modules() == (BASE, "reg7_a", "reg7_b")
     finally:
         tr.abort()
 
@@ -376,7 +376,7 @@ def test_a_space_with_an_install_writes_format_5_and_reopens(tmp_path):
     space = _space(FileStorage(str(tmp_path / "s")))
     try:
         db = space.open_database("db")
-        assert _installed(db) == ("reg7_base", "reg7_contacts", "reg7_crm")
+        assert _installed(db) == (BASE, "reg7_base", "reg7_contacts", "reg7_crm")
         tr = db.new_transaction()
         assert tr.catalog_object("reg7.Lead").parents == ("reg7.Lead",)
         tr.abort()
@@ -402,7 +402,7 @@ def test_concurrent_installs_on_two_cluster_nodes_both_land():
         second.install_module("reg7_b")
         first.commit()
         second.commit()                     # built on the committed root, merged: no conflict
-        assert _installed(dbs[1]) == ("reg7_a", "reg7_b")
+        assert _installed(dbs[1]) == (BASE, "reg7_a", "reg7_b")
 
 
 # -- fix round 1 (review of Task 7) -----------------------------------------------------------------
@@ -477,7 +477,7 @@ def test_an_import_whose_code_commits_never_deadlocks_a_commit_that_needs_the_mo
         assert errors == []
         tr = db.new_transaction()
         try:
-            assert tr.installed_modules() == ("reg7_importcommit", "reg7_y")
+            assert tr.installed_modules() == (BASE, "reg7_importcommit", "reg7_y")
             assert tr.get_root_object("from_import") == 1
         finally:
             tr.abort()
@@ -511,7 +511,7 @@ def test_the_commit_imports_without_the_transaction_lock(tmp_path, monkeypatch, 
         assert errors == []
         assert len(driver.seen) == 1 and isinstance(driver.seen[0], ProtoUserError)
         assert "committing" in str(driver.seen[0])
-        assert _installed(db) == ("reg7_peekcommit", "reg7_y")
+        assert _installed(db) == (BASE, "reg7_peekcommit", "reg7_y")
     finally:
         space.close()
 
@@ -552,7 +552,7 @@ def test_an_install_that_adds_nothing_ignores_another_threads_import(db, monkeyp
     try:
         assert driver.importing.wait(10)            # the other thread is inside the import
         tr.install_module("reg7_y")                 # already installed: adds nothing
-        assert tr.installed_modules() == ("reg7_y", "reg7_peekcommit")
+        assert tr.installed_modules() == (BASE, "reg7_y", "reg7_peekcommit")
     finally:
         driver.go.set()
         importer.join(30)
@@ -616,7 +616,7 @@ def test_install_module_imports_outside_the_transaction_lock(db, driver):
     finally:
         reg7_driver.tr = None
     assert reg7_driver.peeked == [()]           # read while the import ran: nothing pending yet
-    assert tr.installed_modules() == ("reg7_peek",)
+    assert tr.installed_modules() == (BASE, "reg7_peek")
     tr.abort()
 
 
@@ -632,8 +632,8 @@ def test_installs_from_two_file_storage_instances_over_one_directory_both_land(t
         second.install_module("reg7_b")
         first.commit()
         second.commit()
-        assert _installed(first_space.open_database("db")) == ("reg7_a", "reg7_b")
-        assert _installed(second_space.open_database("db")) == ("reg7_a", "reg7_b")
+        assert _installed(first_space.open_database("db")) == (BASE, "reg7_a", "reg7_b")
+        assert _installed(second_space.open_database("db")) == (BASE, "reg7_a", "reg7_b")
     finally:
         first_space.close()
         second_space.close()
@@ -646,11 +646,11 @@ def test_installing_transaction_sees_its_pending_list_through_both_reads(db):
     tr = db.new_transaction()
     tr.install_module("reg7_crm")
     assert tr.get_root_object(MODULES_ROOT).names() == tr.installed_modules() == (
-        "reg7_base", "reg7_contacts", "reg7_crm")
-    assert tr.get_root_object(CATALOG_ROOT).names() == ("reg7.Contact", "reg7.Lead", "reg7.Partner")
+        BASE, "reg7_base", "reg7_contacts", "reg7_crm")
+    assert tr.get_root_object(CATALOG_ROOT).names() == (BASE, "reg7.Contact", "reg7.Lead", "reg7.Partner")
     tr.abort()
     tr = db.new_transaction()
-    assert tr.get_root_object(MODULES_ROOT).names() == ("reg7_base",)     # nothing pending: the snapshot's
+    assert tr.get_root_object(MODULES_ROOT).names() == (BASE, "reg7_base")     # nothing pending: the snapshot's
     tr.abort()
 
 

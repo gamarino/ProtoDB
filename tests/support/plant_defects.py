@@ -355,6 +355,75 @@ def blind_snapshot_of'''),),
         ("tests/concurrency/test_cluster_bounded_replication.py::"
          "test_filling_a_hole_from_peers_never_blocks_the_nodes_own_shipping",),
         "ship() waits behind a fill", "product: filling a hole blocks the node's own shipping"),
+    # -- runtime registry (Task 9 of the runtime-registry plan) -----------------------------------
+    "in_ignores_parents": Plant((
+        ("proto_db/core/dbobject.py",
+         "        return resolution.resolve(self, name)[1] is not None\n",
+         "        return resolution.resolve(self, name)[1] == 0     # PLANT: own attributes only\n"),),
+        ("tests/unit/test_resolution.py::test_in_tells_absent_from_explicit_none",),
+        "AssertionError", "product: `\"x\" in o` checks only o's own attributes (Review Focus 2)"),
+    "c3_drops_duplicate_check": Plant((
+        ("proto_db/resolution.py",
+         "            if ck in kid_keys:\n",
+         "            if False and ck in kid_keys:     # PLANT: a node listed twice is walked twice\n"),),
+        ("tests/unit/test_resolution.py::test_one_parent_listing_two_records_of_one_oid_is_one_node",),
+        ("AssertionError", "Inconsistent parent hierarchy"), "product: the C3 walk keeps a node one parent lists twice (two records of one oid, R159)"),
+    "super_uses_start_position": Plant((
+        ("proto_db/resolution.py",
+         "    return SuperProxy(obj, entry, registry, index, extension.position + 1)\n",
+         "    return SuperProxy(obj, entry, registry, index, 0)     # PLANT: from the start of the chain\n"),),
+        ("tests/unit/test_registry_resolution.py::test_super_walks_three_modules_once_in_load_order",),
+        "RecursionError", "product: _super() resolves from the start of its name's chain, not after the running extension"),
+    "refusal_of_property_removed": Plant((
+        ("proto_db/registry.py",
+         "    for kind in (property, staticmethod, classmethod):\n",
+         "    for kind in (staticmethod, classmethod):     # PLANT: a property is no longer refused\n"),),
+        ("tests/unit/test_registry_modules.py::test_refused_property_in_a_module_names_it",),
+        "Regex pattern did not match",
+        "product: a property in an extension is not refused as such (spec Q4)"),
+    "install_last_writer_wins": Plant((
+        ("proto_db/transactions.py",
+         "        listed = _registry.registry_root(current_objects, _registry.MODULES_ROOT, _registry.ModuleList)\n"
+         "        merged = _registry.merged_module_list(listed, self._installs, self)\n",
+         "        listed = _registry.registry_root(self._objects, _registry.MODULES_ROOT, _registry.ModuleList)  # PLANT\n"
+         "        merged = _registry.merged_module_list(listed, self._installs, self)\n"),),
+        ("tests/unit/test_registry_roots.py::test_concurrent_installs_both_land",
+         "tests/concurrency/test_registry_install_concurrency.py::test_concurrent_installs_land_without_conflicts"),
+        "AssertionError",
+        "product: the module list merges onto this transaction's snapshot, not the committed root (Review Focus 5)"),
+    "modules_read_enter_read_set": Plant((
+        ("proto_db/transactions.py",
+         "        with self._lock:\n            self._check_active()\n            return self._installed_names()\n",
+         "        with self._lock:\n            self._check_active()\n"
+         "            if _registry.MODULES_ROOT not in self._reads:     # PLANT: the read enters the read set\n"
+         "                self._reads[_registry.MODULES_ROOT] = _token(self._objects.get_at(_registry.MODULES_ROOT, _ABSENT))\n"
+         "            return self._installed_names()\n"),),
+        ("tests/unit/test_registry_roots.py::test_reading_modules_does_not_conflict_with_ordinary_writes",),
+        "ProtoConflictError", "product: reading __currentModules enters the read set, so an install conflicts ordinary work"),
+    "mismatch_not_checked": Plant((
+        ("proto_db/transactions.py",
+         "        if binding is None or binding.names != names:\n"
+         "            raise _mismatch(database, self._bound[database].names, names)\n",
+         "        if binding is None or binding.names != names:\n"
+         "            return self.build(database, names)     # PLANT: an automatic rebuild, no mismatch\n"),),
+        ("tests/unit/test_registry_database.py::test_mismatch_raises_after_a_foreign_install",),
+        "DID NOT RAISE", "product: a module-list mismatch is rebuilt silently instead of raising (spec Q2)"),
+    "parents_bytes_for_parentless": Plant((
+        ("proto_db/core/atom.py",
+         "        encoded_parents = codec.encode_value(parents, context.save) if parents else None\n",
+         "        encoded_parents = codec.encode_value(parents, context.save) if parents or cls._parented else None\n"),
+        ("proto_db/core/atom.py",
+         "            if parents:\n                _check_not_own_parent(self, parents, oid)\n",
+         "            if parents or cls._parented:     # PLANT: a parentless DBObject writes \"p\"\n"
+         "                _check_not_own_parent(self, parents, oid)\n"),),
+        ("tests/unit/test_dbobject_parents.py::test_no_parents_keeps_v4_bytes",),
+        "AssertionError", "product: a parentless object writes the envelope key \"p\" (base scheme changed)"),
+    "v4_segment_accepts_parents": Plant((
+        ("proto_db/storage/file.py",
+         "            if seg is None or seg.version < version or (seg.end > SEGMENT_HEADER_SIZE\n",
+         "            if seg is None or False or (seg.end > SEGMENT_HEADER_SIZE     # PLANT: no roll (R151)\n"),),
+        ("tests/unit/test_format_features.py::test_a_parents_record_lands_in_a_v5_segment[file]",),
+        "AssertionError", "product: a file storage appends a parents record to a v4 segment (R151)"),
 }
 
 _IGNORE = shutil.ignore_patterns("__pycache__", ".git", ".venv*", ".junie", "benchmarks", "docs", ".superpowers",

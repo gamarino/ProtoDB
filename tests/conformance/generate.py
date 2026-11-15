@@ -933,7 +933,8 @@ def _fill_registry_first(tx):
 
 
 def _fill_registry_second(tx):
-    """Install a module and its dependency: the module list, the catalog and its objects."""
+    """Install a module and its dependency (and, first, the module ``base``): the module list, the
+    catalog and its objects."""
     tx.install_module(REGISTRY_MODULE)
 
 
@@ -949,8 +950,9 @@ def gen_registry_database(manifest):
     with _Deterministic(0x6000):
         entry = _write_space("registry", [_fill_registry_first, _fill_registry_second], segments_expected=2,
                              modules_mapping=MAPPING)
-    entry["installed"] = ["conformance.base", REGISTRY_MODULE]
-    entry["catalog_names"] = ["acme.Partner", "acme.sales.Order"]
+    # The module base is installed first, implicitly (ruling R205); it introduces the name base.
+    entry["installed"] = ["base", "conformance.base", REGISTRY_MODULE]
+    entry["catalog_names"] = ["acme.Partner", "acme.sales.Order", "base"]
     manifest["registry_database"] = entry
 
 

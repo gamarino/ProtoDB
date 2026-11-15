@@ -22,7 +22,7 @@ import pytest
 from proto_db import resolution
 from proto_db.core.dbobject import DBObject
 from proto_db.errors import ProtoNotSupportedError, ProtoUserError, ProtoValidationError
-from proto_db.registry import Registry, current_registry, using
+from proto_db.registry import BASE, Registry, current_registry, using
 from proto_db.storage.memory import MemoryStorage
 from proto_db.transactions import ObjectSpace
 
@@ -34,7 +34,8 @@ MAPPING = {name: f"{_PACKAGE}.{name}" for name in _FIXTURES}
 
 
 def build(*names):
-    return Registry.build(names, mapping=MAPPING)
+    """The registry of ``names``, after ``base`` (ruling R205: every non-empty list starts with it)."""
+    return Registry.build((BASE,) + names, mapping=MAPPING)
 
 
 @pytest.fixture(scope="module")
@@ -85,7 +86,7 @@ def test_method_and_field_resolve_alike(active):
     assert o._resolve("level") == ("top", (1, 0))
     assert o._resolve("channel") == ("thread", (2, 0))          # the parent name reg6.Thread
     assert o._resolve("absent") == (None, None)
-    assert o._linearization() == (o, "reg6.Opp", "reg6.Thread")
+    assert o._linearization() == (o, "reg6.Opp", "reg6.Thread", BASE)       # base last (R204)
 
 
 def test_self_is_o(active):
@@ -120,7 +121,7 @@ def test_late_binding_inside_methods(active):
 def test_catalog_object_before_its_registry_name(active):
     catalog = DBObject(parents=("reg6.Opp",), stage="catalog", label="Opportunity")
     o = DBObject(parents=(catalog,))
-    assert o._linearization() == (o, catalog, "reg6.Opp", "reg6.Thread")
+    assert o._linearization() == (o, catalog, "reg6.Opp", "reg6.Thread", BASE)
     assert o.stage == "catalog" and o._resolve("stage") == ("catalog", 1)
     assert o.level == "top" and o._resolve("level") == ("top", (2, 0))
     assert o.win([]) == ["top", "mid", "base", "thread"]         # methods still bind to o
@@ -245,15 +246,16 @@ def test_python_member_check_runs_once_per_class_and_registry(monkeypatch):
 # -- registry names ---------------------------------------------------------------------------------
 
 def test_a_registry_name_no_module_extends_is_an_empty_node(active):
-    """A registry name no module extends contributes nothing and has no parents: the lookup goes
-    on past it, and a miss is None (controller ruling overturning R171)."""
+    """A registry name no module extends contributes nothing and has no parents but ``base``
+    (ruling R204): the lookup goes on past it, and a miss is None (controller ruling overturning
+    R171)."""
     o = DBObject(parents=("reg6.Nobody", "reg6.Opp"))
-    assert o._linearization() == (o, "reg6.Nobody", "reg6.Opp", "reg6.Thread")
+    assert o._linearization() == (o, "reg6.Nobody", "reg6.Opp", "reg6.Thread", BASE)
     assert o.stage == "mid-default" and o._resolve("stage") == ("mid-default", (2, 1))
     assert o.win([]) == ["top", "mid", "base", "thread"]
     lone = DBObject(parents=("reg6.Nobody",))
     assert lone.late is None and lone["late"] is None and "late" not in lone
-    assert lone._linearization() == (lone, "reg6.Nobody")
+    assert lone._linearization() == (lone, "reg6.Nobody", BASE)
 
 
 def test_unknown_names_flags_names_no_module_extends(active):

@@ -2648,7 +2648,9 @@ class Transaction:
         """Install the registry module ``name`` at commit, with the dependencies the list lacks.
 
         The module is imported to learn its ``depends`` (and so are its dependencies); the
-        modules the list lacks are added, dependencies first, and a catalog object is made for
+        modules the list lacks are added -- the module ``base`` first when the list lacks it
+        (ruling R205: every database that installs a module has it), then dependencies before
+        the modules that need them -- and a catalog object is made for
         each registry name their extensions introduce that has none.  The resulting list must
         build a registry (:meth:`proto_db.registry.Registry.build`).  A module outside the
         runtime's ``modules_allowed`` or a dependency cycle raises ``ProtoValidationError``, a

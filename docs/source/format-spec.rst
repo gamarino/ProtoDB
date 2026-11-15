@@ -135,7 +135,7 @@ that version and its own, so a root over format-5 data is format 5 whichever nod
 **The pinned vectors.** ``tests/conformance/vectors.sha256`` lists the SHA-256 of every file
 under ``tests/conformance/vectors/`` (``<hex digest>  <path>``, one line per file, sorted by path
 in code point order, ``/`` as the separator), then the digest of ``manifest.json``. The SHA-256
-of that list file is ``6299acaceb9ce352f61fb80b34ce26c90835f8b5e2efd3633b9211ada1404a79``. ``test_conformance.py`` checks that the committed files
+of that list file is ``707eaae74d31bb7cf5506701cb8b36ae2a075ed3b486d94b89841f1aff6f04c2``. ``test_conformance.py`` checks that the committed files
 match the list and that this page states the list's digest. Each vector file is governed by
 the number that covers what it holds: ``vectors/cluster/*.log`` by ``LOG_FORMAT_VERSION``,
 ``vectors/cluster/messages/`` by ``PROTOCOL_VERSION``, every other file by ``FORMAT_VERSION``.

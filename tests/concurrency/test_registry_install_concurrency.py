@@ -16,6 +16,7 @@ import threading
 
 import pytest
 
+from proto_db.registry import BASE
 from proto_db.storage.cloud import CloudStorage
 from proto_db.storage.file import FileStorage
 from proto_db.transactions import ObjectSpace
@@ -36,8 +37,9 @@ def _check_final(db, prefix: str):
     tr = db.new_transaction()
     try:
         installed = tr.installed_modules()
-        assert sorted(installed) == sorted(MODULES), installed
-        names = [f"reg7.Only_{m[-1]}" for m in MODULES] + ["reg7.Shared"]
+        # base first, once, whichever install landed first (rulings R205, R204).
+        assert installed[0] == BASE and sorted(installed[1:]) == sorted(MODULES), installed
+        names = [f"reg7.Only_{m[-1]}" for m in MODULES] + ["reg7.Shared", BASE]
         catalog = {name: tr.catalog_object(name) for name in names}
         assert all(obj is not None and obj.parents == (name,) for name, obj in catalog.items())
         assert all(tr.get_root_object(f"{prefix}{i}") == i for i in range(THREADS))
