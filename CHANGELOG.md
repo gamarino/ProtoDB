@@ -57,7 +57,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     (another writer's) is read as if `base` preceded it, and the next install writes it with `base` first;
     `format-spec.rst` states it normatively (writers SHOULD put `base` first, readers MUST treat it as first). Catalog updates follow normal conflict rules
     (the first updater wins) and reach only objects created after them.
-  - `ObjectSpace(modules_mapping=..., modules_allowed=...)` and `ObjectSpace.reload_registry(database_name)`. When
+  - `ObjectSpace(modules_mapping=..., modules_allowed=...)` and `ObjectSpace.reload_registry(database_name)`,
+    which invalidates every registry of that database cached in the space (later snapshots and installing
+    transactions build fresh too). When
     another process installs a module, a space bound to the older list raises `ProtoValidationError` at the
     next registry lookup inside one of its transactions on the new list (no automatic rebuild; a snapshot
     resolves with its own version's list and never mismatches).

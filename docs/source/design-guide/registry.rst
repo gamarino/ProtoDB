@@ -155,7 +155,9 @@ A mismatch is an error (Q2)
     list until a transaction of the space has seen the new one, and then raises the same error. A snapshot
     resolves with its own version's list and never mismatches. There is no
     automatic rebuild: rebuilding between two lines of a running program would interleave transactions on two
-    behaviours. ``ObjectSpace.reload_registry(database_name)`` is the explicit rebuild. A module that cannot be
+    behaviours. ``ObjectSpace.reload_registry(database_name)`` is the explicit rebuild; it invalidates every
+    registry of that database cached in the space, so later snapshots and installing transactions build fresh
+    too and run the reloaded code (R243), while other databases keep the process's shared registries (R200). A module that cannot be
     imported raises ``ProtoNotSupportedError`` at the first lookup that needs the registry (opening the
     database and reading data never do), and the failure is remembered for that list until
     ``reload_registry`` (R202): Python does not cache a failed import, and every commit would retry it. A

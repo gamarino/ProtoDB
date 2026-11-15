@@ -819,10 +819,7 @@ def registry_for(module_names: tuple, *, mapping: Mapping | None = None,
         error = ProtoNotSupportedError(f"{failed} (this failure is remembered for this module list in this process)")
         error.remembered = True
         raise error
-    if getattr(_NO_BUILDS, "depth", 0):
-        raise ProtoUserError(
-            f"The registry of the modules {list(module_names)} is not built, and a commit's lock step never "
-            f"builds one (building imports, which may deadlock under the root lock)")
+    check_builds_allowed(module_names)
     try:
         built = Registry.build(module_names, mapping=mapping, allowed=allowed)
     except ProtoNotSupportedError as e:
@@ -831,6 +828,15 @@ def registry_for(module_names: tuple, *, mapping: Mapping | None = None,
         raise
     with _REGISTRIES_LOCK:
         return _REGISTRIES.setdefault(key, built)
+
+
+def check_builds_allowed(module_names: tuple) -> None:
+    """``ProtoUserError`` inside :func:`no_builds` (a commit's lock step): the registry of
+    ``module_names`` is not built, and building one there imports, which may deadlock."""
+    if getattr(_NO_BUILDS, "depth", 0):
+        raise ProtoUserError(
+            f"The registry of the modules {list(module_names)} is not built, and a commit's lock step never "
+            f"builds one (building imports, which may deadlock under the root lock)")
 
 
 def forget_failure(module_names: tuple, mapping: Mapping | None = None) -> None:

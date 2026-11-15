@@ -869,7 +869,10 @@ the new module's code, for example):
 
    Dora Perez (Globex) True
 
-Transactions that were already running keep the registry they started with. There is no automatic rebuild.
+Transactions that were already running keep the registry they started with. Everything that resolves for
+that database afterwards in that space, later snapshots and installing transactions included, uses registries
+built after the reload, so a development workflow that reloads edited code never mixes the old and the new.
+There is no automatic rebuild.
 
 A module that cannot be imported
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

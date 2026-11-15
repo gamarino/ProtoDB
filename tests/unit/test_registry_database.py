@@ -208,6 +208,42 @@ def test_a_transaction_keeps_the_registry_it_started_with():
     second.close()
 
 
+def test_reload_registry_invalidates_every_cached_registry_of_the_database():
+    """Final review M4 (ruling R243): after ``reload_registry``, a later snapshot, an installing
+    transaction and the binding after that install use registries built by the reload's rules
+    (fresh builds for that database), never the process cache's pre-reload registry.  Other
+    databases keep the process cache (R200)."""
+    from proto_db.registry import registry_for
+    space = _space()
+    db, other = space.new_database("db"), space.new_database("other")
+    _install(db, "reg8_base")
+    _install(other, "reg8_base")
+    _put(db, thing=_thing)
+    cached = registry_for((BASE, "reg8_base"), mapping=MAPPING)
+    tr = db.new_transaction()
+    old = db.snapshot_at(tr.snapshot_ref)
+    tr.abort()
+    assert old.registry is cached
+    reloaded = space.reload_registry("db")
+    assert reloaded is not cached
+    tr = db.new_transaction()
+    assert tr.registry is reloaded
+    assert db.snapshot_at(tr.snapshot_ref).registry is reloaded            # a later snapshot
+    tr.install_module("reg8_extra")
+    installing = tr.registry
+    assert installing.key == (BASE, "reg8_base", "reg8_extra")
+    assert installing is not registry_for(installing.key, mapping=MAPPING)  # built for db, not cached
+    tr.commit()
+    after = db.new_transaction()
+    assert after.registry is installing                                     # the same fresh build
+    with after:
+        assert after.get_root_object("thing").greet() == "extra+base"
+    keeps = other.new_transaction()
+    assert keeps.registry is cached                                         # another database: unchanged
+    keeps.abort()
+    space.close()
+
+
 # -- Review Focus 4: an unimportable listed module ---------------------------------------------------
 
 @CACHES

@@ -825,10 +825,20 @@ class _SpaceRegistries:
         self._seq = 0                   # last _Binding.seq given
         self._generation = 0            # +1 on every change; the fallback's memo
         self._memo = (-1, None)
+        # database name -> {module names: Registry or the message of a failed build}: the
+        # registries of a database reloaded in this space, built fresh for it (ruling R243).
+        self._reloaded: dict = {}
 
     def build(self, database: str, names: tuple):
-        """The registry of ``names`` from the process cache, outside every lock.  A module that
-        cannot be imported is reported naming ``database`` too (spec section 7)."""
+        """The registry of ``names`` for ``database``, outside every lock: from the process cache,
+        or, once ``database`` was reloaded in this space, from that database's own fresh builds
+        (ruling R243: a reload invalidates every registry of the database cached before it, for
+        later snapshots and installing transactions too).  A module that cannot be imported is
+        reported naming ``database`` too (spec section 7)."""
+        with self._lock:
+            own = self._reloaded.get(database)
+        if own is not None:
+            return self._build_reloaded(database, names, own)
         try:
             return _registry.registry_for(names, mapping=self._mapping, allowed=self._allowed)
         except ProtoNotSupportedError as e:
@@ -836,6 +846,38 @@ class _SpaceRegistries:
                      if getattr(e, "remembered", False) else "")
             raise ProtoNotSupportedError(
                 f"Database {database!r} lists modules this process cannot load: {e}{retry}") from e
+
+    def _build_reloaded(self, database: str, names: tuple, own: dict):
+        """:meth:`build` for a reloaded database: one fresh build per list, kept in ``own``; a
+        build that fails because a module cannot be loaded is remembered there, as
+        :func:`proto_db.registry.registry_for` does (ruling R202), until the next reload."""
+        with self._lock:
+            found = own.get(names)
+        if isinstance(found, str):
+            raise ProtoNotSupportedError(
+                f"{found} (this failure is remembered for this module list; ObjectSpace.reload_registry"
+                f"({database!r}) retries it)")
+        if found is not None:
+            return found
+        _registry.check_builds_allowed(names)
+        try:
+            built = self.build_fresh(database, names)
+        except ProtoNotSupportedError as e:
+            with self._lock:
+                own.setdefault(names, str(e))
+            raise
+        with self._lock:
+            return own.setdefault(names, built)
+
+    def reload(self, database: str, names: tuple):
+        """``ObjectSpace.reload_registry``: a fresh registry of ``names`` for ``database``; every
+        registry of the database cached before is dropped (ruling R243), and the database is
+        rebound to the new one.  Nothing changes when the build fails."""
+        registry = self.build_fresh(database, names) if names else None
+        with self._lock:
+            self._reloaded[database] = {names: registry} if names else {}
+        self.rebind(database, names, registry)
+        return registry
 
     def build_fresh(self, database: str, names: tuple):
         """A new registry of ``names`` for ``database`` only (``reload_registry``): never published
@@ -1999,8 +2041,10 @@ class ObjectSpace:
         rebuilt automatically; this is the explicit rebuild).  The build is fresh: it reads the
         declarations of the modules as they are now (after an ``importlib.reload``, for example)
         for this database only (the process's cached registry of that list, which other databases
-        and spaces use, is unchanged).  Transactions already running
-        keep the registry they started with.  Returns the registry, or ``None`` when the database
+        and spaces use, is unchanged).  It invalidates every registry of this database cached
+        before it in this space (ruling R243): later snapshots, installing transactions and the
+        bindings after later installs build fresh for this database, so they all run the reloaded
+        code.  Transactions and snapshot objects that already resolved keep the registry they had.  Returns the registry, or ``None`` when the database
         lists no modules.  ``ProtoValidationError`` if the database does not exist;
         ``ProtoNotSupportedError`` if a listed module cannot be imported (nothing is rebound)."""
         _check_name(database_name, "database")
@@ -2009,9 +2053,7 @@ class ObjectSpace:
         listed = _registry.registry_root(root.objects, _registry.MODULES_ROOT, _registry.ModuleList)
         names = listed.names() if listed is not None else ()
         _registry.forget_failure(names, self._modules_mapping)
-        registry = self._registries.build_fresh(database_name, names) if names else None
-        self._registries.rebind(database_name, names, registry)
-        return registry
+        return self._registries.reload(database_name, names)
 
     @property
     def coordinator(self):
