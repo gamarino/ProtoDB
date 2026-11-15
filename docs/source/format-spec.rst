@@ -131,6 +131,10 @@ highest segment version its writer has written; in cluster mode the committer's 
 travels with the root (the fifth element of a wire *root*, `Cluster wire protocol`_, and the
 versioned entry of the acceptor log), and a node that persists the root writes the highest of
 that version and its own, so a root over format-5 data is format 5 whichever node persists it.
+"Uses a feature" therefore means "used or attempted by this writer": a writer that appended a
+version-5 record no committed root references (a commit that saved records and then failed) writes
+version-5 roots from then on, so a reader of version 4 refuses that space although no reachable
+record needs 5; this is conservative (nothing is lost or misread) and accepted.
 
 **The pinned vectors.** ``tests/conformance/vectors.sha256`` lists the SHA-256 of every file
 under ``tests/conformance/vectors/`` (``<hex digest>  <path>``, one line per file, sorted by path
