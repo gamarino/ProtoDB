@@ -3023,7 +3023,7 @@ class ClusterCoordinator:
                 while wait.reply is None:
                     if self._state != "running" or self._failure is not None or self._tier_failure is not None:
                         break
-                    if target is None and (self._ownership is not own or own.ended or own.fenced):
+                    if target is None and (self._ownership is not own or own.ended):
                         break
                     now = time.monotonic()
                     if now >= min(limit, deadline):
@@ -3180,19 +3180,22 @@ class ClusterCoordinator:
             if self._state != "running":
                 return
             own = self._ownership
-            if own is not None and own.term == msg["term"] and own.serving(self._clock()) \
-                    and self._failure is None:
-                out = next((e for e in own.pipeline if e.node == sender and e.inc == msg["inc"]
-                            and e.rid == msg["rid"]), None)
-                if out is not None:
-                    # A retried request whose permit is outstanding (it, or the permit, was
-                    # lost; review M6; rule O7 per entry): send the same permit again -- never
-                    # a second one.
-                    sends = [(sender, out.permit)] if out.permit is not None else []
-                else:
-                    if not any(q[0] == sender and q[1] == msg["rid"] for q in own.queue):
-                        own.queue.append((sender, msg["rid"], msg["inc"], None))
-                    sends = self._dispatch(own)
+            # The term is live: neither abandoned nor ended, its lease valid (serving, or fenced).
+            live = own is not None and own.term == msg["term"] and self._failure is None \
+                and not own.abandoned and not own.ended and own.lease.is_valid()
+            out = next((e for e in own.pipeline if e.node == sender and e.inc == msg["inc"]
+                        and e.rid == msg["rid"]), None) if live else None
+            if out is not None:
+                # A retried request whose permit is outstanding (it, or the permit, was lost;
+                # review M6; rule O7 per entry): send the same permit again -- never a second
+                # one -- also while the term is fenced (R149), so that permit can still end by
+                # its done (RENEW-BACKOFF review M1).
+                sends = [(sender, out.permit)] if out.permit is not None else []
+                own.last_demand = time.monotonic()
+            elif live and own.serving(self._clock()):
+                if not any(q[0] == sender and q[1] == msg["rid"] for q in own.queue):
+                    own.queue.append((sender, msg["rid"], msg["inc"], None))
+                sends = self._dispatch(own)
                 own.last_demand = time.monotonic()
             else:
                 reason = "not_owner" if own is None or own.term != msg["term"] else "ending"
@@ -3543,10 +3546,10 @@ class ClusterCoordinator:
                 self._renew(own)
 
     def _renew(self, own: "_Ownership") -> None:
-        """Ask the granters to extend the lease of ``own`` (same term; D50, renewal).  A lost
-        round either fences the term (a majority refused it for good, ruling R149: the queue is
-        refused ``"ending"``, nothing new is issued) or sets ``own.renew_after``, the back-off
-        before the next renewal (issue #1)."""
+        """Ask the granters to extend the lease of ``own`` (same term; D50, renewal).  A round
+        that is not won either fences the term (a majority refused it for good, ruling R149: the
+        queue is refused ``"ending"``, nothing new is issued) or sets ``own.renew_after``, the
+        back-off before the next renewal (issue #1; ruling R149a: a round left pending too)."""
         with self._log_lock, self._lock:
             if self._state != "running" or self._ownership is not own:
                 return
@@ -3587,7 +3590,7 @@ class ClusterCoordinator:
                 sends = self._dispatch(own)        # a request may have waited for the renewal
             else:
                 self._stats["renewal_failures"] += 1
-                if attempt.state == "lost" and self._ownership is own and not own.fenced:
+                if self._state == "running" and self._ownership is own and not own.fenced:
                     if attempt.term_fenced:
                         # Ruling R149: no majority will ever renew this term.  Step down
                         # without abandoning: an outstanding permission ends by its done (or
@@ -3598,7 +3601,9 @@ class ClusterCoordinator:
                                     own.term)
                         sends = self._refuse_queue(own, "ending")
                     else:
-                        # Possibly transient (a grace, another grant): renewing sooner cannot win.
+                        # Lost, or left pending (a member silent; a majority may have answered,
+                        # which ends the wait early): possibly transient, and renewing sooner
+                        # cannot win (rulings R149, R149a).
                         own.renew_after = self._clock() + min(
                             own.lease.remaining(),
                             max(attempt.busy_remaining, self._request_timeout / 4, 0.001))

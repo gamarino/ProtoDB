@@ -20,13 +20,17 @@ assertions read is on the fake clock.  Real time is only given for the ownership
 import threading
 import time
 
-from proto_db.cluster.coordinator import _Ownership, ballot_after
+from proto_db.cluster.coordinator import _Ownership, ballot_after, encode_root
 from proto_db.cluster.lease import Lease
 from proto_db.cluster.protocol import make_message
 from tests.support.manual_cluster import Harness
 
 #: Real seconds the ownership thread is given to act on a change of the fake clock.
 SETTLE = 0.3
+#: A lease long enough that no wait for its remainder ends within a test (review M2): belief 40 s.
+LONG = dict(lease_duration=120.0, drift_margin=80.0)
+#: Real seconds a test waits for a release that only a wake-up can bring.
+RELEASE_WAIT = 2.0
 
 
 class _Pump:
@@ -34,9 +38,10 @@ class _Pump:
     recording the fake time of every renewal ``a`` sent; every other message from ``a`` is
     kept in ``sent`` (and taken off the net) for the test to inspect."""
 
-    def __init__(self, h, owner="a"):
+    def __init__(self, h, owner="a", silent=()):
         self.h, self.owner = h, owner
-        self.others = set(h.names) - {owner}
+        self.others = set(h.names) - {owner} - set(silent)
+        self.silent = set(silent)       # members whose renewals are dropped (never answered)
         self.renewals = []              # fake time of each renew broadcast (one per round)
         self.sent = []                  # (destination, message) of every other message of the owner
         self.lock = threading.Lock()
@@ -47,15 +52,18 @@ class _Pump:
     def _run(self):
         net = self.h.net
         while not self.stop.is_set():
-            renews = net.take(self.owner, self.others, ("renew",))
+            renews = net.take(self.owner, self.others | self.silent, ("renew",))
             rids = {m[2]["rid"] for m in renews}
             with self.lock:
                 self.renewals.extend(self.h.clock.t for _ in rids)
             for _, to, msg in renews:
+                if to in self.silent:
+                    continue
                 net.handlers[to](msg)
                 net.handlers[to].__self__.wait_idle(5.0)
             net.deliver(src=None, dst={self.owner}, kinds=("grant", "reject"))
             other = net.take(self.owner, None, ("release", "permit_no", "permit", "done"))
+            other = [m for m in other if m[1] not in self.silent or m[2]["type"] != "renew"]
             with self.lock:
                 self.sent.extend((to, msg) for _, to, msg in other)
             time.sleep(0.001)
@@ -142,8 +150,13 @@ def test_a_fenced_term_steps_down_after_one_renewal():
 def test_a_fenced_term_lets_its_outstanding_permission_end_by_its_done():
     """As above, with a's own permission outstanding at fencing time: it is never abandoned
     while its lease is valid, b's queued request is refused ``ending`` at once, and the release
-    follows the permission's ``done``."""
-    h = Harness("abc")
+    follows the permission's ``done``.
+
+    The lease is long (:data:`LONG`): the fenced ownership thread waits for what remains of it,
+    many times the time the test waits for the release, so the release can only come from the
+    wake-up that ending the permission gives that thread (review M2), never from that wait
+    running out on the frozen fake clock."""
+    h = Harness("abc", **LONG)
     pump = None
     try:
         a = h.nodes["a"]
@@ -161,10 +174,11 @@ def test_a_fenced_term_lets_its_outstanding_permission_end_by_its_done():
         assert not own.abandoned, "the fenced term was abandoned while its lease is valid"
         _wait_for(lambda: pump.messages("permit_no"), "b's refusal", a)
         time.sleep(SETTLE)
+        assert own.lease.released_at is None, "released with a permission outstanding"
         assert own.lease.is_valid() and permission.is_valid()
         assert not own.abandoned, "the fenced term was abandoned while its lease is valid"
-        assert a._ownership is own and own.lease.released_at is None
-        assert not pump.messages("release"), pump.sent
+        assert a._ownership is own and own.lease.released_at is None, "released with a permission outstanding"
+        assert not pump.messages("release"), f"released with a permission outstanding: {pump.sent}"
         assert pump.count() == 1, f"renewals sent: {pump.renewals}"
         refused = [m for to, m in pump.messages("permit_no") if to == "b" and m["rid"] == 50_002]
         assert refused and refused[0]["reason"] == "ending", pump.sent
@@ -172,9 +186,11 @@ def test_a_fenced_term_lets_its_outstanding_permission_end_by_its_done():
         _remote_request(h, "a", "c", own.term, rid=50_003)
         assert not own.queue and not own.pipeline[1:]
         _wait_for(lambda: any(to == "c" for to, _ in pump.messages("permit_no")), "c's refusal", a)
+        assert own.lease.remaining() > 4 * RELEASE_WAIT, own.lease.remaining()
         permission.outcome = "none"
         a.finish(permission)
-        _wait_for(lambda: a._ownership is None and own.lease.released_at is not None, "the release", a)
+        _wait_for(lambda: a._ownership is None and own.lease.released_at is not None,
+                  "the release after the permission's done", a, timeout=RELEASE_WAIT)
         stats = a.stats()
         assert stats["terms_abandoned"] == before["terms_abandoned"], stats
         assert stats["terms_fenced"] - before["terms_fenced"] == 1, stats
@@ -286,4 +302,82 @@ def test_a_minority_busy_with_a_lower_term_never_fences_the_owner():
         assert stats["renewals"] == before["renewals"] + 2 and stats["renewal_failures"] == 1, stats
         assert not own.fenced and own.renew_after is None and own.lease.is_valid()
     finally:
+        h.close()
+
+
+def test_a_round_left_pending_after_a_majority_answered_backs_off():
+    """Ruling R149a (review I1): b refuses (a higher ballot it promised) and c is silent, so a's
+    renewal ends ``pending`` once a majority (a's own grant and b's refusal) answered -- neither
+    won nor fenced (one permanent refusal of the one allowed).  It backs off like a lost round:
+    no second renewal before ``now + request_timeout / 4`` on the fake clock (no refusal names
+    a remaining time), and one after it."""
+    h = Harness("abc")
+    pump = None
+    try:
+        a = h.nodes["a"]
+        h.own("a")
+        own = a._ownership
+        pump = _Pump(h, silent=("c",))
+        before = a.stats()
+        _promise_higher(h, own.term, ("b",))
+        start = own.lease.valid_until - a._belief / 3      # a renewal due
+        h.clock.t = start
+        own.last_demand = time.monotonic()
+        _poke(a)
+        _wait_for(lambda: a.stats()["renewal_failures"] > before["renewal_failures"], "the failed renewal", a)
+        time.sleep(SETTLE)                          # a renewal sent at once would be counted now
+        assert pump.count() == 1, f"renewals sent at {start} before the back-off ended: {len(pump.renewals)}"
+        deadline = start + a._request_timeout / 4
+        assert own.renew_after is not None and abs(own.renew_after - deadline) < 1e-9, (own.renew_after, deadline)
+        assert not own.fenced and a.stats()["terms_fenced"] == before["terms_fenced"]
+        h.clock.t = deadline + 1e-6
+        own.last_demand = time.monotonic()
+        _poke(a)
+        _wait_for(lambda: pump.count() >= 2, "the renewal after the back-off", a)
+        assert pump.renewals[1] >= deadline, pump.renewals
+    finally:
+        if pump is not None:
+            pump.close()
+        h.close()
+
+
+def test_a_fenced_term_resends_an_outstanding_permit_to_a_retry():
+    """Review M1: while fenced, b's retry of its request whose permit is outstanding (rule O7:
+    the permit, or the request, was lost) gets the same permit again -- never ``ending``, and no
+    new permit is issued; b's ``done`` then ends the term, released and never abandoned."""
+    h = Harness("abc")
+    pump = None
+    try:
+        a = h.nodes["a"]
+        h.own("a")
+        own = a._ownership
+        pump = _Pump(h)
+        before = a.stats()
+        _remote_request(h, "a", "b", own.term, rid=50_010)
+        _wait_for(lambda: pump.messages("permit"), "b's permit", a)
+        first = pump.messages("permit")[0][1]
+        issued = a.stats()["permits_issued"]
+        _promise_higher(h, own.term, ("b", "c"))
+        h.clock.t = own.lease.valid_until - a._belief / 4   # a renewal due, the lease still valid
+        _poke(a)
+        _wait_for(lambda: own.fenced, "the fencing", a)
+        _remote_request(h, "a", "b", own.term, rid=50_010)   # b retries: its permit was lost
+        _wait_for(lambda: len(pump.messages("permit")) >= 2 or any(
+            m["rid"] == 50_010 for _, m in pump.messages("permit_no")), "the answer to b's retry", a)
+        refused = [m for _, m in pump.messages("permit_no") if m["rid"] == 50_010]
+        assert not refused, f"a retry of an outstanding permit was refused: {refused}"
+        again = pump.messages("permit")[1][1]
+        assert again["seq"] == first["seq"] and again["rid"] == first["rid"], (first, again)
+        assert a.stats()["permits_issued"] == issued, "a fenced term issued a new permit"
+        done = make_message("done", "b", term=own.term, seq=first["seq"], inc=h.nodes["b"]._inc, outcome="none",
+                            root=encode_root(None, known=False, term=0), copies=[], ranges=None)
+        h.net.handlers["a"](done)
+        a.wait_idle(5.0)
+        _wait_for(lambda: any(m["term"] == own.term for _, m in pump.messages("release")), "the release", a)
+        stats = a.stats()
+        assert stats["terms_abandoned"] == before["terms_abandoned"] and not own.abandoned, stats
+        assert stats["terms_fenced"] - before["terms_fenced"] == 1, stats
+    finally:
+        if pump is not None:
+            pump.close()
         h.close()
