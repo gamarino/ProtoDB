@@ -2518,7 +2518,12 @@ class Transaction:
     # -- roots ------------------------------------------------------------------------------
 
     def get_root_object(self, name: str):
-        """Return the value of root ``name`` (``None`` if absent); records the read (see module docs)."""
+        """Return the value of root ``name`` (``None`` if absent); records the read (see module docs).
+
+        A registry root (``__currentModules``, ``__catalog``) is read here like any root: the
+        read is recorded, so a concurrent install makes this transaction's commit conflict
+        (ruling R241); :meth:`installed_modules` and :meth:`catalog_object` read the same state
+        without entering the read set."""
         _check_name(name)
         with self._lock:
             self._check_active()
@@ -2749,8 +2754,11 @@ class Transaction:
 
     def installed_modules(self) -> tuple:
         """The installed module names, in installation order, as this transaction sees them (its
-        own installs last).  Not recorded in the read set.  ``get_root_object("__currentModules")``
-        shows the same list (review M-6), as a :class:`~proto_db.registry.ModuleList`."""
+        own installs last).  Not recorded in the read set, so a concurrent install never makes
+        this transaction conflict.  ``get_root_object("__currentModules")`` shows the same list
+        (review M-6), as a :class:`~proto_db.registry.ModuleList`, but it is an ordinary read: it
+        enters the read set, and a concurrent install then makes this transaction's commit
+        conflict (``ProtoConflictError``; ruling R241).  Use this method to read the list."""
         with self._lock:
             self._check_active()
             return self._installed_names()

@@ -126,7 +126,10 @@ The base module (R204-R209)
 Installs merge add-if-absent
     At commit the two registry roots are merged against the root current at that moment, never through the
     read set: the list only grows and the catalog only gains names, so the union is always right, two installs
-    never conflict with each other, and the order of the list is the commit order. A raw ``commit()`` on a
+    never conflict with each other, and the order of the list is the commit order. Reading the roots through
+    ``installed_modules`` and ``catalog_object`` (and for resolution) never enters the read set;
+    ``get_root_object`` of a registry root is an ordinary, recorded read, so a concurrent install makes that
+    transaction conflict (R241). A raw ``commit()`` on a
     storage whose root lock is not global (``CloudStorage`` across processes) can still lose the root's
     compare-and-swap like any commit; it raises ``ProtoConflictError`` and ``Database.run`` retries it. No
     module is ever imported under a lock: a module's import-time code may itself commit, and would wait for

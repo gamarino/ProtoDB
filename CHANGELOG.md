@@ -49,7 +49,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     names. Registry module names are process-global (one name, one Python module per process). A lookup made by a
     module's import-time code through the registry of a database that lists that module raises
     `ModulesBeingImported` (a `ProtoUserError`) and caches nothing; an import-time commit still succeeds.
-  - `Transaction.install_module`, `installed_modules`, `registry`, `catalog_object` and `set_catalog_object`;
+  - `Transaction.install_module`, `installed_modules`, `registry`, `catalog_object` and `set_catalog_object`
+    (`installed_modules` and `catalog_object` never enter the read set; `get_root_object` of a registry root
+    does, so a concurrent install makes that transaction conflict);
     the roots `__currentModules` and `__catalog` (format-5 feature `registry`, built-in type aliases 22 and 23),
     merged add-if-absent at commit, so concurrent installs never conflict with each other. Installing is
     permanent. The module `base` (`proto_db.modules.base`, with `read_data_file`) is installed first,

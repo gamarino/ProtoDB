@@ -404,8 +404,10 @@ always the right answer, and two installs never conflict with each other:
 
    ('base', 'tut_contacts', 'tut_notes')
 
-The order of the list is the commit order. Reading the list for resolution never enters a transaction's read
-set either, so an install never makes ordinary work conflict. On a storage whose root lock is not global
+The order of the list is the commit order. Reading the list for resolution, or through ``installed_modules``
+and ``catalog_object``, never enters a transaction's read set either, so an install never makes ordinary work
+conflict. ``tr.get_root_object("__currentModules")`` (or ``"__catalog"``) is an ordinary read, though: it
+enters the read set, and a concurrent install then makes that transaction's commit conflict. On a storage whose root lock is not global
 (``CloudStorage`` shared by several processes) a commit that installs can still lose the root's
 compare-and-swap, like any commit; it then raises ``ProtoConflictError`` and ``Database.run`` retries it,
 merging onto the winner. No module is ever imported while the root lock is held: a module's import-time code

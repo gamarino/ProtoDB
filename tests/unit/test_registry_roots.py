@@ -130,6 +130,21 @@ def test_concurrent_installs_of_one_module_land_once(db):
     assert _installed(db) == (BASE, "reg7_base", "reg7_contacts", "reg7_crm")
 
 
+@pytest.mark.parametrize("root", [MODULES_ROOT, CATALOG_ROOT])
+def test_reading_a_registry_root_through_get_root_object_enters_the_read_set(db, root):
+    """Final review M2 (ruling R241), probe p3: unlike ``installed_modules`` and
+    ``catalog_object``, ``get_root_object`` of a registry root is an ordinary read, recorded in the
+    read set, so a concurrent install makes the reader's commit conflict (what protects a catalog
+    object handed out through that view)."""
+    db.run(lambda tr: tr.install_module("reg7_base"))
+    reader = db.new_transaction()
+    assert reader.get_root_object(root) is not None
+    reader.set_root_object("x", 1)
+    db.run(lambda tr: tr.install_module("reg7_crm"))
+    with pytest.raises(ProtoConflictError, match=root):
+        reader.commit()
+
+
 def test_reading_modules_does_not_conflict_with_ordinary_writes(db):
     seed = db.new_transaction()
     seed.install_module("reg7_base")
