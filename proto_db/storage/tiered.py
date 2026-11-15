@@ -1072,15 +1072,20 @@ class TieredStorage(SharedStorage):
             self._tls.critical = previous
 
     def set_fetcher(self, fetcher: Optional[Callable]) -> None:
-        """Install the peer page request function (``fetcher(ptr) -> framed bytes or None``)."""
+        """Install the peer page request function (``fetcher(ptr) -> framed bytes or None``).
+        It also removes the answer function of :meth:`set_fetch_answer`, which belongs to the
+        fetcher it was installed with: a fetcher installed alone is then used for every peer
+        read, and its ``None`` counts as definitive."""
         self._fetcher = fetcher
+        self._fetch_answer = None
 
     def set_fetch_answer(self, answer: Optional[Callable]) -> None:
         """Install the peer page request that also says whether its ``None`` is definitive
         (``answer(ptr) -> (framed bytes or None, complete)``; the cluster coordinator's
         ``fetch_answer``).  With it, a record whose segment the object store does not hold
         while some peer did not answer is unavailable (``ProtoUnexpectedError``), not
-        corrupt (ruling R230).  Without it, a fetcher's ``None`` counts as definitive."""
+        corrupt (ruling R230).  Without it, a fetcher's ``None`` counts as definitive.  Installed
+        after :meth:`set_fetcher`, as the pair's second half."""
         self._fetch_answer = answer
 
     @property
