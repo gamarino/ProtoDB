@@ -1544,18 +1544,33 @@ class ClusterCoordinator:
             return None, (f"some records of {what} are on no reachable peer and not in the object store"), None
         return "records", records, ranges
 
+    def _read_wait(self, permitted: bool) -> float:
+        """Under the lock: how long a peer read (``fetch``, ``commit_query``) waits for its
+        answers.  ``fetch_timeout``; a read made inside a commit's critical section
+        (``permitted``) waits no longer than what remains of the permission and the lease
+        this node holds, so that a commit never waits past its permission.  Every other read
+        gets the full ``fetch_timeout``, also while an expired term lease is not yet released
+        (ruling R212)."""
+        timeout = self._fetch_timeout
+        if permitted:
+            for lease in (self._held, self._permit):
+                if lease is not None:
+                    timeout = min(timeout, max(0.0, lease.remaining()))
+        return timeout
+
     def _ask_commit(self, label: int, root: RootRecord) -> tuple:
         """``(persisted, ranges)`` for the commit of ``root`` from the first peer that knows
-        (``commit_query``), within ``fetch_timeout`` (and what remains of a held lease)."""
+        (``commit_query``), within ``fetch_timeout`` (inside a commit, within what remains of
+        its permission: :meth:`_read_wait`)."""
         others = len(self._others)
         if not others:
             return False, None
+        tier = self._tier
+        permitted = bool(tier is not None and getattr(tier, "in_critical", lambda: False)())
         with self._lock:
             if self._state != "running":
                 return False, None
-            timeout = self._fetch_timeout
-            if self._held is not None:
-                timeout = min(timeout, max(0.0, self._held.remaining()))
+            timeout = self._read_wait(permitted)
         waiter = self._ask("commit_query", {"root": encode_root(root, known=True, term=label)},
                            lambda w: w.data is not None or w.missing >= others, timeout)
         if waiter.data is None:
@@ -4285,8 +4300,8 @@ class ClusterCoordinator:
 
     def fetch_record(self, ptr) -> Optional[bytes]:
         """Peer page request: the framed record at ``ptr`` from the first peer that has it, or
-        ``None`` (no peer answered with it within ``fetch_timeout``, nor within what remains
-        of a lease this node holds).  The members the locator names for the record's segment
+        ``None`` (no peer answered with it within ``fetch_timeout``; inside a commit, within
+        what remains of its permission: :meth:`_read_wait`).  The members the locator names for the record's segment
         (the data replicas of the commits that wrote it, D54) are asked first; the others only
         when none of them has it."""
         if not self._others:
@@ -4300,9 +4315,7 @@ class ClusterCoordinator:
             self._stats["record_fetches"] += 1
             if permitted:
                 self._stats["record_fetches_permitted"] += 1
-            timeout = self._fetch_timeout
-            if self._held is not None:
-                timeout = min(timeout, self._held.remaining())
+            timeout = self._read_wait(permitted)
             located = [m for m in self._locator.get(ptr.segment, ()) if m != self._node]
             if located:
                 self._stats["fetches_located"] += 1

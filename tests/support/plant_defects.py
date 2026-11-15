@@ -493,6 +493,34 @@ def blind_snapshot_of'''),),
         ("tests/unit/test_cluster_renew_backoff.py::test_a_fenced_term_resends_an_outstanding_permit_to_a_retry",),
         "a retry of an outstanding permit was refused",
         "product: a fenced term refuses an O7 retry of its outstanding permit (review M1)"),
+    # LEASE-READ (ruling R212).
+    "lease_read_cap_every_read": Plant((
+        ("proto_db/cluster/coordinator.py",
+         "        if permitted:\n            for lease in (self._held, self._permit):\n",
+         "        if True:   # PLANT: every read is capped at the held lease\n"
+         "            for lease in (self._held, self._permit):\n"),),
+        ("tests/unit/test_cluster_lease_read.py::test_a_read_after_the_held_lease_expired_waits_the_full_fetch_timeout",
+         "tests/unit/test_cluster_lease_read.py::"
+         "test_a_commit_query_after_the_held_lease_expired_waits_the_full_fetch_timeout"),
+        "capped at the expired lease",
+        "product: a read outside a commit is capped at an expired, unreleased term lease"),
+    "lease_read_expired_unexpected": Plant((
+        ("proto_db/transactions.py",
+         "    if type(error) is ProtoUnexpectedError and not sent and not permission.is_valid():\n",
+         "    if False:   # PLANT: an expired permission's failed base read stays unexpected\n"),),
+        ("tests/unit/test_cluster_lease_read.py::"
+         "test_a_base_read_failing_after_the_permission_expired_is_a_retryable_conflict",
+         "tests/unit/test_cluster_lease_read.py::"
+         "test_database_run_retries_a_commit_whose_permission_expired_before_its_base_read"),
+        ("was not retryable", "store unreachable (injected)"),
+        "product: a base read failing after the permission expired is not retried (R212)"),
+    "lease_read_subclasses": Plant((
+        ("proto_db/transactions.py",
+         "    if type(error) is ProtoUnexpectedError and not sent and not permission.is_valid():\n",
+         "    if isinstance(error, ProtoUnexpectedError) and not sent and not permission.is_valid():  # PLANT\n"),),
+        ("tests/unit/test_cluster_lease_read.py::test_a_subclass_of_the_unexpected_error_is_never_made_retryable",),
+        "became",
+        "product: a subclass of ProtoUnexpectedError (an unknown outcome) is made retryable"),
     "shiplock": Plant((
         ("proto_db/storage/tiered.py", "            data = self._copy_prefix(segment, end)",
          "            with self._ship_lock:   # PLANT: the hole is filled under the ship lock\n"

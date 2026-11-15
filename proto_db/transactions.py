@@ -1214,7 +1214,8 @@ def _permit_round(coordinator, tier, permission, entries: list, group: _Group, *
             try:
                 try:
                     ptr = entry.build(current, stamp)
-                except (ProtoCorruptionError, ProtoUnexpectedError):
+                except (ProtoCorruptionError, ProtoUnexpectedError) as e:
+                    _check_expired_read(permission, e, sent)
                     # A base read failed.  On a proposal base (``after``) that is not corruption:
                     # its records may be nowhere yet, or never -- the predecessor died or stalled
                     # before any copy left it.  Wait for the gate: once it opens the base is
@@ -1228,7 +1229,11 @@ def _permit_round(coordinator, tier, permission, entries: list, group: _Group, *
                     if not gate:
                         raise ProtoConflictError("The proposal this permission was issued on never committed "
                                                  "(its holder failed or stalled); nothing was sent")
-                    ptr = entry.build(current, stamp)
+                    try:
+                        ptr = entry.build(current, stamp)
+                    except ProtoUnexpectedError as again:
+                        _check_expired_read(permission, again, sent)
+                        raise
             except ProtoConflictError as e:
                 entry.error = e
                 conflicted.append(entry)
@@ -1287,6 +1292,18 @@ def _permit_round(coordinator, tier, permission, entries: list, group: _Group, *
         if not isinstance(e, ProtoDBError):
             raise
         return []
+
+
+def _check_expired_read(permission, error: BaseException, sent: bool) -> None:
+    """Raise a retryable ``ProtoConflictError`` (chained from ``error``) when a base read failed
+    with exactly ``ProtoUnexpectedError`` (never a subclass: an unknown outcome, a refused
+    write or a corruption keeps its meaning), nothing was sent and the write permission is no
+    longer valid.  Such a read was cut at the permission's end, or outlived it; nothing a
+    voter may accept left this node, so the commit may be retried (ruling R212).  Under a
+    valid permission the error stands: an honest failure."""
+    if type(error) is ProtoUnexpectedError and not sent and not permission.is_valid():
+        raise ProtoConflictError("the write permission expired before its base could be read; "
+                                 "nothing was sent") from error
 
 
 def _base_needs_commit(coordinator, permission, current) -> bool:

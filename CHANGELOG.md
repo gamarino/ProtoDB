@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [2.0.0rc4] - unreleased
 
+- A read on a cluster owner after its term lease expired, but before the lease was released, no longer asks its
+  peers with a timeout of 0 s. With the object store down, or the segment not uploaded yet, such a read failed
+  while a majority held the record. The wait is now capped at what remains of the write permission only for a
+  read inside a commit; every other read waits the full `fetch_timeout`. A commit whose base read fails with
+  `ProtoUnexpectedError` after its write permission expired, nothing having been sent, now raises
+  `ProtoConflictError`, which `Database.run` retries (D46 amendment, ruling R212).
 - A cluster owner whose lease renewal was refused by a majority no longer renews again once per round trip
   until its lease ends (GitHub issue #1). When a majority refused the term for good (it promised or granted a
   higher term), the owner stops renewing, refuses its queued permission requests with `ending`, lets an
