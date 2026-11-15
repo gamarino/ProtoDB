@@ -186,8 +186,10 @@ still reads ``o.oid``.
 
 ``bob["parents"]`` is ``None``, not the parents: ``parents`` and ``with_parents`` were ordinary field names
 before parents existed, and a record written then that holds such a field still loads, with the field
-readable through ``o["parents"]`` and carried over by ``with_``. A new record cannot create one. On a
-``DBObject``, ``o.parents`` is always the API member (a subclass that defines its own ``parents`` member wins,
+readable through ``o["parents"]`` and carried over by ``with_``. A new record cannot create one: code
+written before parents existed that passed ``parents=[mom, dad]`` to store a field now sets resolution
+parents, and the record inherits their attributes. Rename such a field before upgrading (the CHANGELOG has
+the migration note). On a ``DBObject``, ``o.parents`` is always the API member (a subclass that defines its own ``parents`` member wins,
 since Python members come first).
 
 ``DBObject`` now defines ``__getitem__``, ``__contains__``, ``__setitem__`` and ``__delitem__`` (the last

@@ -278,6 +278,19 @@ def test_parents_is_a_reserved_attribute_name():
         DBObject(**{"with_parents": 1})
 
 
+def test_old_code_passing_parents_as_a_field_now_sets_resolution_parents():
+    """Final review I3 (rulings R158, R237), probe p4: the documented breaking change.  Code written
+    before parents existed that stored a field named ``parents`` now sets resolution parents: the
+    record inherits, and has no such field.  Every other value of the keyword is refused."""
+    mom, dad = DBObject(surname="Smith", birthdate="1970"), DBObject(surname="Jones")
+    kid = DBObject(name="Leo", parents=[mom, dad])
+    assert kid.parents == (mom, dad) and not kid.has_defined_attr("parents")
+    assert kid.surname == "Smith" and kid.birthdate == "1970"           # inherited, never set on kid
+    for refused in ("Smith", mom, {"a": 1}, [1, 2]):
+        with pytest.raises(ProtoValidationError):
+            DBObject(name="Leo", parents=refused)
+
+
 # -- legacy fields named like the new API (ruling R157) -------------------------------------------
 
 _LEGACY_STATE = {"name": "a", "parents": "old", "with_parents": {"@tup": [1, 2]}}

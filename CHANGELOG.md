@@ -9,13 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **The runtime registry** (format 5; decision D62; tutorial `docs/source/tutorials/extensible-models.rst`, design
   chapter `docs/source/design-guide/registry.rst`). Additive: a `DBObject` without parents, in a database that
-  never installs a module, keeps today's API, bytes and behaviour.
+  never installs a module, keeps today's API, bytes and behaviour, with one breaking change for code that
+  stored a field named `parents` (below).
   - `DBObject` gains parents (`DBObject(parents=(...))`, `o.parents`, `o.with_parents(...)`): other `DBObject`s or
     registry names (non-empty `str`), persisted as the atom envelope key `"p"`, the format-5 feature `parents`; an
-    object without parents writes the format-4 record byte for byte. `parents` and `with_parents` can no longer be
-    created as field names (`ProtoValidationError`), but a record written before that holds a field of either
-    name still loads, keeps the field readable (`o["parents"]`) and `with_` carries it over unchanged: it is
-    never refused (ruling R157).
+    object without parents writes the format-4 record byte for byte. `parents` and `with_parents` are no longer
+    field names. A record written before that holds a field of either name still loads, keeps the field
+    readable (`o["parents"]`) and `with_` carries it over unchanged: it is never refused (ruling R157).
+  - **Breaking change: the keyword `parents=` now sets resolution parents.** `DBObject(parents=...)` and
+    `tr.new_object(parents=...)` used to store a field named `parents`; they now set the object's parents
+    (ruling R158). A tuple or list of `DBObject`s and non-empty strings is accepted silently: the new object then
+    inherits every attribute it does not set from those objects (`kid.surname` returns the mother's), has no
+    field `parents` (`has_defined_attr("parents")` is False), and an index on `parents` finds nothing. Any other
+    value (a single string or object, a dict, a list holding numbers) is refused with `ProtoValidationError`, as
+    are `o.with_(parents=...)` and the keyword `with_parents=` in the constructor and in `with_`. **Migration:**
+    before upgrading, rename such a field in the code that writes it (for example to `parent_records`); records
+    already stored keep their field and load unchanged (R157), and `o["parents"]` reads it.
   - Resolution (`proto_db.resolution`): `o.x` and `o["x"]` read own attributes, then the C3 linearization of the
     parents, registry names included (their extension chains, newest module first); a miss is still `None`
     (R150), and `"x" in o` tells an inherited or explicit `None` from a miss. `o["oid"]`, `o["with_"]` and the
