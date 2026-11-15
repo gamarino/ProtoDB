@@ -391,7 +391,7 @@ The reference must be **smaller than the string**, or nothing is saved:
 4. **Registry roots and the read set.** Reading `__currentModules` or `__catalog` for resolution does not enter the
    read set, so installs never conflict with ordinary work. This is safe because installs are additive (decision 4):
    a transaction that resolved with the older list committed a state that the older list described.
-   - The process's registry is keyed by the **content** of the module list (the ordered names), not by the root's
+   - The process's registry is keyed by the **content** of the module list (as built: the set of names with their import paths, ruling R257), not by the root's
      pointer. An add-if-absent merge then never makes the installing process mismatch itself.
    - The private write path for `__` roots is internal to `proto_db.registry`.
 5. **Symbols and strings.** A `Symbol` is not a `str`, is never equal to one and does not hash like one, matching

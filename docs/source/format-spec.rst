@@ -1528,7 +1528,8 @@ version 5, so it lands in a segment of version 5 or later. Both types carry no p
     smallest in **code-point order** (the names compared as sequences of Unicode code points,
     the first differing code point deciding and a proper prefix coming first; no locale, case
     folding or normalization; UTF-8 byte order agrees with it, UTF-16 code-unit order does not).
-    A dependency cycle is an error. Everything the load order decides follows it: a registry
+    A dependency cycle, or a dependency that is not listed, is an error; the dependencies are
+    the ones the module's code declares when it is loaded. Everything the load order decides follows it: a registry
     name's extensions are chained newest first (the module loaded last first), and its parents
     are the union of the ``parents=`` its extensions declare, in load order. Two databases that
     list the same modules in different orders therefore compose the same registry and resolve
