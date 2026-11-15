@@ -1213,6 +1213,7 @@ def _messages(root, base, records, ranges) -> list:
         ("answer", dict(rid=7, inc=43, root=wire, committed=wire, certain=True, promised=7, state="ok", ballot=0)),
         ("fetch", dict(rid=8, inc=43, segment=seg, offset=records[0][1])),
         ("fetched", dict(rid=8, inc=43, segment=seg, offset=records[0][1], data=records[0][2])),
+        ("fetched-unknown", dict(rid=8, inc=43, segment=seg, offset=records[0][1], data=None, unknown=True)),
         ("warm", dict(term=7, records=records)),
         ("commit_query", dict(rid=9, inc=43, root=wire)),
         ("commit_info", dict(rid=9, inc=43, persisted=False, ranges=rng)),
@@ -1220,7 +1221,7 @@ def _messages(root, base, records, ranges) -> list:
     ]
     out = []
     for name, fields in msgs:
-        kind = "commit_query" if name == "unknown-root" else name
+        kind = {"unknown-root": "commit_query", "fetched-unknown": "fetched"}.get(name, name)
         msg = protocol.make_message(kind, "n1", **fields)
         frame = protocol.encode_frame(msg)
         out.append({"id": name, "type": kind, "file": _write(f"cluster/messages/{name}.frame", frame),

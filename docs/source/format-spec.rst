@@ -139,7 +139,7 @@ record needs 5; this is conservative (nothing is lost or misread) and accepted.
 **The pinned vectors.** ``tests/conformance/vectors.sha256`` lists the SHA-256 of every file
 under ``tests/conformance/vectors/`` (``<hex digest>  <path>``, one line per file, sorted by path
 in code point order, ``/`` as the separator), then the digest of ``manifest.json``. The SHA-256
-of that list file is ``707eaae74d31bb7cf5506701cb8b36ae2a075ed3b486d94b89841f1aff6f04c2``. ``test_conformance.py`` checks that the committed files
+of that list file is ``37b286fd97df098769aee26c222f76d295bf747b1a02f9441e52bd54e1ca1695``. ``test_conformance.py`` checks that the committed files
 match the list and that this page states the list's digest. Each vector file is governed by
 the number that covers what it holds: ``vectors/cluster/*.log`` by ``LOG_FORMAT_VERSION``,
 ``vectors/cluster/messages/`` by ``PROTOCOL_VERSION``, every other file by ``FORMAT_VERSION``.
@@ -1791,11 +1791,22 @@ Field types:
    * - ``fetch``
      - rid, inc; segment (uuid); offset (int)
    * - ``fetched``
-     - rid, inc; segment (uuid); offset; data (optional bytes: a framed record)
+     - rid, inc; segment (uuid); offset; data (optional bytes: a framed record); optional
+       ``unknown`` (bool, absent reads as false)
    * - ``commit_query``
      - rid, inc; root
    * - ``commit_info``
-     - rid, inc; persisted (bool); ranges
+     - rid, inc; persisted (bool); ranges; optional ``unknown`` (bool, absent reads as false)
+
+An optional field may be absent; it is checked when present, and a receiver ignores a key it
+does not know. ``unknown`` is the only optional field of protocol 14. A member answers
+``fetched`` or ``commit_info`` with ``unknown`` true when it cannot tell whether it holds what
+was asked: it has no storage attached, its space closed or detached while it served the
+request, or (``commit_info`` only) it is still attaching its storage. The asker counts such a
+member as heard, but never as one that "does not have it": a record is reported absent only
+when every member answered that it lacks it, so an answer with ``unknown`` makes the record
+unavailable, not corrupt. A member that sends ``data: None`` without ``unknown`` says it
+lacks the record.
 
 Values a member must compute like the others:
 

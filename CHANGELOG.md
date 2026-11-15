@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - A read on a cluster owner after its term lease expired, but before the lease was released, no longer asks its
   peers with a timeout of 0 s: only a read inside a commit is capped, at what remains of the commit's write
-  permission (on any node, also one that holds no term lease); every other read waits the full `fetch_timeout`.
+  permission and of any lease the node holds (on any node, also one that holds no term lease); every other read waits the full `fetch_timeout`.
   A read of a record whose segment the object store does not hold yet, while some peer did not answer the page
   request in time, now raises `ProtoUnexpectedError` (the record is unavailable) instead of `ProtoCorruptionError`;
   `ProtoCorruptionError` stays for a record that every peer answered it lacks (each peer counted once, however
@@ -17,7 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   closed while it served the request, or one still attaching its storage (for a commit query), counts as not
   heard, and a corrupt answer no longer ends the page request: the members not heard yet are asked again while
   the wait lasts), or
-  whose stored copy is wrong. A
+  whose stored copy is wrong. The cases of a member that cannot tell travel as a new optional reply field,
+  `unknown`, on `fetched` and `commit_info` (part of protocol 14). A
   commit whose base read fails with `ProtoUnexpectedError` after its write permission expired, nothing having
   been sent and its local tier not failed, raises `ProtoConflictError`, which `Database.run` retries. A failed
   read of the base a round must first re-commit no longer ends the permission with an unknown outcome, since
@@ -175,7 +176,7 @@ The first release candidate published on PyPI.
 `docs/design-principles.md`: everything stored is immutable, a transaction is an explicit object, and
 every safety argument holds under arbitrary delay and loss. There are no 0.1 data or API to preserve.
 The design is `docs/superpowers/specs/2026-11-01-protodb-v2-design.md`; every decision is in
-`docs/decisions.md` (D1-D61).
+`docs/decisions.md` (D1-D62).
 
 ### Added
 - **One value model** with a total order across types (`1 == 1.0 == Decimal(1)`, `True != 1`), used by

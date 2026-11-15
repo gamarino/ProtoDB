@@ -131,7 +131,7 @@ than :data:`MAX_RECORD_BYTES`, so any commit fits.  A message of another
 protocol version, an unknown type or a missing or ill-typed field is a
 :class:`ClusterProtocolError`; receivers drop such messages.  An optional field
 (:data:`OPTIONAL_FIELDS`) may be absent and is checked when present; a receiver that does not
-know it ignores it (it was added without a version change: ruling R240L).
+know it ignores it (``unknown``, ruling R240L, is part of protocol 14 from its first release).
 """
 import struct
 import uuid
@@ -173,12 +173,14 @@ __all__ = ["PROTOCOL_VERSION", "MAX_FRAME_BYTES", "CHUNK_BYTES", "MAX_RECORD_BYT
 #: ``permit.after``; ``replicate`` loses ``pred_committed`` (voters accept a same-term root only
 #: by extension of what they hold, rule V2').
 #: 14: the records carried by ``replicate``, ``records``, ``store``, ``warm`` and ``fetched`` may
-#: be format-5 records (the feature ``parents``, ruling R151).  The message layout is unchanged;
+#: be format-5 records (the feature ``parents``, ruling R151).  The layout of the existing fields is unchanged;
 #: what changes is what a record may hold and what a receiver must do with it: a receiver that
 #: writes records into a segment file it did not create writes the header version of the
 #: segment's first record (the highest version when it lacks that record).  A protocol-13 node
 #: would write a version-4 header over format-5 records and read them as format 4, so the two
-#: versions must not exchange messages.
+#: versions must not exchange messages.  Also 14: ``fetched`` and ``commit_info`` may carry the
+#: optional ``unknown`` (R240L), the reply of a member that cannot tell whether it holds what was
+#: asked.
 PROTOCOL_VERSION = 14
 #: Largest accepted frame payload, in bytes (a replicate message carries a commit's records).
 MAX_FRAME_BYTES = 64 * 1024 * 1024
@@ -237,8 +239,8 @@ MESSAGE_TYPES = {
 
 #: Fields a message of a type may carry or omit (checked when present).  ``unknown`` (R240L):
 #: the replying member has no storage attached and cannot tell whether it holds what was asked.
-#: Added within protocol 14 because it changes no existing field: a node without it ignores the
-#: key and counts the reply as a miss, as before; a node with it reads an absent key as False.
+#: Part of protocol 14 from its first release (protocol 14 is new in 2.0.0rc4, so no released node
+#: speaks it without the field); optional so that an absent key reads as False.
 OPTIONAL_FIELDS = {
     "fetched": {"unknown": _BOOL},
     "commit_info": {"unknown": _BOOL},

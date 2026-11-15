@@ -3,7 +3,7 @@
 [![PyPI version](https://img.shields.io/pypi/v/proto_db.svg)](https://pypi.org/project/proto_db/)
 [![Python Version](https://img.shields.io/pypi/pyversions/proto_db.svg)](https://pypi.org/project/proto_db/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Project Status](https://img.shields.io/badge/status-2.0.0.dev0-orange.svg)](#status)
+[![Project Status](https://img.shields.io/badge/status-2.0.0rc4-orange.svg)](#status)
 
 `proto_db` is an embedded, transactional, object-oriented database for Python. It stores immutable,
 persistent collections with secondary indexes, runs queries through an index-aware planner, and
@@ -11,7 +11,7 @@ commits serializable transactions per root, all in-process, without a separate s
 
 ### Status
 
-`2.0.0.dev0`: the 2.0 rebuild, unreleased (design: `docs/superpowers/specs/2026-11-01-protodb-v2-design.md`,
+`2.0.0rc4`: the 2.0 rebuild, release candidate (design: `docs/superpowers/specs/2026-11-01-protodb-v2-design.md`,
 decisions: `docs/decisions.md`). The 0.1 implementation has been removed; the API below is the 2.0 API.
 Everything this page lists is implemented and covered by the test suite, which runs on CPython 3.14t
 (free-threaded) and with the GIL. The cluster is new: it is documented, tested and measured in this
@@ -109,7 +109,7 @@ pip install --pre proto_db
 ```
 
 Until 2.0.0 is final, the published versions are release candidates, so `pip` needs `--pre` (or an
-explicit version such as `proto_db==2.0.0rc3`). Start with a single-node space: under heavy load the
+explicit version such as `proto_db==2.0.0rc4`). Start with a single-node space: under heavy load the
 cluster reports outcomes as unknown, or times out, more often than it should (see the CHANGELOG's known
 limitations). On Python 3.14, end the process after a Ctrl-C that interrupted `proto_db` code: the
 interrupt can leave one of its locks held (see the concurrency model).
