@@ -602,6 +602,30 @@ def blind_snapshot_of'''),),
          "test_a_base_re_commit_that_sent_its_root_is_never_a_retryable_conflict",),
         "became a retryable conflict",
         "product: a base re-commit never marks the round sent (R238L)"),
+    # LEASE-READ fix round 3 (rulings R240L-R242L).
+    "lease_read_unattached_fetch_is_miss": Plant((
+        ("proto_db/cluster/coordinator.py",
+         "        extra = {\"unknown\": True} if tier is None else {}\n"
+         "        self._transport.send(msg[\"from\"], make_message(\"fetched\"",
+         "        extra = {}   # PLANT: a member without storage answers as one lacking the record\n"
+         "        self._transport.send(msg[\"from\"], make_message(\"fetched\""),),
+        ("tests/unit/test_cluster_lease_read.py::test_a_member_without_storage_attached_is_never_a_miss",),
+        "members without storage counted as lacking the record",
+        "product: a member with no tier attached counts as lacking the record (R240L)"),
+    "lease_read_unattached_commit_info_is_miss": Plant((
+        ("proto_db/cluster/coordinator.py",
+         "        extra = {\"unknown\": True} if tier is None else {}     # cannot tell (R240L)\n",
+         "        extra = {}   # PLANT: a member without storage answers as one not knowing the commit\n"),),
+        ("tests/unit/test_cluster_lease_read.py::test_a_commit_query_to_members_without_storage_counts_no_miss",),
+        "members without storage counted as misses",
+        "product: a member with no tier attached counts as not knowing the commit (R240L)"),
+    "lease_read_corrupt_ends_request": Plant((
+        ("proto_db/cluster/coordinator.py",
+         "                    remaining = [m for m in remaining if m not in heard]\n",
+         "                    remaining = []   # PLANT: a corrupt answer ends the round\n"),),
+        ("tests/unit/test_cluster_lease_read.py::test_a_peer_answering_corrupt_bytes_does_not_end_the_page_request",),
+        "is unavailable",
+        "product: a peer answering corrupt bytes ends the page request (R242L)"),
     "shiplock": Plant((
         ("proto_db/storage/tiered.py", "            data = self._copy_prefix(segment, end)",
          "            with self._ship_lock:   # PLANT: the hole is filled under the ship lock\n"

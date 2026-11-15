@@ -414,6 +414,24 @@ def _decode_root_object(data: bytes) -> tuple:
     return label, record
 
 
+def _decodable(data: bytes) -> bool:
+    """True when ``data`` starts with a well-formed framed record (a peer's answer, R242L)."""
+    try:
+        read_record(data, 0)
+        return True
+    except ProtoCorruptionError:
+        return False
+
+
+def _well_framed(data: bytes) -> bool:
+    """True when ``data`` is exactly one well-formed framed record (a commit's records)."""
+    try:
+        kind, payload = read_record(data, 0)
+    except ProtoCorruptionError:
+        return False
+    return len(encode_record(kind, payload)) == len(data)
+
+
 class _SegmentAbsent(ProtoCorruptionError):
     """The object store holds neither the sealed object nor a part of a segment.  Corrupt only
     when no peer holds the record either; a read that could not hear every peer reports it
@@ -1183,8 +1201,9 @@ class TieredStorage(SharedStorage):
             return found
         if isinstance(failure, _SegmentAbsent) and not peers_complete:
             raise ProtoUnexpectedError(f"The record at {ptr} is unavailable: the object store does not hold "
-                                       f"its segment (not uploaded yet) and not every peer answered the page "
-                                       f"request within its wait") from failure
+                                       f"its segment (not uploaded yet), and some peer was not heard within the "
+                                       f"wait, could not tell (no storage attached), or answered corrupt bytes "
+                                       f"(logged)") from failure
         raise ProtoCorruptionError(f"There is no full copy of the record at {ptr}: the object store's "
                                    f"copy is short or corrupt ({failure}) and no reachable peer holds "
                                    f"it") from failure
@@ -1231,7 +1250,7 @@ class TieredStorage(SharedStorage):
         so the other peers may not have been heard (R235L)."""
         fetcher, answer = self._peer
         if answer is not None:
-            data, complete = answer(ptr)
+            data, complete = answer(ptr, valid=_decodable)
         elif fetcher is not None:
             data, complete = fetcher(ptr), True
         else:
@@ -1513,8 +1532,11 @@ class TieredStorage(SharedStorage):
 
     def _peer_framed(self, ptr: AtomPointer) -> Optional[bytes]:
         """The framed record at ``ptr`` from a peer (page request), validated, or ``None``."""
-        fetcher = self._peer[0]
-        data = fetcher(ptr) if fetcher is not None else None
+        fetcher, answer = self._peer
+        if answer is not None:
+            data = answer(ptr, valid=_well_framed)[0]       # a corrupt answer: ask the others (R242L)
+        else:
+            data = fetcher(ptr) if fetcher is not None else None
         if data is None:
             return None
         try:

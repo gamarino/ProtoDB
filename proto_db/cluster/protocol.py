@@ -103,6 +103,9 @@ at every start (Task 8.3g review, C1):
 ``fetched``    ``rid``, ``inc``, ``segment``, ``offset``, ``data``: the framed record bytes at
                ``segment``/``offset`` (echoed), or ``None`` when the peer lacks it.  The asker
                takes it only for the incarnation and the pointer it asked (protocol 12).
+               Optional ``unknown``: True when the peer cannot tell, because it has no
+               storage attached (a restart before attach, a closed space); the asker then
+               counts it as not heard, never as lacking the record (ruling R240L).
 ``warm``       ``term``, ``records``: records of a commit sent to a member that is not one of
                its data replicas, which keeps them in its record cache only: no append, no
                sync, no acknowledgement (ruling R89, protocol 12).  Best effort: a member that
@@ -112,7 +115,7 @@ at every start (Task 8.3g review, C1):
                persisted root ordering at or above ``root`` (that commit and every earlier one
                are in the object store); ``ranges`` lists ``[segment UUID bytes, start, end]``,
                the byte ranges of the records shipped with that commit, when the peer knows
-               them (else ``None``).
+               them (else ``None``).  Optional ``unknown`` as for ``fetched`` (R240L).
 
 ``root`` and ``committed`` use :func:`encode_root`: a root with the term of the lease that
 replicated it (its *label*); roots are ordered by
@@ -126,7 +129,9 @@ to send one.  A replication splits its records into frames of at most
 :data:`CHUNK_BYTES` of record data, and a cluster node refuses to store a record larger
 than :data:`MAX_RECORD_BYTES`, so any commit fits.  A message of another
 protocol version, an unknown type or a missing or ill-typed field is a
-:class:`ClusterProtocolError`; receivers drop such messages.
+:class:`ClusterProtocolError`; receivers drop such messages.  An optional field
+(:data:`OPTIONAL_FIELDS`) may be absent and is checked when present; a receiver that does not
+know it ignores it (it was added without a version change: ruling R240L).
 """
 import struct
 import uuid
@@ -137,7 +142,7 @@ import msgpack
 from ..errors import ProtoCorruptionError
 from ..storage.format import WRITE_FORMAT_VERSION, RootRecord
 
-__all__ = ["PROTOCOL_VERSION", "MAX_FRAME_BYTES", "CHUNK_BYTES", "MAX_RECORD_BYTES", "MESSAGE_TYPES",
+__all__ = ["PROTOCOL_VERSION", "MAX_FRAME_BYTES", "CHUNK_BYTES", "MAX_RECORD_BYTES", "MESSAGE_TYPES", "OPTIONAL_FIELDS",
            "ClusterProtocolError",
            "make_message", "validate_message", "encode_message", "decode_message", "check_frame_size",
            "encode_frame", "FrameDecoder", "encode_root", "decode_root", "decode_labeled_root",
@@ -222,6 +227,15 @@ MESSAGE_TYPES = {
     "commit_info": {"rid": _INT, "inc": _INT, "persisted": _BOOL, "ranges": _RANGES},
 }
 
+#: Fields a message of a type may carry or omit (checked when present).  ``unknown`` (R240L):
+#: the replying member has no storage attached and cannot tell whether it holds what was asked.
+#: Added within protocol 13 because it changes no existing field: a node without it ignores the
+#: key and counts the reply as a miss, as before; a node with it reads an absent key as False.
+OPTIONAL_FIELDS = {
+    "fetched": {"unknown": _BOOL},
+    "commit_info": {"unknown": _BOOL},
+}
+
 
 class ClusterProtocolError(ProtoCorruptionError):
     """A malformed frame or message, or one of an unsupported protocol version."""
@@ -279,6 +293,9 @@ def validate_message(msg) -> dict:
         if name not in msg:
             raise ClusterProtocolError(f"A {kind!r} message lacks the field {name!r}")
         _check_field(kind, name, msg[name], expected)
+    for name, expected in OPTIONAL_FIELDS.get(kind, {}).items():
+        if name in msg:
+            _check_field(kind, name, msg[name], expected)
     return msg
 
 

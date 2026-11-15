@@ -462,7 +462,7 @@ class _Waiter:
     """Replies gathered for one replicate, query or fetch (guarded by the coordinator lock)."""
 
     __slots__ = ("kind", "term", "acks", "nacks", "answers", "promised", "states", "ballots", "data", "missing",
-                 "stored", "unstored", "key")
+                 "stored", "unstored", "key", "unknown", "data_from")
 
     def __init__(self, kind: str, term: int = 0):
         self.kind = kind
@@ -480,6 +480,10 @@ class _Waiter:
         # The members that answered a fetch or commit_query without it: a set, so that a
         # duplicated reply never counts twice (transport duplication; R234L).
         self.missing = set()
+        # Members that answered they cannot tell (no storage attached, R240L): heard, but never
+        # a miss.  ``data_from``: the member whose bytes are ``data``.
+        self.unknown = set()
+        self.data_from = None
 
 
 class _PermitWait:
@@ -1575,7 +1579,7 @@ class ClusterCoordinator:
             timeout = self._read_wait(permitted)
         asked = set(self._others)
         waiter = self._ask("commit_query", {"root": encode_root(root, known=True, term=label)},
-                           lambda w: w.data is not None or asked <= w.missing, timeout)
+                           lambda w: w.data is not None or asked <= w.missing | w.unknown, timeout)
         if waiter.data is None:
             return False, None
         return waiter.data
@@ -2209,9 +2213,11 @@ class ClusterCoordinator:
         elif kind == "fetched":
             if waiter.kind != "fetch" or waiter.key != (msg["segment"], msg["offset"]):
                 return              # the bytes of another record are never this one's (review C2)
-            if msg["data"] is not None:
+            if msg.get("unknown", False):
+                waiter.unknown.add(sender)          # cannot tell: not a miss (R240L)
+            elif msg["data"] is not None:
                 if waiter.data is None:
-                    waiter.data = msg["data"]
+                    waiter.data, waiter.data_from = msg["data"], sender
             else:
                 waiter.missing.add(sender)
         elif kind == "commit_info":
@@ -2219,7 +2225,9 @@ class ClusterCoordinator:
                 return
             if waiter.data is not None:
                 return
-            if msg["persisted"]:
+            if msg.get("unknown", False):
+                waiter.unknown.add(sender)          # cannot tell: not a miss (R240L)
+            elif msg["persisted"]:
                 waiter.data = (True, None)
             elif msg["ranges"] is not None:
                 waiter.data = (False, protocol.decode_ranges(msg["ranges"]))
@@ -2706,8 +2714,12 @@ class ClusterCoordinator:
         with self._lock:
             if data is not None:
                 self._stats["fetches_served"] += 1
+        # Without a tier this member cannot tell whether its disk holds the record (a restart
+        # before attach, a closed space): it says so, and is never counted as lacking it (R240L).
+        extra = {"unknown": True} if tier is None else {}
         self._transport.send(msg["from"], make_message("fetched", self._node, rid=msg["rid"], inc=msg["inc"],
-                                                       segment=msg["segment"], offset=msg["offset"], data=data))
+                                                       segment=msg["segment"], offset=msg["offset"], data=data,
+                                                       **extra))
 
     def _warm(self, msg: dict) -> None:
         """Cache the records of another member's commit (ruling R89): memory only, never
@@ -2730,9 +2742,10 @@ class ClusterCoordinator:
         ranges = None
         if not persisted and root is not None and tier is not None and getattr(tier, "local_records", False):
             ranges = tier.commit_ranges(root)
+        extra = {"unknown": True} if tier is None else {}     # cannot tell (R240L)
         self._transport.send(msg["from"], make_message("commit_info", self._node, rid=msg["rid"], inc=msg["inc"],
                                                        persisted=persisted,
-                                                       ranges=protocol.encode_ranges(ranges)))
+                                                       ranges=protocol.encode_ranges(ranges), **extra))
 
     # -- acquiring and releasing -------------------------------------------------------------
 
@@ -4308,15 +4321,21 @@ class ClusterCoordinator:
         what remains of its permission: :meth:`_read_wait`).  See :meth:`fetch_answer`."""
         return self.fetch_answer(ptr)[0]
 
-    def fetch_answer(self, ptr) -> tuple:
+    def fetch_answer(self, ptr, valid: Optional[Callable[[bytes], bool]] = None) -> tuple:
         """``(framed record or None, complete)``: the peer page request of :meth:`fetch_record`,
         and whether its ``None`` is definitive -- every other member answered that it does
-        not hold the record (``complete`` True), as opposed to a member that did not answer
-        within the wait (a timeout, the cap of a commit's permission, a stopped coordinator:
-        ``complete`` False).  A record found is ``(data, True)``; with no other member,
-        ``(None, True)``.  The members the locator names for the record's segment (the data
-        replicas of the commits that wrote it, D54) are asked first; the others only when none
-        of them has it.  A tier tells an unavailable record from an absent one by it (R230)."""
+        not hold the record (``complete`` True), as opposed to a member that was not heard
+        within the wait (a timeout, the cap of a commit's permission, a stopped coordinator),
+        one that cannot tell because it has no storage attached (R240L), or one that answered
+        bytes ``valid`` rejects (``complete`` False).  Each member counts once, however often
+        its reply arrives (R234L).  A record found is ``(data, True)``; with no other member,
+        ``(None, True)``.
+
+        The members the locator names for the record's segment (the data replicas of the
+        commits that wrote it, D54) are asked first; the others only when none of them has
+        it.  An answer ``valid`` rejects does not end the request: the members of that round
+        not heard yet are asked again, within what remains of the round's wait (R242L).  A
+        tier tells an unavailable record from an absent one by it (R230)."""
         if not self._others:
             return None, True
         tier = self._tier
@@ -4340,13 +4359,25 @@ class ClusterCoordinator:
             if i:
                 with self._lock:
                     self._stats["fetch_fallbacks"] += 1
-            waiter = self._ask("fetch", {"segment": ptr.segment.bytes, "offset": ptr.offset},
-                               lambda w, asked=set(targets): w.data is not None or asked <= w.missing, timeout,
-                               targets=targets)
-            if waiter.data is not None:
-                return waiter.data, True
-            if not set(targets) <= waiter.missing:
-                complete = False        # some member did not answer: says nothing about it
+            deadline = time.monotonic() + timeout
+            remaining, wait = list(targets), timeout
+            while remaining:
+                waiter = self._ask("fetch", {"segment": ptr.segment.bytes, "offset": ptr.offset},
+                                   lambda w, asked=set(remaining): w.data is not None
+                                   or asked <= w.missing | w.unknown, wait, targets=remaining)
+                wait = max(0.0, deadline - time.monotonic())    # a re-ask: what remains of the round
+                if waiter.data is not None:
+                    if valid is None or valid(waiter.data):
+                        return waiter.data, True
+                    logger.warning("Node %s: member %s answered corrupt bytes for the record at %s; asking the "
+                                   "others", self._node, waiter.data_from, ptr)
+                    complete = False        # a corrupt answer is no answer that the record is absent
+                    heard = waiter.missing | waiter.unknown | {waiter.data_from}
+                    remaining = [m for m in remaining if m not in heard]
+                    continue
+                if not set(remaining) <= waiter.missing:
+                    complete = False        # some member was not heard, or cannot tell
+                break
         return None, complete
 
 

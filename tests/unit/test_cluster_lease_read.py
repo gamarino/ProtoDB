@@ -683,3 +683,126 @@ def test_a_base_re_commit_that_sent_its_root_is_never_a_retryable_conflict(monke
         assert permission.outcome == "unknown", permission.outcome
     finally:
         h.close()
+
+
+# -- fix round 3 (re-review 2 of LEASE-READ; rulings R240L-R242L) ------------------------------
+
+def _detached_holders(h, names="bc"):
+    """``names`` hold a record on disk but run with no tier attached (a restart before attach,
+    a closed space); returns the record."""
+    r = rec(7)
+    for n in names:
+        h.nodes[n].tier.held.add((r.segment, r.offset))
+    for n in names:
+        h.nodes[n].detach(h.nodes[n].tier)
+    return r
+
+
+def test_a_member_without_storage_attached_is_never_a_miss():
+    """R240L: ``b`` and ``c`` hold the record but have no tier attached.  They answer that they
+    cannot tell, so the page request is not complete -- before, their ``data=None`` counted
+    as "answered without the record" and an available record was called corrupt (re-review
+    2, R2-A; probe ``rr2-1794900000/probe_unattached.py``)."""
+    h = Harness("abc", records=True)
+    try:
+        h.bootstrap("a")
+        a = h.nodes["a"]
+        r = _detached_holders(h)
+
+        def pump():
+            h.net.deliver(src="a", dst={"b", "c"}, kinds=("fetch",))
+            h.net.deliver(src=None, dst={"a"}, kinds=("fetched",))
+        got = h._run(lambda: a.fetch_answer(AtomPointer(r.segment, r.offset)), pump)
+        assert got == (None, False), f"members without storage counted as lacking the record: {got}"
+    finally:
+        h.close()
+
+
+def test_a_commit_query_to_members_without_storage_counts_no_miss():
+    """R240L, ``commit_info``: the same members answer that they cannot tell; the ask ends (they
+    were heard) without counting them as members that do not know the commit."""
+    h = Harness("abc", records=True)
+    try:
+        h.bootstrap("a")
+        a = h.nodes["a"]
+        r = _detached_holders(h)
+        waiters = []
+        ask = a._ask
+
+        def recording(kind, msg_fields, done, timeout, targets=None):
+            waiter = ask(kind, msg_fields, done, timeout, targets=targets)
+            waiters.append(waiter)
+            return waiter
+        a._ask = recording
+
+        def pump():
+            h.net.deliver(src="a", dst={"b", "c"}, kinds=("commit_query",))
+            h.net.deliver(src=None, dst={"a"}, kinds=("commit_info",))
+        assert h._run(lambda: a._ask_commit(1, r), pump) == (False, None)
+        (waiter,) = waiters
+        assert not waiter.missing, f"members without storage counted as misses: {waiter.missing}"
+        assert waiter.unknown == {"b", "c"}, waiter.unknown
+    finally:
+        h.close()
+
+
+def _first_fetch_reply_lost(tc, node, reader):
+    """``node``'s first ``fetched`` reply to ``reader`` is lost; later ones go through.  Returns
+    a function restoring its transport."""
+    send = tc[node]._transport.send
+    lost = []
+
+    def lossy(to, msg):
+        if to == reader and msg["type"] == "fetched" and not lost:
+            lost.append(msg)
+            return
+        send(to, msg)
+    tc[node]._transport.send = lossy
+
+    def restore():
+        tc[node]._transport.send = send
+    return restore, lost
+
+
+def test_a_peer_answering_corrupt_bytes_does_not_end_the_page_request(tmp_path):
+    """R242L: ``n0`` answers corrupt bytes and ``n1``'s first reply is lost; the read asks again
+    the members not heard yet and gets the record from ``n1``.  Before, the corrupt answer
+    ended the request, and with the store lacking the segment the read failed although
+    ``n1`` holds the record."""
+    with TieredCluster(tmp_path, **NOT_UPLOADED) as tc:
+        tc.create_database("n0")
+        _commit_without(tc, "n0", "n2")
+        r = tc["n0"].committed_root()[1]
+        st = tc.storages["n2"]
+        n0_send = tc["n0"]._transport.send
+
+        def corrupt(to, msg):
+            if to == "n2" and msg["type"] == "fetched" and msg["data"] is not None:
+                msg = dict(msg, data=b"\x00" * len(msg["data"]))
+            n0_send(to, msg)
+        tc["n0"]._transport.send = corrupt
+        restore, lost = _first_fetch_reply_lost(tc, "n1", "n2")
+        try:
+            reads = st.stats()["reads_peer"]
+            st._record(AtomPointer(r.segment, r.offset))     # raises when unavailable
+        finally:
+            restore()
+            tc["n0"]._transport.send = n0_send
+        assert lost, "the schedule did not run: n1 sent no reply"
+        assert st.stats()["reads_peer"] == reads + 1, "the record did not come from a peer"
+
+
+def test_the_unavailable_error_names_a_corrupt_answer(tmp_path):
+    """R241L: when the only answers were corrupt bytes, the unavailable error says a peer may
+    have answered corrupt bytes, not only that a peer was not heard."""
+    with TieredCluster(tmp_path, **NOT_UPLOADED) as tc:
+        tc.create_database("n0")
+        _commit_without(tc, "n0", "n2")
+        r = tc["n0"].committed_root()[1]
+        restore = _corrupting(tc, "n2")
+        try:
+            with pytest.raises(ProtoUnexpectedError) as info:
+                tc.storages["n2"].get_atom(AtomPointer(r.segment, r.offset))
+        finally:
+            restore()
+        assert "corrupt bytes" in str(info.value), str(info.value)
