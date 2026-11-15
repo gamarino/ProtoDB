@@ -65,6 +65,19 @@ Self-describing acceptances (Task 8.3f phase B, D50)
     refuses such a log with ``ProtoCorruptionError`` (an entry of an unexpected size), never
     misreads it, so the log's header version is unchanged.
 
+Versioned entries (runtime registry, ruling R151 fix round 1)
+    A root, base root or record of a storage format above
+    :data:`~proto_db.storage.format.WRITE_FORMAT_VERSION` is logged in a *versioned* entry,
+    kind :data:`VERSIONED_KIND`: the kind, the storage format version (``u16``) and the plain
+    entry of kind 1, 2, 5 or 6.  The roots read from it keep that version, so a node that
+    restarts persists a format-5 root as format 5.  Every other entry keeps its bytes.  The
+    first versioned entry raises the log header to log format version 3
+    (:data:`VERSIONED_LOG_VERSION`), synced before the entry: a reader of log format 2 refuses
+    the file at its header with ``ProtoNotSupportedError``, and a reader that knows only kinds
+    1 to 6 would refuse the entry as an unknown kind; neither reads format-5 records as format
+    4 (a redo of them under a version-4 header would).  A log that never held such an entry
+    stays log format 2, byte for byte.
+
 Failed writes poison the handle (8.3d re-review 9, B1; ruling R57)
     Any I/O error of a :class:`RootsLog` -- a write, an ``fsync``, a compaction's rewrite,
     rename, reopen or close of the replaced descriptor -- leaves the handle refusing every
@@ -106,15 +119,18 @@ import uuid
 import weakref
 from typing import NamedTuple, Optional
 
-from ..errors import ProtoCorruptionError, ProtoUnexpectedError, ProtoValidationError, attach_secondary_errors
-from ..storage.format import WRITE_FORMAT_VERSION, RootRecord
+from ..errors import (ProtoCorruptionError, ProtoNotSupportedError, ProtoUnexpectedError, ProtoValidationError,
+                      attach_secondary_errors)
+from ..storage import format as _format
+from ..storage.format import SEGMENT_HEADER_SIZE, WRITE_FORMAT_VERSION, RootRecord, framed_version
 from ..storage.ownerlock import OwnerLock
-from ..storage.logfile import (FRAME_OVERHEAD, HEADER_SIZE, encode_frame, fsync_dir, log_contents, open_log,
-                               prepare_replacement, read_log, write_all)
+from ..storage.logfile import (FRAME_OVERHEAD, HEADER_SIZE, LOG_WRITE_VERSION, encode_frame, fsync_dir,
+                               header_version, log_contents, open_log, prepare_replacement, read_log,
+                               set_header_version, write_all)
 
 __all__ = ["root_key", "compare_roots", "LoggedRoots", "RedoEntry", "RootsLog", "MemoryRootsLog",
            "memory_log_for", "write_all", "prepare_replacement", "encode_records_entry", "decode_records_entry",
-           "encode_replica_entry", "RECORDS_KIND", "REPLICA_KIND", "DATA_KINDS"]
+           "encode_replica_entry", "RECORDS_KIND", "REPLICA_KIND", "VERSIONED_KIND", "DATA_KINDS"]
 
 _ENTRY = struct.Struct("<BQQ16sQ")          # kind, label (or term), epoch, segment, offset
 #: Head of a kind-5 entry: kind, label, epoch, segment, offset, seq, pred label, pred epoch,
@@ -135,6 +151,21 @@ REPLICA_KIND = 6
 ACCEPTED = 1
 #: Kinds of entries carrying records (redone at open, kept until a checkpoint covers them).
 DATA_KINDS = (RECORDS_KIND, REPLICA_KIND)
+#: Kind code of a *versioned* entry (runtime registry, ruling R151 fix round 1): ``kind (u8) |
+#: storage format version (u16) | the payload of an entry of kind 1, 2, 5 or 6``.  An entry whose
+#: root, base root or records need a storage format above
+#: :data:`~proto_db.storage.format.WRITE_FORMAT_VERSION` is written in this form, so a reader of
+#: an earlier revision refuses it (an unknown kind) instead of reading format-5 data as format
+#: 4, and the root keeps its version across a restart; every other entry keeps its bytes.  A log
+#: holding one has the log format version 3 in its header (:data:`VERSIONED_LOG_VERSION`).
+VERSIONED_KIND = 7
+_VERSIONED_HEAD = struct.Struct("<BH")
+#: The entry kinds this version reads (an older revision knows 1 to 6).
+_KNOWN_KINDS = frozenset({1, 2, 3, 4, RECORDS_KIND, REPLICA_KIND, VERSIONED_KIND})
+#: The kinds a versioned entry may wrap: those that carry a root or records.
+_WRAPPED_KINDS = frozenset({1, 2, RECORDS_KIND, REPLICA_KIND})
+#: The log format version of a log holding a versioned entry.
+VERSIONED_LOG_VERSION = 3
 #: Size of one framed entry on disk (:mod:`proto_db.storage.logfile` framing).
 ENTRY_SIZE = _ENTRY.size + FRAME_OVERHEAD
 #: Kind of the acceptor log in its file header.
@@ -218,10 +249,64 @@ def _check_kind(kind: str) -> int:
     return code
 
 
+def _versioned(version: int, inner: bytes) -> bytes:
+    """``inner`` as written: plain when ``version`` is the base version, else wrapped in a
+    versioned entry (:data:`VERSIONED_KIND`)."""
+    if version <= WRITE_FORMAT_VERSION:
+        return inner
+    return _VERSIONED_HEAD.pack(VERSIONED_KIND, version) + inner
+
+
+def _unwrap(payload, path: str) -> tuple:
+    """``(storage format version, inner payload)`` of the entry ``payload``; an entry of a kind
+    this version does not know raises ``ProtoCorruptionError``, a versioned entry of a storage
+    format it does not read ``ProtoNotSupportedError``."""
+    if not len(payload) or payload[0] not in _KNOWN_KINDS:
+        raise ProtoCorruptionError(
+            f"The root log {path} holds an entry of unknown kind {payload[0] if len(payload) else None}")
+    if payload[0] != VERSIONED_KIND:
+        return WRITE_FORMAT_VERSION, payload
+    if len(payload) <= _VERSIONED_HEAD.size:
+        raise ProtoCorruptionError(f"The root log {path} holds a short versioned entry")
+    _, version = _VERSIONED_HEAD.unpack_from(payload)
+    inner = payload[_VERSIONED_HEAD.size:]
+    if version <= WRITE_FORMAT_VERSION or inner[0] not in _WRAPPED_KINDS:
+        raise ProtoCorruptionError(
+            f"The root log {path} holds a versioned entry of version {version} wrapping kind {inner[0]}")
+    if version not in _format.READABLE_FORMAT_VERSIONS:
+        raise ProtoNotSupportedError(
+            f"The root log {path} holds an entry of storage format {version}, which this version does not read")
+    return version, inner
+
+
+def _entry_kind(payload) -> int:
+    """The kind of the entry ``payload``, a versioned entry being of the kind it wraps."""
+    if len(payload) > _VERSIONED_HEAD.size and payload[0] == VERSIONED_KIND:
+        return payload[_VERSIONED_HEAD.size]
+    return payload[0] if len(payload) else 0
+
+
+def _records_version(root: Optional[RootRecord], pred: Optional[tuple], records: list) -> int:
+    """The storage format version an entry carrying ``root``, ``pred`` and ``records`` needs: the
+    root's version, which a committer makes at least that of every record of its commit
+    (:func:`~proto_db.storage.format.next_root_version`), the base root's, and the version of
+    every segment whose first record rides here (a segment's version is its first record's)."""
+    version = max(WRITE_FORMAT_VERSION, root.version if root is not None else 0,
+                  pred[1].version if pred is not None and pred[1] is not None else 0)
+    for _, offset, data in records:
+        if offset == SEGMENT_HEADER_SIZE and data is not None:
+            try:
+                version = max(version, framed_version(data))
+            except ProtoCorruptionError:
+                version = max(version, _format.FORMAT_VERSION)
+    return version
+
+
 def _payload(code: int, label: int, record: Optional[RootRecord]) -> bytes:
-    return _ENTRY.pack(code, label, record.epoch if record is not None else 0,
-                       record.segment.bytes if record is not None else bytes(16),
-                       record.offset if record is not None else 0)
+    inner = _ENTRY.pack(code, label, record.epoch if record is not None else 0,
+                        record.segment.bytes if record is not None else bytes(16),
+                        record.offset if record is not None else 0)
+    return _versioned(record.version if record is not None else WRITE_FORMAT_VERSION, inner)
 
 
 def _encode(code: int, label: int, record: Optional[RootRecord]) -> bytes:
@@ -245,8 +330,9 @@ class RedoEntry(NamedTuple):
     ranges: Optional[list] = None
 
 
-def _record_or_none(epoch: int, segment: bytes, offset: int) -> Optional[RootRecord]:
-    return None if epoch == 0 else RootRecord(WRITE_FORMAT_VERSION, uuid.UUID(bytes=segment), offset, epoch)
+def _record_or_none(epoch: int, segment: bytes, offset: int, version: int = WRITE_FORMAT_VERSION
+                    ) -> Optional[RootRecord]:
+    return None if epoch == 0 else RootRecord(version, uuid.UUID(bytes=segment), offset, epoch)
 
 
 def encode_records_entry(label: int, root: Optional[RootRecord], seq: int, pred: Optional[tuple],
@@ -265,7 +351,7 @@ def encode_records_entry(label: int, root: Optional[RootRecord], seq: int, pred:
     for raw, offset, data in items:
         parts.append(_RECORD_ITEM.pack(bytes(raw), offset, len(data)))
         parts.append(bytes(data))
-    return b"".join(parts)
+    return _versioned(_records_version(root, pred, items), b"".join(parts))
 
 
 def encode_replica_entry(label: int, root: Optional[RootRecord], seq: int, pred: Optional[tuple],
@@ -285,12 +371,14 @@ def encode_replica_entry(label: int, root: Optional[RootRecord], seq: int, pred:
     for raw, offset, data in items:
         parts.append(_RECORD_ITEM.pack(bytes(raw), offset, len(data)))
         parts.append(bytes(data))
-    return b"".join(parts)
+    return _versioned(_records_version(root, pred, items), b"".join(parts))
 
 
 def decode_records_entry(payload, path: str = "") -> RedoEntry:
     """Decode the payload of a kind-5 or kind-6 entry; ``ProtoCorruptionError`` when it is
-    malformed (the frame's CRC matched, so only a writer bug or another format can cause it)."""
+    malformed (the frame's CRC matched, so only a writer bug or another format can cause it).
+    A versioned entry (:data:`VERSIONED_KIND`) gives its roots its storage format version."""
+    version, payload = _unwrap(payload, path)
     view = memoryview(payload)
     ranges, accepted = None, True
     if len(view) and view[0] == REPLICA_KIND:
@@ -331,27 +419,27 @@ def decode_records_entry(payload, path: str = "") -> RedoEntry:
         pos += length
     if pos != len(view):
         raise ProtoCorruptionError(f"The root log {path} holds a records entry with trailing bytes")
-    pred_root = _record_or_none(pred_epoch, pred_segment, pred_offset)
+    pred_root = _record_or_none(pred_epoch, pred_segment, pred_offset, version)
     pred = None if pred_label == 0 and pred_root is None else (pred_label, pred_root)
-    return RedoEntry(label, _record_or_none(epoch, segment, offset), seq, pred, records, accepted, ranges)
+    return RedoEntry(label, _record_or_none(epoch, segment, offset, version), seq, pred, records, accepted, ranges)
 
 
 def _decode(payloads: list, path: str) -> LoggedRoots:
     """The roots and the promise held by the entries ``payloads`` of the log at ``path``."""
     best = _Best()
     for payload in payloads:
-        if len(payload) and payload[0] in DATA_KINDS:
+        if len(payload) and _entry_kind(payload) in DATA_KINDS:
             entry = decode_records_entry(payload, path)
             if entry.accepted:
                 best.add(1, entry.label, entry.root)      # an accepted root, with its records
             continue
+        version, payload = _unwrap(payload, path)
         if len(payload) != _ENTRY.size:
             raise ProtoCorruptionError(f"The root log {path} holds an entry of {len(payload)} bytes")
         code, label, epoch, segment, offset = _ENTRY.unpack(payload)
         if code not in (1, 2, 3, 4):
             raise ProtoCorruptionError(f"The root log {path} holds an entry of unknown kind {code}")
-        record = None if epoch == 0 else RootRecord(WRITE_FORMAT_VERSION, uuid.UUID(bytes=segment), offset, epoch)
-        best.add(code, label, record)
+        best.add(code, label, _record_or_none(epoch, segment, offset, version))
     return best.result()
 
 
@@ -411,8 +499,9 @@ class RootsLog:
             # Every kind-5 entry is uncheckpointed at open: its records are redone by the
             # storage (take_redo), which then checkpoints and compacts.
             self._redo = [decode_records_entry(p, self._path) for p in payloads
-                          if len(p) and p[0] in DATA_KINDS]
-            self._pending = sum(FRAME_OVERHEAD + len(p) for p in payloads if len(p) and p[0] in DATA_KINDS)
+                          if len(p) and _entry_kind(p) in DATA_KINDS]
+            self._pending = sum(FRAME_OVERHEAD + len(p) for p in payloads if len(p) and _entry_kind(p) in DATA_KINDS)
+            self._log_version = header_version(os.pread(fd, HEADER_SIZE, 0))
         except BaseException as e:
             closing = ([lambda: os.close(fd)] if fd >= 0 else []) + [self._owner.release]
             secondary = []
@@ -558,8 +647,13 @@ class RootsLog:
     def _write(self, entry: bytes, *, sync: bool) -> None:
         """Append ``entry``, ``fsync``-ed with ``sync`` whatever the storage's data durability
         mode (lock held, handle writable).  Any failure poisons the handle: the file may end in
-        a torn entry, or hold what an ``fsync`` could not confirm."""
+        a torn entry, or hold what an ``fsync`` could not confirm.  The first versioned entry
+        raises the log's header to :data:`VERSIONED_LOG_VERSION`, synced before the entry is
+        written, so a reader of the previous log format refuses the file at its header."""
         try:
+            if entry[FRAME_OVERHEAD] == VERSIONED_KIND and self._log_version < VERSIONED_LOG_VERSION:
+                set_header_version(self._path, LOG_KIND, VERSIONED_LOG_VERSION)
+                self._log_version = VERSIONED_LOG_VERSION
             write_all(self._fd, entry)
             if sync:
                 os.fsync(self._fd)
@@ -600,7 +694,9 @@ class RootsLog:
         if not roots.empty:
             payloads.append(_payload(4, 0, None))        # the rejoined marker, last
         payloads.extend(kept)
-        data = log_contents(LOG_KIND, payloads)
+        version = (VERSIONED_LOG_VERSION if any(p[0] == VERSIONED_KIND for p in payloads if len(p))
+                   else LOG_WRITE_VERSION)
+        data = log_contents(LOG_KIND, payloads, version)
         # Open and fully prepare the replacement, swap, and only then close the old descriptor
         # (8.3d re-review 9, B1): the handle never holds a closed descriptor number.
         new = prepare_replacement(self._path, data, os.O_RDWR | _O_BINARY | _O_CLOEXEC)
@@ -608,7 +704,8 @@ class RootsLog:
         os.close(old)
         self._owner.track(new)             # the log is a new file (M3)
         fsync_dir(os.path.dirname(self._path))
-        self._pending = sum(FRAME_OVERHEAD + len(p) for p in kept if len(p) and p[0] in DATA_KINDS)
+        self._pending = sum(FRAME_OVERHEAD + len(p) for p in kept if len(p) and _entry_kind(p) in DATA_KINDS)
+        self._log_version = version
         self._generation += 1
 
     def load(self) -> LoggedRoots:

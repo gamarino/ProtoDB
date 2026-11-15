@@ -103,6 +103,9 @@ at every start (Task 8.3g review, C1):
 ``fetched``    ``rid``, ``inc``, ``segment``, ``offset``, ``data``: the framed record bytes at
                ``segment``/``offset`` (echoed), or ``None`` when the peer lacks it.  The asker
                takes it only for the incarnation and the pointer it asked (protocol 12).
+               Optional ``unknown``: True when the peer cannot tell, because it has no
+               storage attached (a restart before attach, a closed space); the asker then
+               counts it as not heard, never as lacking the record (ruling R240L).
 ``warm``       ``term``, ``records``: records of a commit sent to a member that is not one of
                its data replicas, which keeps them in its record cache only: no append, no
                sync, no acknowledgement (ruling R89, protocol 12).  Best effort: a member that
@@ -112,7 +115,7 @@ at every start (Task 8.3g review, C1):
                persisted root ordering at or above ``root`` (that commit and every earlier one
                are in the object store); ``ranges`` lists ``[segment UUID bytes, start, end]``,
                the byte ranges of the records shipped with that commit, when the peer knows
-               them (else ``None``).
+               them (else ``None``).  Optional ``unknown`` as for ``fetched`` (R240L).
 
 ``root`` and ``committed`` use :func:`encode_root`: a root with the term of the lease that
 replicated it (its *label*); roots are ordered by
@@ -126,7 +129,9 @@ to send one.  A replication splits its records into frames of at most
 :data:`CHUNK_BYTES` of record data, and a cluster node refuses to store a record larger
 than :data:`MAX_RECORD_BYTES`, so any commit fits.  A message of another
 protocol version, an unknown type or a missing or ill-typed field is a
-:class:`ClusterProtocolError`; receivers drop such messages.
+:class:`ClusterProtocolError`; receivers drop such messages.  An optional field
+(:data:`OPTIONAL_FIELDS`) may be absent and is checked when present; a receiver that does not
+know it ignores it (``unknown``, ruling R240L, is part of protocol 14 from its first release).
 """
 import struct
 import uuid
@@ -135,9 +140,10 @@ from typing import Optional
 import msgpack
 
 from ..errors import ProtoCorruptionError
+from ..storage import format as _format
 from ..storage.format import WRITE_FORMAT_VERSION, RootRecord
 
-__all__ = ["PROTOCOL_VERSION", "MAX_FRAME_BYTES", "CHUNK_BYTES", "MAX_RECORD_BYTES", "MESSAGE_TYPES",
+__all__ = ["PROTOCOL_VERSION", "MAX_FRAME_BYTES", "CHUNK_BYTES", "MAX_RECORD_BYTES", "MESSAGE_TYPES", "OPTIONAL_FIELDS",
            "ClusterProtocolError",
            "make_message", "validate_message", "encode_message", "decode_message", "check_frame_size",
            "encode_frame", "FrameDecoder", "encode_root", "decode_root", "decode_labeled_root",
@@ -166,7 +172,16 @@ __all__ = ["PROTOCOL_VERSION", "MAX_FRAME_BYTES", "CHUNK_BYTES", "MAX_RECORD_BYT
 #: 13: pipelined permissions (Task 8.3k, D55): the ``store`` and ``propose`` messages,
 #: ``permit.after``; ``replicate`` loses ``pred_committed`` (voters accept a same-term root only
 #: by extension of what they hold, rule V2').
-PROTOCOL_VERSION = 13
+#: 14: the records carried by ``replicate``, ``records``, ``store``, ``warm`` and ``fetched`` may
+#: be format-5 records (the feature ``parents``, ruling R151).  The layout of the existing fields is unchanged;
+#: what changes is what a record may hold and what a receiver must do with it: a receiver that
+#: writes records into a segment file it did not create writes the header version of the
+#: segment's first record (the highest version when it lacks that record).  A protocol-13 node
+#: would write a version-4 header over format-5 records and read them as format 4, so the two
+#: versions must not exchange messages.  Also 14: ``fetched`` and ``commit_info`` may carry the
+#: optional ``unknown`` (R240L), the reply of a member that cannot tell whether it holds what was
+#: asked.
+PROTOCOL_VERSION = 14
 #: Largest accepted frame payload, in bytes (a replicate message carries a commit's records).
 MAX_FRAME_BYTES = 64 * 1024 * 1024
 #: Record bytes a replication puts in one frame at most (a single record may fill one alone).
@@ -220,6 +235,15 @@ MESSAGE_TYPES = {
     "fetched": {"rid": _INT, "inc": _INT, "segment": _UUID, "offset": _INT, "data": _OPT_BYTES},
     "commit_query": {"rid": _INT, "inc": _INT, "root": _ROOT},
     "commit_info": {"rid": _INT, "inc": _INT, "persisted": _BOOL, "ranges": _RANGES},
+}
+
+#: Fields a message of a type may carry or omit (checked when present).  ``unknown`` (R240L):
+#: the replying member has no storage attached and cannot tell whether it holds what was asked.
+#: Part of protocol 14 from its first release (protocol 14 is new in 2.0.0rc4, so no released node
+#: speaks it without the field); optional so that an absent key reads as False.
+OPTIONAL_FIELDS = {
+    "fetched": {"unknown": _BOOL},
+    "commit_info": {"unknown": _BOOL},
 }
 
 
@@ -279,6 +303,9 @@ def validate_message(msg) -> dict:
         if name not in msg:
             raise ClusterProtocolError(f"A {kind!r} message lacks the field {name!r}")
         _check_field(kind, name, msg[name], expected)
+    for name, expected in OPTIONAL_FIELDS.get(kind, {}).items():
+        if name in msg:
+            _check_field(kind, name, msg[name], expected)
     return msg
 
 
@@ -345,25 +372,38 @@ class FrameDecoder:
 
 def encode_root(record: Optional[RootRecord], *, known: bool, term: int = 0):
     """Wire form of a root: ``None`` (unknown), ``[0, None, None, term]`` (known empty space)
-    or ``[epoch, segment UUID bytes, offset, term]``; ``term`` is the root's label (D46)."""
+    or ``[epoch, segment UUID bytes, offset, term]``; ``term`` is the root's label (D46).  A
+    root of a format version above :data:`~proto_db.storage.format.WRITE_FORMAT_VERSION` adds
+    its version as a fifth element (protocol 14), so the version a committer gave the root
+    reaches every acceptor and the persisted root; a root of the base version keeps the
+    four-element form."""
     if not known:
         return None
     if record is None:
         return [0, None, None, term]
+    if record.version > WRITE_FORMAT_VERSION:
+        return [record.epoch, record.segment.bytes, record.offset, term, record.version]
     return [record.epoch, record.segment.bytes, record.offset, term]
 
 
 def decode_labeled_root(value) -> tuple:
     """Inverse of :func:`encode_root`: ``(known, RootRecord or None, term)``.
 
-    A three-element value (no term) is accepted with term ``0``.
+    A three-element value (no term) is accepted with term ``0``; a five-element one carries the
+    root's format version, which must be one this version reads (``ClusterProtocolError``
+    otherwise: the message is dropped, never read as another version).
     """
     if value is None:
         return False, None, 0
-    if not isinstance(value, (list, tuple)) or len(value) not in (3, 4):
+    if not isinstance(value, (list, tuple)) or len(value) not in (3, 4, 5):
         raise ClusterProtocolError(f"Malformed root {value!r}")
     epoch, segment, offset = value[:3]
-    term = value[3] if len(value) == 4 else 0
+    term = value[3] if len(value) >= 4 else 0
+    version = value[4] if len(value) == 5 else WRITE_FORMAT_VERSION
+    if type(version) is not int or version <= WRITE_FORMAT_VERSION and len(value) == 5:
+        raise ClusterProtocolError(f"Malformed root format version {value!r}")
+    if version not in _format.READABLE_FORMAT_VERSIONS:
+        raise ClusterProtocolError(f"A root of format version {version}, which this version does not read")
     if type(epoch) is not int or epoch < 0 or type(term) is not int or term < 0:
         raise ClusterProtocolError(f"Malformed root epoch or term {value!r}")
     if epoch == 0:
@@ -372,7 +412,7 @@ def decode_labeled_root(value) -> tuple:
         return True, None, term
     if not isinstance(segment, bytes) or len(segment) != 16 or type(offset) is not int or offset < 0:
         raise ClusterProtocolError(f"Malformed root pointer {value!r}")
-    return True, RootRecord(WRITE_FORMAT_VERSION, uuid.UUID(bytes=segment), offset, epoch), term
+    return True, RootRecord(version, uuid.UUID(bytes=segment), offset, epoch), term
 
 
 def decode_root(value) -> tuple:

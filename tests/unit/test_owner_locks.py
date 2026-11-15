@@ -26,7 +26,7 @@ from proto_db.cluster.rootlog import RootsLog
 from proto_db.errors import ProtoCorruptionError, ProtoLockingError, secondary_errors
 from proto_db.storage import tiered as tiered_module
 from proto_db.storage.file import FileStorage
-from proto_db.storage.format import FORMAT_VERSION, RECORD_HEADER_SIZE, RootRecord, encode_record
+from proto_db.storage.format import WRITE_FORMAT_VERSION, RECORD_HEADER_SIZE, RootRecord, encode_record
 from proto_db.storage.tiered import RANGES_LOG, TieredStorage
 from tests.support.fake_object_store import FakeObjectStore
 
@@ -38,7 +38,7 @@ REAL_WRITE = os.write
 
 
 def rec(i: int) -> RootRecord:
-    return RootRecord(FORMAT_VERSION, uuid.UUID(int=i), 64, i)
+    return RootRecord(WRITE_FORMAT_VERSION, uuid.UUID(int=i), 64, i)
 
 
 # -- same process -----------------------------------------------------------------------------
@@ -77,10 +77,16 @@ def test_the_lock_survives_a_compaction_that_replaces_the_log_file(tmp_path, mon
     path = str(tmp_path / "n.roots")
     a = RootsLog(path)
     try:
-        ino = os.stat(path).st_ino
-        for i in range(1, 20):
-            a.append("accepted", i, rec(i))
-        assert os.stat(path).st_ino != ino, "no compaction happened"
+        # Hold the original file open: a compaction frees its inode, and a file system such as
+        # ext4 may hand the same number to the next compaction's file, so a bare inode number
+        # compare can miss a compaction that happened.  An open descriptor keeps the inode alive.
+        original = os.open(path, os.O_RDONLY)
+        try:
+            for i in range(1, 20):
+                a.append("accepted", i, rec(i))
+            assert not os.path.samestat(os.fstat(original), os.stat(path)), "no compaction happened"
+        finally:
+            os.close(original)
         with pytest.raises(ProtoLockingError):
             RootsLog(path)
     finally:
@@ -645,10 +651,13 @@ def test_a_compaction_through_a_symlink_replaces_the_target_not_the_link(tmp_pat
     os.symlink(real, link)
     a = RootsLog(link)
     try:
-        ino = os.stat(real).st_ino
-        for i in range(1, 20):
-            a.append("accepted", i, rec(i))
-        assert os.stat(real).st_ino != ino, "no compaction happened"
+        original = os.open(real, os.O_RDONLY)   # keeps the inode alive; see the test above
+        try:
+            for i in range(1, 20):
+                a.append("accepted", i, rec(i))
+            assert not os.path.samestat(os.fstat(original), os.stat(real)), "no compaction happened"
+        finally:
+            os.close(original)
         assert os.path.islink(link)
         with pytest.raises(ProtoLockingError):
             RootsLog(real)

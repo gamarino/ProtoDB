@@ -11,7 +11,7 @@ import os
 import pytest
 
 from proto_db.storage import tiered
-from proto_db.storage.format import FORMAT_VERSION, RootRecord
+from proto_db.storage.format import WRITE_FORMAT_VERSION, RootRecord
 from tests.support.fake_object_store import FakeObjectStore
 
 pytestmark = [pytest.mark.timeout(120)]
@@ -48,7 +48,7 @@ def test_contiguous_records_are_written_in_one_run_each(tmp_path, monkeypatch, p
         keep = [0, 1, 2, 3, 5, 6, 7, 10, 11]
         records = [records[i] for i in keep]
         ptrs = [ptrs[i] for i in keep]
-    root = RootRecord(FORMAT_VERSION, ptrs[-1].segment, ptrs[-1].offset, 7)
+    root = RootRecord(WRITE_FORMAT_VERSION, ptrs[-1].segment, ptrs[-1].offset, 7)
     path = str(tmp_path / "replica")
     st = tiered.TieredStorage(path, FakeObjectStore(), durability="none", release_local=False)
     try:

@@ -488,7 +488,10 @@ The commit path
 **Held retries (D50 amendment, D-LIVE-2).** When a transaction of a round conflicts and ``Database.run`` will
 retry it, the round keeps the permission (up to ``_PERMIT_RETRIES`` extra rounds while it is valid) and waits up
 to ``_RETRY_HOLD`` for the retry, which starts from the root the round just committed; the conflict is marked
-``permit_held`` and retried at once. Safety is unchanged: a kept permission is the same permission.
+``permit_held`` and retried at once. Safety is unchanged: a kept permission is the same permission. While a kept
+permission is being ended (its hold expired, or ``Database.run`` did not retry), the node's commit group holds an
+*ending* marker until ``finish`` returns, and the next runner waits for it, within its permit timeout, before it
+asks for a new permission (R148).
 
 The owner's rules, O1 to O8
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -587,9 +590,13 @@ because the owner must not issue the same base again.
    A majority of voters acknowledged the round's last root within the permission. The commits return normally.
 ``none``
    Nothing a voter may accept left the node and no own acceptance was logged (H7), and the base may be issued
-   again: every commit conflicted, the reserve refused the send, the gate closed, or a proposal base was
-   superseded (H2). The commits get ``ProtoConflictError``, which ``Database.run`` retries. Under rule O5 a
-   ``none`` lets the owner reuse its committed base.
+   again: every commit conflicted, the reserve refused the send, the gate closed, a proposal base was
+   superseded (H2), or a read of a base that the round must first re-commit failed before the re-proposal's
+   ``replicate`` (R233; nothing was sent). The commits get ``ProtoConflictError``, which ``Database.run`` retries,
+   except for the last cause: a failed base read raises ``ProtoUnexpectedError`` while the permission is still
+   valid, and a retryable ``ProtoConflictError`` only once it expired. Under rule O5 a ``none`` lets the owner
+   reuse its committed base, so it may issue the same base again; a base that proves unreachable
+   (``_BaseUnreachable``) instead abandons the term and ends ``unknown``.
 ``unknown``
    * Something acceptable left, and the majority was not observed in time, or a failure followed the send. The
      commits get ``ProtoOutcomeUnknownError`` (D44 amendment R35), which is never retried automatically: the root
@@ -936,7 +943,7 @@ always one of the conservative failures named at the top of this page.
      - How many times a rejoin round asks a silent member again.
    * - ``fetch_timeout``
      - ``belief / 4``
-     - How long a peer page request waits; never beyond the lease under a held permission.
+     - How long a peer page request waits. Only a read inside a commit's critical section waits no longer than what remains of its permission and of the lease the node holds; every other read waits the full ``fetch_timeout`` (R212).
    * - ``persist_interval``, ``persist_lag``
      - 0.05 s, 1.0 s
      - Persister passes; when any node persists another's commits.
@@ -969,7 +976,7 @@ Where the code is
 ``proto_db/cluster/persister.py``, ``proto_db/storage/tiered.py``
    Asynchronous persistence and the persisted-root compare-and-swap.
 ``proto_db/cluster/protocol.py``, ``proto_db/cluster/transport.py``
-   Messages (protocol version 13) and the TCP and in-process transports.
+   Messages (protocol version 14) and the TCP and in-process transports.
 ``proto_db/transactions.py``
    The commit round under a permission (``_run_round``, ``_permit_round``), the base (``_lease_base``,
    ``_phase_1_floor``, ``_commit_base``).

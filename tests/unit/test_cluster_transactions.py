@@ -244,6 +244,20 @@ def test_a_holder_paused_past_its_lease_never_replicates():
             return original()
 
         cl["n0"].tier.outgoing = paused_outgoing
+        # Checked per call of n0's replication: the call paused past the lease must refuse before
+        # sending anything acceptable, so it counts no failed replication.  n0's retry is a real
+        # round; under load it may fail after sending (counted rightly), so n0's total is not
+        # asserted (Task 11.1, A4: the total counted such a retry).
+        replicate, paused_calls = cl["n0"].replicate, []
+
+        def recorded_replicate(*args, **kw):
+            pausing, before = armed[0], cl["n0"].stats()["replication_failures"]
+            try:
+                return replicate(*args, **kw)
+            finally:
+                if pausing and not armed[0]:
+                    paused_calls.append(cl["n0"].stats()["replication_failures"] - before)
+        cl["n0"].replicate = recorded_replicate
         errors = []
 
         def paused_commit():
@@ -261,7 +275,7 @@ def test_a_holder_paused_past_its_lease_never_replicates():
         t.join(10)
         assert not errors
         assert _eventually(lambda: _value(s1) == 2)     # n0 retried on the new root: nothing lost
-        assert cl["n0"].stats()["replication_failures"] == 0
+        assert paused_calls == [0], f"the paused holder replicated past its lease: {paused_calls}"
 
 
 def test_a_late_replication_is_refused_by_peers_that_granted_a_newer_term():
@@ -363,13 +377,16 @@ def test_sync_waits_for_the_persisted_epoch_and_exposes_both_epochs():
         for i in range(5):
             _run(spaces[i % 3].open_database("db"), _incr, **RUN_KW)
         spaces[1].sync(timeout=stress.budget(5))                         # the last committer
-        assert spaces[1].persisted_epoch >= spaces[1].committed_epoch == 6
+        # At least one epoch per commit (a base re-commit adds one with the same data; Task 11.1):
+        # the plain reader's value counts the commits exactly.
+        epoch = spaces[1].committed_epoch
+        assert spaces[1].persisted_epoch >= epoch >= 6
         plain = ObjectSpace(shared)                       # a reader without the cluster
         assert _value(plain) == 5
         root = shared.read_root()
-        assert _eventually(lambda: spaces[0].committed_epoch == 6)
+        assert _eventually(lambda: spaces[0].committed_epoch >= epoch)
         tr = db.new_transaction()
-        assert tr._epoch == 6
+        assert tr._epoch == spaces[0].committed_epoch
         tr.abort()
         assert root is not None
 
@@ -538,6 +555,10 @@ def test_a_setup_new_database_whose_recovery_query_goes_unanswered_conflicts_and
             tc[node].transport.send = filtered
         with pytest.raises(ProtoConflictError, match="witnesses needed answered the recovery query"):
             tc.spaces["n0"].new_database("db")
+        # Both answers to the first query are lost; under load the second may be sent after the
+        # round already ended (Task 11.1, A4: only n1's had been dropped when this was checked), so
+        # wait for it before the next queries, which must all be answered.
+        assert _eventually(lambda: len(dropped) == 2), dropped
         assert sorted(dropped) == ["n1", "n2"] and tc.spaces["n0"].list_databases() == []
         tc.create_database("n0")                           # the next queries are answered
         _run(tc.db("n0"), incr, **TRUN_KW)

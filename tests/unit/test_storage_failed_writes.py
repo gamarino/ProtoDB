@@ -31,7 +31,7 @@ from proto_db.storage.logfile import HEADER_SIZE
 from proto_db.errors import ProtoOutcomeUnknownError, ProtoUnexpectedError, ProtoValidationError
 from proto_db.storage import tiered as tiered_module
 from proto_db.storage.cloud import CloudStorage
-from proto_db.storage.format import FORMAT_VERSION, RootRecord
+from proto_db.storage.format import WRITE_FORMAT_VERSION, RootRecord
 from proto_db.storage.tiered import RANGES_LOG, TieredStorage
 from tests.support.fake_object_store import FakeObjectStore
 
@@ -50,7 +50,7 @@ REAL = {name: getattr(os, name) for name in ("open", "close", "fsync", "replace"
 
 
 def rec(epoch: int) -> RootRecord:
-    return RootRecord(FORMAT_VERSION, uuid.UUID(int=epoch), 64, epoch)
+    return RootRecord(WRITE_FORMAT_VERSION, uuid.UUID(int=epoch), 64, epoch)
 
 
 def _claim(number: int, path: str) -> int:
@@ -269,7 +269,7 @@ def test_b1_a_ranges_log_compaction_never_writes_through_a_released_number(tmp_p
     store = FakeObjectStore()
     writer, records, ptr = _replication(tmp_path, store)
     s = _tiered(tmp_path, store, "s")
-    root1 = RootRecord(FORMAT_VERSION, ptr.segment, ptr.offset, 1)
+    root1 = RootRecord(WRITE_FORMAT_VERSION, ptr.segment, ptr.offset, 1)
     s.apply(records, root1, 1)
     path = os.path.join(s.path, RANGES_LOG)
     fault = CompactionFault(monkeypatch, step, path, s._ranges_fd, str(tmp_path / "victim.log"))
@@ -282,7 +282,7 @@ def test_b1_a_ranges_log_compaction_never_writes_through_a_released_number(tmp_p
     assert fault.victim is None or s._ranges_fd != fault.victim, "ranges.log holds a number another file owns"
     assert _is_open(s._ranges_fd)
     before = fault.victim_size()
-    root2 = RootRecord(FORMAT_VERSION, ptr.segment, ptr.offset, 2)
+    root2 = RootRecord(WRITE_FORMAT_VERSION, ptr.segment, ptr.offset, 2)
     try:
         s.apply(records, root2, 2)
         applied = True
@@ -317,7 +317,7 @@ def test_a_failed_local_write_poisons_the_tiered_storage(tmp_path, monkeypatch, 
     store = FakeObjectStore()
     writer, records, ptr = _replication(tmp_path, store)
     s = _tiered(tmp_path, store, "s")
-    root = RootRecord(FORMAT_VERSION, ptr.segment, ptr.offset, 1)
+    root = RootRecord(WRITE_FORMAT_VERSION, ptr.segment, ptr.offset, 1)
     copy = os.path.join(s.path, ptr.segment.hex + ".seg")
     armed = {"on": True}
 
@@ -352,7 +352,7 @@ def test_a_failed_local_write_poisons_the_tiered_storage(tmp_path, monkeypatch, 
     with pytest.raises(ProtoUnexpectedError, match="failed earlier"):
         s.flush()
     with pytest.raises(ProtoUnexpectedError, match="failed earlier"):
-        s.apply(records, RootRecord(FORMAT_VERSION, ptr.segment, ptr.offset, 2), 2)
+        s.apply(records, RootRecord(WRITE_FORMAT_VERSION, ptr.segment, ptr.offset, 2), 2)
     with pytest.raises(ProtoUnexpectedError, match="failed earlier"):
         s.log_root("accepted", 2, root)
     with pytest.raises(ProtoUnexpectedError, match="failed earlier"):

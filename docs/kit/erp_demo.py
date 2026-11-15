@@ -337,8 +337,20 @@ def act_3(workdir: str) -> None:
             if time.monotonic() > deadline:
                 raise SystemExit("[FAILED] the nodes never joined")
             time.sleep(0.005)
-        sales = {i: (spaces[i].new_database("sales") if i == "n0" else spaces[i].open_database("sales"))
-                 for i in ids}
+        def create_sales():
+            # Creating a database is a commit: like any commit it may end 'outcome unknown' (or
+            # conflict, or time out) on a loaded machine.  Not acknowledged, so look and try again.
+            for _ in range(20):
+                if "sales" in spaces["n0"].list_databases():
+                    return spaces["n0"].open_database("sales")
+                try:
+                    return spaces["n0"].new_database("sales")
+                except ProtoDBError:
+                    continue
+            raise SystemExit("[FAILED] the sales database could not be created")
+
+        sales = {"n0": create_sales()}
+        sales.update({i: spaces[i].open_database("sales") for i in ids if i != "n0"})
 
         def register(db, order):
             def work(tr):
@@ -372,13 +384,28 @@ def act_3(workdir: str) -> None:
         say(f"   on n0 before it was cut off: {len(acknowledged)} orders acknowledged; "
             f"{len(unknown)} ended 'outcome unknown', {len(failed)} failed")
 
-        for k in range(10):                        # the survivors keep working
-            register(sales["n1" if k % 2 else "n2"], f"n1n2-{k}")
-            acknowledged.append(f"n1n2-{k}")
-        say("   n1 and n2 (a majority of three) kept committing: 10 more orders acknowledged")
+        def acknowledge(db, order):
+            """True once run() returned (acknowledged); an unknown outcome is recorded, never assumed."""
+            try:
+                register(db, order)
+            except ProtoDBError as e:              # outcome unknown, a conflict, or a timeout
+                (unknown if isinstance(e, ProtoOutcomeUnknownError) else failed).append(order)
+                return False
+            return True
 
-        # A linearizable read on n2: a barrier commit, then a transaction (cluster tutorial).
-        register(sales["n2"], "read-barrier")
+        survivors = []
+        for k in range(30):                        # the survivors keep working
+            if len(survivors) == 10:
+                break
+            order = f"n1n2-{k}"
+            if acknowledge(sales["n1" if k % 2 else "n2"], order):
+                survivors.append(order)
+        acknowledged.extend(survivors)
+        check(len(survivors) == 10, "n1 and n2 (a majority of three) kept committing: 10 more orders acknowledged")
+
+        # A linearizable read on n2: an acknowledged barrier commit, then a transaction (cluster tutorial).
+        check(any(acknowledge(sales["n2"], f"read-barrier-{k}") for k in range(10)),
+              "a barrier commit on n2 was acknowledged before the read")
         tr = sales["n2"].new_transaction()
         try:
             orders = tr.get_root_object("orders")

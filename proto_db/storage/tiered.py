@@ -205,9 +205,11 @@ from .cloud import (ObjectNotFoundError, OutcomeUnknownError, PreconditionFailed
                     TransientObjectStoreError)
 from .crc import PrefixCrc
 from .file import DURABILITY_MODES, FileStorage
-from .format import (WRITE_FORMAT_VERSION, RECORD_HEADER_SIZE, RECORD_MAGIC, SEGMENT_HEADER_SIZE, RecordKind,
-                     RootRecord, decode_root, decode_segment_header, encode_record, encode_segment_header,
-                     read_record, record_header, undecodable_atom)
+from . import format as _format
+from .format import (FORMAT_VERSION, WRITE_FORMAT_VERSION, RECORD_HEADER_SIZE, RECORD_MAGIC, SEGMENT_HEADER_SIZE,
+                     SEGMENT_MAGIC, RecordKind, RootRecord, atom_version, decode_root, decode_segment_header,
+                     encode_record, encode_segment_header, framed_version, peek_segment_header, read_record,
+                     record_header, undecodable_atom)
 from .logfile import encode_frame, log_contents, open_log, prepare_replacement, read_fd, write_all
 from .ownerlock import OwnerLock
 
@@ -318,6 +320,40 @@ def _one_prefixes_the_other(a: bytes, b: bytes) -> bool:
     return a.startswith(b) or b.startswith(a)
 
 
+def _exact_header(segment: uuid.UUID, items) -> Optional[bytes]:
+    """The header of ``segment`` when ``items`` (``(offset, framed bytes)`` pairs of its records)
+    hold its first record, else ``None``.
+
+    A segment's header version is the version of its first record: a writer opens a new segment
+    for a record that needs a later version than the open one's (ruling R151).  A node that
+    writes replicated or recovered records into a segment file it did not create rebuilds the
+    header from them: exactly with the first record, otherwise at :func:`_unknown_header`."""
+    for offset, data in items:
+        if offset == SEGMENT_HEADER_SIZE and data is not None:
+            try:
+                return encode_segment_header(segment, framed_version(data))
+            except ProtoCorruptionError:
+                return None
+    return None
+
+
+def _exact_image(segment: uuid.UUID, data) -> bytes:
+    """The bytes of a segment image ``data`` (a header and the segment's records from its first
+    one) with the header of its first record's version, for an upload: a header rebuilt without
+    that record (:func:`_unknown_header`) never reaches the object store.  ``data`` is returned
+    unchanged when it holds no valid first record."""
+    data = bytes(data)
+    exact = _exact_header(segment, ((SEGMENT_HEADER_SIZE, memoryview(data)[SEGMENT_HEADER_SIZE:]),))
+    return data if exact is None or data.startswith(exact) else exact + data[SEGMENT_HEADER_SIZE:]
+
+
+def _unknown_header(segment: uuid.UUID) -> bytes:
+    """The header of a segment file rebuilt without its first record: the highest version this
+    revision writes, so a reader of an earlier revision refuses the file rather than misreads a
+    later record in it.  :func:`_exact_header` corrects it once the first record arrives."""
+    return encode_segment_header(segment, FORMAT_VERSION)
+
+
 def _pwrite_all(fd: int, data, offset: int) -> None:
     """Write every byte of ``data`` at ``offset`` of ``fd``: a short write is continued, a write
     that makes no progress raises ``OSError``."""
@@ -412,6 +448,30 @@ def _decode_root_object(data: bytes) -> tuple:
     if type(label) is not int or label < 0:
         raise ProtoCorruptionError("Malformed root term")
     return label, record
+
+
+def _decodable(data: bytes) -> bool:
+    """True when ``data`` starts with a well-formed framed record (a peer's answer, R242L)."""
+    try:
+        read_record(data, 0)
+        return True
+    except ProtoCorruptionError:
+        return False
+
+
+def _well_framed(data: bytes) -> bool:
+    """True when ``data`` is exactly one well-formed framed record (a commit's records)."""
+    try:
+        kind, payload = read_record(data, 0)
+    except ProtoCorruptionError:
+        return False
+    return len(encode_record(kind, payload)) == len(data)
+
+
+class _SegmentAbsent(ProtoCorruptionError):
+    """The object store holds neither the sealed object nor a part of a segment.  Corrupt only
+    when no peer holds the record either; a read that could not hear every peer reports it
+    unavailable instead (:meth:`TieredStorage._store_record`, ruling R230)."""
 
 
 class TieredStorage(SharedStorage):
@@ -525,7 +585,7 @@ class TieredStorage(SharedStorage):
         self._cache = BoundedCache(cache_bytes)
         self._segments = BoundedCache(segment_cache_bytes)
         self._tls = threading.local()
-        self._fetcher = None
+        self._peer = (None, None)      # (fetcher, answer): installed together (set_fetcher, R236L)
         self._own = {}                 # UUID -> _Own, in creation order (dicts keep it)
         self._live_own = {}            # UUID -> _Own of the own segments not released (I1)
         self._copies = {}              # UUID -> root_key of the newest commit that wrote into the copy
@@ -782,7 +842,7 @@ class TieredStorage(SharedStorage):
                                 f"Segment {segment.hex} at {path} has {os.fstat(fd).st_nlink} hard links; a "
                                 f"local segment must have exactly one name because opening repairs it")
                         if os.fstat(fd).st_size < SEGMENT_HEADER_SIZE:
-                            _pwrite_all(fd, encode_segment_header(segment), 0)
+                            _pwrite_all(fd, _unknown_header(segment), 0)
                             self._dirty_dir = True
                         if own is not None:
                             if segment not in present:
@@ -794,6 +854,9 @@ class TieredStorage(SharedStorage):
                     elif own is None and (self._copies.get(segment) is None or order > self._copies[segment]):
                         self._copies[segment] = order
                     _pwrite_all(fd, data, offset)
+                    exact = _exact_header(segment, ((offset, data),))
+                    if exact is not None:
+                        _pwrite_all(fd, exact, 0)
                     self._stats["redo_records"] += 1
                     self._dirty_copies.add(segment)     # own or copy: synced by path at the checkpoint
                     written = True
@@ -860,7 +923,17 @@ class TieredStorage(SharedStorage):
             data = read_fd(fd)
             size = len(data)
             view = memoryview(data)
-            header = encode_segment_header(segment)
+            # The header's version is the segment's (ruling R151): read it when the magic and the
+            # version bytes are intact; a version this revision cannot read is refused, never
+            # repaired.  A header torn before its version is rewritten at the highest version
+            # (_unknown_header); the redo of its first record writes the exact one.
+            magic_ok, version = peek_segment_header(data)
+            version = version if magic_ok else None
+            if version is not None and version not in _format.READABLE_FORMAT_VERSIONS:
+                raise ProtoNotSupportedError(
+                    f"Own segment {segment.hex} at {path} has format version {version}, which this "
+                    f"version does not read")
+            header = encode_segment_header(segment, FORMAT_VERSION if version is None else version)
             if size >= SEGMENT_HEADER_SIZE and data[:SEGMENT_HEADER_SIZE] == header:
                 pos = SEGMENT_HEADER_SIZE
                 while pos < size:
@@ -882,7 +955,9 @@ class TieredStorage(SharedStorage):
                     ambiguous = False
             else:
                 keep = 0
-                while keep < min(size, SEGMENT_HEADER_SIZE) and data[keep] == header[keep]:
+                # Without a readable version (torn before it), the version bytes are not compared.
+                version_bytes = range(len(SEGMENT_MAGIC), len(SEGMENT_MAGIC) + 2) if version is None else ()
+                while keep < min(size, SEGMENT_HEADER_SIZE) and (data[keep] == header[keep] or keep in version_bytes):
                     keep += 1
                 if any(view[keep:]):
                     raise ProtoCorruptionError(
@@ -968,7 +1043,7 @@ class TieredStorage(SharedStorage):
 
     # -- writes ------------------------------------------------------------------------------
 
-    def _push(self, kind: RecordKind, payload: bytes) -> AtomPointer:
+    def _push(self, kind: RecordKind, payload: bytes, version: int = None) -> AtomPointer:
         self._check_open()
         limit = _protocol.MAX_RECORD_BYTES
         if len(payload) > limit:
@@ -976,17 +1051,17 @@ class TieredStorage(SharedStorage):
                 f"A record of {len(payload)} bytes exceeds the {limit} bytes a cluster node can replicate")
         framed = encode_record(kind, payload)
         with self._push_lock:
-            ptr, spill = self._push_locked(framed)
+            ptr, spill = self._push_locked(framed, version)
         self._cache.put((ptr.segment, ptr.offset), framed)
         if spill:
             self._local.spill()
         return ptr
 
-    def _push_locked(self, framed: bytes) -> tuple:
+    def _push_locked(self, framed: bytes, version: int = None) -> tuple:
         """The body of :meth:`_push`, under the push lock: the offset assignment and the
         append to ``_unshipped`` are one step, and nothing else is done under it (re-review
         1, N2).  Returns ``(pointer, spill)``."""
-        ptr, spill = self._local.reserve_framed(framed)
+        ptr, spill = self._local.reserve_framed(framed, version=version)
         with self._lock:
             own = self._own.get(ptr.segment)
             if own is not None:
@@ -1021,11 +1096,17 @@ class TieredStorage(SharedStorage):
             own.first = time.monotonic()
         self._unshipped.append([ptr.segment.bytes, ptr.offset, framed])
 
-    def push_atom(self, payload: dict) -> AtomPointer:
+    def push_atom(self, payload: dict, *, features=frozenset()) -> AtomPointer:
         """See :meth:`SharedStorage.push_atom`."""
         if not isinstance(payload, dict):
             raise ProtoValidationError("Atom payload must be a dict")
-        return self._push(RecordKind.ATOM, msgpack.packb(payload, use_bin_type=True))
+        version = atom_version(payload, features)
+        return self._push(RecordKind.ATOM, msgpack.packb(payload, use_bin_type=True), version)
+
+    @property
+    def written_version(self) -> int:
+        """See :attr:`SharedStorage.written_version` (the local tier's own segments)."""
+        return self._local.written_version
 
     def push_blob(self, data: bytes) -> AtomPointer:
         """See :meth:`SharedStorage.push_blob`."""
@@ -1064,9 +1145,23 @@ class TieredStorage(SharedStorage):
         finally:
             self._tls.critical = previous
 
-    def set_fetcher(self, fetcher: Optional[Callable]) -> None:
-        """Install the peer page request function (``fetcher(ptr) -> framed bytes or None``)."""
-        self._fetcher = fetcher
+    def set_fetcher(self, fetcher: Optional[Callable], answer: Optional[Callable] = None) -> None:
+        """Install the peer page request: ``fetcher(ptr) -> framed bytes or None`` and, with it,
+        ``answer(ptr, valid=None) -> (framed bytes or None, complete)``, the same request saying whether
+        its ``None`` is definitive (every peer answered without the record; the cluster
+        coordinator's ``fetch_answer``; ``valid`` rejects a corrupt answer, which does not end
+        the request, R242L).  The two are installed together, so they cannot be
+        split (R236L).  With ``answer``, a record whose segment the object store does not hold
+        while some peer was not heard is unavailable (``ProtoUnexpectedError``), not corrupt
+        (ruling R230); without it (a plain fetcher), a ``None`` counts as definitive.
+        ``set_fetcher(None)`` removes both."""
+        self._peer = (fetcher, answer if fetcher is not None else None)
+
+    @property
+    def failure(self) -> Optional[BaseException]:
+        """The local write error that poisoned this tier (module docstring), or ``None``."""
+        with self._lock:
+            return self._failed
 
     def in_critical(self) -> bool:
         """True when the calling thread is inside a commit's critical section (it holds a write
@@ -1126,26 +1221,31 @@ class TieredStorage(SharedStorage):
             self._count("reads_local")
         else:
             asked = not self._known_remote(ptr)
-            found = self._from_peer(ptr) if asked else None
+            found, complete = self._peer_answer(ptr) if asked else (None, True)
             if found is not None:
                 self._count("reads_peer")
             else:
-                found = self._store_record(ptr, ask_peers=not asked)
+                found = self._store_record(ptr, ask_peers=not asked, peers_complete=complete)
         self._cache.put(key, encode_record(found[0], found[1]))
         return found
 
-    def _store_record(self, ptr: AtomPointer, *, ask_peers: bool) -> tuple:
+    def _store_record(self, ptr: AtomPointer, *, ask_peers: bool, peers_complete: bool = True) -> tuple:
         """The record at ``ptr`` from the object store.  When the store's object turns out
         short or corrupt there, the record is read from the peers (unless they were just asked,
-        ``ask_peers`` False), then from a part; ``ProtoCorruptionError`` when no full copy is
-        anywhere -- never short data."""
+        ``ask_peers`` False; ``peers_complete`` then says whether every one answered), then from
+        a part; ``ProtoCorruptionError`` when no full copy is anywhere -- never short data.
+        A segment the store does not hold (not uploaded yet) while some peer did not answer is
+        unavailable, not corrupt: ``ProtoUnexpectedError`` (ruling R230)."""
         try:
             found = self._remote_record(ptr)
             self._count("reads_remote")
             return found
         except ProtoCorruptionError as e:
             failure = e
-        found = self._from_peer(ptr) if ask_peers else None
+        if ask_peers:
+            found, peers_complete = self._peer_answer(ptr)
+        else:
+            found = None
         if found is not None:
             logger.warning("The object store's copy of the record at %s is short or corrupt (%s); read "
                            "from a peer", ptr, failure)
@@ -1157,6 +1257,11 @@ class TieredStorage(SharedStorage):
                            "read from a part", ptr, failure)
             self._count("reads_remote")
             return found
+        if isinstance(failure, _SegmentAbsent) and not peers_complete:
+            raise ProtoUnexpectedError(f"The record at {ptr} is unavailable: the object store does not hold "
+                                       f"its segment (not uploaded yet), and some peer was not heard within the "
+                                       f"wait, could not tell (no storage attached), or answered corrupt bytes "
+                                       f"(logged)") from failure
         raise ProtoCorruptionError(f"There is no full copy of the record at {ptr}: the object store's "
                                    f"copy is short or corrupt ({failure}) and no reachable peer holds "
                                    f"it") from failure
@@ -1194,17 +1299,29 @@ class TieredStorage(SharedStorage):
         self._list_remote()
 
     def _from_peer(self, ptr: AtomPointer) -> Optional[tuple]:
-        fetcher = self._fetcher
-        if fetcher is None:
-            return None
-        data = fetcher(ptr)
+        return self._peer_answer(ptr)[0]
+
+    def _peer_answer(self, ptr: AtomPointer) -> tuple:
+        """``(record or None, complete)`` from a peer page request; ``complete`` False when
+        some peer was not heard (only known with an ``answer`` function, :meth:`set_fetcher`).
+        A corrupt answer is no record and not definitive either: the request stopped at it,
+        so the other peers may not have been heard (R235L).  The coordinator's answer function
+        rejects such bytes itself (``valid``, R242L); this check serves a plain fetcher, which
+        validates nothing, and any answer function that ignores ``valid`` (R245L)."""
+        fetcher, answer = self._peer
+        if answer is not None:
+            data, complete = answer(ptr, valid=_decodable)
+        elif fetcher is not None:
+            data, complete = fetcher(ptr), True
+        else:
+            return None, True
         if data is None:
-            return None
+            return None, complete
         try:
-            return read_record(data, 0)
+            return read_record(data, 0), True
         except ProtoCorruptionError as e:
             logger.warning("A peer answered a corrupt record for %s: %s", ptr, e)
-            return None
+            return None, False
 
     def _segment_object(self, segment: uuid.UUID, *, reload: bool = False) -> bytes:
         """The sealed object of ``segment``, else its largest part; cached (``reload`` skips the cache)."""
@@ -1220,7 +1337,7 @@ class TieredStorage(SharedStorage):
             with self._lock:
                 end = self._parts.get(segment)
             if end is None:
-                raise ProtoCorruptionError(f"Segment {segment.hex} is in no tier (local, peers, object store)") from e
+                raise _SegmentAbsent(f"Segment {segment.hex} is in no tier (local, peers, object store)") from e
             part = self._part_key(segment, end)
             data, _ = self._retrying(lambda: self._store.get(part), f"Reading segment part {part}")
             sealed = False
@@ -1475,8 +1592,11 @@ class TieredStorage(SharedStorage):
 
     def _peer_framed(self, ptr: AtomPointer) -> Optional[bytes]:
         """The framed record at ``ptr`` from a peer (page request), validated, or ``None``."""
-        fetcher = self._fetcher
-        data = fetcher(ptr) if fetcher is not None else None
+        fetcher, answer = self._peer
+        if answer is not None:
+            data = answer(ptr, valid=_well_framed)[0]       # a corrupt answer: ask the others (R242L)
+        else:
+            data = fetcher(ptr) if fetcher is not None else None
         if data is None:
             return None
         try:
@@ -1644,11 +1764,13 @@ class TieredStorage(SharedStorage):
                 with self._lock:
                     released = own.released
                 runs = _runs(items)
+                exact = _exact_header(segment, items)
+                header = exact if exact is not None else _unknown_header(segment)
                 path = os.path.join(self._path, segment.hex + SEGMENT_SUFFIX)
                 base = None                 # bytes to write first: the header or the store's prefix
                 if released and not os.path.exists(path):
                     if runs[0][0] <= SEGMENT_HEADER_SIZE:
-                        base = encode_segment_header(segment)
+                        base = header
                     elif segment in prefixes:
                         base = prefixes[segment]
                     else:
@@ -1660,7 +1782,7 @@ class TieredStorage(SharedStorage):
                     try:
                         size = max(os.path.getsize(path), SEGMENT_HEADER_SIZE)
                     except FileNotFoundError:
-                        base, size = encode_segment_header(segment), SEGMENT_HEADER_SIZE
+                        base, size = header, SEGMENT_HEADER_SIZE
                 end = size
                 for offset, data in runs:
                     if offset > end:
@@ -1668,9 +1790,9 @@ class TieredStorage(SharedStorage):
                             f"Records of own segment {segment.hex} carried back at offset {offset} would "
                             f"leave a hole after its end {end}; nothing was written")
                     end = max(end, offset + len(data))
-                plans.append((segment, own, items, runs, path, base, released, end))
+                plans.append((segment, own, items, runs, path, base, released, end, header, exact))
             created = restored = False
-            for segment, own, items, runs, path, base, released, end in plans:
+            for segment, own, items, runs, path, base, released, end, header, exact in plans:
                 # A prefix from the store is synced, with the directory, before the entry: the
                 # redo rebuilds a missing file from its header and the entry's records only.
                 restore = base is not None and len(base) > SEGMENT_HEADER_SIZE
@@ -1682,9 +1804,11 @@ class TieredStorage(SharedStorage):
                             created = True
                             restored = restored or restore
                         elif os.fstat(fd).st_size < SEGMENT_HEADER_SIZE:
-                            _pwrite_all(fd, encode_segment_header(segment), 0)
+                            _pwrite_all(fd, header, 0)
                         for offset, data in runs:
                             _pwrite_all(fd, data, offset)
+                        if exact is not None:
+                            _pwrite_all(fd, exact, 0)
                         if sync or restore:
                             os.fsync(fd)
                         else:
@@ -1743,9 +1867,12 @@ class TieredStorage(SharedStorage):
                 try:
                     fd = os.open(path, os.O_RDWR | os.O_CREAT | _O_BINARY | _O_CLOEXEC, 0o644)
                     try:
+                        exact = _exact_header(segment, items)
                         if os.fstat(fd).st_size < SEGMENT_HEADER_SIZE:
-                            _pwrite_all(fd, encode_segment_header(segment), 0)
+                            _pwrite_all(fd, exact if exact is not None else _unknown_header(segment), 0)
                             created = created or not known
+                        elif exact is not None:
+                            _pwrite_all(fd, exact, 0)
                         for offset, data in _runs(items):
                             _pwrite_all(fd, data, offset)
                         if sync:
@@ -1844,8 +1971,12 @@ class TieredStorage(SharedStorage):
 
         Returns True when written, False when the store already holds that root or a newer
         one.  Raises ``ProtoUnexpectedError`` when the store stays unreachable.
+
+        The root is written at the highest of its own version (the committer's, carried on the
+        wire and in the acceptor log), the version of the root it replaces and this node's
+        :attr:`written_version`.  The same root held at a lower version is written again at
+        the higher one: a root's version is never kept lower than its data needs.
         """
-        data = _encode_root_object(record, label)
         with self._ship_lock:       # object-store writes: never once close() has started
             self._refuse_closed("persisting the root", local=False)
             for attempt in range(self._retries + 1):
@@ -1855,8 +1986,16 @@ class TieredStorage(SharedStorage):
                         current_label, current_root = _decode_root_object(current)
                     except ObjectNotFoundError:
                         etag, current_label, current_root = None, 0, None
-                    if etag is not None and compare_roots(current_label, current_root, label, record) >= 0:
-                        return False
+                    # Never lower than the root it replaces, nor than a segment this node wrote
+                    # (``SharedStorage.publish_root``).
+                    version = max(record.version, self._local.written_version,
+                                  current_root.version if current_root is not None else 0)
+                    if etag is not None:
+                        order = compare_roots(current_label, current_root, label, record)
+                        if order > 0 or (order == 0 and current_root.version >= version):
+                            return False
+                    data = _encode_root_object(RootRecord(version, record.segment, record.offset, record.epoch),
+                                               label)
                     if etag is None:
                         self._store.put_if_absent(self._root_key, data)
                     else:
@@ -1912,6 +2051,7 @@ class TieredStorage(SharedStorage):
                         f"Own segment {own.uuid.hex} is missing from {self._path} before its upload") from e
                 except OSError as e:
                     raise ProtoUnexpectedError(f"Reading segment {own.uuid.hex} for upload failed: {e}") from e
+                data = _exact_image(own.uuid, data)     # a rebuilt header never reaches the store
                 length = self._put_segment(own.uuid, data)
                 self._put_sealed_marker(own.uuid, length)
                 self._note_sealed(own.uuid, length)
@@ -2055,7 +2195,9 @@ class TieredStorage(SharedStorage):
         if filled:
             with self._lock:
                 self._stats["holes_filled"] += filled
-        return bytes(out)
+        # The copy's header may have been rebuilt without the first record (_unknown_header):
+        # the part carries the exact one, the version of the first record (ruling R151).
+        return _exact_image(segment, out)
 
     def _fill_record(self, segment: uuid.UUID, offset: int) -> Optional[bytes]:
         """The framed record at ``offset`` of ``segment`` from a peer, checked, or ``None``."""
@@ -2270,7 +2412,8 @@ class TieredStorage(SharedStorage):
         persisted = self.read_persisted()
         return None if persisted is None else persisted[1]
 
-    def publish_root(self, ptr: AtomPointer, expected_epoch: Optional[int]) -> RootRecord:
+    def publish_root(self, ptr: AtomPointer, expected_epoch: Optional[int], *,
+                     version: Optional[int] = None) -> RootRecord:
         """Not supported: a tiered storage's root is committed by the cluster and persisted by
         the persister (D46)."""
         raise ProtoNotSupportedError("TieredStorage roots are committed by the cluster (use a ClusterCoordinator)")

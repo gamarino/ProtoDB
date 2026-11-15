@@ -289,6 +289,19 @@ class LeaseAttempt:
         return "pending"
 
     @property
+    def term_fenced(self) -> bool:
+        """True when this term can never be renewed by a majority (ruling R149, issue #1): the
+        refusals that are permanent exceed ``size - needed``.  A refusal is permanent when its
+        reason is ``stale_term`` or ``term_taken``, or when it carries a highest term above this
+        one, whatever its reason (``busy`` and ``starting`` included): once that peer's other
+        grant or its grace ends, a renewal of this term meets ``term < highest``, and a peer's
+        highest and granted terms only grow.  :attr:`highest_seen` alone never decides it: a
+        single peer can raise it."""
+        permanent = sum(1 for reason, highest, _ in self.rejected_by.values()
+                        if reason in ("stale_term", "term_taken") or highest > self.term)
+        return permanent > self._size - self._needed
+
+    @property
     def busy_remaining(self) -> float:
         """Longest remaining promise among the refusals (``0.0`` if none)."""
         return max((r[2] for r in self.rejected_by.values() if r[0] in ("busy", "starting")), default=0.0)

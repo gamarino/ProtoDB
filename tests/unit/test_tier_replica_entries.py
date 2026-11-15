@@ -14,7 +14,7 @@ import pytest
 
 from proto_db.cluster.rootlog import REPLICA_KIND
 from proto_db.storage import tiered
-from proto_db.storage.format import FORMAT_VERSION, RootRecord
+from proto_db.storage.format import WRITE_FORMAT_VERSION, RootRecord
 from proto_db.storage.logfile import read_log
 from tests.support.fake_object_store import FakeObjectStore
 from tests.support.power_loss import PowerLoss
@@ -30,7 +30,7 @@ def _writer_records(tmp_path, n: int = 3):
         records = st.outgoing()
     finally:
         st.close()
-    root = RootRecord(FORMAT_VERSION, ptrs[-1].segment, ptrs[-1].offset, 7)
+    root = RootRecord(WRITE_FORMAT_VERSION, ptrs[-1].segment, ptrs[-1].offset, 7)
     return records, ptrs, root
 
 

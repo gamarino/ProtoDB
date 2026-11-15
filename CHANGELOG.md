@@ -5,6 +5,159 @@ All notable changes to `proto_db` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0rc4] - 2026-11-15
+
+- A read on a cluster owner after its term lease expired, but before the lease was released, no longer asks its
+  peers with a timeout of 0 s: only a read inside a commit is capped, at what remains of the commit's write
+  permission and of any lease the node holds (on any node, also one that holds no term lease); every other read waits the full `fetch_timeout`.
+  A read of a record whose segment the object store does not hold yet, while some peer did not answer the page
+  request in time, now raises `ProtoUnexpectedError` (the record is unavailable) instead of `ProtoCorruptionError`;
+  `ProtoCorruptionError` stays for a record that every peer answered it lacks (each peer counted once, however
+  often its reply arrives; a peer that answered corrupt bytes, one with no storage attached, one whose space
+  closed while it served the request, or one still attaching its storage (for a commit query), counts as not
+  heard, and a corrupt answer no longer ends the page request: the members not heard yet are asked again while
+  the wait lasts), or
+  whose stored copy is wrong. The cases of a member that cannot tell travel as a new optional reply field,
+  `unknown`, on `fetched` and `commit_info` (part of protocol 14). A
+  commit whose base read fails with `ProtoUnexpectedError` after its write permission expired, nothing having
+  been sent and its local tier not failed, raises `ProtoConflictError`, which `Database.run` retries. A failed
+  read of the base a round must first re-commit no longer ends the permission with an unknown outcome, since
+  nothing was sent (D46 amendment, rulings R212, R230-R233, R234L-R236L, R240L-R242L and R243L-R245L).
+- A cluster owner whose lease renewal was refused by a majority no longer renews again once per round trip
+  until its lease ends (GitHub issue #1). When a majority refused the term for good (it promised or granted a
+  higher term), the owner stops renewing, refuses its queued permission requests with `ending`, lets an
+  outstanding permission end, and releases its lease (new stat `terms_fenced`); after any other renewal that
+  fails, including one a silent member leaves unanswered, it waits for the refusals' `remaining`, at least
+  `request_timeout / 4`, before renewing again (D50 amendment, rulings R149 and R149a).
+- **The runtime registry** (format 5; decision D62; tutorial `docs/source/tutorials/extensible-models.rst`, design
+  chapter `docs/source/design-guide/registry.rst`). Additive: a `DBObject` without parents, in a database that
+  never installs a module, keeps today's API, bytes and behaviour, with one breaking change for code that
+  stored a field named `parents` (below).
+  - `DBObject` gains parents (`DBObject(parents=(...))`, `o.parents`, `o.with_parents(...)`): other `DBObject`s or
+    registry names (non-empty `str`), persisted as the atom envelope key `"p"`, the format-5 feature `parents`; an
+    object without parents writes the format-4 record byte for byte. `parents` and `with_parents` are no longer
+    field names. A record written before that holds a field of either name still loads, keeps the field
+    readable (`o["parents"]`) and `with_` carries it over unchanged: it is never refused (ruling R157).
+  - **Breaking change: the keyword `parents=` now sets resolution parents.** `DBObject(parents=...)` and
+    `tr.new_object(parents=...)` used to store a field named `parents`; they now set the object's parents
+    (ruling R158). A tuple or list of `DBObject`s and non-empty strings is accepted silently: the new object then
+    inherits every attribute it does not set from those objects (`kid.surname` returns the mother's), has no
+    field `parents` (`has_defined_attr("parents")` is False), and an index on `parents` finds nothing. Any other
+    value (a single string or object, a dict, a list holding numbers) is refused with `ProtoValidationError`, as
+    are `o.with_(parents=...)` and the keyword `with_parents=` in the constructor and in `with_`. **Migration:**
+    before upgrading, rename such a field in the code that writes it (for example to `parent_records`); records
+    already stored keep their field and load unchanged (R157), and `o["parents"]` reads it.
+  - Resolution (`proto_db.resolution`): `o.x` and `o["x"]` read own attributes, then the C3 linearization of the
+    parents, registry names included (their extension chains, newest module first); a miss is still `None`
+    (R150), and `"x" in o` tells an inherited or explicit `None` from a miss. `o["oid"]`, `o["with_"]` and the
+    other API names raise `ProtoAttributeNameError` (new, exported from `proto_db`), a `ProtoValidationError`
+    that is also a `KeyError`, so a mapping-first consumer such as a Django template (`{{ obj.oid }}` tries
+    `obj["oid"]` first) falls back to attribute access as it did when `DBObject` was not subscriptable. `DBObject` now defines `__getitem__`, `__contains__`,
+    `__setitem__` and `__delitem__` (both raise `ProtoUserError`), and sets `__iter__ = None` (it stays
+    non-iterable). A mixin listed after `DBObject` in a subclass's bases no longer provides any of these, and
+    `%`-formatting with a `DBObject` as the mapping (`"%(n)s" % o`) now formats instead of raising `TypeError`.
+    `has_defined_attr`, index keys and query paths read own attributes only, as before.
+  - Modules (`proto_db.registry`): `module(name, depends=...)` and `@handle.extends(registry_name, parents=...)`
+    declare extensions whose plain functions are methods and whose other attributes are canonical data
+    defaults; a property, staticmethod, classmethod, callable instance, lambda, nested class or a default holding
+    a database object is refused at import (`ProtoValidationError`). `self._super()` reaches the next definition
+    with the same `self` (a miss is `None`; refused outside a registry method and in generators, allowed in
+    coroutine methods). A method wrapped by a `functools.wraps` decorator is indexed by the function it wraps, so
+    one decorator may wrap many methods and `_super()` works in the wrapped body. A `DBObject` subclass whose
+    Python member hides a definition of a registry name its objects reach is refused (`ProtoValidationError`) at
+    the first resolution of such an object through that registry, including `name in o` and `o[name]` of the
+    member; plain attribute access of the member involves no resolution. A registry name no module
+    extends is an empty node; `Registry.unknown_names` lists such
+    names. Registry module names are process-global (one name, one Python module per process). A lookup made by a
+    module's import-time code through the registry of a database that lists that module raises
+    `ModulesBeingImported` (a `ProtoUserError`) and caches nothing; an import-time commit still succeeds.
+  - `Transaction.install_module`, `installed_modules`, `registry`, `catalog_object` and `set_catalog_object`
+    (`installed_modules` and `catalog_object` never enter the read set; `get_root_object` of a registry root
+    does, so a concurrent install makes that transaction conflict);
+    the roots `__currentModules` and `__catalog` (format-5 feature `registry`, built-in type aliases 22 and 23),
+    merged add-if-absent at commit, so concurrent installs never conflict with each other. Installing is
+    permanent. The module `base` (`proto_db.modules.base`, with `read_data_file`) is installed first,
+    implicitly, and is the last parent of every registry name. A persisted list that does not start with `base`
+    (another writer's) is read as if `base` preceded it, and the next install writes it with `base` first;
+    `format-spec.rst` states it normatively (writers SHOULD put `base` first, readers MUST treat it as first). Catalog updates follow normal conflict rules
+    (the first updater wins) and reach only objects created after them.
+  - The load order is a function of the set of installed modules (rulings R253-R257): `base` first, then each
+    module after the modules it depends on, ties broken by module name in code-point order (no locale). The
+    persisted list's order is the install history only, so two databases that installed the same modules in
+    different orders, or whose concurrent installs committed in either order, compose the same registry (same
+    chains, parents unions, linearizations and results); `format-spec.rst` states it normatively (MUST). The
+    process cache shares one registry per set of modules, and a space's fallback treats two orders of one set as
+    one list.
+  - `ObjectSpace(modules_mapping=..., modules_allowed=...)` and `ObjectSpace.reload_registry(database_name)`,
+    which invalidates every registry of that database cached in the space (later snapshots and installing
+    transactions build fresh too). When
+    another process installs a module, a space bound to the older list raises `ProtoValidationError` at the
+    next registry lookup inside one of its transactions on the new list (no automatic rebuild; a snapshot
+    resolves with its own version's list and never mismatches).
+    A loaded object resolved outside any block keeps using the space's bound list until a transaction of the
+    space has seen the new list, and then raises the same mismatch. A listed module that cannot be imported
+    raises `ProtoNotSupportedError` at the first lookup that needs it, and is remembered until
+    `reload_registry`; a failed reload is not remembered, so the next lookup tries the import once more. As-of
+    reads (`with snapshot:`) resolve with the modules of their version. A transaction or reader of a database that
+    lists no modules resolves with no registry (a lookup that reaches a registry name raises "needs a
+    registry"), never through another database's modules; the space's single-list fallback applies only when
+    no reader of the space is current.
+  - Format: `FORMAT_VERSION` 5 (`FEATURE_VERSIONS`: `parents`, `registry`); a space that uses neither keeps
+    writing version 4, and a reader of format 4 refuses version-5 segments and roots with
+    `ProtoNotSupportedError`. The cluster `PROTOCOL_VERSION` is 14, and an acceptor log that holds a root of
+    format 5 has log format 3. `remove_root_object` refuses `__` roots, which only the registry writes. The
+    conformance vectors gained `parents/` and `registry/`; `format-spec.rst` publishes the additions, and states
+    that symbol references were measured and deferred (`docs/superpowers/2026-11-14-symbol-measurement.md`).
+- `proto_db.__version__` reports the package version; in 2.0.0rc3 it still said `2.0.0.dev0`.
+- `CloudStorage.publish_root` reports a write refused by its precondition as `ProtoConflictError`, which
+  `Database.run` retries, when the object store declares that its refusals are definitive
+  (`refusals_are_definitive`: nothing below it re-sends a conditional write). `GCSObjectStore` declares it with any
+  client (its writes pass `retry=None`); `S3ObjectStore` declares it with the client it builds, and with a
+  client passed in only when that client is configured for one attempt in total. Before, such a refusal was reported as `ProtoOutcomeUnknownError` when
+  another instance had published more than `root_history` roots before the read-back, although nothing of
+  ours could have been applied (seen as an intermittent CI failure of two instances sharing a counter). Other
+  stores keep the unknown outcome, and the read-back still runs first, so a write that did land is reported as
+  applied (D43 amendment, ruling R147a).
+- A cluster commit that started while the node was ending a write permission kept for a retry (D50 "held
+  retries": its hold timer expired, or `Database.run` returned instead of retrying) no longer fails with
+  `ProtoUserError("Node ... already holds a write permission")`, a misuse error that `Database.run` does not
+  retry. The commit now waits until that permission is finished and then asks for a new one; the wait counts
+  against the permit timeout and ends, like the permit's own wait, with `ProtoTimeoutError` (ruling R148).
+  `ClusterCoordinator.acquire_timeout` exposes the default permit timeout.
+- `S3ObjectStore` builds its client with one attempt in total (`retries={"total_max_attempts": 1}`). botocore
+  reads the former `max_attempts=1` as one retry, so a conditional `PutObject` could be sent twice.
+- Documented a Python 3.14 hazard (concurrency model, "Interrupts and signal handlers on Python 3.14"): an
+  exception from a signal handler, such as `KeyboardInterrupt`, can leave a `proto_db` lock held, so a
+  process interrupted inside `proto_db` code should end rather than keep using the space.
+- Tests: pytest-timeout ends a run that overruns by stopping the process (`timeout_method = "thread"`) rather
+  than raising in the main thread, which on 3.14 could leak a lock and left test threads running into the
+  next tests (CI-314); `test_pager_stability` stops its threads and bounds its writers.
+- Tests: the two pipelined-permit tests that bounded the abandoned terms
+  (`test_permits_overlap_the_predecessors_durability`, `test_p5_a_proposal_base_is_never_re_proposed`) no
+  longer count an abandonment that timing explains: an owner timer (R82), or rule O5 after a send-reserve
+  refusal (R121) of that very permission, which a permit that waited in the owner's queue gets under CPU load.
+  Every other abandonment still fails them; plant `o5_none_unrefused` checks it.
+- Tests: the P1 power-loss schedules of `test_cluster_pipelined_permits` no longer report an unavailable read
+  as lost history. Under CPU load a read after the power cut failed with `ProtoUnexpectedError` ("store
+  unreachable") while two members held the record in their local files: the peer fetch timed out
+  (`fetch_timeout`, 75 ms there) and the schedule keeps the object store in outage. Reads failing with exactly
+  that type are now retried for up to 15 s (scaled in stress mode); a record that no member holds still fails
+  them (plant `p1_catch_up`). Every read check also compares the length of `history()` with the commits
+  acknowledged before it (plant `history_truncated`). A schedule that did not form is rebuilt in a fresh
+  cluster: A's round ended before it proposed; A's term ended after the term's first root, or k opened a new
+  term (`False` cases: the voters then hold an older term's root, the `True` schedule, which the planted V2 rule
+  loses; the product's V2' refuses k+1 there); B's permission was not issued on A's proposal; B's round sent
+  nothing a voter may accept; or B, whose permission on k had run out, was acknowledged on another base. The
+  records-nowhere scenario is rebuilt when n2's term ended right after its commit, when A's proposal never
+  reached n2, or when B committed under a later permission, and it now runs with a 1.8 s lease, so that the
+  owner's delayed permit still arrives valid. Every run that reaches the power cut still goes through the reads
+  and their checks, a rebuilt one included (plants `p1_catch_up_missed`, `p1_conflict_after_root_stage`,
+  `nowhere_false_ack`). A schedule that never forms raises a setup error, which the strict xfails of the planted
+  cases no longer accept: they expect the read check's failure only (plant `p1_setup_never_forms`). The `False`
+  cases wait until every voter holds the term's first root, the premise of their claim. No product change.
+- Tests: the two compaction checks of `test_owner_locks` held on ext4, where a freed inode number is
+  reused; they now keep the original file open and compare with `os.path.samestat`.
+
 ## [2.0.0rc3] - 2026-11-13
 
 The first release candidate published on PyPI.
@@ -23,7 +176,7 @@ The first release candidate published on PyPI.
 `docs/design-principles.md`: everything stored is immutable, a transaction is an explicit object, and
 every safety argument holds under arbitrary delay and loss. There are no 0.1 data or API to preserve.
 The design is `docs/superpowers/specs/2026-11-01-protodb-v2-design.md`; every decision is in
-`docs/decisions.md` (D1-D61).
+`docs/decisions.md` (D1-D62).
 
 ### Added
 - **One value model** with a total order across types (`1 == 1.0 == Decimal(1)`, `True != 1`), used by
@@ -152,6 +305,9 @@ indexes lost on the first write; queries that silently returned empty or partial
   transactions, is not guaranteed (open defect D-LIVE-2).
 - A read-only linearizable read (`read_barrier`) is proposed in the D46 amendment but not implemented; the
   barrier commit is the supported path.
+- On Python 3.14 an exception from a signal handler (Ctrl-C) can leave a `proto_db` lock held, and the process
+  can then hang; end the process after such an interrupt. An interpreter defect (CPython gh-148874, fixed in
+  3.15, not in 3.14); 3.12 and 3.13 are not affected. See the concurrency model.
 
 ## Before 2.0
 

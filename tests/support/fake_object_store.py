@@ -43,6 +43,10 @@ _WRITES = ("put_if_absent", "put_if_match", "delete")
 class FakeObjectStore:
     """Thread-safe in-memory object store (see module docstring)."""
 
+    #: Nothing re-sends a write below this store, so a refusal is definitive (ruling R147a).  A
+    #: test that emulates a hidden SDK retry sets it to ``False`` on its instance.
+    refusals_are_definitive = True
+
     def __init__(self, *, random_faults: float = 0.0, seed: int = 0,
                  before_write: Optional[Callable[[str, str], None]] = None):
         self._lock = threading.Lock()

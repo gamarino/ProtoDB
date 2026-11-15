@@ -291,12 +291,388 @@ def blind_snapshot_of'''),),
          "                    keep = False        # PLANT: the keep for the runner's own retry is lost"),),
         ("tests/concurrency/test_cluster_permit_hot_key.py::test_each_usable_permit_of_a_delayed_holder_commits",),
         "ended unretried with no cause", "product: a conflicted permission is never kept for its retry"),
+    "kept_no_marker": Plant((
+        ("proto_db/transactions.py",
+         "    with group.cond:\n            if group.kept is not kept:\n                return              # taken (or dropped) meanwhile\n            group.kept = marker = _Ending()\n",
+         "    with group.cond:\n            if group.kept is not kept:\n                return              # taken (or dropped) meanwhile\n            group.kept = None; marker = _Ending()   # PLANT: no ending marker\n"),
+        ("proto_db/transactions.py",
+         "            return\n        group.kept = marker = _Ending()\n    _end_kept(group, kept, marker)\n",
+         "            return\n        group.kept = None; marker = _Ending()   # PLANT: no ending marker\n    _end_kept(group, kept, marker)\n"),),
+        ("tests/unit/test_kept_permit_window.py::test_a_commit_inside_the_end_of_a_kept_permission_waits_for_it_and_commits",),
+        "already holds a write permission",
+        "product: a kept permission being ended is neither kept nor finished for the next runner (R148)"),
+    "kept_full_budget": Plant((
+        ("proto_db/transactions.py",
+         "                permission = coordinator.permit(timeout)\n",
+         "                permission = coordinator.permit(lock_timeout)     # PLANT: the wait is not counted\n"),),
+        ("tests/unit/test_kept_permit_window.py::test_the_permit_gets_what_the_wait_for_an_ending_kept_permission_left",),
+        "got the full timeout after waiting",
+        "product: permit() gets the full timeout after waiting for an ending kept permission (R148 review)"),
     "nostore": Plant((
         ("proto_db/cluster/coordinator.py", "            use_store = bounded and not gate_open\n",
          "            use_store = False   # PLANT: no data stage leaves before the gate opens\n"),),
         # Without stores the pipeline also degrades: either assertion of the test may fire first.
         ("tests/concurrency/test_cluster_pipelined_permits.py::test_permits_overlap_the_predecessors_durability",),
         ("overlapped their data stage", "of the permits were issued on a proposal"), "product: a pipelined permit's data stage no longer overlaps (review I5)"),
+    # Task ABANDON: the two pipeline tests accept an O5 abandonment only after a reserve refusal
+    # of that very permission.  Here a pipelined round ends "none" with nothing refused, at most
+    # three times per process: the owner abandons its term by O5, which they must not accept.
+    "o5_none_unrefused": Plant((
+        ("proto_db/transactions.py", "_RETRY_HOLD = 0.1\n",
+         "_RETRY_HOLD = 0.1\n_PLANT_FIRED = [0]   # PLANT\n"),
+        ("proto_db/transactions.py", "        base = _lease_base(coordinator, tier, permission)\n",
+         "        if getattr(permission, \"after\", None) is not None and _PLANT_FIRED[0] < 3:\n"
+         "            _PLANT_FIRED[0] += 1   # PLANT: a pipelined round ends without a root, unrefused\n"
+         "            raise ProtoConflictError(\"PLANT: a pipelined round sent nothing\")\n"
+         "        base = _lease_base(coordinator, tier, permission)\n"),),
+        ("tests/concurrency/test_cluster_pipelined_permits.py::test_permits_overlap_the_predecessors_durability",
+         "tests/concurrency/test_cluster_pipelined_permits.py::test_p5_a_proposal_base_is_never_re_proposed[False]"),
+        ("abandoned for no timing reason: ['permission", "abandoned for no timing reason: ['unknown', 'permission"),
+        "tests: an O5 abandonment without a reserve refusal is taken for a timing one (Task ABANDON)"),
+    "renewal_term_cut": Plant((
+        ("proto_db/cluster/coordinator.py", "class Peer(NamedTuple):",
+         "_PLANT_FIRED = False   # PLANT\n\n\nclass Peer(NamedTuple):"),
+        ("proto_db/cluster/coordinator.py", "                    self._note_request(sender)\n",
+         "                    self._note_request(sender)\n"
+         "                    _own = self._ownership   # PLANT: remember a refused higher request\n"
+         "                    if _own is not None and sender != self._node and msg[\"term\"] > _own.term:\n"
+         "                        _own._plant_refused = True\n"),
+        ("proto_db/cluster/coordinator.py", '                    self._stats["terms_released_idle_local"] += 1\n',
+         '                    self._stats["terms_released_idle_local"] += 1\n'
+         "                global _PLANT_FIRED\n"
+         "                if end is None and getattr(own, \"_plant_refused\", False) and not _PLANT_FIRED \\\n"
+         "                        and own.lease.remaining() < self._belief / 2:\n"
+         "                    _PLANT_FIRED = True   # PLANT: the term ends once, at a renewal, while in use\n"
+         "                    end = \"planted\"\n")),
+        ("tests/unit/test_cluster_renewal.py::test_a_refused_higher_request_does_not_end_the_owners_term",),
+        "the owner's term ended while in use",
+        "product: a refused higher request ends the owner's term once while in use (fix round 1 of "
+        "Task CI-FLAKES, review I2: the plant passed the test that read own.last_demand)"),
+    # Task P1-READ: the P1 schedules retry a read that gave up (a peer fetch timed out, the store
+    # in outage) and rebuild a schedule whose rounds sent nothing.  A true loss must still fail
+    # them, and so must a conflict reported after a root stage.
+    "p1_catch_up": Plant((
+        ("proto_db/cluster/coordinator.py",
+         "        return compare_roots(pred[2], pred[1], accepted_label, accepted) == 0\n",
+         "        return compare_roots(pred[2], pred[1], accepted_label, accepted) >= 0   # PLANT: voter catch-up\n"),),
+        ("tests/concurrency/test_cluster_pipelined_permits.py::"
+         "test_p1_without_the_gate_the_voters_alone_keep_every_acknowledged_commit[False-V2']",),
+        ("cannot read the history", "lost B's acknowledged commit"),
+        "product: a voter accepts a root extending one it does not hold (P1v); the history is lost after a "
+        "power cut, and the P1 reads, retried until their deadline, still fail (Task P1-READ)"),
+    "p1_catch_up_missed": Plant((
+        ("proto_db/cluster/coordinator.py",
+         "        return compare_roots(pred[2], pred[1], accepted_label, accepted) == 0\n",
+         "        return compare_roots(pred[2], pred[1], accepted_label, accepted) >= 0   # PLANT: voter catch-up\n"),
+        ("tests/concurrency/test_cluster_pipelined_permits.py",
+         "        # The whole cluster loses power.\n",
+         "        miss = miss or \"a miss forced by the plant\"   # PLANT: every run is a setup miss\n"
+         "        # The whole cluster loses power.\n"),),
+        ("tests/concurrency/test_cluster_pipelined_permits.py::"
+         "test_p1_without_the_gate_the_voters_alone_keep_every_acknowledged_commit[False-V2']",),
+        ("cannot read the history", "lost B's acknowledged commit"),
+        "product and tests: the voter catch-up of p1_catch_up, with every run of the schedule taken for a setup "
+        "miss; the loss still fails the read check of the run it happened in, never as a schedule that never "
+        "formed (Task P1-READ review, F2)"),
+    "history_truncated": Plant((
+        ("proto_db/transactions.py",
+         "        while root is not None:\n            entries.append(HistoryEntry(root, self._name))\n",
+         "        while root is not None and len(entries) < 5:   # PLANT: the history is truncated\n"
+         "            entries.append(HistoryEntry(root, self._name))\n"),),
+        ("tests/concurrency/test_cluster_pipelined_permits.py::"
+         "test_p1_without_the_gate_the_voters_alone_keep_every_acknowledged_commit[True-V2']",
+         "tests/concurrency/test_cluster_pipelined_permits.py::"
+         "test_p1_without_the_gate_the_voters_alone_keep_every_acknowledged_commit[False-V2']"),
+        "lost versions of the history",
+        "product: ``history()`` stops after five versions without an error; the P1 reads compare the history's "
+        "length with the commits acknowledged before them (Task P1-READ review, F6)"),
+    "p1_setup_never_forms": Plant((
+        ("tests/concurrency/test_cluster_pipelined_permits.py",
+         "        outcome, reads, miss = _p1_attempt(path, fs, first_of_term)\n",
+         "        outcome, reads, miss = {}, {}, \"a miss forced by the plant\"   # PLANT: no run ever forms\n"),),
+        ("tests/concurrency/test_cluster_pipelined_permits.py::"
+         "test_p1_without_the_gate_the_voters_alone_keep_every_acknowledged_commit[True-V2]",),
+        "the P1 schedule never formed",
+        "tests: the P1 schedule never forms; the strict xfail of a planted case must not take that for the loss "
+        "it expects (Task P1-READ review, F1)"),
+    "p1_conflict_after_root_stage": Plant((
+        ("tests/concurrency/test_cluster_pipelined_permits.py",
+         "            except ProtoOutcomeUnknownError:\n                outcome[key] = \"unknown\"\n"
+         "            except ProtoDBError as e:\n                outcome[key] = type(e).__name__\n"
+         "                outcome[f\"{key} error\"] = str(e)[:160]\n",
+         "            except ProtoOutcomeUnknownError:     # PLANT: H7 broken, B's unknown reported as a conflict\n"
+         "                outcome[key] = \"ProtoConflictError\" if key == \"b\" else \"unknown\"\n"
+         "            except ProtoDBError as e:\n                outcome[key] = type(e).__name__\n"
+         "                outcome[f\"{key} error\"] = str(e)[:160]\n"),),
+        ("tests/concurrency/test_cluster_pipelined_permits.py::"
+         "test_p1_without_the_gate_the_voters_alone_keep_every_acknowledged_commit[True-V2']",
+         "tests/concurrency/test_cluster_pipelined_permits.py::"
+         "test_p1_without_the_gate_the_voters_alone_keep_every_acknowledged_commit[False-V2']"),
+        "assert 'ProtoConflictError' == 'unknown'",
+        "tests: B's round reports a conflict after its root stage; the P1 setup-miss rule must not take it for "
+        "a miss (Task P1-READ)"),
+    "nowhere_false_ack": Plant((
+        ("tests/concurrency/test_cluster_pipelined_permits.py",
+         "            except ProtoConflictError:\n                results[key] = \"conflict\"\n"
+         "            except ProtoDBError as e:\n                results[key] = f\"{type(e).__name__}: {str(e)[:160]}\"\n"
+         "        ta = threading.Thread(target=run, args=(\"n0\", \"a\"))\n"
+         "        tb = threading.Thread(target=run, args=(\"n1\", \"b\"))\n        ta.start()\n\n"
+         "        def proposed_to_owner():\n",
+         "            except ProtoConflictError:     # PLANT: B's conflict reported as an acknowledgement\n"
+         "                results[key] = \"acked\" if key == \"b\" else \"conflict\"\n"
+         "            except ProtoDBError as e:\n                results[key] = f\"{type(e).__name__}: {str(e)[:160]}\"\n"
+         "        ta = threading.Thread(target=run, args=(\"n0\", \"a\"))\n"
+         "        tb = threading.Thread(target=run, args=(\"n1\", \"b\"))\n        ta.start()\n\n"
+         "        def proposed_to_owner():\n"),),
+        ("tests/concurrency/test_cluster_pipelined_permits.py::"
+         "test_a_successor_whose_base_records_are_nowhere_gets_a_retryable_conflict[True]",),
+        "assert {'a': None, 'b': None} == {'a': None, 'b': 1}",
+        "tests: an acknowledgement of a commit that never took effect, which the records-nowhere setup-miss rule "
+        "takes for a miss, still fails its check of the next term (Task P1-READ)"),
+    # Task RENEW-BACKOFF (ruling R149, issue #1): a lost renewal fences the term only on a majority of
+    # permanent refusals, and otherwise backs off; a fenced term is never abandoned for being fenced.
+    "renew_fence_highest_seen": Plant((
+        ("proto_db/cluster/lease.py",
+         "        return permanent > self._size - self._needed\n",
+         "        return permanent > self._size - self._needed or self.highest_seen > self.term   # PLANT\n"),),
+        ("tests/unit/test_cluster_renew_backoff.py::test_a_minority_busy_with_a_lower_term_never_fences_the_owner",),
+        "fenced the owner",
+        "product: the term is fenced on the highest term seen alone (one peer can raise it)"),
+    "renew_busy_permanent": Plant((
+        ("proto_db/cluster/lease.py",
+         '''                        if reason in ("stale_term", "term_taken") or highest > self.term)''',
+         '''                        if reason in ("stale_term", "term_taken", "busy") or highest > self.term)  # PLANT'''),),
+        ("tests/unit/test_cluster_renew_backoff.py::test_a_minority_busy_with_a_lower_term_never_fences_the_owner",),
+        "fenced the owner",
+        "product: a busy refusal counts as permanent without a higher term"),
+    "renew_no_backoff": Plant((
+        ("proto_db/cluster/coordinator.py",
+         "                        own.renew_after = self._clock() + min(\n",
+         "                        _plant = self._clock() + min(   # PLANT: no back-off\n"),),
+        ("tests/unit/test_cluster_renew_backoff.py::test_a_transient_refusal_backs_off_until_the_refusals_remaining",),
+        "renewals sent at",
+        "product: a transiently lost renewal is renewed again at once (issue #1)"),
+    "renew_fence_abandons": Plant((
+        ("proto_db/cluster/coordinator.py",
+         '''                                    own.term)
+                        sends = self._refuse_queue(own, "ending")\n''',
+         '''                                    own.term)
+                        sends = self._abandon(own, "PLANT: fenced") + self._refuse_queue(own, "ending")\n'''),),
+        ("tests/unit/test_cluster_renew_backoff.py::test_a_fenced_term_steps_down_after_one_renewal",
+         "tests/unit/test_cluster_renew_backoff.py::test_a_fenced_term_lets_its_outstanding_permission_end_by_its_done"),
+        "abandoned while its lease is valid",
+        "product: a fenced term is abandoned at once instead of letting its permission end (R149)"),
+    # RENEW-BACKOFF fix round (review I1, M1, M2; ruling R149a).
+    "renew_pending_no_backoff": Plant((
+        ("proto_db/cluster/coordinator.py",
+         "                if self._state == \"running\" and self._ownership is own and not own.fenced:\n",
+         "                if attempt.state == \"lost\" and self._ownership is own and not own.fenced:  # PLANT\n"),),
+        ("tests/unit/test_cluster_renew_backoff.py::test_a_round_left_pending_after_a_majority_answered_backs_off",),
+        "before the back-off ended",
+        "product: a renewal left pending after a majority answered is renewed again at once (review I1)"),
+    "renew_fenced_no_wake": Plant((
+        ("proto_db/cluster/coordinator.py",
+         "        if self._idle_release is not None or own.fenced:\n",
+         "        if self._idle_release is not None:   # PLANT: a fenced owner is not woken\n"),),
+        ("tests/unit/test_cluster_renew_backoff.py::"
+         "test_a_fenced_term_lets_its_outstanding_permission_end_by_its_done",),
+        "the release after the permission's done",
+        "product: ending a fenced term's permission does not wake its ownership thread (review M2)"),
+    "renew_fenced_releases_outstanding": Plant((
+        ("proto_db/cluster/coordinator.py",
+         "                elif own.fenced and not own.pipeline:\n",
+         "                elif own.fenced:   # PLANT: released with a permission outstanding\n"),),
+        ("tests/unit/test_cluster_renew_backoff.py::"
+         "test_a_fenced_term_lets_its_outstanding_permission_end_by_its_done",),
+        "released with a permission outstanding",
+        "product: a fenced term is released, as certain, with a permission outstanding"),
+    "renew_fenced_refuses_retry": Plant((
+        ("proto_db/cluster/coordinator.py",
+         "                        and e.rid == msg[\"rid\"]), None) if live else None\n",
+         "                        and e.rid == msg[\"rid\"]), None) if live and not own.fenced else None  # PLANT\n"),),
+        ("tests/unit/test_cluster_renew_backoff.py::test_a_fenced_term_resends_an_outstanding_permit_to_a_retry",),
+        "a retry of an outstanding permit was refused",
+        "product: a fenced term refuses an O7 retry of its outstanding permit (review M1)"),
+    # LEASE-READ (ruling R212).
+    "lease_read_cap_every_read": Plant((
+        ("proto_db/cluster/coordinator.py",
+         "        if permitted:\n            for lease in (self._held, self._permit):\n",
+         "        if True:   # PLANT: every read is capped at the held lease\n"
+         "            for lease in (self._held, self._permit):\n"),),
+        ("tests/unit/test_cluster_lease_read.py::test_a_read_after_the_held_lease_expired_waits_the_full_fetch_timeout",
+         "tests/unit/test_cluster_lease_read.py::"
+         "test_a_commit_query_after_the_held_lease_expired_waits_the_full_fetch_timeout"),
+        "capped at the expired lease",
+        "product: a read outside a commit is capped at an expired, unreleased term lease"),
+    "lease_read_expired_unexpected": Plant((
+        ("proto_db/transactions.py",
+         "    if type(error) is ProtoUnexpectedError and getattr(tier, \"failure\", None) is None \\\n",
+         "    if False and getattr(tier, \"failure\", None) is None \\\n"),),
+        ("tests/unit/test_cluster_lease_read.py::"
+         "test_a_base_read_failing_after_the_permission_expired_is_a_retryable_conflict",
+         "tests/unit/test_cluster_lease_read.py::"
+         "test_database_run_retries_a_commit_whose_permission_expired_before_its_base_read"),
+        ("was not retryable", "store unreachable (injected)"),
+        "product: a base read failing after the permission expired is not retried (R212)"),
+    "lease_read_subclasses": Plant((
+        ("proto_db/transactions.py",
+         "    if type(error) is ProtoUnexpectedError and getattr(tier, \"failure\", None) is None \\\n",
+         "    if isinstance(error, ProtoUnexpectedError) and getattr(tier, \"failure\", None) is None \\\n"),),
+        ("tests/unit/test_cluster_lease_read.py::test_a_subclass_of_the_unexpected_error_is_never_made_retryable",),
+        "became",
+        "product: a subclass of ProtoUnexpectedError (an unknown outcome) is made retryable"),
+    # LEASE-READ fix round 1 (rulings R230-R233).
+    "lease_read_absent_is_corrupt": Plant((
+        ("proto_db/storage/tiered.py",
+         "        if isinstance(failure, _SegmentAbsent) and not peers_complete:\n",
+         "        if False:   # PLANT: a segment not uploaded yet is corruption whatever the peers said\n"),),
+        ("tests/unit/test_cluster_lease_read.py::"
+         "test_a_segment_not_uploaded_yet_with_peers_unheard_is_unavailable_not_corrupt",
+         "tests/unit/test_cluster_lease_read.py::"
+         "test_database_run_retries_a_commit_whose_base_segment_is_not_uploaded_and_permission_expired"),
+        "ProtoCorruptionError",
+        "product: an unavailable record (store lacks the segment, peers unheard) is reported corrupt (R230)"),
+    "lease_read_poisoned_converted": Plant((
+        ("proto_db/transactions.py",
+         "    if type(error) is ProtoUnexpectedError and getattr(tier, \"failure\", None) is None \\\n",
+         "    if type(error) is ProtoUnexpectedError and True \\\n"),),
+        ("tests/unit/test_cluster_lease_read.py::"
+         "test_a_poisoned_tier_keeps_its_own_error_under_an_expired_permission",),
+        "a poisoned tier's write error became",
+        "product: a poisoned tier's write error is made a retryable conflict (R231)"),
+    "lease_read_cap_without_permit": Plant((
+        ("proto_db/cluster/coordinator.py",
+         "            for lease in (self._held, self._permit):\n",
+         "            for lease in (self._held,):   # PLANT: the permission does not cap a commit read\n"),),
+        ("tests/unit/test_cluster_lease_read.py::test_a_non_owner_commit_read_waits_no_longer_than_its_permission",),
+        "waited beyond its permission",
+        "product: a non-owner's commit read is not capped at its permission (R232)"),
+    "lease_read_commit_base_sent_early": Plant((
+        ("proto_db/transactions.py",
+         "    where, records, ranges = coordinator.commit_records(label, base)\n",
+         "    if sending is not None:\n        sending()   # PLANT: marked sent before the base's reads\n"
+         "    where, records, ranges = coordinator.commit_records(label, base)\n"),),
+        ("tests/unit/test_cluster_lease_read.py::test_a_base_re_commit_whose_read_fails_sent_nothing",
+         "tests/unit/test_cluster_lease_read.py::"
+         "test_a_base_re_commit_read_failing_after_the_permission_expired_is_retryable"),
+        ("ended its permission unknown", "isinstance("),
+        "product: a base re-commit counts as sent before its reads (R233)"),
+    # LEASE-READ fix round 2 (rulings R234L-R238L).
+    "lease_read_fetch_miss_per_message": Plant((
+        ("proto_db/cluster/coordinator.py",
+         "            else:\n                waiter.missing.add(sender)\n        elif kind == \"commit_info\":\n",
+         "            else:   # PLANT: a duplicated miss counts as another member's\n"
+         "                waiter.missing.add(sender if sender not in waiter.missing else next(iter(set(self._others) - waiter.missing), sender))\n"
+         "        elif kind == \"commit_info\":\n"),),
+        ("tests/unit/test_cluster_lease_read.py::test_a_duplicated_miss_never_makes_every_peer_answered",),
+        "a duplicated miss counted as c's answer",
+        "product: fetch misses are counted per message, so a duplicate makes every peer look answered (R234L)"),
+    "lease_read_commit_info_miss_per_message": Plant((
+        ("proto_db/cluster/coordinator.py",
+         "            else:\n                waiter.missing.add(sender)\n        self._cond.notify_all()\n",
+         "            else:   # PLANT: a duplicated miss counts as another member's\n"
+         "                waiter.missing.add(sender if sender not in waiter.missing else next(iter(set(self._others) - waiter.missing), sender))\n"
+         "        self._cond.notify_all()\n"),),
+        ("tests/unit/test_cluster_lease_read.py::test_a_duplicated_commit_info_miss_never_ends_the_wait_as_answered",),
+        "made every peer look answered",
+        "product: commit_info misses are counted per message (R234L)"),
+    "lease_read_corrupt_answer_definitive": Plant((
+        # Since R242L the coordinator checks a peer's answer (fetch_answer's ``valid``), so the
+        # defect is planted where the corrupt answer is classified.
+        ("proto_db/cluster/coordinator.py",
+         "                    complete = False        # a corrupt answer is no answer that the record is absent\n",
+         "                    pass   # PLANT: a corrupt answer counts as definitive\n"),),
+        ("tests/unit/test_cluster_lease_read.py::"
+         "test_a_corrupt_peer_answer_is_not_an_answer_that_the_record_is_nowhere",),
+        "a corrupt peer answer made the read ProtoCorruptionError",
+        "product: a corrupt peer answer makes the record look absent everywhere (R235L)"),
+    "lease_read_failure_hidden": Plant((
+        ("proto_db/storage/tiered.py",
+         "            return self._failed\n",
+         "            return None   # PLANT: the poisoning is not reported\n"),),
+        ("tests/unit/test_cluster_lease_read.py::"
+         "test_a_really_poisoned_tier_reports_its_failure_and_keeps_its_error",),
+        "the poisoned tier reports None",
+        "product: TieredStorage.failure hides a poisoned tier, so its error is converted (R237L)"),
+    "lease_read_commit_base_never_sent": Plant((
+        ("proto_db/transactions.py",
+         "    if sending is not None:\n        sending()\n    coordinator.replicate(",
+         "    coordinator.replicate("),),
+        ("tests/unit/test_cluster_lease_read.py::"
+         "test_a_base_re_commit_that_sent_its_root_is_never_a_retryable_conflict",),
+        "became a retryable conflict",
+        "product: a base re-commit never marks the round sent (R238L)"),
+    # LEASE-READ fix round 3 (rulings R240L-R242L).
+    "lease_read_unattached_fetch_is_miss": Plant((
+        ("proto_db/cluster/coordinator.py",
+         "            unknown = tier is None or (data is None and self._tier is not tier)\n",
+         "            unknown = tier is not None and data is None and self._tier is not tier   # PLANT: no tier, a miss\n"),),
+        ("tests/unit/test_cluster_lease_read.py::test_a_member_without_storage_attached_is_never_a_miss",),
+        "members without storage counted as lacking the record",
+        "product: a member with no tier attached counts as lacking the record (R240L)"),
+    "lease_read_unattached_commit_info_is_miss": Plant((
+        ("proto_db/cluster/coordinator.py",
+         "                tier is None or persister is None or self._tier is not tier or self._persister is not persister)\n",
+         "                tier is not None and (persister is None or self._tier is not tier\n"
+         "                                      or self._persister is not persister))   # PLANT: no tier, a miss\n"),),
+        ("tests/unit/test_cluster_lease_read.py::test_a_commit_query_to_members_without_storage_counts_no_miss",),
+        "members without storage counted as misses",
+        "product: a member with no tier attached counts as not knowing the commit (R240L)"),
+    "lease_read_corrupt_ends_request": Plant((
+        ("proto_db/cluster/coordinator.py",
+         "                    remaining = [m for m in remaining if m not in heard]\n",
+         "                    remaining = []   # PLANT: a corrupt answer ends the round\n"),),
+        ("tests/unit/test_cluster_lease_read.py::test_a_peer_answering_corrupt_bytes_does_not_end_the_page_request",),
+        "is unavailable",
+        "product: a peer answering corrupt bytes ends the page request (R242L)"),
+    # LEASE-READ fix round 4 (rulings R243L-R245L).
+    "lease_read_closing_fetch_is_miss": Plant((
+        ("proto_db/cluster/coordinator.py",
+         "            unknown = tier is None or (data is None and self._tier is not tier)\n",
+         "            unknown = tier is None   # PLANT: a space closing while serving answers a miss\n"),),
+        ("tests/unit/test_cluster_lease_read.py::test_a_member_whose_space_closes_while_serving_a_fetch_cannot_tell",),
+        "members closing while serving made the read",
+        "product: a member whose space closes while it serves a fetch answers that it lacks the record (R243L)"),
+    "lease_read_closing_commit_info_is_miss": Plant((
+        ("proto_db/cluster/coordinator.py",
+         "                tier is None or persister is None or self._tier is not tier or self._persister is not persister)\n",
+         "                tier is None or persister is None)   # PLANT: a space closing while serving, a miss\n"),),
+        ("tests/unit/test_cluster_lease_read.py::test_a_commit_query_served_while_the_space_closes_counts_no_miss",),
+        "members closing while serving counted as misses",
+        "product: a member whose space closes while it serves a commit query counts as not knowing it (R243L)"),
+    "lease_read_attaching_commit_info_is_miss": Plant((
+        ("proto_db/cluster/coordinator.py",
+         "                tier is None or persister is None or self._tier is not tier or self._persister is not persister)\n",
+         "                tier is None or self._tier is not tier or self._persister is not persister)   # PLANT\n"),),
+        ("tests/unit/test_cluster_lease_read.py::test_a_commit_query_answered_while_attaching_counts_no_miss",),
+        "members answering while attaching counted as misses",
+        "product: a member still attaching counts as not knowing the commit (R244L)"),
+    "lease_read_stop_before_re_ask_raises": Plant((
+        ("proto_db/cluster/coordinator.py",
+         "                    if stopped:             # stopped before this ask: not heard, as below (R244L)\n"
+         "                        return None, False\n",
+         "                    if stopped:\n"
+         "                        raise   # PLANT: a stop before a re-ask is a validation error\n"),),
+        ("tests/unit/test_cluster_lease_read.py::test_a_node_stopping_before_a_re_ask_reports_the_record_unavailable",),
+        "a stop before the re-ask surfaced as",
+        "product: a node stopping before a re-ask raises ProtoValidationError (R244L)"),
+    "lease_read_re_ask_without_time": Plant((
+        ("proto_db/cluster/coordinator.py",
+         "                    if wait <= 0:\n"
+         "                        break               # no time left: nobody would wait for a re-ask (R244L)\n",
+         "                    wait = max(0.0, wait)   # PLANT: a re-ask with no time left is sent\n"),),
+        ("tests/unit/test_cluster_lease_read.py::test_a_re_ask_with_no_time_left_sends_nothing",),
+        "a re-ask with no time left was sent",
+        "product: a re-ask with no time left still sends page requests (R244L)"),
+    "lease_read_tier_corrupt_answer_definitive": Plant((
+        ("proto_db/storage/tiered.py",
+         "            logger.warning(\"A peer answered a corrupt record for %s: %s\", ptr, e)\n"
+         "            return None, False\n",
+         "            logger.warning(\"A peer answered a corrupt record for %s: %s\", ptr, e)\n"
+         "            return None, True   # PLANT: the tier counts a corrupt answer as definitive\n"),),
+        ("tests/unit/test_cluster_lease_read.py::test_a_plain_fetcher_answering_corrupt_bytes_is_not_a_definitive_miss",),
+        "a plain fetcher's corrupt answer made the read",
+        "product: the tier's own decode counts a corrupt peer answer as definitive (R245L)"),
     "shiplock": Plant((
         ("proto_db/storage/tiered.py", "            data = self._copy_prefix(segment, end)",
          "            with self._ship_lock:   # PLANT: the hole is filled under the ship lock\n"
@@ -304,6 +680,106 @@ def blind_snapshot_of'''),),
         ("tests/concurrency/test_cluster_bounded_replication.py::"
          "test_filling_a_hole_from_peers_never_blocks_the_nodes_own_shipping",),
         "ship() waits behind a fill", "product: filling a hole blocks the node's own shipping"),
+    # -- runtime registry (Task 9 of the runtime-registry plan) -----------------------------------
+    "in_ignores_parents": Plant((
+        ("proto_db/core/dbobject.py",
+         "        return resolution.resolve(self, name)[1] is not None\n",
+         "        return resolution.resolve(self, name)[1] == 0     # PLANT: own attributes only\n"),),
+        ("tests/unit/test_resolution.py::test_in_tells_absent_from_explicit_none",),
+        "AssertionError: assert 'inherited_none' in", "product: `\"x\" in o` checks only o's own attributes (Review Focus 2)"),
+    "c3_drops_duplicate_check": Plant((
+        ("proto_db/resolution.py",
+         "            if ck in kid_keys:\n",
+         "            if False and ck in kid_keys:     # PLANT: a node listed twice is walked twice\n"),),
+        ("tests/unit/test_resolution.py::test_one_parent_listing_two_records_of_one_oid_is_one_node",),
+        "Inconsistent parent hierarchy", "product: the C3 walk keeps a node one parent lists twice (two records of one oid, R159)"),
+    "super_uses_start_position": Plant((
+        ("proto_db/resolution.py",
+         "    return SuperProxy(obj, entry, registry, index, extension.position + 1)\n",
+         "    return SuperProxy(obj, entry, registry, index, 0)     # PLANT: from the start of the chain\n"),),
+        ("tests/unit/test_registry_resolution.py::test_super_walks_three_modules_once_in_load_order",),
+        "RecursionError", "product: _super() resolves from the start of its name's chain, not after the running extension"),
+    "refusal_of_property_removed": Plant((
+        ("proto_db/registry.py",
+         "    for kind in (property, staticmethod, classmethod):\n",
+         "    for kind in (staticmethod, classmethod):     # PLANT: a property is no longer refused\n"),),
+        ("tests/unit/test_registry_modules.py::test_refused_property_in_a_module_names_it",
+         "tests/unit/test_registry_modules.py::"
+         "test_a_property_is_refused_by_the_registry_even_if_canonical_accepted_it"),
+        "DID NOT RAISE",
+        "product: a property in an extension is not refused as a property (spec Q4); with canonical() "
+        "accepting it, it is not refused at all"),
+    "install_last_writer_wins": Plant((
+        ("proto_db/transactions.py",
+         "        listed = _registry.registry_root(current_objects, _registry.MODULES_ROOT, _registry.ModuleList)\n"
+         "        merged = _registry.merged_module_list(listed, self._installs, self)\n",
+         "        listed = _registry.registry_root(self._objects, _registry.MODULES_ROOT, _registry.ModuleList)  # PLANT\n"
+         "        merged = _registry.merged_module_list(listed, self._installs, self)\n"),),
+        ("tests/unit/test_registry_roots.py::test_concurrent_installs_both_land",
+         "tests/concurrency/test_registry_install_concurrency.py::test_concurrent_installs_land_without_conflicts"),
+        "AssertionError: assert ('base', 'reg7_b') == ('base', 'reg7_a', 'reg7_b')",
+        "product: the module list merges onto this transaction's snapshot, not the committed root (Review Focus 5)"),
+    "modules_read_enter_read_set": Plant((
+        ("proto_db/transactions.py",
+         "        with self._lock:\n            self._check_active()\n            return self._installed_names()\n",
+         "        with self._lock:\n            self._check_active()\n"
+         "            if _registry.MODULES_ROOT not in self._reads:     # PLANT: the read enters the read set\n"
+         "                self._reads[_registry.MODULES_ROOT] = _token(self._objects.get_at(_registry.MODULES_ROOT, _ABSENT))\n"
+         "            return self._installed_names()\n"),),
+        ("tests/unit/test_registry_roots.py::test_reading_modules_does_not_conflict_with_ordinary_writes",),
+        "ProtoConflictError", "product: reading __currentModules enters the read set, so an install conflicts ordinary work"),
+    "mismatch_not_checked": Plant((
+        ("proto_db/transactions.py",
+         "        if binding is None or binding.names != names:\n"
+         "            raise _mismatch(database, self._bound[database].names, names)\n",
+         "        if binding is None or binding.names != names:\n"
+         "            return self.build(database, names)     # PLANT: an automatic rebuild, no mismatch\n"),),
+        ("tests/unit/test_registry_database.py::test_mismatch_raises_after_a_foreign_install",),
+        "DID NOT RAISE", "product: a module-list mismatch is rebuilt silently instead of raising (spec Q2)"),
+    "parents_bytes_for_parentless": Plant((
+        ("proto_db/core/atom.py",
+         "        encoded_parents = codec.encode_value(parents, context.save) if parents else None\n",
+         "        encoded_parents = codec.encode_value(parents, context.save) if parents or cls._parented else None\n"),
+        ("proto_db/core/atom.py",
+         "            if parents:\n                _check_not_own_parent(self, parents, oid)\n",
+         "            if parents or cls._parented:     # PLANT: a parentless DBObject writes \"p\"\n"
+         "                _check_not_own_parent(self, parents, oid)\n"),),
+        ("tests/unit/test_dbobject_parents.py::test_no_parents_keeps_v4_bytes",),
+        "['t', 'oid', 's', 'p'] == ['t', 'oid', 's']", "product: a parentless object writes the envelope key \"p\" (base scheme changed)"),
+    "v4_segment_accepts_parents": Plant((
+        ("proto_db/storage/file.py",
+         "            if seg is None or seg.version < version or (seg.end > SEGMENT_HEADER_SIZE\n",
+         "            if seg is None or False or (seg.end > SEGMENT_HEADER_SIZE     # PLANT: no roll (R151)\n"),),
+        ("tests/unit/test_format_features.py::test_a_parents_record_lands_in_a_v5_segment[file]",),
+        "assert parents.segment != plain.segment", "product: a file storage appends a parents record to a v4 segment (R151)"),
+    # -- Task 9 fix round 1 (review I1, I2, M8) ---------------------------------------------------
+    "base_parents_allowed": Plant((
+        ("proto_db/registry.py",
+         "        if registry_name == BASE and parents:\n",
+         "        if False and registry_name == BASE and parents:     # PLANT: base may declare parents\n"),),
+        ("tests/unit/test_base_module.py::test_an_extension_of_base_may_not_declare_parents",),
+        "DID NOT RAISE", "product: an extension of base declares parents, a cycle the build cannot see (I1)"),
+    "data_file_checked_before_open_only": Plant((
+        ("proto_db/modules/base.py",
+         "        if real is not None:\n            _check_inside(directory, name, path, real)\n        else:\n"
+         "            real = _realpath_after_open(joined)\n            _check_inside(directory, name, path, real)\n",
+         "        if real is not None:\n            pass     # PLANT: the open file's location is not checked\n        else:\n"
+         "            real = _realpath_after_open(joined)\n            pass     # PLANT\n"),),
+        ("tests/unit/test_base_module.py::test_a_swap_between_the_check_and_the_open_is_refused",),
+        "DID NOT RAISE", "product: read_data_file checks the path before the open only (TOCTOU, I2)"),
+    "data_file_any_file_kind": Plant((
+        ("proto_db/modules/base.py",
+         "        if not stat.S_ISREG(opened.st_mode):\n",
+         "        if False and not stat.S_ISREG(opened.st_mode):     # PLANT: FIFOs, devices, directories read\n"),),
+        ("tests/unit/test_base_module.py::test_read_data_file_refuses_what_is_not_a_regular_file",),
+        "DID NOT RAISE", "product: read_data_file reads a FIFO or a device (I2)"),
+    "explicit_base_ignores_allowed": Plant((
+        ("proto_db/registry.py",
+         "    if name == BASE:\n        _check_allowed(name, allowed, explicit=True)\n",
+         "    if False:     # PLANT: an explicit install of base ignores modules_allowed\n"
+         "        _check_allowed(name, allowed, explicit=True)\n"),),
+        ("tests/unit/test_base_module.py::test_an_explicit_install_of_base_obeys_the_allowed_set",),
+        "DID NOT RAISE", "product: install_module('base') ignores modules_allowed (R207 narrowed, M8)"),
 }
 
 _IGNORE = shutil.ignore_patterns("__pycache__", ".git", ".venv*", ".junie", "benchmarks", "docs", ".superpowers",

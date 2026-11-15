@@ -42,8 +42,10 @@ remain meaningful:
 * ``root`` is assumed durable, and the model is per process: every fsync recorded is one this
   process made (subprocess peers are not modelled).
 """
+import itertools
 import os
 import stat
+import threading
 
 
 class PowerLoss:
@@ -51,16 +53,59 @@ class PowerLoss:
 
     def __init__(self, monkeypatch):
         self._seq = 0
-        self.files = {}          # (dev, ino) -> (seq, bytes)
-        self.dirs = {}           # realpath -> (seq, {name: (dev, ino)})
+        self.files = {}          # file id -> (seq, bytes)
+        self.dirs = {}           # realpath -> (seq, {name: file id})
         self.syncs = 0
+        # A file id names one inode for its lifetime.  An inode number alone does not: ext4
+        # gives a freed inode's number to the next file created (CI, Task 11.1: a new segment
+        # was restored with the bytes of a removed file that had held its inode number, "does
+        # not start with its segment header but holds other data").  So the model maps
+        # (dev, ino) to a fresh id, and drops that mapping when the inode's last name goes
+        # (unlink, remove, or a rename over it): the next file with that number gets a new id,
+        # with no durable contents until it is synced.  A directory record keeps the old id,
+        # so an unlink that was never made durable still brings the old file back intact.
+        self._ids = {}
+        self._id_seq = itertools.count(1)
+        self._ids_lock = threading.Lock()
         real_fsync = os.fsync
+        real_unlink, real_remove, real_replace, real_rename = os.unlink, os.remove, os.replace, os.rename
 
         def fsync(fd):
             real_fsync(fd)
             self._record_fd(fd)
 
+        def freeing(real, path_arg, dir_fd_arg):
+            def call(*args, **kw):
+                path = args[path_arg] if len(args) > path_arg else kw.get(("path", "dst")[path_arg])
+                dir_fd = kw.get(dir_fd_arg)
+                try:
+                    st = os.lstat(path, dir_fd=dir_fd) if dir_fd is not None else os.lstat(path)
+                except (FileNotFoundError, NotADirectoryError, TypeError):
+                    st = None
+                result = real(*args, **kw)
+                if st is not None and stat.S_ISREG(st.st_mode) and st.st_nlink <= 1:
+                    with self._ids_lock:
+                        self._ids.pop((st.st_dev, st.st_ino), None)
+                return result
+            return call
+
         monkeypatch.setattr(os, "fsync", fsync)
+        monkeypatch.setattr(os, "unlink", freeing(real_unlink, 0, "dir_fd"))
+        monkeypatch.setattr(os, "remove", freeing(real_remove, 0, "dir_fd"))
+        monkeypatch.setattr(os, "replace", freeing(real_replace, 1, "dst_dir_fd"))
+        monkeypatch.setattr(os, "rename", freeing(real_rename, 1, "dst_dir_fd"))
+
+    def _id(self, dev: int, ino: int) -> int:
+        """The file id of the inode ``(dev, ino)`` now (see ``__init__``)."""
+        with self._ids_lock:
+            key = (dev, ino)
+            fid = self._ids.get(key)
+            if fid is None:
+                fid = self._ids[key] = next(self._id_seq)
+            return fid
+
+    def _ided(self, entries: dict) -> dict:
+        return {name: self._id(*key[:2]) for name, key in entries.items()}
 
     def _next(self) -> int:
         self._seq += 1
@@ -79,26 +124,79 @@ class PowerLoss:
         st = os.fstat(fd)
         path = os.readlink(f"/proc/self/fd/{fd}")
         if stat.S_ISDIR(st.st_mode):
-            self.dirs[os.path.realpath(path)] = (self._next(), self._entries(path))
+            self.dirs[os.path.realpath(path)] = (self._next(), self._ided(self._entries(path)))
         elif stat.S_ISREG(st.st_mode):
             with open(f"/proc/self/fd/{fd}", "rb") as f:
-                self.files[(st.st_dev, st.st_ino)] = (self._next(), f.read())
+                self.files[self._id(st.st_dev, st.st_ino)] = (self._next(), f.read())
+
+    #: Attempts at a consistent image in :meth:`writeback` before it gives up.
+    WRITEBACK_ATTEMPTS = 200
 
     def writeback(self, root: str) -> None:
-        """Make everything under ``root`` durable as it is now (the kernel's write-back)."""
-        for dirpath, dirnames, filenames in os.walk(root):
-            self.dirs[os.path.realpath(dirpath)] = (self._next(), self._entries(dirpath))
-            for name in filenames:
-                path = os.path.join(dirpath, name)
-                st = os.lstat(path)
-                if stat.S_ISREG(st.st_mode):
-                    with open(path, "rb") as f:
-                        self.files[(st.st_dev, st.st_ino)] = (self._next(), f.read())
+        """Make everything under ``root`` durable as it is now (the kernel's write-back).
+
+        Live nodes rename, create and remove files while the image is taken (a log compaction
+        renames ``roots.log.tmp`` over ``roots.log``; Task 11.1, A3 run 43).  The image must be
+        one point in time, or it may hold neither the old nor the new file, a state no disk can
+        reach.  So it is taken as a stable capture: list every directory with each entry's
+        inode, size and modification time, read every regular file, list again; the image is
+        recorded only when both listings are equal and every file read matches its listing
+        (otherwise, or when a file vanishes, the capture restarts).  Equal listings around the
+        reads mean no rename, creation, removal or write happened between them, so the image is
+        the state at that moment.  ``AssertionError`` after ``WRITEBACK_ATTEMPTS`` restarts."""
+        for _ in range(self.WRITEBACK_ATTEMPTS):
+            image = self._stable_image(root)
+            if image is not None:
+                listing, contents = image
+                for dirpath, entries in listing.items():
+                    self.dirs[dirpath] = (self._next(), self._ided(entries))
+                for key, data in contents.items():
+                    self.files[self._id(*key)] = (self._next(), data)
+                return
+        raise AssertionError(f"writeback: no consistent image of {root} in {self.WRITEBACK_ATTEMPTS} attempts")
+
+    @staticmethod
+    def _listing(root: str):
+        """``{realpath: {name: (dev, ino, mode, size, mtime_ns)}}`` of every directory under
+        ``root``, or ``None`` when an entry vanished while it was listed."""
+        out = {}
+        try:
+            for dirpath, dirnames, filenames in os.walk(root):
+                entries = {}
+                for name in os.listdir(dirpath):
+                    st = os.lstat(os.path.join(dirpath, name))
+                    entries[name] = (st.st_dev, st.st_ino, st.st_mode, st.st_size, st.st_mtime_ns)
+                out[os.path.realpath(dirpath)] = entries
+        except FileNotFoundError:
+            return None
+        return out
+
+    def _stable_image(self, root: str):
+        """One capture attempt: ``(listing, {(dev, ino): bytes})`` or ``None`` (restart)."""
+        before = self._listing(root)
+        if before is None:
+            return None
+        contents = {}
+        for dirpath, entries in before.items():
+            for name, (dev, ino, mode, size, mtime) in entries.items():
+                if not stat.S_ISREG(mode):
+                    continue
+                try:
+                    with open(os.path.join(dirpath, name), "rb") as f:
+                        st = os.fstat(f.fileno())
+                        data = f.read()
+                except FileNotFoundError:
+                    return None
+                if (st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns) != (dev, ino, size, mtime) \
+                        or len(data) != size:
+                    return None
+                contents[(dev, ino)] = data
+        return (before, contents) if self._listing(root) == before else None
 
     def durable_contents(self, path: str):
         """The bytes a power loss would keep for the file now at ``path`` (``None``: no record)."""
         st = os.lstat(path)
-        entry = self.files.get((st.st_dev, st.st_ino))
+        entry = self.files.get(self._id(st.st_dev, st.st_ino))
         return None if entry is None else entry[1]
 
     def power_loss(self, root: str) -> None:

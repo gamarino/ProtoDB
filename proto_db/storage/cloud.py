@@ -31,7 +31,12 @@ our root is the current one or in ``recent`` -> success (the write landed; it ma
 have been superseded already); the etag is unchanged -> not applied, retried; the
 epoch we tried to take belongs to another root -> ``ProtoConflictError``; the history no
 longer reaches that epoch, or the read-back fails -> ``ProtoOutcomeUnknownError`` (never
-a conflict, so ``Database.run`` does not retry it).  ``publish_outcome(ptr, epoch)``
+a conflict, so ``Database.run`` does not retry it).  One exception (ruling R147a, D43
+amendment): when the store declares ``refusals_are_definitive`` (see :class:`ObjectStore`),
+a failed precondition on an attempt with no earlier attempt of the call in doubt proves
+that nothing of ours was applied, so beyond the history it is ``ProtoConflictError``.
+Without the declaration a hidden SDK re-send of a write that landed could be the refusal,
+and the outcome stays unknown.  ``publish_outcome(ptr, epoch)``
 gives the same verdict later from the root and its history; transactions.py consults it
 (step 6 of D34).  ``root_lock_is_global`` is False: an epoch mismatch alone proves
 nothing, because other processes publish without taking this instance's lock.  A request still in flight can only land while the etag it was
@@ -45,7 +50,8 @@ processes; with a coordinator (D44) it is the fencing safety net.
 Retries: ``TransientObjectStoreError`` (not applied) and ``OutcomeUnknownError`` are
 retried up to ``retries`` times with exponential backoff and jitter; reads and segment
 uploads are idempotent, root writes follow the resolution above.  The SDK adapters turn
-their SDK's own retries off so that no hidden retry re-sends a conditional write.
+their SDK's own retries off so that no hidden retry re-sends a conditional write (S3: one
+attempt in total, ``total_max_attempts=1``; GCS: ``retry=None`` on writes).
 
 Thread-safety: every public method may be called from any thread.  One lock guards the
 local buffers, one serializes uploads, the read cache (:class:`BoundedCache` of whole
@@ -75,10 +81,10 @@ from ..errors import (ProtoClosedError, ProtoConflictError, ProtoCorruptionError
                       ProtoUnexpectedError, ProtoValidationError)
 from .base import SharedStorage, check_lock_timeout
 from .cache import BoundedCache
-from .format import (WRITE_FORMAT_VERSION, RECORD_HEADER_SIZE, SEGMENT_HEADER_SIZE, RecordKind,
-                     RootRecord, decode_root, decode_segment_header, encode_record,
+from .format import (RECORD_HEADER_SIZE, SEGMENT_HEADER_SIZE, RecordKind,
+                     RootRecord, atom_version, decode_root, decode_segment_header, encode_record,
                      encode_segment_header, read_record, record_size,
-                     undecodable_atom)
+                     undecodable_atom, write_version)
 
 __all__ = ["ObjectStore", "ObjectStoreError", "ObjectNotFoundError", "PreconditionFailedError",
            "TransientObjectStoreError", "OutcomeUnknownError", "CloudStorage", "S3ObjectStore",
@@ -122,6 +128,14 @@ class ObjectStore(Protocol):
     Etags are opaque strings that change on every write of a key.  Every method raises
     only :class:`ObjectStoreError` subclasses or ``ProtoNotAuthorizedError`` for store
     failures.
+
+    Optional attribute ``refusals_are_definitive`` (ruling R147a, D43 amendment): ``True``
+    declares that a ``PreconditionFailedError`` proves that the request of THIS call was never
+    applied, because no layer below the store (an SDK, a proxy) re-sends a conditional write.
+    :class:`CloudStorage` reads it with ``getattr(store, "refusals_are_definitive", False)``:
+    only with ``True`` is a refused root write, with no earlier attempt in doubt, a conflict
+    even when the root history no longer reaches our epoch; otherwise that outcome is unknown,
+    because a hidden re-send of a write that did land comes back as a failed precondition.
     """
 
     def put_if_absent(self, key: str, data: bytes) -> str:
@@ -175,13 +189,15 @@ def _decode_root_object(data: bytes) -> tuple:
 # --- storage ----------------------------------------------------------------------------------
 
 class _LocalSegment:
-    """A segment not yet uploaded: open (receiving appends) or sealed (waiting for upload)."""
+    """A segment not yet uploaded: open (receiving appends) or sealed (waiting for upload);
+    ``version`` is the format version of its header."""
 
-    __slots__ = ("uuid", "data", "sealed")
+    __slots__ = ("uuid", "version", "data", "sealed")
 
-    def __init__(self, segment_uuid: uuid.UUID):
+    def __init__(self, segment_uuid: uuid.UUID, version: int):
         self.uuid = segment_uuid
-        self.data = bytearray(encode_segment_header(segment_uuid))
+        self.version = version
+        self.data = bytearray(encode_segment_header(segment_uuid, version))
         self.sealed = False
 
 
@@ -252,6 +268,7 @@ class CloudStorage(SharedStorage):
         self._root_lock = threading.Lock()
         self._holder = None
         self._current = None      # open _LocalSegment receiving appends
+        self._written_version = write_version()  # highest header version this instance wrote
         self._local = {}          # UUID -> _LocalSegment not yet uploaded (open or sealed)
         self._sealed = []         # sealed segments in upload order
         self._sealed_bytes = 0
@@ -314,16 +331,20 @@ class CloudStorage(SharedStorage):
         self._sealed_bytes += len(seg.data)
         self._current = None
 
-    def _append(self, kind: RecordKind, payload: bytes) -> AtomPointer:
+    def _append(self, kind: RecordKind, payload: bytes, version: int = None) -> AtomPointer:
         record = encode_record(kind, payload)
+        version = write_version() if version is None else version
         with self._state_lock:
             self._check_open()
             seg = self._current
-            if seg is not None and len(seg.data) + len(record) > self._segment_max:
+            # A record needing a later version than the open segment's opens a new segment of
+            # that version (ruling R151), so a segment's version is its first record's.
+            if seg is not None and (seg.version < version or len(seg.data) + len(record) > self._segment_max):
                 self._seal_current()
                 seg = None
             if seg is None:
-                seg = _LocalSegment(uuid.uuid4())
+                seg = _LocalSegment(uuid.uuid4(), version)
+                self._written_version = max(self._written_version, version)
                 self._current = seg
                 self._local[seg.uuid] = seg
             offset = len(seg.data)
@@ -333,7 +354,7 @@ class CloudStorage(SharedStorage):
             self._upload(seal_current=False)
         return AtomPointer(seg.uuid, offset)
 
-    def push_atom(self, payload: dict) -> AtomPointer:
+    def push_atom(self, payload: dict, *, features=frozenset()) -> AtomPointer:
         """See :meth:`SharedStorage.push_atom`.
 
         When sealed segments exceed ``write_buffer_bytes`` this push uploads them and may
@@ -343,8 +364,15 @@ class CloudStorage(SharedStorage):
         """
         if not isinstance(payload, dict):
             raise ProtoValidationError("Atom payload must be a dict")
+        version = atom_version(payload, features)
         self._check_open()
-        return self._append(RecordKind.ATOM, msgpack.packb(payload, use_bin_type=True))
+        return self._append(RecordKind.ATOM, msgpack.packb(payload, use_bin_type=True), version)
+
+    @property
+    def written_version(self) -> int:
+        """See :attr:`SharedStorage.written_version`."""
+        with self._state_lock:
+            return self._written_version
 
     def push_blob(self, data: bytes) -> AtomPointer:
         """See :meth:`SharedStorage.push_blob`; may raise for a spill upload as :meth:`push_atom`."""
@@ -498,11 +526,21 @@ class CloudStorage(SharedStorage):
         current, _, recent = self._read_root_object()
         return self._verdict(current, recent, ptr.segment, ptr.offset, epoch)
 
-    def _resolve(self, mine: RootRecord, etag_before: Optional[str], error) -> str:
+    def _resolve(self, mine: RootRecord, etag_before: Optional[str], error,
+                 refused: bool = False) -> str:
         """After an uncertain root write: ``"applied"``, ``"unchanged"`` or ``"taken"``.
 
-        Raises ``ProtoOutcomeUnknownError`` if the root cannot be read or its history no
-        longer reaches the epoch we tried to take.
+        ``refused`` says that this attempt's write was refused by its precondition, that no
+        earlier attempt of this call had an unknown outcome, AND that the store declares
+        ``refusals_are_definitive`` (ruling R147a): nothing of ours can have been applied, so
+        when the history no longer reaches our epoch the answer is ``"taken"``, a conflict.
+        The read-back still runs first, so a write that did land is found and reported as
+        applied.  Without the declaration a hidden re-send may have applied our write and then
+        been refused; beyond the history that is indistinguishable from a lost race, and the
+        outcome stays unknown (never a conflict ``Database.run`` would apply a second time).
+
+        Raises ``ProtoOutcomeUnknownError`` if the root cannot be read, or if its history no
+        longer reaches the epoch we tried to take and the write was not ``refused``.
         """
         try:
             current, etag, recent = self._read_root_object()
@@ -515,7 +553,7 @@ class CloudStorage(SharedStorage):
         verdict = self._verdict(current, recent, mine.segment, mine.offset, mine.epoch)
         if verdict is True:
             return "applied"
-        if verdict is False:
+        if verdict is False or refused:
             return "taken"
         raise ProtoOutcomeUnknownError(
             f"The outcome of publishing the root is unknown ({error}): the root changed and its "
@@ -539,7 +577,8 @@ class CloudStorage(SharedStorage):
             return
         self._fetch_record(ptr)  # a segment written by another instance
 
-    def publish_root(self, ptr: AtomPointer, expected_epoch: Optional[int]) -> RootRecord:
+    def publish_root(self, ptr: AtomPointer, expected_epoch: Optional[int], *,
+                     version: Optional[int] = None) -> RootRecord:
         """See :meth:`SharedStorage.publish_root` and the module docstring.
 
         Checks that ``ptr`` names a record, uploads every pending segment, then writes the
@@ -573,18 +612,21 @@ class CloudStorage(SharedStorage):
                         raise ProtoUnexpectedError(f"Segment {ptr.segment.hex} is not uploaded; refusing to publish")
                 current, etag, recent = self._read_root_object()
                 epoch = current.epoch if current is not None else 0
+                with self._state_lock:
+                    root_version = max(self._written_version, current.version if current is not None else 0,
+                                       version or 0)
                 if expected_epoch is not None and expected_epoch != epoch:
                     if uncertain:
                         # An earlier attempt of ours may be what moved the root.
                         verdict = self._verdict(current, recent, ptr.segment, ptr.offset, expected_epoch + 1)
                         if verdict is True:
-                            return RootRecord(WRITE_FORMAT_VERSION, ptr.segment, ptr.offset, expected_epoch + 1)
+                            return RootRecord(root_version, ptr.segment, ptr.offset, expected_epoch + 1)
                         if verdict is None:
                             raise ProtoOutcomeUnknownError(
                                 f"The root moved to epoch {epoch} after an attempt with an unknown outcome "
                                 f"and its history no longer reaches epoch {expected_epoch + 1}")
                     raise ProtoConflictError(f"Root epoch is {epoch}, expected {expected_epoch}")
-                mine = RootRecord(WRITE_FORMAT_VERSION, ptr.segment, ptr.offset, epoch + 1)
+                mine = RootRecord(root_version, ptr.segment, ptr.offset, epoch + 1)
                 history = ([(current.segment, current.offset, current.epoch)] + recent
                            if current is not None else [])
                 data = _encode_root_object(mine, history[:self._root_history])
@@ -597,8 +639,12 @@ class CloudStorage(SharedStorage):
                 except TransientObjectStoreError as e:
                     error, outcome = e, "unchanged"
                 except (PreconditionFailedError, OutcomeUnknownError) as e:
+                    # Ruling R147a: a refusal proves nothing of ours landed only when the store
+                    # declares that nothing below it re-sends a conditional write.
+                    refused = (isinstance(e, PreconditionFailedError) and not uncertain
+                               and getattr(self._store, "refusals_are_definitive", False) is True)
                     uncertain = uncertain or isinstance(e, OutcomeUnknownError)
-                    error, outcome = e, self._resolve(mine, etag, e)
+                    error, outcome = e, self._resolve(mine, etag, e, refused)
                 if outcome == "applied":
                     return mine
             # The upload lock is released: decide, and back off without holding it.
@@ -666,14 +712,35 @@ class CloudStorage(SharedStorage):
 
 # --- SDK adapters -----------------------------------------------------------------------------
 
+def _one_attempt(client) -> bool:
+    """True when a boto3 client's configuration shows exactly one attempt in total (botocore
+    normalizes ``max_attempts``, the number of retries, to ``total_max_attempts``)."""
+    retries = getattr(getattr(getattr(client, "meta", None), "config", None), "retries", None)
+    if not isinstance(retries, dict):
+        return False
+    if "total_max_attempts" in retries:
+        return retries["total_max_attempts"] == 1
+    if "max_attempts" in retries:
+        return retries["max_attempts"] == 0
+    return False
+
+
 class S3ObjectStore:
     """:class:`ObjectStore` over Amazon S3 (or a compatible service) with boto3.
 
     Conditional writes use ``If-None-Match: *`` and ``If-Match: <etag>`` on ``PutObject``
     (supported by S3 since 2024; S3-compatible services must support them too).  The
-    client is created with SDK retries disabled (``max_attempts=1``) because
-    :class:`CloudStorage` decides about retries; a client passed in should be configured
-    the same way.
+    client is created with SDK retries disabled, one attempt in total
+    (``retries={"total_max_attempts": 1}``; botocore reads ``max_attempts`` as the number of
+    RETRIES), because :class:`CloudStorage` decides about retries; a client passed in should be
+    configured the same way.
+
+    ``refusals_are_definitive`` (ruling R147a) is ``True`` for the client this adapter builds,
+    and for a client passed in only when ``client.meta.config.retries`` shows one attempt in
+    total.  Any other client is accepted: a refused root write whose epoch the root history no
+    longer reaches is then reported as an unknown outcome (the conservative answer), because the
+    SDK may have re-sent a write that did land.  The flag is computed once, when the adapter is
+    built: replace the client by building a new adapter, not by assigning to its ``client``.
 
     Args:
         bucket: bucket name.
@@ -687,8 +754,11 @@ class S3ObjectStore:
             if client is None:
                 import boto3
                 from botocore.config import Config
-                client = boto3.client("s3", config=Config(retries={"max_attempts": 1, "mode": "standard"}),
+                client = boto3.client("s3", config=Config(retries={"total_max_attempts": 1, "mode": "standard"}),
                                       **client_kwargs)
+                definitive = True
+            else:
+                definitive = _one_attempt(client)
         except ImportError as e:
             raise ProtoNotSupportedError(
                 "S3ObjectStore requires boto3: pip install boto3 (or proto_db[s3])") from e
@@ -703,6 +773,7 @@ class S3ObjectStore:
             if hasattr(exceptions, name))
         self._bucket = bucket
         self.client = client
+        self.refusals_are_definitive = definitive
 
     def _call(self, what: str, operation, *, read: bool = False):
         """Run ``operation()`` mapping botocore errors to the protocol.
@@ -790,7 +861,10 @@ class GCSObjectStore:
 
     Etags are object generations; conditional writes use ``if_generation_match`` (``0``
     for "absent").  Writes pass ``retry=None`` so the SDK never re-sends a conditional
-    write on its own (:class:`CloudStorage` decides); reads keep the SDK defaults.
+    write on its own (:class:`CloudStorage` decides); reads keep the SDK defaults.  Its
+    refusals are therefore definitive (``refusals_are_definitive``, ruling R147a), with the
+    client it builds and with one passed in alike.  ``retry=None`` covers the SDK's own retries
+    only: a client given a custom HTTP session that re-sends requests itself must not be used.
 
     Args:
         bucket: bucket name.
@@ -799,6 +873,8 @@ class GCSObjectStore:
     """
 
     _GET_ATTEMPTS = 3
+    #: Writes force ``retry=None``: a failed precondition is never a re-send (R147a).
+    refusals_are_definitive = True
 
     def __init__(self, bucket: str, *, client=None, **client_kwargs):
         try:

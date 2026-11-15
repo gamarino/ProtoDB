@@ -60,10 +60,10 @@ from ..errors import (ProtoClosedError, ProtoConflictError, ProtoCorruptionError
                       ProtoValidationError)
 from .base import SharedStorage, check_lock_timeout
 from .cache import BoundedCache
-from .format import (WRITE_FORMAT_VERSION, RECORD_HEADER_SIZE, SEGMENT_HEADER_SIZE, RecordKind,
-                     RootRecord, decode_root, decode_segment_header, encode_record,
+from .format import (RECORD_HEADER_SIZE, SEGMENT_HEADER_SIZE, RecordKind,
+                     RootRecord, atom_version, decode_root, decode_segment_header, encode_record,
                      encode_root, encode_segment_header, read_record, record_size,
-                     undecodable_atom)
+                     undecodable_atom, write_version)
 
 try:
     import fcntl
@@ -182,14 +182,15 @@ class _Segment:
 
     ``end`` (guarded by the state lock) is the logical end including buffered bytes;
     ``written``/``synced`` (guarded by the flush lock) are the bytes handed to the OS and
-    the bytes known durable.
+    the bytes known durable.  ``version`` is the format version of its header.
     """
 
-    __slots__ = ("uuid", "path", "fd", "end", "written", "synced", "sealed")
+    __slots__ = ("uuid", "path", "version", "fd", "end", "written", "synced", "sealed")
 
-    def __init__(self, segment_uuid: uuid.UUID, path: str):
+    def __init__(self, segment_uuid: uuid.UUID, path: str, version: int):
         self.uuid = segment_uuid
         self.path = path
+        self.version = version
         self.fd = None
         self.end = 0
         self.written = 0
@@ -277,6 +278,7 @@ class FileStorage(SharedStorage):
         self._thread_lock = threading.Lock()
         self._holder = None
         self._current = None          # segment receiving appends
+        self._written_version = write_version()  # highest header version this instance wrote
         self._segments = []           # own segments with an open write descriptor or pending data
         self._pending = []            # chunks not yet handed to a flush
         self._pending_bytes = 0
@@ -335,14 +337,15 @@ class FileStorage(SharedStorage):
 
     # --- write path ----------------------------------------------------------------
 
-    def _start_segment(self) -> _Segment:
-        """Seal the current segment and start a new one (state lock held)."""
+    def _start_segment(self, version: int) -> _Segment:
+        """Seal the current segment and start a new one of format ``version`` (state lock held)."""
         if self._current is not None:
             self._current.sealed = True
         seg_uuid = uuid.uuid4()
-        seg = _Segment(seg_uuid, os.path.join(self._path, seg_uuid.hex + SEGMENT_SUFFIX))
+        seg = _Segment(seg_uuid, os.path.join(self._path, seg_uuid.hex + SEGMENT_SUFFIX), version)
+        self._written_version = max(self._written_version, version)
         chunk = _Chunk(seg, 0)
-        chunk.data += encode_segment_header(seg_uuid)
+        chunk.data += encode_segment_header(seg_uuid, version)
         seg.end = len(chunk.data)
         self._pending.append(chunk)
         self._pending_bytes += len(chunk.data)
@@ -350,21 +353,26 @@ class FileStorage(SharedStorage):
         self._current = seg
         return seg
 
-    def _append(self, kind: RecordKind, payload: bytes) -> AtomPointer:
-        ptr, spill = self._reserve(encode_record(kind, payload))
+    def _append(self, kind: RecordKind, payload: bytes, version: int = None) -> AtomPointer:
+        ptr, spill = self._reserve(encode_record(kind, payload), version)
         if spill:
             self._write_out(sync=False)
         return ptr
 
-    def _reserve(self, record: bytes) -> tuple:
-        """Buffer one framed record and assign its offset; return ``(pointer, spill)``, where
-        ``spill`` says the buffer reached its size and should be written out."""
+    def _reserve(self, record: bytes, version: int = None) -> tuple:
+        """Buffer one framed record needing format ``version`` and assign its offset; return
+        ``(pointer, spill)``, where ``spill`` says the buffer reached its size and should be
+        written out.  A segment of a lower version is sealed first (ruling R151): a segment's
+        version is then always the version of its first record, which a node rebuilding a
+        header from replicated records relies on (:func:`~proto_db.storage.format.framed_version`).
+        ``None`` is :func:`~proto_db.storage.format.write_version` with no feature."""
+        version = write_version() if version is None else version
         with self._state_lock:
             self._check_writable()
             seg = self._current
-            if seg is None or (seg.end > SEGMENT_HEADER_SIZE
-                               and seg.end + len(record) > self._segment_max):
-                seg = self._start_segment()
+            if seg is None or seg.version < version or (seg.end > SEGMENT_HEADER_SIZE
+                                                        and seg.end + len(record) > self._segment_max):
+                seg = self._start_segment(version)
             if not self._pending or self._pending[-1].segment is not seg:
                 self._pending.append(_Chunk(seg, seg.end))
             offset = seg.end
@@ -432,12 +440,13 @@ class FileStorage(SharedStorage):
                 fd, seg.fd = seg.fd, None
                 self._fs.close(fd)
 
-    def push_atom(self, payload: dict) -> AtomPointer:
+    def push_atom(self, payload: dict, *, features=frozenset()) -> AtomPointer:
         """See :meth:`SharedStorage.push_atom`."""
         if not isinstance(payload, dict):
             raise ProtoValidationError("Atom payload must be a dict")
+        version = atom_version(payload, features)
         self._check_writable()
-        return self._append(RecordKind.ATOM, msgpack.packb(payload, use_bin_type=True))
+        return self._append(RecordKind.ATOM, msgpack.packb(payload, use_bin_type=True), version)
 
     def push_blob(self, data: bytes) -> AtomPointer:
         """See :meth:`SharedStorage.push_blob`."""
@@ -479,26 +488,34 @@ class FileStorage(SharedStorage):
                     self._unsynced_closed |= paths
                 raise ProtoUnexpectedError(f"Syncing segment data of {self._path} failed: {e}") from e
 
-    def append_record(self, kind: RecordKind, payload: bytes) -> AtomPointer:
-        """Append an already encoded record payload of ``kind`` (``push_atom`` without the msgpack step).
+    def append_record(self, kind: RecordKind, payload: bytes, *, version: int = None) -> AtomPointer:
+        """Append an already encoded record payload of ``kind`` needing format ``version``
+        (``push_atom`` without the msgpack step).
 
         Used by :class:`~proto_db.storage.tiered.TieredStorage`, which keeps the framed bytes.
         """
         if not isinstance(payload, (bytes, bytearray, memoryview)):
             raise ProtoValidationError("Record payload must be bytes")
         self._check_writable()
-        return self._append(RecordKind(kind), bytes(payload))
+        return self._append(RecordKind(kind), bytes(payload), version)
 
-    def reserve_framed(self, record: bytes) -> tuple:
+    def reserve_framed(self, record: bytes, *, version: int = None) -> tuple:
         """Append a record already framed by :func:`~proto_db.storage.format.encode_record`
         without writing out a full buffer: return ``(pointer, spill)``; when ``spill`` is true
         the caller calls :meth:`spill`, outside any lock of its own.  Used by
         :class:`~proto_db.storage.tiered.TieredStorage`, which orders its bookkeeping with the
-        offset assignment and keeps encoding and buffer I/O out of that step."""
+        offset assignment and keeps encoding and buffer I/O out of that step.  ``version`` is
+        the format version the record needs (:meth:`push_atom`)."""
         if not isinstance(record, bytes):
             raise ProtoValidationError("A framed record must be bytes")
         self._check_writable()
-        return self._reserve(record)
+        return self._reserve(record, version)
+
+    @property
+    def written_version(self) -> int:
+        """See :attr:`SharedStorage.written_version`."""
+        with self._state_lock:
+            return self._written_version
 
     def spill(self) -> None:
         """Write the buffered records out (no sync): the deferred half of
@@ -702,7 +719,8 @@ class FileStorage(SharedStorage):
         if sync:
             self._fs.fsync_dir(self._path)
 
-    def publish_root(self, ptr: AtomPointer, expected_epoch: Optional[int]) -> RootRecord:
+    def publish_root(self, ptr: AtomPointer, expected_epoch: Optional[int], *,
+                     version: Optional[int] = None) -> RootRecord:
         """See :meth:`SharedStorage.publish_root`.
 
         Flushes first (data before root), checks that ``ptr`` names a valid record, then
@@ -726,7 +744,9 @@ class FileStorage(SharedStorage):
             epoch = current.epoch if current is not None else 0
             if expected_epoch is not None and expected_epoch != epoch:
                 raise ProtoConflictError(f"Root epoch is {epoch}, expected {expected_epoch}")
-            root = RootRecord(WRITE_FORMAT_VERSION, ptr.segment, ptr.offset, epoch + 1)
+            with self._state_lock:
+                version = max(self._written_version, current.version if current is not None else 0, version or 0)
+            root = RootRecord(version, ptr.segment, ptr.offset, epoch + 1)
             try:
                 self._write_root(root)
             except OSError as e:

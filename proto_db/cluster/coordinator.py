@@ -462,7 +462,7 @@ class _Waiter:
     """Replies gathered for one replicate, query or fetch (guarded by the coordinator lock)."""
 
     __slots__ = ("kind", "term", "acks", "nacks", "answers", "promised", "states", "ballots", "data", "missing",
-                 "stored", "unstored", "key")
+                 "stored", "unstored", "key", "unknown", "data_from")
 
     def __init__(self, kind: str, term: int = 0):
         self.kind = kind
@@ -477,7 +477,13 @@ class _Waiter:
         self.states = {}
         self.ballots = {}
         self.data = None
-        self.missing = 0
+        # The members that answered a fetch or commit_query without it: a set, so that a
+        # duplicated reply never counts twice (transport duplication; R234L).
+        self.missing = set()
+        # Members that answered they cannot tell (no storage attached, R240L): heard, but never
+        # a miss.  ``data_from``: the member whose bytes are ``data``.
+        self.unknown = set()
+        self.data_from = None
 
 
 class _PermitWait:
@@ -529,7 +535,12 @@ class _Ownership:
     newest root it knows committed in its term ``(known, root, label)`` (known committed when
     ``committed``), which a permit carries when no proposal is waiting to be issued on.  Only
     the incarnation a permission was issued to can end it with ``"none"`` or ``"committed"``
-    (8.3f review, C1)."""
+    (8.3f review, C1).
+
+    ``fenced``: a lost renewal proved that a majority will never renew this term (ruling R149):
+    the term issues nothing new and ends once its pipeline is empty.  ``renew_after``: after any
+    other renewal round that was not won (lost, or left pending: ruling R149a), the time on the
+    coordinator's clock before which it is not renewed again (``None`` once a renewal won)."""
 
     def __init__(self, lease: Lease, base: tuple, committed: bool, now: float):
         self.lease = lease
@@ -543,10 +554,12 @@ class _Ownership:
         self.last_local = now           # the last permission request of this node's own threads
         self.abandoned = False
         self.ended = False
+        self.fenced = False
+        self.renew_after = None
 
     def serving(self, now: float) -> bool:
-        """True while permissions may be issued: neither abandoned nor ended, lease valid."""
-        return not self.abandoned and not self.ended and self.lease.is_valid()
+        """True while permissions may be issued: neither abandoned, fenced nor ended, lease valid."""
+        return not self.abandoned and not self.fenced and not self.ended and self.lease.is_valid()
 
     def entry(self, node: str, seq: int) -> Optional[_Issued]:
         """The issued permission ``seq`` of ``node``, if it is in the pipeline."""
@@ -600,8 +613,10 @@ class ClusterCoordinator:
             first start it decides on the answers of a ballot round (ruling R78a, module
             docstring "Rejoining").
         fetch_timeout: seconds a peer page request waits for an answer; must be shorter than
-            ``lease_duration - drift_margin`` (default a quarter of it), and a request made
-            under the lease never waits beyond what remains of the lease.
+            ``lease_duration - drift_margin`` (default a quarter of it).  Only a read inside a
+            commit's critical section waits no longer than what remains of its permission and of
+            the lease the node holds; every other read waits the full ``fetch_timeout`` (ruling
+            R212).
         persist_interval: seconds between two passes of the persister (D46).
         persist_lag: seconds the persisted epoch may lag the committed one before this node
             persists a root committed by another node (covers a crashed committer).
@@ -799,7 +814,8 @@ class ClusterCoordinator:
         self._placements = collections.OrderedDict()    # root_key -> (copies, ranges) of a commit
         self._replica_suspects = {}         # member -> monotonic time until which it is tried last
         for key in ("permits_issued", "permits_held", "permit_requests_sent", "permits_refused", "renewals",
-                    "renewal_failures", "ownerships", "terms_abandoned", "permit_rounds", "permits_foreign_dropped",
+                    "renewal_failures", "ownerships", "terms_abandoned", "terms_fenced", "permit_rounds",
+                    "permits_foreign_dropped",
                     "permit_requests_retried", "pipelined_permits", "proposals", "proposals_received",
                     "foreign_proposals", "gate_open_at_send", "gate_waits", "gate_fallbacks", "gate_closures",
                     "stores_sent", "stores_applied", "records_cached_on_receipt", "sends_refused_reserve"):
@@ -855,6 +871,11 @@ class ClusterCoordinator:
     def lease_duration(self) -> float:
         """Seconds a grant lasts on the granter's clock."""
         return self._duration
+
+    @property
+    def acquire_timeout(self) -> float:
+        """Default seconds :meth:`acquire` and :meth:`permit` try before ``ProtoTimeoutError``."""
+        return self._acquire_timeout
 
     @property
     def persister(self):
@@ -1133,7 +1154,7 @@ class ClusterCoordinator:
             self._hint = max(self._hint, top)
             self._grants.restore(max(promised, accepted[0] if accepted is not None else 0))
             self._logged_promise = (tier, promised)
-            tier.set_fetcher(self.fetch_record)
+            tier.set_fetcher(self.fetch_record, answer=self.fetch_answer)   # R230: unavailable vs. absent
             self._confirmed = False
             self._rejoining = rejoin
             self._rejoin_blocked = None
@@ -1531,20 +1552,36 @@ class ClusterCoordinator:
             return None, (f"some records of {what} are on no reachable peer and not in the object store"), None
         return "records", records, ranges
 
+    def _read_wait(self, permitted: bool) -> float:
+        """Under the lock: how long a peer read (``fetch``, ``commit_query``) waits for its
+        answers.  ``fetch_timeout``; a read made inside a commit's critical section
+        (``permitted``) waits no longer than what remains of the permission and the lease
+        this node holds, so that a commit never waits past its permission.  Every other read
+        gets the full ``fetch_timeout``, also while an expired term lease is not yet released
+        (ruling R212)."""
+        timeout = self._fetch_timeout
+        if permitted:
+            for lease in (self._held, self._permit):
+                if lease is not None:
+                    timeout = min(timeout, max(0.0, lease.remaining()))
+        return timeout
+
     def _ask_commit(self, label: int, root: RootRecord) -> tuple:
         """``(persisted, ranges)`` for the commit of ``root`` from the first peer that knows
-        (``commit_query``), within ``fetch_timeout`` (and what remains of a held lease)."""
+        (``commit_query``), within ``fetch_timeout`` (inside a commit, within what remains of
+        its permission: :meth:`_read_wait`)."""
         others = len(self._others)
         if not others:
             return False, None
+        tier = self._tier
+        permitted = bool(tier is not None and getattr(tier, "in_critical", lambda: False)())
         with self._lock:
             if self._state != "running":
                 return False, None
-            timeout = self._fetch_timeout
-            if self._held is not None:
-                timeout = min(timeout, max(0.0, self._held.remaining()))
+            timeout = self._read_wait(permitted)
+        asked = set(self._others)
         waiter = self._ask("commit_query", {"root": encode_root(root, known=True, term=label)},
-                           lambda w: w.data is not None or w.missing >= others, timeout)
+                           lambda w: w.data is not None or asked <= w.missing | w.unknown, timeout)
         if waiter.data is None:
             return False, None
         return waiter.data
@@ -2178,21 +2215,26 @@ class ClusterCoordinator:
         elif kind == "fetched":
             if waiter.kind != "fetch" or waiter.key != (msg["segment"], msg["offset"]):
                 return              # the bytes of another record are never this one's (review C2)
-            if msg["data"] is not None and waiter.data is None:
-                waiter.data = msg["data"]
+            if msg.get("unknown", False):
+                waiter.unknown.add(sender)          # cannot tell: not a miss (R240L)
+            elif msg["data"] is not None:
+                if waiter.data is None:
+                    waiter.data, waiter.data_from = msg["data"], sender
             else:
-                waiter.missing += 1
+                waiter.missing.add(sender)
         elif kind == "commit_info":
             if waiter.kind != "commit_query":
                 return
             if waiter.data is not None:
                 return
-            if msg["persisted"]:
+            if msg.get("unknown", False):
+                waiter.unknown.add(sender)          # cannot tell: not a miss (R240L)
+            elif msg["persisted"]:
                 waiter.data = (True, None)
             elif msg["ranges"] is not None:
                 waiter.data = (False, protocol.decode_ranges(msg["ranges"]))
             else:
-                waiter.missing += 1
+                waiter.missing.add(sender)
         self._cond.notify_all()
 
     def _broadcast(self, msg: dict) -> None:
@@ -2674,8 +2716,17 @@ class ClusterCoordinator:
         with self._lock:
             if data is not None:
                 self._stats["fetches_served"] += 1
+            # Without a tier this member cannot tell whether its disk holds the record (a
+            # restart before attach, a closed space): it says so, and is never counted as
+            # lacking it (R240L).  Nor can it when its space closed or detached after the tier
+            # was taken: a closed tier reads nothing.  ``detach`` clears ``_tier`` (under this
+            # lock) before the space closes its tier, so a read that saw the tier closed sees
+            # ``_tier`` changed here (R243L).
+            unknown = tier is None or (data is None and self._tier is not tier)
+        extra = {"unknown": True} if unknown else {}
         self._transport.send(msg["from"], make_message("fetched", self._node, rid=msg["rid"], inc=msg["inc"],
-                                                       segment=msg["segment"], offset=msg["offset"], data=data))
+                                                       segment=msg["segment"], offset=msg["offset"], data=data,
+                                                       **extra))
 
     def _warm(self, msg: dict) -> None:
         """Cache the records of another member's commit (ruling R89): memory only, never
@@ -2698,9 +2749,17 @@ class ClusterCoordinator:
         ranges = None
         if not persisted and root is not None and tier is not None and getattr(tier, "local_records", False):
             ranges = tier.commit_ranges(root)
+        with self._lock:
+            # Cannot tell (never a miss): no tier attached (R240L); a tier still attaching,
+            # whose persister -- and so whether the persisted root covers the commit -- is not
+            # there yet (R244L); or a space that closed or detached after the pair was taken
+            # (R243L, as in _serve_fetch).
+            unknown = not persisted and ranges is None and (
+                tier is None or persister is None or self._tier is not tier or self._persister is not persister)
+        extra = {"unknown": True} if unknown else {}
         self._transport.send(msg["from"], make_message("commit_info", self._node, rid=msg["rid"], inc=msg["inc"],
                                                        persisted=persisted,
-                                                       ranges=protocol.encode_ranges(ranges)))
+                                                       ranges=protocol.encode_ranges(ranges), **extra))
 
     # -- acquiring and releasing -------------------------------------------------------------
 
@@ -3167,19 +3226,25 @@ class ClusterCoordinator:
             if self._state != "running":
                 return
             own = self._ownership
-            if own is not None and own.term == msg["term"] and own.serving(self._clock()) \
-                    and self._failure is None:
-                out = next((e for e in own.pipeline if e.node == sender and e.inc == msg["inc"]
-                            and e.rid == msg["rid"]), None)
-                if out is not None:
-                    # A retried request whose permit is outstanding (it, or the permit, was
-                    # lost; review M6; rule O7 per entry): send the same permit again -- never
-                    # a second one.
-                    sends = [(sender, out.permit)] if out.permit is not None else []
-                else:
-                    if not any(q[0] == sender and q[1] == msg["rid"] for q in own.queue):
-                        own.queue.append((sender, msg["rid"], msg["inc"], None))
-                    sends = self._dispatch(own)
+            # The term is live: neither abandoned nor ended, its lease valid (serving, or fenced).
+            live = own is not None and own.term == msg["term"] and self._failure is None \
+                and not own.abandoned and not own.ended and own.lease.is_valid()
+            out = next((e for e in own.pipeline if e.node == sender and e.inc == msg["inc"]
+                        and e.rid == msg["rid"]), None) if live else None
+            if out is not None:
+                # A retried request whose permit is outstanding (it, or the permit, was lost;
+                # review M6; rule O7 per entry): send the same permit again -- never a second
+                # one -- also while the term is fenced (R149), so that permit can still end by
+                # its done (RENEW-BACKOFF review M1).  The resend is safe: it carries the
+                # ``valid`` fixed at issue, and the holder measures it from the first send of
+                # this request (``wait.sent_at + valid``, the D45 argument), never from the
+                # resend.
+                sends = [(sender, out.permit)] if out.permit is not None else []
+                own.last_demand = time.monotonic()
+            elif live and own.serving(self._clock()):
+                if not any(q[0] == sender and q[1] == msg["rid"] for q in own.queue):
+                    own.queue.append((sender, msg["rid"], msg["inc"], None))
+                sends = self._dispatch(own)
                 own.last_demand = time.monotonic()
             else:
                 reason = "not_owner" if own is None or own.term != msg["term"] else "ending"
@@ -3301,8 +3366,9 @@ class ClusterCoordinator:
         (``none``): the only entry, which did not propose, is removed and the next permit
         reuses the committed base (D50); any other ``none`` abandons the term.  O6: any other
         outcome abandons the term (D50)."""
-        if self._idle_release is not None:
-            self._cond.notify_all()     # a draining ownership thread ends the term now (R80)
+        if self._idle_release is not None or own.fenced:
+            # A draining (R80) or fenced (R149) ownership thread ends the term now.
+            self._cond.notify_all()
         if outcome == "committed":
             if issued.proposal is not None and issued.proposal != (root, label):
                 return self._abandon(own, f"permission {issued.seq} of {issued.node} committed another root "
@@ -3449,7 +3515,9 @@ class ClusterCoordinator:
             raise
 
     def _own_loop_body(self, own: "_Ownership") -> None:
-        """The loop of :meth:`_own_loop`."""
+        """The loop of :meth:`_own_loop`.  After a renewal round that was not won it renews
+        again only once ``own.renew_after`` has passed, and a fenced term is never renewed: it ends ("fenced")
+        when its pipeline is empty (ruling R149, issue #1)."""
         idle = self._duration / 4
         while True:
             renew = False
@@ -3471,6 +3539,10 @@ class ClusterCoordinator:
                         # know yet: abandon, so the release is uncertain (review I3).
                         sends = self._abandon(own, f"lease expired with permission {own.pipeline[0].seq} "
                                                    f"of {own.pipeline[0].node} outstanding")
+                elif own.fenced and not own.pipeline:
+                    # No majority will renew this term (R149) and no permission is outstanding
+                    # any more (one that was ended by its done): end it and release normally.
+                    end = "fenced"
                 elif not own.pipeline and not own.queue and mono - own.last_demand > idle:
                     end = "idle"
                 elif not own.pipeline and self._idle_release is not None \
@@ -3488,9 +3560,21 @@ class ClusterCoordinator:
                     demand = own.pipeline or own.queue or mono - own.last_demand <= self._duration / 2
                     # Renewed when half of the holder's belief is left (ruling R78b: with the
                     # default margin, every lease_duration / 6 -- a message, no fsync).
-                    renew = demand and own.lease.remaining() < self._belief / 2
+                    backing_off = own.renew_after is not None and now < own.renew_after
+                    renew = demand and not own.fenced and not backing_off \
+                        and own.lease.remaining() < self._belief / 2
                     if not renew:
-                        waits = [max(0.001, own.lease.remaining() - self._belief / 2) if demand else idle]
+                        if own.fenced:
+                            # Never renewed: woken by the outstanding permission's done (or
+                            # its deadline); the lease's expiry abandons it (review I3).
+                            waits = [max(0.001, own.lease.remaining())]
+                        elif demand:
+                            due = own.lease.remaining() - self._belief / 2
+                            if backing_off:
+                                due = max(due, own.renew_after - now)
+                            waits = [max(0.001, due)]
+                        else:
+                            waits = [idle]
                         if own.pipeline:
                             waits.append(max(0.001, min(e.deadline for e in own.pipeline) - now))
                         elif not own.queue:
@@ -3511,7 +3595,10 @@ class ClusterCoordinator:
                 self._renew(own)
 
     def _renew(self, own: "_Ownership") -> None:
-        """Ask the granters to extend the lease of ``own`` (same term; D50, renewal)."""
+        """Ask the granters to extend the lease of ``own`` (same term; D50, renewal).  A round
+        that is not won either fences the term (a majority refused it for good, ruling R149: the
+        queue is refused ``"ending"``, nothing new is issued) or sets ``own.renew_after``, the
+        back-off before the next renewal (issue #1; ruling R149a: a round left pending too)."""
         with self._log_lock, self._lock:
             if self._state != "running" or self._ownership is not own:
                 return
@@ -3547,10 +3634,28 @@ class ClusterCoordinator:
             sends = []
             if attempt.state == "won" and self._clock() < attempt.valid_until and self._ownership is own:
                 own.lease.valid_until = max(own.lease.valid_until, attempt.valid_until)
+                own.renew_after = None
                 self._stats["renewals"] += 1
                 sends = self._dispatch(own)        # a request may have waited for the renewal
             else:
                 self._stats["renewal_failures"] += 1
+                if self._state == "running" and self._ownership is own and not own.fenced:
+                    if attempt.term_fenced:
+                        # Ruling R149: no majority will ever renew this term.  Step down
+                        # without abandoning: an outstanding permission ends by its done (or
+                        # its deadline), then the ownership thread releases the lease.
+                        own.fenced = True
+                        self._stats["terms_fenced"] += 1
+                        logger.info("Node %s: lease term %d is fenced by a majority; it ends", self._node,
+                                    own.term)
+                        sends = self._refuse_queue(own, "ending")
+                    else:
+                        # Lost, or left pending (a member silent; a majority may have answered,
+                        # which ends the wait early): possibly transient, and renewing sooner
+                        # cannot win (rulings R149, R149a).
+                        own.renew_after = self._clock() + min(
+                            own.lease.remaining(),
+                            max(attempt.busy_remaining, self._request_timeout / 4, 0.001))
             self._cond.notify_all()
         self._send_all(sends)
 
@@ -4226,40 +4331,79 @@ class ClusterCoordinator:
 
     def fetch_record(self, ptr) -> Optional[bytes]:
         """Peer page request: the framed record at ``ptr`` from the first peer that has it, or
-        ``None`` (no peer answered with it within ``fetch_timeout``, nor within what remains
-        of a lease this node holds).  The members the locator names for the record's segment
-        (the data replicas of the commits that wrote it, D54) are asked first; the others only
-        when none of them has it."""
+        ``None`` (no peer answered with it within ``fetch_timeout``; inside a commit, within
+        what remains of its permission: :meth:`_read_wait`).  See :meth:`fetch_answer`."""
+        return self.fetch_answer(ptr)[0]
+
+    def fetch_answer(self, ptr, valid: Optional[Callable[[bytes], bool]] = None) -> tuple:
+        """``(framed record or None, complete)``: the peer page request of :meth:`fetch_record`,
+        and whether its ``None`` is definitive -- every other member answered that it does
+        not hold the record (``complete`` True), as opposed to a member that was not heard
+        within the wait (a timeout, the cap of a commit's permission, a coordinator stopped
+        before or during an ask, R244L), one that cannot tell because it has no storage
+        attached or its space closed while it served the request (R240L, R243L), or one that
+        answered bytes ``valid`` rejects (``complete`` False).  Each member counts once, however often
+        its reply arrives (R234L).  A record found is ``(data, True)``; with no other member,
+        ``(None, True)``.
+
+        The members the locator names for the record's segment (the data replicas of the
+        commits that wrote it, D54) are asked first; the others only when none of them has
+        it.  An answer ``valid`` rejects does not end the request: the members of that round
+        not heard yet are asked again, within what remains of the round's wait (R242L), and not
+        at all when nothing remains (R244L).  A
+        tier tells an unavailable record from an absent one by it (R230)."""
         if not self._others:
-            return None
+            return None, True
         tier = self._tier
         permitted = bool(tier is not None and getattr(tier, "in_critical", lambda: False)())
         with self._lock:
             if self._state != "running":
-                return None
+                return None, False
             self._stats["fetches_requested"] += 1
             self._stats["record_fetches"] += 1
             if permitted:
                 self._stats["record_fetches_permitted"] += 1
-            timeout = self._fetch_timeout
-            if self._held is not None:
-                timeout = min(timeout, self._held.remaining())
+            timeout = self._read_wait(permitted)
             located = [m for m in self._locator.get(ptr.segment, ()) if m != self._node]
             if located:
                 self._stats["fetches_located"] += 1
         rounds = [located, [m for m in self._others if m not in located]] if located else [list(self._others)]
+        complete = True
         for i, targets in enumerate(rounds):
             if not targets:
                 continue
             if i:
                 with self._lock:
                     self._stats["fetch_fallbacks"] += 1
-            waiter = self._ask("fetch", {"segment": ptr.segment.bytes, "offset": ptr.offset},
-                               lambda w, n=len(targets): w.data is not None or w.missing >= n, timeout,
-                               targets=targets)
-            if waiter.data is not None:
-                return waiter.data
-        return None
+            deadline = time.monotonic() + timeout
+            remaining, wait = list(targets), timeout
+            while remaining:
+                try:
+                    waiter = self._ask("fetch", {"segment": ptr.segment.bytes, "offset": ptr.offset},
+                                       lambda w, asked=set(remaining): w.data is not None
+                                       or asked <= w.missing | w.unknown, wait, targets=remaining)
+                except ProtoValidationError:
+                    with self._lock:
+                        stopped = self._state != "running"
+                    if stopped:             # stopped before this ask: not heard, as below (R244L)
+                        return None, False
+                    raise
+                if waiter.data is not None:
+                    if valid is None or valid(waiter.data):
+                        return waiter.data, True
+                    logger.warning("Node %s: member %s answered corrupt bytes for the record at %s; asking the "
+                                   "others", self._node, waiter.data_from, ptr)
+                    complete = False        # a corrupt answer is no answer that the record is absent
+                    heard = waiter.missing | waiter.unknown | {waiter.data_from}
+                    remaining = [m for m in remaining if m not in heard]
+                    wait = deadline - time.monotonic()      # a re-ask: what remains of the round
+                    if wait <= 0:
+                        break               # no time left: nobody would wait for a re-ask (R244L)
+                    continue
+                if not set(remaining) <= waiter.missing:
+                    complete = False        # some member was not heard, or cannot tell
+                break
+        return None, complete
 
 
 class _LeaseContext:

@@ -7,7 +7,7 @@ import pytest
 from proto_db.errors import (ProtoBacklogFullError, ProtoCorruptionError, ProtoNotSupportedError,
                              ProtoUnexpectedError, ProtoValidationError)
 from proto_db.storage.cloud import CloudStorage
-from proto_db.storage.format import FORMAT_VERSION, RootRecord, encode_segment_header
+from proto_db.storage.format import WRITE_FORMAT_VERSION, RootRecord, encode_segment_header
 from proto_db.cluster.rootlog import root_key
 from proto_db.storage.tiered import TieredStorage
 from tests.support.fake_object_store import FakeObjectStore
@@ -24,7 +24,7 @@ def _tiered(tmp_path, store, name="n0", **kw):
 
 
 def _root(ptr, epoch):
-    return RootRecord(FORMAT_VERSION, ptr.segment, ptr.offset, epoch)
+    return RootRecord(WRITE_FORMAT_VERSION, ptr.segment, ptr.offset, epoch)
 
 
 def test_records_are_read_back_from_the_cache_and_the_local_tier(tmp_path):
@@ -241,7 +241,7 @@ def test_local_release_follows_the_order_of_roots_not_the_epoch(tmp_path):
     st.shipped(st.outgoing(), _root(ptr, 2), new_lineage)
     st.ship(force=True)
     st.push_atom({"n": 2})                             # the open segment is never released
-    dead_branch = root_key(5, RootRecord(FORMAT_VERSION, uuid.uuid4(), 64, 10))
+    dead_branch = root_key(5, RootRecord(WRITE_FORMAT_VERSION, uuid.uuid4(), 64, 10))
     assert st.release_local(dead_branch) == 0          # an epoch-keyed release dropped it here
     assert st.commit_ranges(_root(ptr, 2)) is not None
     assert st.release_local(root_key(new_lineage, _root(ptr, 2))) == 1

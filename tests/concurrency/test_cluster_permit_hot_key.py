@@ -84,11 +84,12 @@ def _watch(tc, holder):
             note(permission, "kept")
         return originals["_keep"](group, permission, tier, rounds, coordinator)
 
-    def take_kept(group, coordinator, tier):
+    def take_kept(group, coordinator, tier, timeout):
         with group.cond:
             kept = group.kept
-        result = originals["_take_kept"](group, coordinator, tier)
-        if coordinator is node and kept is not None and result is None:
+        result = originals["_take_kept"](group, coordinator, tier, timeout)
+        # A permission being ended (an ``_Ending`` marker, R148) was not refused by this take.
+        if coordinator is node and isinstance(kept, tuple) and result[0] is None:
             note(kept[0], "take refused")
         return result
 
@@ -249,7 +250,7 @@ def test_a_permission_kept_for_a_slow_retry_is_released_for_the_other_members(tm
 
         def fn(tr):
             group = tx._GROUPS.get(tc[b])
-            kept = group is not None and group.kept is not None
+            kept = group is not None and isinstance(group.kept, tuple)     # kept, not being ended
             v = tr.get_root_object("n") or 0
             if kept and not started:
                 started.append(1)

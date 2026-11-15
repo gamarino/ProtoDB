@@ -4,9 +4,10 @@ Every append-only log of the local tier -- the acceptor log (``roots.log`` and t
 ``*.roots`` files of a shared storage), ``ranges.log`` and ``segments.log`` -- uses this file
 format and opens through :func:`open_log`.
 
-File layout (format version 2, D46 fix round 13)::
+File layout (format versions 2 and 3, D46 fix round 13; 3 differs only in what an acceptor log
+may hold)::
 
-    header  LOG_MAGIC (8 bytes) | LOG_FORMAT_VERSION (u16 LE) | kind (4 ASCII bytes)
+    header  LOG_MAGIC (8 bytes) | format version (u16 LE) | kind (4 ASCII bytes)
     frame   FRAME_MAGIC (2 bytes) | length (u32 LE, > 0) | payload_crc (u32 LE) | header_crc (u32 LE)
             | payload (``length`` bytes)
 
@@ -62,16 +63,26 @@ from typing import NamedTuple
 from ..errors import ProtoCorruptionError, ProtoLockingError, ProtoNotSupportedError, attach_secondary_errors
 from .crc import PrefixCrc
 
-__all__ = ["LOG_MAGIC", "LOG_FORMAT_VERSION", "FRAME_MAGIC", "HEADER_SIZE", "FRAME_OVERHEAD", "ScanResult",
-           "encode_header", "encode_frame", "scan", "read_fd", "read_log", "open_log", "log_contents",
-           "write_all", "prepare_replacement", "fsync_dir"]
+__all__ = ["LOG_MAGIC", "LOG_FORMAT_VERSION", "LOG_WRITE_VERSION", "READABLE_LOG_VERSIONS", "FRAME_MAGIC",
+           "HEADER_SIZE", "FRAME_OVERHEAD", "ScanResult", "encode_header", "header_version", "set_header_version",
+           "encode_frame", "scan", "read_fd", "read_log", "open_log", "log_contents", "write_all",
+           "prepare_replacement", "fsync_dir"]
 
 logger = logging.getLogger(__name__)
 
 LOG_MAGIC = b"PDB2LOG\0"
-#: Version of the framed log format; bump it when the header or the framing changes.
+#: Version of the framed log format (the highest one read); bump it when the header, the framing
+#: or the acceptor log's entry kinds change.
 #: 2: self-validating frame headers (D46 fix round 13).
-LOG_FORMAT_VERSION = 2
+#: 3: the acceptor log's versioned entry (kind 7), which carries a root or records of a storage
+#: format above 4 (runtime registry, ruling R151 fix round 1).
+LOG_FORMAT_VERSION = 3
+#: The version written in the header of a log that holds nothing of a later version: a log
+#: whose entries need version 3 (:mod:`proto_db.cluster.rootlog`) is written as 3, every other
+#: log keeps 2, byte for byte, so a reader of the previous revision keeps opening it.
+LOG_WRITE_VERSION = 2
+#: Versions this code reads.
+READABLE_LOG_VERSIONS = frozenset({2, 3})
 #: First two bytes of every frame (a search candidate marker; the header CRC decides).
 FRAME_MAGIC = b"\xc1\xf7"
 _HEADER = struct.Struct("<8sH4s")
@@ -96,9 +107,34 @@ class ScanResult(NamedTuple):
     torn: bool
 
 
-def encode_header(kind: bytes) -> bytes:
-    """The header of a log of ``kind`` (4 ASCII bytes)."""
-    return _HEADER.pack(LOG_MAGIC, LOG_FORMAT_VERSION, kind)
+def encode_header(kind: bytes, version: int = None) -> bytes:
+    """The header of a log of ``kind`` (4 ASCII bytes) and format ``version`` (default
+    :data:`LOG_WRITE_VERSION`)."""
+    return _HEADER.pack(LOG_MAGIC, LOG_WRITE_VERSION if version is None else version, kind)
+
+
+def header_version(data) -> int:
+    """The format version in the (valid, complete) log header at the start of ``data``."""
+    return _HEADER.unpack_from(data)[1]
+
+
+def set_header_version(path: str, kind: bytes, version: int) -> None:
+    """Rewrite the header of the log at ``path`` with format ``version`` in place and ``fsync``
+    it (the header is the first ``HEADER_SIZE`` bytes; the frames are untouched).  A separate
+    descriptor is used: a positioned write through an ``O_APPEND`` descriptor appends on some
+    systems.  ``OSError`` propagates."""
+    fd = os.open(path, os.O_WRONLY | _O_BINARY | _O_CLOEXEC)
+    try:
+        view = memoryview(encode_header(kind, version))
+        offset = 0
+        while view:
+            n = os.pwrite(fd, view, offset)
+            if n <= 0:
+                raise OSError(errno.EIO, f"pwrite returned {n}")
+            view, offset = view[n:], offset + n
+        os.fsync(fd)
+    finally:
+        os.close(fd)
 
 
 def encode_frame(payload: bytes) -> bytes:
@@ -171,6 +207,10 @@ def scan(data: bytes, kind: bytes, path: str) -> ScanResult:
     view = memoryview(data)
     size = len(data)
     expected = encode_header(kind)
+    if size >= HEADER_SIZE:
+        magic, version, found = _HEADER.unpack_from(data)
+        if magic == LOG_MAGIC and found == kind and version in READABLE_LOG_VERSIONS:
+            expected = encode_header(kind, version)          # a readable header of a later version
     if size < HEADER_SIZE or bytes(view[:HEADER_SIZE]) != expected:
         head = bytes(view[:HEADER_SIZE])
         keep = 0
@@ -179,10 +219,11 @@ def scan(data: bytes, kind: bytes, path: str) -> ScanResult:
         if not any(view[keep:]):
             return ScanResult([], 0, size > 0)       # a new log, or its header torn
         magic, version, found = _HEADER.unpack(head) if size >= HEADER_SIZE else (None, None, None)
-        if magic == LOG_MAGIC and version != LOG_FORMAT_VERSION:
+        if magic == LOG_MAGIC and version not in READABLE_LOG_VERSIONS:
             raise ProtoNotSupportedError(
-                f"The log {path} has format version {version}; this version reads {LOG_FORMAT_VERSION}")
-        if magic == LOG_MAGIC and version == LOG_FORMAT_VERSION and found != kind:
+                f"The log {path} has format version {version}; this version reads "
+                f"{sorted(READABLE_LOG_VERSIONS)}")
+        if magic == LOG_MAGIC and found != kind:
             raise ProtoCorruptionError(f"The log {path} is a {found!r} log, not a {kind!r} log")
         raise ProtoCorruptionError(
             f"The log {path} does not start with a valid {kind!r} log header but holds other data (no entry "
@@ -257,9 +298,10 @@ def fsync_dir(directory: str) -> None:
         os.close(fd)
 
 
-def log_contents(kind: bytes, payloads) -> bytes:
-    """The complete contents of a log of ``kind`` holding ``payloads`` (a compaction's file)."""
-    return encode_header(kind) + b"".join(encode_frame(p) for p in payloads)
+def log_contents(kind: bytes, payloads, version: int = None) -> bytes:
+    """The complete contents of a log of ``kind`` and format ``version`` (default
+    :data:`LOG_WRITE_VERSION`) holding ``payloads`` (a compaction's file)."""
+    return encode_header(kind, version) + b"".join(encode_frame(p) for p in payloads)
 
 
 def open_log(path: str, kind: bytes, *, durability: str) -> tuple:

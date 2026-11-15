@@ -36,13 +36,15 @@ The key words MUST, MUST NOT, SHOULD and MAY are used as in RFC 2119. A section 
      - Value
      - Where it is written
    * - Storage format (``FORMAT_VERSION``)
-     - 4
-     - every segment header and every root record; versions 2, 3 and 4 are read
+     - 5
+     - every segment header and every root record; versions 2 to 5 are read, and 4 is written
+       unless the data uses a feature of 5 (`Format stability`_)
    * - Framed log format (``LOG_FORMAT_VERSION``)
-     - 2
-     - the header of every framed log file
+     - 3
+     - the header of every framed log file; versions 2 and 3 are read, and 2 is written unless the
+       log is an acceptor log holding a versioned entry (kind 7, `The acceptor log (kind ROOT)`_)
    * - Cluster protocol (``PROTOCOL_VERSION``)
-     - 13
+     - 14
      - the ``v`` field of every cluster message; no other version is accepted
 
 There are three levels of conformance:
@@ -112,22 +114,42 @@ later root of the space is too (a root is shared by all the databases of a space
 that predates *n* refuses that segment or root with ``ProtoNotSupportedError``, never misreads
 it. A reader of version *n* reads every version up to *n*. Processes of different revisions may
 share a directory while only features all of them read are written; ``proto_db`` writes 4 in this
-revision (``proto_db.storage.format.WRITE_FORMAT_VERSION``), and ``FEATURE_VERSIONS`` lists the
-version of every feature added later (none yet).
+revision (``proto_db.storage.format.WRITE_FORMAT_VERSION``) for data that uses no later feature, and
+``FEATURE_VERSIONS`` lists the version of every feature added later: ``parents`` (an atom whose
+envelope has the key ``"p"``) is version 5, and so is ``registry`` (a record of one of the
+runtime registry's built-in types, aliases 22 and 23, `Registry roots`_).
+
+A segment header is written before the segment's records, so ``proto_db`` opens a new segment
+for a record that needs a later version than the open segment's, and a segment's version is the
+version of its **first** record (a segment of version 5 may hold later records of version 4; a
+record never lands in a segment of a lower version than it needs). Every feature is visible in
+the bytes of the records that use it. A node that writes replicated or recovered records into a
+segment file it did not create (a cluster copy, a redo from the acceptor log) writes the header
+version of the segment's first record, and the highest version it writes while it lacks that
+record. A root record's version is the highest of 4, the version of the root it replaces and the
+highest segment version its writer has written; in cluster mode the committer's root version
+travels with the root (the fifth element of a wire *root*, `Cluster wire protocol`_, and the
+versioned entry of the acceptor log), and a node that persists the root writes the highest of
+that version and its own, so a root over format-5 data is format 5 whichever node persists it.
+"Uses a feature" therefore means "used or attempted by this writer": a writer that appended a
+version-5 record no committed root references (a commit that saved records and then failed) writes
+version-5 roots from then on, so a reader of version 4 refuses that space although no reachable
+record needs 5; this is conservative (nothing is lost or misread) and accepted.
 
 **The pinned vectors.** ``tests/conformance/vectors.sha256`` lists the SHA-256 of every file
 under ``tests/conformance/vectors/`` (``<hex digest>  <path>``, one line per file, sorted by path
 in code point order, ``/`` as the separator), then the digest of ``manifest.json``. The SHA-256
-of that list file is ``6e913bcb960dee1c71d955754a3519f573cdb435e66476561d8e873f602dfbf4``. ``test_conformance.py`` checks that the committed files
+of that list file is ``37b286fd97df098769aee26c222f76d295bf747b1a02f9441e52bd54e1ca1695``. ``test_conformance.py`` checks that the committed files
 match the list and that this page states the list's digest. Each vector file is governed by
 the number that covers what it holds: ``vectors/cluster/*.log`` by ``LOG_FORMAT_VERSION``,
 ``vectors/cluster/messages/`` by ``PROTOCOL_VERSION``, every other file by ``FORMAT_VERSION``.
 A change to an existing vector file is a change of its number's items; a new vector adds lines
 and changes the manifest's line, and raises nothing by itself.
 
-Two extensions are decided and not implemented. Both are **additive**: no existing byte, order,
+Two extensions were decided after the freeze. Both are **additive**: no existing byte, order,
 hash or token changes, data written without them keeps its version and its meaning, and they
-are marked by the version rule above.
+are marked by the version rule above. The registry is implemented (format 5); symbols are not, and
+symbol references are not part of format 5 (see `Symbol references`_ below).
 
 Symbols (``@sym``)
     A new value kind, ``{"@sym": name}`` (option (c2) of the runtime-symbols investigation; see
@@ -141,18 +163,34 @@ Symbols (``@sym``)
     another key when ``@sym`` lands, and lookups by the symbol would silently miss it.
 
 The per-database class registry
-    Its persisted state is database roots whose names start with ``__``: ``__currentModules``
-    (the installed modules), ``__currentSymbols`` (string to symbol) and a catalog root of class
-    objects, whose name the registry specification fixes. Nothing in them is specific to a
-    language. **Root names starting with ``__`` are reserved for the format from this revision
-    on**: ``proto_db`` refuses to write one (``ProtoValidationError``). The registry holds symbols
-    and atoms of new built-in types under ``proto_db.``, which a reader that predates them
-    refuses (`Atoms of unknown types (D59)`_), so it is a format-5 feature if it ships with
-    ``@sym``, otherwise one of the next version. A space whose data never uses it keeps its
-    version. Data written before this revision may hold a root named like a registry root: the
-    registry specification identifies its roots by name **and** by the type of their value, and
-    a reader of the registry's version refuses a ``__`` root whose value is not of the
-    registry's type (``ProtoCorruptionError``) rather than reading it as registry state.
+    Its persisted state is database roots whose names start with ``__``. **Root names starting
+    with ``__`` are reserved for the format from ``v2.0.0rc1`` on**: ``proto_db`` refuses to
+    write or remove one through the application API (``ProtoValidationError``); only the
+    registry writes its own roots, at commit. Two of them are implemented, as the format-5
+    features ``parents`` (an object's parents, the atom envelope key ``p``, `Atom records`_) and
+    ``registry`` (the roots ``__currentModules`` and ``__catalog``, whose values are records of
+    two new built-in types, `Registry roots`_). A space whose data never uses them keeps its
+    version. ``__currentSymbols`` is **not** a defined root of format 5: it stays reserved only by
+    the general ``__`` rule. Data written before the reservation
+    may hold a root named like a registry root: a reader identifies the registry's roots by name
+    **and** by the type of their value, and refuses a ``__`` root whose value is not of the
+    registry's type (``ProtoCorruptionError``) rather than reading it as registry state. Such
+    a database is corrupt for the registry: the application API cannot repair it (it neither
+    writes nor removes ``__`` roots), so a repair is the job of tooling that rewrites the root,
+    not of the API.
+
+.. _symbol references:
+
+Symbol references
+    Symbol references are **not part of format 5**. The design of 2026-11-14 (a string already
+    interned in the database written as a short content id, transparent to values, keys, hashes
+    and tokens) was measured and deferred: with segment compression, references plus compression
+    were larger than compression alone on the measured data set (the measurement and the verdict
+    are in ``docs/superpowers/2026-11-14-symbol-measurement.md``). No feature named ``symbols``
+    exists: ``FEATURE_VERSIONS`` lists only ``parents`` and ``registry``. The root
+    ``__currentSymbols`` is not defined; a writer MUST NOT write it, and ``proto_db`` refuses to
+    (the ``__`` rule above). Should the feature be adopted later it will be an additive change
+    marked by a new format-5 feature, with its own entry in this page.
 
 Conventions
 -----------
@@ -370,6 +408,11 @@ order::
 
     {"t": <type tag>, "oid": <16 bytes>, "s": <state map>}
 
+or, for an object that has parents (the feature ``parents``, format version 5), with exactly
+four keys, written in this order::
+
+    {"t": <type tag>, "oid": <16 bytes>, "s": <state map>, "p": <parents>}
+
 ``t``
     The **type tag**: an integer alias of a built-in type (the table below) or the type name as
     a string. A reader maps the tag to a type name; an unknown alias or a non-integer,
@@ -386,6 +429,25 @@ order::
     the order in which the object's attributes were set (which differs, for example, between
     an empty collection and a later version of it). Writers that want byte equality with
     ``proto_db`` reproduce the order shown by the vectors.
+
+``p``
+    The object's **parents** (format version 5, feature ``parents``), in order: a ``@tup``
+    value (`Canonical values`_) of at least one item. Each item is either a reference to a
+    record of ``proto_db.core.dbobject.DBObject`` or of an application subtype of it (an
+    ``@ref``, like any nested atom; a writer saves an unsaved parent before its child, once),
+    or a **registry name**: a non-empty string, written as a plain msgpack string. No other
+    kind of item is a parent. A writer writes ``p`` only for an object that has parents: an
+    object without parents writes the three-key payload, byte for byte as format 4, so its
+    record keeps version 4. Only a ``DBObject`` record (or a record of a type the reader has no
+    class for, `Atoms of unknown types (D59)`_, whose parents a reader keeps) may carry ``p``:
+    on a record of any other built-in type it is ``ProtoCorruptionError``, and so is a ``p``
+    that is not a non-empty tuple of those items, or that holds one item twice (the same record
+    reference or the same name; a writer never writes a parent twice). A record that has ``p`` is of version 5, so
+    it lands in a segment of version 5 or later (`Format stability`_). An object may not be its
+    own parent; ``proto_db`` refuses to write one whose parent has its ``oid``
+    (``ProtoValidationError``). What a parent means for reading an attribute (resolution along
+    the parents) is behaviour, not format: it is specified by the runtime registry, and a
+    reader that only reads data needs none of it.
 
 A payload with other keys, or whose ``t`` names another type than the one the reference was
 made with, is ``ProtoCorruptionError``.
@@ -404,7 +466,13 @@ later release may be absent from its older records (it reads as nil).
 every implementation of it, and a type's *behaviour names* are reserved: a persisted attribute
 MUST NOT carry one.
 
-- ``proto_db.core.dbobject.DBObject`` reserves ``with_`` and ``has_defined_attr``.
+- ``proto_db.core.dbobject.DBObject`` reserves ``with_``, ``has_defined_attr``, ``parents`` and
+  ``with_parents``. The last two are reserved from format version 5 (an object's parents are
+  the envelope key ``p``, never an attribute) for **new** fields only: a record written before
+  may hold a field named ``parents`` or ``with_parents``, and a reader MUST still read it as an
+  ordinary field (``proto_db`` keeps it readable and never refuses it, ruling R157). A writer
+  MUST NOT create such a field, and keeps an existing one unchanged in a new version of the
+  record.
 - An application type reserves the names of the methods and properties its class defines in
   each implementation that defines it, **except accessors**. An accessor of an attribute is a
   method named like the attribute that only returns its stored value, or only stores a new
@@ -418,7 +486,8 @@ MUST NOT carry one.
   accessor, and any attribute of the Python class with the same name, a property written as an
   accessor included, would hide it. ``proto_db`` therefore refuses a field named like any attribute
   of its Python class, when writing (``ProtoValidationError``) and when reading
-  (``ProtoCorruptionError``), and both messages say so. A Python class for a shared type
+  (``ProtoCorruptionError``), and both messages say so. The one exception is the two ``DBObject`` field names above,
+  which a record written before format 5 may hold. A Python class for a shared type
   defines no accessors; it reads ``order.total`` directly.
 
 An implementation cannot know the behaviour names of the others, so an application that shares
@@ -587,6 +656,12 @@ its alias; readers also accept its name (format 2 wrote names).
    * - 21
      - ``proto_db.avl.CountedKeyNode``
      - yes (added in format 3, D56)
+   * - 22
+     - ``proto_db.registry.ModuleList``
+     - yes (added in format 5, feature ``registry``)
+   * - 23
+     - ``proto_db.registry.Catalog``
+     - yes (added in format 5, feature ``registry``)
 
 Lazy loading (implementation-specific, portable)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -737,7 +812,9 @@ a format kind names is that kind, not a subclass: in Smalltalk ``Symbol`` derive
 implemented, an implementation MUST refuse to store a symbol; it MUST NOT store it as its string
 (when ``@sym`` lands the two are different keys, and a collection keyed by symbols stored as
 strings would stop answering lookups by symbol without an error) and MUST NOT write a tag of its
-own.
+own. This rule concerns a language's own symbol type; the deferred symbol-reference
+optimization of the runtime registry design (spec section 3a, a shared copy of a repeated string,
+`Symbol references`_) is unrelated to it.
 
 **One spelling per value.** Every canonical value has exactly one encoding, and readers refuse
 the other spellings of the text forms (``@int``, ``@dec``, ``@td``), so decoding and
@@ -1419,6 +1496,64 @@ Space and database roots
       later version, the database's identity across processes (D56). **Optional: absent means
       nil**, for databases created before it existed; such a database never gets one.
 
+Registry roots
+~~~~~~~~~~~~~~
+
+The runtime registry's state (the per-database class registry of `Format stability`_) is two
+roots of a database's ``objects``. Their records are of the built-in types below, which use the
+format-5 feature ``registry``: a record whose type tag is alias 22 or 23 (or either name) is
+version 5, so it lands in a segment of version 5 or later. Both types carry no parents (no
+``p``).
+
+``proto_db.registry.ModuleList``, the value of the root ``__currentModules``
+    ``modules``: a ``@tup`` of 2-item ``@tup`` values ``(name, depends)``, one per installed
+    module, in installation order. ``name`` is the module name (a non-empty string, language
+    neutral); ``depends`` a ``@tup`` of the module names it declared as dependencies when it was
+    installed (non-empty strings; a record of the install: at load time a runtime follows its
+    code's declaration). A name appears once. Anything else is ``ProtoCorruptionError``.
+
+    **The module** ``base``. ``base`` is the module of the default mechanisms, which every
+    runtime provides (its definitions are each language's own); it has no dependencies. A writer
+    **SHOULD** put ``base`` first in a non-empty ``modules`` (``proto_db`` always does, adding it
+    with an empty ``depends`` before the first module it installs). A reader **MUST** treat
+    ``base`` as implicitly first when a non-empty ``modules`` does not start with it: as if
+    ``(base, ())`` preceded the list when ``base`` is absent, or as if its entry were moved first
+    when it is listed later. An empty ``modules`` lists nothing, ``base`` included.
+
+    **The load order.** The order of ``modules`` is the install history only: a runtime **MUST
+    NOT** let it decide how the registry is composed. A runtime **MUST** load the listed modules
+    in this order, a function of the set of listed names and of the dependencies their code
+    declares at load time: ``base`` first (whatever its name compares to), then, repeatedly,
+    among the modules not yet placed whose dependencies are all placed, the one whose name is
+    smallest in **code-point order** (the names compared as sequences of Unicode code points,
+    the first differing code point deciding and a proper prefix coming first; no locale, case
+    folding or normalization; UTF-8 byte order agrees with it, UTF-16 code-unit order does not).
+    A dependency cycle, or a dependency that is not listed, is an error; the dependencies are
+    the ones the module's code declares when it is loaded. Everything the load order decides follows it: a registry
+    name's extensions are chained newest first (the module loaded last first), and its parents
+    are the union of the ``parents=`` its extensions declare, in load order. Two databases that
+    list the same modules in different orders therefore compose the same registry and resolve
+    every name the same way. A writer **MUST NOT** reorder ``modules`` into the load order (the
+    list is only appended to, see below).
+
+``proto_db.registry.Catalog``, the value of the root ``__catalog``
+    ``entries``: a ref to a Dictionary from registry name (a non-empty string) to a ref to its
+    **catalog object**: a ``proto_db.core.dbobject.DBObject`` record whose parents include that
+    registry name (``proto_db`` writes exactly the one-name tuple). An entry of another type, or
+    whose parents lack its name, is ``ProtoCorruptionError``.
+
+A writer changes ``modules`` only by **appending** a module that is absent, and never changes
+nor removes a listed one, with one exception: a writer that appends to a list that does not start
+with ``base`` writes it with ``base`` first, moved there or added (``proto_db`` repairs such a
+list on its next install). An install changes ``entries`` only by adding a registry name that is
+absent. An existing entry is **never removed**, and it is replaced only by a new version of that
+catalog object: a record of the same type whose parents still include the name (the catalog
+object's data is application data; a version is a new record, with a new ``oid``).
+``proto_db`` merges installs against the root current at commit (add-if-absent), so concurrent
+installs of different modules all land, in commit order, and replaces an entry only when it is
+still the record the replacing transaction read (a concurrent replacement conflicts). Those
+rules are behaviour, specified by the runtime registry, and leave no trace in the bytes.
+
 To read a database: decode ``space.root``, load its SpaceRoot, look the database's name up in
 ``databases``, then read ``objects`` and ``mutables`` of that DatabaseRoot. History is the chain
 of ``previous`` links; every version stays readable (nothing is ever deleted).
@@ -1437,10 +1572,15 @@ Framed log files
 Every append-only log of a node (``roots.log``, ``ranges.log``, ``segments.log``, a shared
 storage's ``cluster/<node_id>.roots``) has this layout.
 
-Header (14 bytes): magic ``PDB2LOG\0`` (8 bytes), the log format version (``u16``, 2), and the
-kind (4 ASCII bytes: ``ROOT``, ``RANG`` or ``SEGS``). A reader checks all three: a header that is
-only a prefix of the expected one (possibly followed by zero bytes, and nothing else) is a new
-log; any other header is ``ProtoCorruptionError``, another version ``ProtoNotSupportedError``.
+Header (14 bytes): magic ``PDB2LOG\0`` (8 bytes), the log format version (``u16``, 2 or 3), and
+the kind (4 ASCII bytes: ``ROOT``, ``RANG`` or ``SEGS``). A reader checks all three: a header that
+is only a prefix of the expected one (possibly followed by zero bytes, and nothing else) is a new
+log; any other header is ``ProtoCorruptionError``, a version it does not read
+``ProtoNotSupportedError``. Version 3 differs from 2 only in that an acceptor log may hold
+versioned entries (kind 7); a writer writes 2 for every other log, and raises the header of an
+acceptor log to 3 in place, ``fsync``-ed, before it appends the log's first versioned entry (a
+compaction writes 3 when it keeps one). A reader of version 2 therefore refuses such a log at
+its header.
 
 Then frames, one per entry:
 
@@ -1534,6 +1674,17 @@ first byte:
        kind 5. Flag bit 0 (``ACCEPTED``) marks an accepted root; without it the entry only makes
        the records durable on a data replica. Other flag bits, and a range with ``start >
        end``, are ``ProtoCorruptionError``.
+   * - 7 versioned
+     - 3 + entry
+     - ``kind (u8) | storage format version (u16) |`` the payload of an entry of kind 1, 2, 5 or
+       6: that entry, whose roots (root and ``pred``) are of the given storage format version
+       (above 4). An entry whose root, ``pred`` or records need a storage format above 4 is
+       written in this form, every other entry in its plain form; a committer gives its root at
+       least the version of every record of its commit (`Format stability`_). A version of 4 or
+       less, a wrapped kind other than 1, 2, 5 or 6, or an entry of 3 bytes or fewer is
+       ``ProtoCorruptionError``; a version the reader does not read is
+       ``ProtoNotSupportedError``. A reader that predates kind 7 refuses it as an unknown kind,
+       so it never reads a format-5 root or record as format 4.
 
 ``seq`` is the write permission the root was committed under (0 under a plain lease); ``pred``
 is the root it was built on, all zero when unknown (``pred`` label 0 and epoch 0). Kinds 1 to 4
@@ -1585,7 +1736,10 @@ Field types:
 - *int*: a non-negative integer; *number*: a non-negative integer or float; *str*, *bool*;
 - *uuid*: 16 bytes; *optional bytes* / *optional str*: the type or nil;
 - *root*: nil (unknown), ``[0, nil, nil, label]`` (the empty space, known) or ``[epoch, segment
-  16 bytes, offset, label]``; a 3-item form without the label is read with label 0;
+  16 bytes, offset, label]``; a 3-item form without the label is read with label 0; a root of a
+  storage format above 4 adds the version as a fifth item, ``[epoch, segment, offset, label,
+  version]`` (a version of 4 or less there, or one the reader does not read, is refused as a
+  malformed message);
 - *records*: an array of ``[segment 16 bytes, offset, framed record bytes or nil]``;
 - *ranges*: nil or an array of ``[segment 16 bytes, start, end]`` with ``start <= end``;
 - *list of str*; *after*: nil or ``[seq > 0, holder str]``.
@@ -1637,11 +1791,22 @@ Field types:
    * - ``fetch``
      - rid, inc; segment (uuid); offset (int)
    * - ``fetched``
-     - rid, inc; segment (uuid); offset; data (optional bytes: a framed record)
+     - rid, inc; segment (uuid); offset; data (optional bytes: a framed record); optional
+       ``unknown`` (bool, absent reads as false)
    * - ``commit_query``
      - rid, inc; root
    * - ``commit_info``
-     - rid, inc; persisted (bool); ranges
+     - rid, inc; persisted (bool); ranges; optional ``unknown`` (bool, absent reads as false)
+
+An optional field may be absent; it is checked when present, and a receiver ignores a key it
+does not know. ``unknown`` is the only optional field of protocol 14. A member answers
+``fetched`` or ``commit_info`` with ``unknown`` true when it cannot tell whether it holds what
+was asked: it has no storage attached, its space closed or detached while it served the
+request, or (``commit_info`` only) it is still attaching its storage. The asker counts such a
+member as heard, but never as one that "does not have it": a record is reported absent only
+when every member answered that it lacks it, so an answer with ``unknown`` makes the record
+unavailable, not corrupt. A member that sends ``data: None`` without ``unknown`` says it
+lacks the record.
 
 Values a member must compute like the others:
 
@@ -1657,7 +1822,7 @@ Values a member must compute like the others:
 
 The meaning of each message, and the rules that make the protocol safe, are those of
 :doc:`coordinator-protocol` and of decisions D44 to D55; the field list above is complete for
-protocol 13. The vectors hold one frame of every type.
+protocol 14. The vectors hold one frame of every type.
 
 
 A minimal external writer (file storage)
@@ -1841,9 +2006,11 @@ Known gaps
 
 None of these breaks a round trip between conforming implementations.
 
-- **Symbols** (``@sym``) and the class registry are decided but not implemented: an
-  implementation cannot store symbols yet without breaking the round trip. Both are additive
-  and land with ``FORMAT_VERSION`` 5 (`Format stability`_).
+- **Symbols** (``@sym``) are decided but not implemented: an implementation cannot store
+  symbols yet without breaking the round trip. Symbol *references* (a storage encoding of strings)
+  are deferred and not part of format 5 (`Symbol references`_). The class registry's persisted state is
+  implemented, an object's parents (`Atom records`_) and the registry roots (`Registry roots`_),
+  as format-5 features (`Format stability`_).
 - **Format-3 zone datetimes need a tz database** (what remains of B3). Format-4 data never does
   for its keys, hashes or tokens (an ``["instant", key]`` value holds its UTC instant), only to
   show a wall clock. A format-3 ``["zone", key]`` value holds a wall clock, and its instant, its
@@ -1914,7 +2081,15 @@ JSON description of what every file means, in a language-neutral notation), the 
   and an older record of that type whose ``t`` is its previous name ``polyglot.st.SalesOrder``,
   referenced under the declared name.
   The test changes the referencing record and checks that the opaque record is kept byte for
-  byte and still reachable at its pointer.
+  byte and still reachable at its pointer;
+- a ``parents`` space using the format-5 feature ``parents``: a format-4 segment, then the
+  format-5 segment opened by the first record with parents, holding a record whose parents are
+  a saved record, a record saved in the same commit and a registry name, and a record whose
+  only parent is a registry name; its root record is version 5;
+- a ``registry`` space using the format-5 feature ``registry``: a format-4 segment, then the
+  format-5 segment opened by an install of a module and its dependency, holding the catalog
+  objects, the ``ModuleList`` of ``__currentModules`` and the ``Catalog`` of ``__catalog``
+  (`Registry roots`_); its root record is version 5.
 
 ``tests/conformance/vectors.sha256`` pins the vector files (`Format stability`_).
 

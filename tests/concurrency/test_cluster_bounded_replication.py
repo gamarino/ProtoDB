@@ -10,6 +10,7 @@ the bytes it ships.
 
 Every case runs tiered storages over one shared object store (in-process network).
 """
+import contextlib
 import os
 import threading
 import time
@@ -19,7 +20,8 @@ import pytest
 from proto_db.cluster.protocol import encode_ranges, encode_root, make_message
 from proto_db.core.atom import AtomPointer
 from proto_db.errors import ProtoConflictError, ProtoOutcomeUnknownError, ProtoTimeoutError
-from proto_db.storage.format import FORMAT_VERSION, RootRecord
+from proto_db.storage.format import WRITE_FORMAT_VERSION, RootRecord
+from tests.support import stress
 from tests.support.tiered_cluster import RUN_KW, TieredCluster, incr
 
 pytestmark = [pytest.mark.timeout(240)]
@@ -31,6 +33,10 @@ def _cluster(tmp_path, n, **kw):
     tc = TieredCluster(tmp_path, n, storage_kw=dict(durability="fsync"), **dict(LEASE, **kw))
     tc.create_database(tc.ids[0])
     return tc
+
+
+#: Rounds of three commits the R89 test may run before it gives up on a hedge-free round.
+HEDGE_FREE_ATTEMPTS = 5
 
 
 def _root(tc, node):
@@ -122,7 +128,7 @@ def test_a_voter_refuses_a_root_whose_records_lack_their_copies(tmp_path):
             orig = n1.transport.send
             n1.transport.send = lambda to, msg: sent.append(msg) if msg["type"] == "ack" else orig(to, msg)
             base = permission.root
-            new = RootRecord(FORMAT_VERSION, base.segment, base.offset + 1, base.epoch + 1)
+            new = RootRecord(WRITE_FORMAT_VERSION, base.segment, base.offset + 1, base.epoch + 1)
             ranges = encode_ranges([(base.segment, base.offset, base.offset + 1)])
 
             def replicate(rid, copies):
@@ -237,10 +243,22 @@ def test_two_lost_committers_with_different_replicas_are_both_persisted(tmp_path
 _SPLIT_STORAGE = dict(durability="fsync", ship_interval=3600.0)
 
 
-def _split_segment(tc) -> None:
+#: Clusters a split-segment test may build before it gives up on the setup (liveness, R142).
+SPLIT_ATTEMPTS = 5
+
+
+def _split_segment(tc):
     """Task 8.3g review I1's setup: nine commits of n0 in ONE own segment, the middle three hedged
     to n2 while n1 is partitioned away, so n1's copy lacks the middle and n2's the start.  The
-    split is asserted, not assumed."""
+    split is checked, not assumed: returns ``None`` when this cluster has it, or why not when a
+    hedge of the first three commits put the start on n2 (the one timing miss); any other
+    departure from the split fails the test.
+
+    Whether the split forms depends on timing, never on a rule: n0 hedges a commit's records to
+    n2 whenever n1 has not stored them ``request_timeout`` (0.1 s) after n0's own append, so on a
+    starved machine one of the first three commits (n1 reachable) may reach n2 too, and n2's copy
+    then has the start (Task CI-FLAKES: a CI runner, Python 3.13).  The caller then builds a fresh
+    cluster (:func:`_split_cluster`)."""
     net = tc.cluster.net
     tc.create_database("n0")
     tc.store.set_outage(True)
@@ -251,6 +269,7 @@ def _split_segment(tc) -> None:
         roots.append(tc["n0"].committed_root()[1])
     for _ in range(3):
         commit()                                    # n0's records -> n0 + n1
+    early_hedges = tc["n0"].stats()["replica_hedges"]
     net.partition({"n0", "n2"}, {"n1"})
     for _ in range(3):
         commit()                                    # hedged: n0 + n2
@@ -262,8 +281,36 @@ def _split_segment(tc) -> None:
     assert tc["n0"].stats()["replica_hedges"] >= 1
     assert len({r.segment for r in roots}) == 1, "n0's commits are not in one segment"
     ptr = [AtomPointer(r.segment, r.offset) for r in roots]
-    assert tc.storages["n2"]._local_record(ptr[0]) is None, "n2's copy has the start"
+    if tc.storages["n2"]._local_record(ptr[0]) is not None:
+        # Only a hedge of the first three commits (n1 slow to store, timing) may put the start
+        # on n2; without one, n2 holding it is a result, and the test fails here (review M4).
+        assert early_hedges > 0, "n2's copy has the start, with no hedge in the first three commits"
+        return f"n2's copy has the start ({early_hedges} hedges in the first three commits)"
     assert any(tc.storages["n1"]._local_record(p) is None for p in ptr[3:6]), "n1's copy has the middle"
+    return None
+
+
+@contextlib.contextmanager
+def _split_cluster(tmp_path):
+    """A 3-member cluster whose n0 segment is split (:func:`_split_segment`), built again, in a
+    fresh directory, when a cluster did not form the split; every miss is printed (and recorded
+    in stress mode).  After :data:`SPLIT_ATTEMPTS` misses (``stress.attempts`` of it) the test
+    fails: a split that never forms is a liveness failure of the setup, not a pass."""
+    misses = []
+    for attempt in range(stress.attempts(SPLIT_ATTEMPTS)):
+        path = tmp_path / f"attempt-{attempt}"
+        path.mkdir()
+        with TieredCluster(path, 3, storage_kw=_SPLIT_STORAGE, **LEASE) as tc:
+            miss = _split_segment(tc)
+            if miss is None:
+                if misses:
+                    print(f"\nsplit-segment setup repeated: {misses}")
+                yield tc
+                return
+        misses.append(miss)
+        if stress.ACTIVE:
+            stress.record(f"split-segment setup missed: {miss}")
+    raise AssertionError(f"the split never formed in {len(misses)} clusters: {misses}")
 
 
 def test_a_segment_split_by_a_hedge_is_persisted_after_its_committers_disk_is_lost(tmp_path):
@@ -272,8 +319,7 @@ def test_a_segment_split_by_a_hedge_is_persisted_after_its_committers_disk_is_lo
     one disk loss (n0) neither copy is a prefix; the persister fills the holes from the peers,
     record by record, and uploads the segment's true prefix.  Before, persistence stalled at
     epoch 0 for good and the hedged commits stayed at ``f`` copies."""
-    with TieredCluster(tmp_path, 3, storage_kw=_SPLIT_STORAGE, **LEASE) as tc:
-        _split_segment(tc)
+    with _split_cluster(tmp_path) as tc:
         tc.wipe("n0")                                   # ONE disk lost
         tc.store.set_outage(False)
         for node in ("n1", "n2"):
@@ -291,19 +337,34 @@ def test_every_member_caches_each_commit_without_a_durable_copy(tmp_path):
         tc.commit("n5", incr)
         for node in tc.ids:
             tc[node].wait_idle(5)
-        before = {n: (tc[n].stats()["fetches_requested"], tc.storages[n].stats()["replicas_logged"])
-                  for n in tc.ids}
-        for _ in range(3):
-            tc.commit("n5", incr)
-        for node in tc.ids:
-            tc[node].wait_idle(5)
+        # A hedge (n6 slow to store, timing) legitimately adds durable copies on n7, n0, ...;
+        # the scenario under test is a round without one, so a hedged round is repeated.
+        hedged = []
+        for _attempt in range(stress.attempts(HEDGE_FREE_ATTEMPTS)):
+            before = {n: (tc[n].stats()["fetches_requested"], tc.storages[n].stats()["replicas_logged"])
+                      for n in tc.ids}
+            hedges = tc["n5"].stats()["replica_hedges"]
+            for _ in range(3):
+                tc.commit("n5", incr)
+            for node in tc.ids:
+                tc[node].wait_idle(5)
+            if tc["n5"].stats()["replica_hedges"] == hedges:
+                break
+            hedged.append(tc["n5"].stats()["replica_hedges"] - hedges)
+            if stress.ACTIVE:
+                stress.record(f"hedged round repeated: {hedged[-1]} hedge(s)")
+        else:
+            raise AssertionError(f"every round hedged ({hedged}): no hedge-free round to check")
+        if hedged:
+            print(f"\nhedged rounds repeated: {hedged}")
+        value = 1 + 3 * (len(hedged) + 1)          # incr: one initial commit, 3 per round
         root, _ = _root(tc, "n5")
         ptr = AtomPointer(root.segment, root.offset)
         assert _holders(tc, ptr) == {"n5", "n6"}                    # durable copies: f + 1
         for node in tc.ids:
             assert tc.storages[node].local_record(ptr) is not None, f"{node} did not cache the commit"
         for node in ("n1", "n3", "n7"):
-            assert tc.eventually(node, 4)
+            assert tc.eventually(node, value)
             assert tc[node].stats()["fetches_requested"] == before[node][0], f"{node} fetched"
             assert tc.storages[node].stats()["replicas_logged"] == before[node][1]
         assert tc["n7"].stats()["records_warmed"] > 0
@@ -312,8 +373,7 @@ def test_every_member_caches_each_commit_without_a_durable_copy(tmp_path):
 def test_filling_a_hole_from_peers_never_blocks_the_nodes_own_shipping(tmp_path):
     """Re-review N2: the persister fetches a split segment's holes outside ``_ship_lock`` (the
     bytes are immutable), so a slow or unanswered fill never holds up ``ship()``."""
-    with TieredCluster(tmp_path, 3, storage_kw=_SPLIT_STORAGE, **LEASE) as tc:
-        _split_segment(tc)
+    with _split_cluster(tmp_path) as tc:
         tc.wipe("n0")
         # n1's persister waits until the measurement is over: otherwise it may upload the whole
         # segment first (filling its own middle hole), and n2, finding the store covered, never
@@ -326,7 +386,7 @@ def test_filling_a_hole_from_peers_never_blocks_the_nodes_own_shipping(tmp_path)
             return n1_ensure(needs, **kw)
         n1.ensure_remote = gated_ensure
         st = tc.storages["n2"]
-        fetcher = st._fetcher
+        fetcher, fetch_answer = st._peer                # the coordinator's pair (R236L)
         filling, answer = threading.Event(), threading.Event()
 
         def slow_fetcher(ptr):
@@ -334,7 +394,12 @@ def test_filling_a_hole_from_peers_never_blocks_the_nodes_own_shipping(tmp_path)
             answer.wait(30)                             # a peer answer that has not come yet
             return fetcher(ptr)
 
-        st.set_fetcher(slow_fetcher)
+        def slow_answer(ptr, **kw):
+            filling.set()
+            answer.wait(30)
+            return fetch_answer(ptr, **kw)
+
+        st.set_fetcher(slow_fetcher, answer=slow_answer)
         try:
             tc.store.set_outage(False)                  # n2's persister now fills its front hole
             assert filling.wait(10), "no fill started"
@@ -350,6 +415,6 @@ def test_filling_a_hole_from_peers_never_blocks_the_nodes_own_shipping(tmp_path)
             answer.set()
             n1_may_upload.set()
             n1.ensure_remote = n1_ensure
-        st.set_fetcher(fetcher)
+        st.set_fetcher(fetcher, answer=fetch_answer)
         for node in ("n1", "n2"):
             tc.spaces[node].sync(timeout=20)

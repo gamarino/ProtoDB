@@ -19,6 +19,10 @@ _ETAG = 32
 class DirObjectStore:
     """Object store over a directory, safe across processes (see the module docstring)."""
 
+    #: A refused write was never applied: each request is one locked file operation, never
+    #: re-sent (ruling R147a, D43).
+    refusals_are_definitive = True
+
     def __init__(self, path: str):
         self._path = os.path.abspath(path)
         os.makedirs(self._path, exist_ok=True)

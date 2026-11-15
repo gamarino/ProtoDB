@@ -20,6 +20,7 @@ root then has a record that lives on the disks of the nodes that accepted it thr
 replication (``holds(name, root)``), served to peers by page requests, and a rejoin must
 copy it before the node acts as an acceptor (D46, ruling R50).
 """
+import contextlib
 import itertools
 import threading
 import time
@@ -28,7 +29,7 @@ import weakref
 
 from proto_db.cluster.coordinator import ClusterCoordinator
 from proto_db.errors import ProtoDBError
-from proto_db.storage.format import FORMAT_VERSION, RootRecord
+from proto_db.storage.format import WRITE_FORMAT_VERSION, RootRecord
 from proto_db.storage.memory import MemoryStorage
 from tests.support.cluster import MemoryTier
 
@@ -53,13 +54,28 @@ class RecordTier(MemoryTier):
         super().__init__(storage, node_id)
         self.disk = storage
         self._fetcher = None
+        self._tls = threading.local()
+
+    @contextlib.contextmanager
+    def critical_section(self):
+        """As :meth:`~proto_db.storage.tiered.TieredStorage.critical_section`: the calling
+        thread is inside a commit's critical section (it holds a write permission)."""
+        previous = getattr(self._tls, "critical", False)
+        self._tls.critical = True
+        try:
+            yield
+        finally:
+            self._tls.critical = previous
+
+    def in_critical(self) -> bool:
+        return bool(getattr(self._tls, "critical", False))
 
     @property
     def held(self) -> set:
         """The ``(segment, offset)`` of the records on this node's disk."""
         return _held.setdefault(self.disk, set())
 
-    def set_fetcher(self, fetcher) -> None:
+    def set_fetcher(self, fetcher, answer=None) -> None:
         self._fetcher = fetcher
 
     def local_record(self, ptr):
@@ -98,7 +114,7 @@ class RecordTier(MemoryTier):
 
 def rec(epoch: int) -> RootRecord:
     """A fake root record at ``epoch`` with a pointer of its own."""
-    return RootRecord(FORMAT_VERSION, uuid.UUID(int=next(_ids)), 64, epoch)
+    return RootRecord(WRITE_FORMAT_VERSION, uuid.UUID(int=next(_ids)), 64, epoch)
 
 
 class FakeClock:

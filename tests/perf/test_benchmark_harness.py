@@ -40,7 +40,13 @@ def test_quick_run_verifies_every_workload(tmp_path):
     proc = subprocess.run(_python() + ["-m", "benchmarks", "--quick", "--threads", "1,2", "--repeat", "1",
                                        "--warmup", "0", "--workdir", str(tmp_path / "work"), "--json", str(out)],
                           cwd=REPO, capture_output=True, text=True, timeout=220, env=env)
-    assert proc.returncode == 0, proc.stdout[-4000:] + proc.stderr[-4000:]
+    # The failing workloads' own errors first: the tail of the output alone cut them off in CI
+    # (Task 11.1: job 131949940290 showed only "1 failed: cluster_cas_baseline").
+    failed = {}
+    if out.exists():
+        failed = {n: (r.get("error"), [c for c in r.get("checks", []) if not c.get("ok")])
+                  for n, r in json.loads(out.read_text())["results"].items() if r.get("status") == "failed"}
+    assert proc.returncode == 0, f"failed workloads: {failed}\n" + proc.stdout[-4000:] + proc.stderr[-4000:]
     doc = json.loads(out.read_text())
     assert set(doc["results"]) == set(harness.REGISTRY)
     assert doc["environment"]["gil_enabled"] == (sys._is_gil_enabled() if hasattr(sys, "_is_gil_enabled") else True)

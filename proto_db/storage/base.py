@@ -11,7 +11,7 @@ from typing import ContextManager, Optional
 
 from ..core.atom import AtomPointer
 from ..errors import ProtoValidationError
-from .format import RootRecord
+from .format import RootRecord, write_version
 
 __all__ = ["SharedStorage", "check_lock_timeout"]
 
@@ -54,12 +54,29 @@ class SharedStorage(ABC):
     root_lock_is_global = True
 
     @abstractmethod
-    def push_atom(self, payload: dict) -> AtomPointer:
+    def push_atom(self, payload: dict, *, features=frozenset()) -> AtomPointer:
         """Serialize ``payload`` (produced by core/atom) and buffer it; return its pointer.
 
         Synchronous: when it returns the atom is readable via :meth:`get_atom`, though not
         necessarily durable until :meth:`flush`.
+
+        ``features`` names the format features the payload uses (keys of
+        :data:`~proto_db.storage.format.FEATURE_VERSIONS`); the version the record needs is
+        :func:`~proto_db.storage.format.atom_version` of the two.  The declared features must
+        match the payload exactly: a feature the payload uses but does not declare, or a
+        declared feature it does not use, raises ``ProtoValidationError``.  The record is appended only to a segment whose header
+        version is at least that version; otherwise the storage first rolls to a new segment
+        written at it (ruling R151).  A space that never uses a feature writes version-4
+        segments only.
         """
+
+    @property
+    def written_version(self) -> int:
+        """The highest segment header version this instance has written, at least
+        :data:`~proto_db.storage.format.WRITE_FORMAT_VERSION`: what a root built over this
+        instance's data must reach (:func:`~proto_db.storage.format.next_root_version`).  A
+        storage that writes no feature keeps the default."""
+        return write_version()
 
     @abstractmethod
     def get_atom(self, ptr: AtomPointer) -> dict:
@@ -85,12 +102,21 @@ class SharedStorage(ABC):
         """Return the currently published root, or ``None`` for a store never published to."""
 
     @abstractmethod
-    def publish_root(self, ptr: AtomPointer, expected_epoch: Optional[int]) -> RootRecord:
+    def publish_root(self, ptr: AtomPointer, expected_epoch: Optional[int], *,
+                     version: Optional[int] = None) -> RootRecord:
         """Publish ``ptr`` as the root if the current epoch equals ``expected_epoch``.
 
         Raises ``ProtoConflictError`` otherwise, leaving the root unchanged.
         ``expected_epoch=None`` publishes unconditionally and is meant for tooling only.
         Returns the new :class:`RootRecord`.
+
+        Its format version is the highest of :data:`~proto_db.storage.format.WRITE_FORMAT_VERSION`,
+        the version of the root it replaces, the highest segment version this instance has
+        written (:attr:`written_version`) and ``version``, the version of the root as its
+        writer built it when another instance wrote some of its data (a cluster persisting a
+        committed root): a root is never lower than the root it replaces, and once a space
+        holds data of a later version every later root of it is of that version
+        (``format-spec.rst``, "Format stability").
         """
 
     def publish_outcome(self, ptr: AtomPointer, epoch: int) -> Optional[bool]:
