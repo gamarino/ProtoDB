@@ -41,7 +41,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     a database object is refused at import (`ProtoValidationError`). `self._super()` reaches the next definition
     with the same `self` (a miss is `None`; refused outside a registry method and in generators, allowed in
     coroutine methods). A method wrapped by a `functools.wraps` decorator is indexed by the function it wraps, so
-    one decorator may wrap many methods and `_super()` works in the wrapped body. A registry name no module
+    one decorator may wrap many methods and `_super()` works in the wrapped body. A `DBObject` subclass whose
+    Python member hides a definition of a registry name its objects reach is refused (`ProtoValidationError`) at
+    the first resolution of such an object through that registry, including `name in o` and `o[name]` of the
+    member; plain attribute access of the member involves no resolution. A registry name no module
     extends is an empty node; `Registry.unknown_names` lists such
     names. Registry module names are process-global (one name, one Python module per process). A lookup made by a
     module's import-time code through the registry of a database that lists that module raises

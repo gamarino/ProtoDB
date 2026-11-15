@@ -193,6 +193,8 @@ class DBObject(Atom):
         kind = self._item_kind(name)
         if kind is _DATA:
             return resolution.resolve(self, name)[0]
+        if kind is _MEMBER or class_defines(type(self), name):
+            resolution.check_members(self)      # a Python member must not hide the registry (R240)
         return getattr(self, name)
 
     def __contains__(self, name) -> bool:
@@ -204,6 +206,7 @@ class DBObject(Atom):
         except (TypeError, ProtoValidationError):
             return False
         if kind is _MEMBER or (kind is _ATTRIBUTE and class_defines(type(self), name)):
+            resolution.check_members(self)      # a Python member must not hide the registry (R240)
             return True
         return resolution.resolve(self, name)[1] is not None
 

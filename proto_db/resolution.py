@@ -41,7 +41,14 @@ Registry names
     resolution of an object of such a class through a linearization with registry names raises
     ``ProtoValidationError`` naming the class, the name, the module and the registry name
     (memoized per class and registry name on the registry, so it runs once per pair even when
-    the object's context caches no linearization).
+    the object's context caches no linearization; ruling R240).  Every form that resolves runs
+    the check: an inherited lookup (``o.x`` past the own attributes, ``o["x"]``), ``"x" in o``
+    and ``o["x"]`` of a Python member (:func:`check_members`), :func:`linearize` and
+    ``_super()``.  The spec says "refused at load"; the registry is not known when an object is
+    created or decoded (a load never builds one, Review Focus 4, and a commit's lock step cannot),
+    so the refusal comes at the first resolution instead.  Plain attribute access of the Python
+    member (``o.label``) and of an own attribute involves no resolution: until a resolution of an
+    object of that class has run, such an access silently runs the Python member.
 
 The registry of an object (Task 8, ruling R201)
     The registry is decided by the code doing the resolving, never by load order or cache
@@ -159,7 +166,7 @@ from .errors import (ProtoAttributeNameError, ProtoCorruptionError, ProtoNotSupp
                      ProtoValidationError)
 from .storage.cache import BoundedCache
 
-__all__ = ["linearize", "resolve", "new_cache", "super_proxy", "SuperProxy", "CACHE_NODES",
+__all__ = ["linearize", "resolve", "check_members", "new_cache", "super_proxy", "SuperProxy", "CACHE_NODES",
            "NAMES_PER_ENTRY", "current_registry", "set_current_registry", "reset_current_registry",
            "current_reader", "set_reader", "reset_reader", "enter_reader", "exit_reader", "registry_of"]
 
@@ -317,7 +324,23 @@ def linearize(obj, registry=None) -> tuple:
     parents = _parents_of(obj)
     if not parents:
         return (obj,)
-    return (obj,) + _entry_and_registry(obj, parents, registry)[0].tail
+    entry, registry = _entry_and_registry(obj, parents, registry)
+    _check_python_members(type(obj), entry, registry)
+    return (obj,) + entry.tail
+
+
+def check_members(obj) -> None:
+    """Refuse ``obj``'s class when a registry name its linearization reaches defines a name the
+    class defines in Python (``ProtoValidationError``; see "Python members first"): for the
+    resolutions that read a Python member without walking (``name in o`` and ``o[name]`` of a
+    member).  Nothing to do without parents, for a plain ``DBObject`` or with no registry-name
+    node, and nothing is built then."""
+    if type(obj) is _dbobject_class():
+        return
+    parents = _parents_of(obj)
+    if parents:
+        entry, registry = _entry_and_registry(obj, parents, None)
+        _check_python_members(type(obj), entry, registry)
 
 
 def resolve(obj, name, registry=None) -> tuple:

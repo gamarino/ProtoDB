@@ -255,6 +255,21 @@ def test_registry_cannot_shadow_a_python_member():
         assert DBObject(parents=("reg6.Shadowed",)).label() == "registry label"
 
 
+def test_a_python_member_conflict_is_refused_at_every_resolution_of_the_name():
+    """Final review M1 (ruling R240): the conflict is refused at the first resolution involving
+    the class and the registry, through every form that resolves: ``name in o`` and ``o[name]`` of
+    the Python member itself, the linearization, an inherited lookup.  Only plain attribute access
+    of the Python member (``o.label``) involves no resolution at all."""
+    with using(build("reg6_shadow")):
+        o = _Labelled(parents=("reg6.Shadowed",), own=1)
+        for resolving in (lambda: "label" in o, lambda: o["label"], lambda: o._linearization(),
+                          lambda: "note" in o, lambda: o.note):
+            with pytest.raises(ProtoValidationError, match=r"_Labelled.*'label'.*reg6\.Shadowed"):
+                resolving()
+        assert o.own == 1 and o["own"] == 1         # an own attribute needs no registry
+        assert "label" in _Labelled(own=1)          # no parents: nothing to conflict with
+
+
 def test_python_member_check_runs_once_per_class_and_registry(monkeypatch):
     """Without a cached entry (no context) the check is still memoized per (class, registry,
     registry name), so a repeated lookup does not scan the chains again."""

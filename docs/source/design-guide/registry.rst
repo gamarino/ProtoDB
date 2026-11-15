@@ -183,6 +183,13 @@ Its cost, stated honestly
 * **Indexes and query paths read own attributes only.** An inherited default is invisible to them, because
   an index of inherited values would have to change whenever a module or a catalog object did. An attribute
   that is queried or indexed is set on the object itself (tutorial, section 10).
+* **A Python member that hides a registry definition is refused late.** The spec says "refused at load";
+  the registry is not known when an object is created or decoded (a load never builds one, and a commit's
+  lock step cannot), so a ``DBObject`` subclass that defines in Python a name a registry name it reaches
+  defines is refused (``ProtoValidationError``) at the first resolution of one of its objects through that
+  registry: an inherited lookup, ``name in o`` or ``o[name]`` of the member, ``_linearization()`` or
+  ``_super()`` (R240). Plain attribute access of the Python member (``o.label()``) involves no resolution:
+  until such a resolution has run, it silently runs the Python member.
 * **A misspelt registry name is silent.** A name no module extends is an empty node, so lookups go on past
   it (the opposite was implemented first and overturned, below). ``Registry.unknown_names`` lists such names
   for tests and tools.

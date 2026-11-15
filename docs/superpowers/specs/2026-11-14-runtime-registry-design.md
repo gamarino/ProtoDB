@@ -113,7 +113,10 @@ at the previous one), not part of the base module.
 **Python subclasses of `DBObject`** (today's way to give an object methods) keep working. Their Python members are
 found by Python before resolution runs, so they come first. Resolution covers everything else. A module may not
 define, in a registry name, a member that a `DBObject` subclass it extends already defines in Python: that is
-refused at load with `ProtoValidationError`, because it could never be reached (anti-goal A2). The registry path is
+refused at load with `ProtoValidationError`, because it could never be reached (anti-goal A2). *(As built,
+ruling R240: the registry is not known when an object is created or decoded, so the refusal comes at the first
+resolution of an object of that class through the registry; plain attribute access of the Python member
+involves no resolution.)* The registry path is
 the recommended one for extensible models; subclasses remain for fixed, non-extensible types *(proposal)*.
 
 ## 5. Resolution: one rule for fields and methods
