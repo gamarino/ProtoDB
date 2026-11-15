@@ -12,14 +12,17 @@ that climbs out of the module's directory with ``..``, or through a symbolic lin
 from __future__ import annotations
 
 import os
+import stat
 import sys
 import textwrap
+import zipfile
 
 import pytest
 
 from proto_db import registry as registry_module
 from proto_db.core.dbobject import DBObject
-from proto_db.errors import ProtoUserError, ProtoValidationError
+from proto_db.errors import ProtoNotSupportedError, ProtoUserError, ProtoValidationError
+from proto_db.modules import base as base_module
 from proto_db.registry import BASE, MODULES_ROOT, Registry, using
 from proto_db.resolution import linearize
 from proto_db.storage.memory import MemoryStorage
@@ -82,6 +85,31 @@ class Base:
     extra = 1
 '''
 
+_BASE_UNEXTENDED_PARENT = '''
+from proto_db.registry import module
+
+late = module("reg9_base_unextended")
+
+
+@late.extends("base", parents=("reg9.Unextended",))
+class Base:
+    extra = 1
+'''
+
+_ZIPPED = '''
+from proto_db.registry import module
+
+zipped = module("reg9_zipped")
+
+
+@zipped.extends("reg9.Zipped")
+class Zipped:
+    def hello(self):
+        return self.read_data_file("data/hello.txt")
+'''
+
+_REG9_MODULES = ("reg9_files", "reg9_theme", "reg9_base_parent", "reg9_base_unextended", "reg9_zipped")
+
 
 @pytest.fixture(scope="module")
 def tree(tmp_path_factory):
@@ -94,6 +122,10 @@ def tree(tmp_path_factory):
     (pkg / "reg9_files.py").write_text(textwrap.dedent(_FILES))
     (theme / "reg9_theme.py").write_text(textwrap.dedent(_THEME))
     (theme / "reg9_base_parent.py").write_text(textwrap.dedent(_BASE_PARENT))
+    (theme / "reg9_base_unextended.py").write_text(textwrap.dedent(_BASE_UNEXTENDED_PARENT))
+    with zipfile.ZipFile(root / "zipped.zip", "w") as archive:
+        archive.writestr("reg9_zipped.py", textwrap.dedent(_ZIPPED))
+        archive.writestr("data/hello.txt", "zipped")
     (pkg / "data" / "hello.txt").write_text("hello é\n", encoding="utf-8")
     (pkg / "data" / "sub" / "deep.txt").write_text("deep", encoding="utf-8")
     (theme / "data" / "hello.txt").write_text("the theme's own file", encoding="utf-8")
@@ -101,12 +133,17 @@ def tree(tmp_path_factory):
     os.symlink(outside / "secret.txt", pkg / "data" / "escape.txt")
     os.symlink(outside, pkg / "data" / "escape_dir")
     os.symlink(pkg / "data" / "hello.txt", pkg / "data" / "inner.txt")
-    sys.path[:0] = [str(pkg), str(theme)]
+    os.symlink(pkg / "data" / "hello.txt", pkg / "data" / "swap.txt")     # retargeted by the swap test only
+    os.mkfifo(pkg / "data" / "fifo")
+    paths = [str(pkg), str(theme), str(root / "zipped.zip")]
+    sys.path[:0] = paths
     try:
         yield {"pkg": pkg, "theme": theme, "outside": outside}
     finally:
-        for p in (str(pkg), str(theme)):
+        for p in paths:
             sys.path.remove(p)
+        for name in _REG9_MODULES:          # review M9: leave no fixture module imported
+            sys.modules.pop(name, None)
 
 
 @pytest.fixture(scope="module")
@@ -198,6 +235,30 @@ def test_base_with_dependencies_is_refused(tree, monkeypatch):
         Registry.build((BASE, "reg9_files"))
 
 
+def test_an_explicit_install_of_base_obeys_the_allowed_set():
+    """The exemption covers only base added implicitly by an install of another module (review
+    M8): an embedder that allows no module forbids the registry."""
+    space = ObjectSpace(MemoryStorage(), modules_mapping=MAPPING, modules_allowed=set())
+    try:
+        db = space.new_database("db")
+        tr = db.new_transaction()
+        with pytest.raises(ProtoValidationError, match="'base' is not allowed"):
+            tr.install_module(BASE)
+        assert tr.installed_modules() == ()
+        tr.abort()
+    finally:
+        space.close()
+    space = ObjectSpace(MemoryStorage(), modules_mapping=MAPPING, modules_allowed={BASE})
+    try:
+        db = space.new_database("db")
+        db.run(lambda tr: tr.install_module(BASE))
+        tr = db.new_transaction()
+        assert tr.installed_modules() == (BASE,)
+        tr.abort()
+    finally:
+        space.close()
+
+
 def test_base_is_exempt_from_the_allowed_set(tree):
     assert Registry.build((BASE, "reg9_files"), allowed={"reg9_files"}).key == (BASE, "reg9_files")
     space = ObjectSpace(MemoryStorage(), modules_mapping=MAPPING, modules_allowed={"reg7_base"})
@@ -238,9 +299,12 @@ def test_base_named_before_another_registry_name_has_no_c3_order(plain):
             linearize(DBObject(parents=(BASE, "reg9.Thing")))
 
 
-def test_a_module_that_gives_base_parents_is_a_cycle(tree):
-    with pytest.raises(ProtoValidationError, match="parent cycle"):
-        Registry.build((BASE, "reg9_files", "reg9_base_parent"))
+@pytest.mark.parametrize("name", ["reg9_base_parent", "reg9_base_unextended"])
+def test_an_extension_of_base_may_not_declare_parents(tree, name):
+    """base is the root of the registry-name graph: any parent of it is a cycle, also through a
+    name no module extends, which the build's cycle check cannot see (review I1)."""
+    with pytest.raises(ProtoValidationError, match=rf"Module {name!r}.*'base' may not declare parents"):
+        Registry.build((BASE, "reg9_files", name))
 
 
 def test_an_object_without_a_registry_name_does_not_reach_base(plain):
@@ -324,6 +388,84 @@ def test_read_data_file_needs_a_registry_method_or_an_explicit_module(plain):
             o.read_data_file("data/hello.txt", module="reg9_theme")
         with pytest.raises(ProtoValidationError, match="not in the registry"):
             o.read_data_file("data/hello.txt", module="")
+
+
+def test_read_data_file_refuses_what_is_not_a_regular_file(plain):
+    """A FIFO would block (or stream forever), a directory is not a file (review I2)."""
+    with using(plain):
+        o = DBObject(parents=("reg9.Thing",))
+        with pytest.raises(ProtoValidationError, match="not a regular file"):
+            o.hello("data/fifo")
+        with pytest.raises(ProtoValidationError, match="not a regular file"):
+            o.hello("data/sub")
+
+
+@pytest.mark.parametrize("locate", ["native", "fallback"])
+def test_a_swap_between_the_check_and_the_open_is_refused(plain, tree, monkeypatch, locate):
+    """The containment check runs again on the open file (review I2): an in-tree link retargeted
+    outside after the path check, just before the open, is refused, whichever way the open file
+    is located (the platform's descriptor path, or realpath after the open plus samestat)."""
+    pkg, outside = tree["pkg"], tree["outside"]
+    link = pkg / "data" / "swap.txt"
+    fresh = pkg / "data" / f"swap-{locate}.reset"
+    os.symlink(pkg / "data" / "hello.txt", fresh)
+    os.replace(fresh, link)                                     # in the tree again (another parameter swapped it)
+    real_open = base_module._open
+    swapped = []
+
+    def swapping_open(path, flags, *args):
+        if os.path.basename(os.fspath(path)) == "swap.txt" and not swapped:
+            tmp = pkg / "data" / f"swap-{locate}.tmp"
+            os.symlink(outside / "secret.txt", tmp)
+            os.replace(tmp, link)                               # atomic retarget
+            swapped.append(True)
+        return real_open(path, flags, *args)
+
+    if locate == "fallback":
+        monkeypatch.setattr(base_module, "_descriptor_path", lambda fd: None)
+    with using(plain):
+        o = DBObject(parents=("reg9.Thing",))
+        if locate == "native":
+            assert o.hello("data/swap.txt") == "hello \u00e9\n"     # before the swap: in the tree
+        monkeypatch.setattr(base_module, "_open", swapping_open)
+        with pytest.raises(ProtoValidationError, match="leaves the directory of module 'reg9_files'"):
+            o.hello("data/swap.txt")
+    assert swapped
+
+
+def test_the_fallback_location_refuses_a_file_replaced_after_the_open(plain, tree, monkeypatch):
+    """Without a descriptor path, the open file must be the file realpath names (samestat)."""
+    pkg = tree["pkg"]
+    monkeypatch.setattr(base_module, "_descriptor_path", lambda fd: None)
+    real = os.path.realpath
+    monkeypatch.setattr(base_module, "_realpath_after_open",
+                        lambda p: real(str(pkg / "data" / "sub" / "deep.txt")))
+    with using(plain):
+        o = DBObject(parents=("reg9.Thing",))
+        with pytest.raises(ProtoValidationError, match="changed while it was opened"):
+            o.hello()
+
+
+@pytest.mark.parametrize("path", ["\\Windows\\x.txt", "/etc/passwd", "C:x.txt", "C:\\x.txt", "\\\\host\\share\\x"])
+def test_root_relative_and_drive_paths_are_absolute(path):
+    """Windows-style root-relative and drive paths are refused as absolute on every platform
+    (review M1: ntpath.isabs is False for a root-relative path since Python 3.13)."""
+    with pytest.raises(ProtoValidationError, match="is absolute"):
+        base_module._checked_path("/some/module/dir", "m", path)
+
+
+def test_a_containment_check_that_cannot_compare_refuses():
+    """os.path.commonpath raising ValueError (another drive, mixed forms) is a refusal (review M2)."""
+    with pytest.raises(ProtoValidationError, match="leaves the directory of module 'm'"):
+        base_module._check_inside("/some/module/dir", "m", "x.txt", "relative/x.txt")
+
+
+def test_a_module_imported_from_a_zip_has_no_directory(tree):
+    registry = Registry.build((BASE, "reg9_zipped"))
+    with using(registry):
+        o = DBObject(parents=("reg9.Zipped",))
+        with pytest.raises(ProtoNotSupportedError, match="module 'reg9_zipped' has no directory .imported from a zip"):
+            o.hello()
 
 
 def test_a_missing_data_file_raises(plain):

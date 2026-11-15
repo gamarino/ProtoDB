@@ -199,6 +199,14 @@ def test_refused_property_in_a_module_names_it():
         build("reg_bad_property")
 
 
+def test_a_property_is_refused_by_the_registry_even_if_canonical_accepted_it(monkeypatch):
+    """The refusal of a property is the registry's own rule (spec Q4), not an accident of
+    canonical() not encoding it (review M7; plant ``refusal_of_property_removed``)."""
+    from proto_db import registry as registry_module
+    monkeypatch.setattr(registry_module, "canonical", lambda value: value)
+    _refuse({"size": property(lambda self: 1)}, match=r"'size'.*a property is refused")
+
+
 def test_refused_container_shapes():
     class Base:
         pass

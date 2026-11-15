@@ -65,15 +65,23 @@ The module ``base`` (rulings R204, R205, R207)
     with ``base`` (:meth:`Registry.build` refuses any other with ``ProtoValidationError``, and a
     ``base`` that declares dependencies likewise), and ``install_module`` adds it first, by the
     same add-if-absent merge, to a database whose list lacks it; a database that never installs a
-    module has no ``base``.  ``base`` is allowed whatever the runtime's ``allowed`` set.  In a
+    module has no ``base``.  ``base`` is allowed whatever the runtime's ``allowed`` set when it is
+    added implicitly or a list holding it is built; an explicit ``install_module("base")`` obeys
+    ``allowed`` (R207, narrowed by review M8).  An extension of ``base`` may not declare
+    ``parents=`` (``ProtoValidationError`` at declaration, naming the module; review I1): ``base``
+    is the root of the registry-name graph, so any parent of it would be a cycle, also through a
+    name no module extends, which the build's cycle check cannot see.  In a
     registry that has it, every other registry name -- extended or not -- has ``base`` as its
     implicit last parent (:meth:`Registry.parents_of`; a ``base`` named among ``parents=`` is
     placed last too), so C3 places the ``base`` node after every other registry name: an object
     whose parents reach any registry name finds ``base``'s definitions last, a module's
     definition of the same name shadows it, and ``_super()`` from a module method reaches it.
     An object with no registry-name parent never reaches ``base``.  An object that lists
-    ``base`` explicitly before another registry name has no C3 order (``ProtoValidationError``);
-    a module that gives the name ``base`` parents makes a registry-name parent cycle.
+    ``base`` explicitly before another registry name has no C3 order (``ProtoValidationError``).
+    Because every registry linearization ends with ``base``, the names ``base`` defines are
+    reserved against Python members of every ``DBObject`` subclass that reaches a registry name
+    (the Python-members check of :mod:`proto_db.resolution` refuses such a class at its first
+    resolution; review M5); ``base`` keeps its public names few and distinctive.
 
 Errors (all explicit)
     - a module outside ``allowed``, a repeated or invalid name, a dependency cycle, a cycle of
@@ -244,10 +252,12 @@ def _path(name: str, mapping: Mapping) -> str:
     return mapping.get(name, _DEFAULT_PATHS.get(name, name))
 
 
-def _check_allowed(name: str, allowed: Container | None) -> None:
-    """``ProtoValidationError`` for a module outside ``allowed``; ``base`` is always allowed
-    (ruling R207: every database that installs a module has it)."""
-    if allowed is not None and name != BASE and name not in allowed:
+def _check_allowed(name: str, allowed: Container | None, *, explicit: bool = False) -> None:
+    """``ProtoValidationError`` for a module outside ``allowed``.  ``base`` is allowed when it is
+    implied (added by an install of another module, or in a list being built: every database
+    that installs a module has it, ruling R207); an ``explicit`` install of ``base`` obeys
+    ``allowed`` (review M8)."""
+    if allowed is not None and (name != BASE or explicit) and name not in allowed:
         raise ProtoValidationError(f"Module {name!r} is not allowed by this runtime's configuration")
 
 
@@ -340,6 +350,10 @@ class ModuleHandle:
         parents = _check_names(f"The parents of {registry_name!r} in module {self.name!r}",
                                parents, exclude=registry_name,
                                itself=f"{registry_name!r} cannot be its own parent")
+        if registry_name == BASE and parents:
+            raise ProtoValidationError(
+                f"Module {self.name!r}: an extension of {BASE!r} may not declare parents ({list(parents)}): "
+                f"{BASE!r} is the implicit last parent of every other registry name (review I1)")
         caller = _caller_module()
         if caller != self.source:
             raise ProtoValidationError(
@@ -960,6 +974,8 @@ def install_plan(name: str, installed: tuple, mapping: Mapping, allowed: Contain
     ``ProtoValidationError``; a module that cannot be imported, or that declares no registry
     module of its name, ``ProtoNotSupportedError``."""
     _check_name("A module name", name)
+    if name == BASE:
+        _check_allowed(name, allowed, explicit=True)
     present = set(installed)
     handles = {}
     order = []

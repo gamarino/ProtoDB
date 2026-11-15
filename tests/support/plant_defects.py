@@ -361,13 +361,13 @@ def blind_snapshot_of'''),),
          "        return resolution.resolve(self, name)[1] is not None\n",
          "        return resolution.resolve(self, name)[1] == 0     # PLANT: own attributes only\n"),),
         ("tests/unit/test_resolution.py::test_in_tells_absent_from_explicit_none",),
-        "AssertionError", "product: `\"x\" in o` checks only o's own attributes (Review Focus 2)"),
+        "AssertionError: assert 'inherited_none' in", "product: `\"x\" in o` checks only o's own attributes (Review Focus 2)"),
     "c3_drops_duplicate_check": Plant((
         ("proto_db/resolution.py",
          "            if ck in kid_keys:\n",
          "            if False and ck in kid_keys:     # PLANT: a node listed twice is walked twice\n"),),
         ("tests/unit/test_resolution.py::test_one_parent_listing_two_records_of_one_oid_is_one_node",),
-        ("AssertionError", "Inconsistent parent hierarchy"), "product: the C3 walk keeps a node one parent lists twice (two records of one oid, R159)"),
+        "Inconsistent parent hierarchy", "product: the C3 walk keeps a node one parent lists twice (two records of one oid, R159)"),
     "super_uses_start_position": Plant((
         ("proto_db/resolution.py",
          "    return SuperProxy(obj, entry, registry, index, extension.position + 1)\n",
@@ -378,9 +378,12 @@ def blind_snapshot_of'''),),
         ("proto_db/registry.py",
          "    for kind in (property, staticmethod, classmethod):\n",
          "    for kind in (staticmethod, classmethod):     # PLANT: a property is no longer refused\n"),),
-        ("tests/unit/test_registry_modules.py::test_refused_property_in_a_module_names_it",),
-        "Regex pattern did not match",
-        "product: a property in an extension is not refused as such (spec Q4)"),
+        ("tests/unit/test_registry_modules.py::test_refused_property_in_a_module_names_it",
+         "tests/unit/test_registry_modules.py::"
+         "test_a_property_is_refused_by_the_registry_even_if_canonical_accepted_it"),
+        "DID NOT RAISE",
+        "product: a property in an extension is not refused as a property (spec Q4); with canonical() "
+        "accepting it, it is not refused at all"),
     "install_last_writer_wins": Plant((
         ("proto_db/transactions.py",
          "        listed = _registry.registry_root(current_objects, _registry.MODULES_ROOT, _registry.ModuleList)\n"
@@ -389,7 +392,7 @@ def blind_snapshot_of'''),),
          "        merged = _registry.merged_module_list(listed, self._installs, self)\n"),),
         ("tests/unit/test_registry_roots.py::test_concurrent_installs_both_land",
          "tests/concurrency/test_registry_install_concurrency.py::test_concurrent_installs_land_without_conflicts"),
-        "AssertionError",
+        "AssertionError: assert ('base', 'reg7_b') == ('base', 'reg7_a', 'reg7_b')",
         "product: the module list merges onto this transaction's snapshot, not the committed root (Review Focus 5)"),
     "modules_read_enter_read_set": Plant((
         ("proto_db/transactions.py",
@@ -417,13 +420,41 @@ def blind_snapshot_of'''),),
          "            if parents or cls._parented:     # PLANT: a parentless DBObject writes \"p\"\n"
          "                _check_not_own_parent(self, parents, oid)\n"),),
         ("tests/unit/test_dbobject_parents.py::test_no_parents_keeps_v4_bytes",),
-        "AssertionError", "product: a parentless object writes the envelope key \"p\" (base scheme changed)"),
+        "['t', 'oid', 's', 'p'] == ['t', 'oid', 's']", "product: a parentless object writes the envelope key \"p\" (base scheme changed)"),
     "v4_segment_accepts_parents": Plant((
         ("proto_db/storage/file.py",
          "            if seg is None or seg.version < version or (seg.end > SEGMENT_HEADER_SIZE\n",
          "            if seg is None or False or (seg.end > SEGMENT_HEADER_SIZE     # PLANT: no roll (R151)\n"),),
         ("tests/unit/test_format_features.py::test_a_parents_record_lands_in_a_v5_segment[file]",),
-        "AssertionError", "product: a file storage appends a parents record to a v4 segment (R151)"),
+        "assert parents.segment != plain.segment", "product: a file storage appends a parents record to a v4 segment (R151)"),
+    # -- Task 9 fix round 1 (review I1, I2, M8) ---------------------------------------------------
+    "base_parents_allowed": Plant((
+        ("proto_db/registry.py",
+         "        if registry_name == BASE and parents:\n",
+         "        if False and registry_name == BASE and parents:     # PLANT: base may declare parents\n"),),
+        ("tests/unit/test_base_module.py::test_an_extension_of_base_may_not_declare_parents",),
+        "DID NOT RAISE", "product: an extension of base declares parents, a cycle the build cannot see (I1)"),
+    "data_file_checked_before_open_only": Plant((
+        ("proto_db/modules/base.py",
+         "        if real is not None:\n            _check_inside(directory, name, path, real)\n        else:\n"
+         "            real = _realpath_after_open(joined)\n            _check_inside(directory, name, path, real)\n",
+         "        if real is not None:\n            pass     # PLANT: the open file's location is not checked\n        else:\n"
+         "            real = _realpath_after_open(joined)\n            pass     # PLANT\n"),),
+        ("tests/unit/test_base_module.py::test_a_swap_between_the_check_and_the_open_is_refused",),
+        "DID NOT RAISE", "product: read_data_file checks the path before the open only (TOCTOU, I2)"),
+    "data_file_any_file_kind": Plant((
+        ("proto_db/modules/base.py",
+         "        if not stat.S_ISREG(opened.st_mode):\n",
+         "        if False and not stat.S_ISREG(opened.st_mode):     # PLANT: FIFOs, devices, directories read\n"),),
+        ("tests/unit/test_base_module.py::test_read_data_file_refuses_what_is_not_a_regular_file",),
+        "DID NOT RAISE", "product: read_data_file reads a FIFO or a device (I2)"),
+    "explicit_base_ignores_allowed": Plant((
+        ("proto_db/registry.py",
+         "    if name == BASE:\n        _check_allowed(name, allowed, explicit=True)\n",
+         "    if False:     # PLANT: an explicit install of base ignores modules_allowed\n"
+         "        _check_allowed(name, allowed, explicit=True)\n"),),
+        ("tests/unit/test_base_module.py::test_an_explicit_install_of_base_obeys_the_allowed_set",),
+        "DID NOT RAISE", "product: install_module('base') ignores modules_allowed (R207 narrowed, M8)"),
 }
 
 _IGNORE = shutil.ignore_patterns("__pycache__", ".git", ".venv*", ".junie", "benchmarks", "docs", ".superpowers",
