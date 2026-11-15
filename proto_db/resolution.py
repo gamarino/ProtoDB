@@ -22,8 +22,7 @@ Registry names
     (:meth:`~proto_db.registry.Registry.chain`): its extensions, newest first, each a frame of
     the walk.  A data default is returned as is; a method (a plain function) is returned bound
     to the object looked up, ``types.MethodType(fn, o)``, so ``self is o``.  The registry is the
-    one passed, or else the current one (:func:`proto_db.registry.using`, ruling R169; Task 8
-    takes it from the transaction).  A name node's parents are ``Registry.parents_of(N)``:
+    one passed, or else the object's (below).  A name node's parents are ``Registry.parents_of(N)``:
     registry names (spec Q6), never objects, so every node placed before the first name node is
     placed exactly as it would be with the registry: a hit before that node is the true result.
     A lookup that reaches a name node without a registry raises ``ProtoNotSupportedError``
@@ -41,6 +40,26 @@ Registry names
     (memoized per class and registry name on the registry, so it runs once per pair even when
     the object's context caches no linearization).
 
+The registry of an object (Task 8, rulings R191-R193)
+    With no registry passed, :func:`registry_of` takes the first of these that has one:
+
+    1. the transaction the object belongs to (its ``context``: an object created or derived in
+       it, or loaded through it when the space's atom cache is off): ``Transaction.registry``;
+    2. the **reader** of the running code (:func:`current_reader`): the transaction of a
+       ``with tr:`` block or of ``Database.run``, or the snapshot of a ``with snapshot:`` block;
+    3. :func:`proto_db.registry.using` (tests);
+    4. the space the object was read through (the space's shared atom cache is its context),
+       which knows the databases it bound but not which one the object was read in: its one
+       module list, else an explicit error (``ObjectSpace``'s ``_SpaceRegistries.fallback``).
+
+    A source whose database lists no modules has no registry and passes to the next one.  The
+    registry is looked up only when the linearization has a registry-name node: one computed
+    without a registry shows whether it has any (its names), and one with none is the same
+    under every registry.  So reading own attributes, or inheriting along object parents only,
+    never builds a registry (an unimportable listed module raises only at a lookup that needs
+    it, Review Focus 4), and a linearization with a name node is never computed nor walked
+    without the database's registry when it has one (ruling M3 of the Task 4 review).
+
 Positions
     Where a definition was found, as :func:`resolve` returns it: ``0`` for an own attribute; an
     ``int`` ``k >= 1`` for the object node at index ``k`` of :func:`linearize`; a pair ``(k, j)``
@@ -57,8 +76,8 @@ Positions
     following nodes, binding methods to ``o``.  A miss through it is ``None`` (R150, ruling
     R170), so the end of a chain is tested with the idiom ``if self._super().f:
     self._super().f(x)`` (calling ``self._super().f(x)`` past the end raises ``TypeError``, as
-    calling ``None`` does).  ``ProtoUserError`` (naming the caller) when no registry is current,
-    when the code is not a registry method's (outside a method, a closure, a helper, a generator
+    calling ``None`` does).  ``ProtoUserError`` (naming the caller) when the object has no
+    registry (see above), when the code is not a registry method's (outside a method, a closure, a helper, a generator
     expression), when it is a method of a module the current registry does not contain (a method
     bound under another registry), when it is a generator's or an async generator's (ruling
     R172: such a frame may run after the call returned), and when ``o``'s linearization does not
@@ -114,7 +133,8 @@ from .errors import ProtoCorruptionError, ProtoNotSupportedError, ProtoUserError
 from .storage.cache import BoundedCache
 
 __all__ = ["linearize", "resolve", "new_cache", "super_proxy", "SuperProxy", "CACHE_NODES",
-           "NAMES_PER_ENTRY", "current_registry", "set_current_registry", "reset_current_registry"]
+           "NAMES_PER_ENTRY", "current_registry", "set_current_registry", "reset_current_registry",
+           "current_reader", "set_reader", "reset_reader", "registry_of"]
 
 #: Capacity of each linearization cache, counted in nodes and per-name positions: an entry is
 #: charged ``len(tail) + NAMES_PER_ENTRY`` (a configuration bound, not a measured figure).
@@ -133,6 +153,11 @@ _MISS = object()
 
 #: The registry resolution uses when none is passed (``proto_db.registry.using``, ruling R169).
 _CURRENT_REGISTRY: contextvars.ContextVar = contextvars.ContextVar("proto_db_registry", default=None)
+
+#: The reader whose registry resolution uses for objects that do not belong to a transaction: the
+#: transaction of a ``with tr:`` block or of ``Database.run``, or the snapshot of a ``with snapshot:``
+#: block (Task 8).  Anything with a ``_resolution_registry()`` method.
+_READER: contextvars.ContextVar = contextvars.ContextVar("proto_db_reader", default=None)
 
 #: The code flags of a frame that may run after its call returned (R172): a generator (also set
 #: on a generator-based coroutine) or an async generator.  A coroutine method is allowed (R176).
@@ -156,18 +181,72 @@ def reset_current_registry(token: contextvars.Token) -> None:
     _CURRENT_REGISTRY.reset(token)
 
 
-def _effective(registry):
-    return _CURRENT_REGISTRY.get() if registry is None else registry
+def current_reader():
+    """The reader of the running code (``None`` when no ``with tr:``, ``Database.run`` or
+    ``with snapshot:`` block is active in this context)."""
+    return _READER.get()
+
+
+def set_reader(reader) -> contextvars.Token:
+    """Make ``reader`` (a transaction or a snapshot) the reader of this context; return the token
+    :func:`reset_reader` takes."""
+    return _READER.set(reader)
+
+
+def reset_reader(token: contextvars.Token) -> None:
+    """Restore the reader that was current before :func:`set_reader` returned ``token``."""
+    _READER.reset(token)
+
+
+def registry_of(obj):
+    """The registry resolution uses for ``obj`` when none is passed (see "The registry of an
+    object" in the module docstring): the first of these that has one -- the transaction ``obj``
+    belongs to, the current reader, :func:`proto_db.registry.using`, the space ``obj`` was read
+    through -- else ``None``.  Building it may import modules and raise (an unimportable module,
+    a module-list mismatch, an ambiguous space)."""
+    context = obj.context
+    if isinstance(context, _transaction_class()):
+        found = context._resolution_registry()
+        if found is not None:
+            return found
+    reader = _READER.get()
+    if reader is not None:
+        found = reader._resolution_registry()
+        if found is not None:
+            return found
+    found = _CURRENT_REGISTRY.get()
+    if found is not None:
+        return found
+    space = getattr(context, "_space_registries", None)
+    return None if space is None else space.fallback()
+
+
+def _entry_and_registry(obj, parents: tuple, registry) -> tuple:
+    """``(entry, registry)``: the linearization of ``obj``'s non-empty ``parents`` and the registry
+    it was computed under.  With no registry passed, the object's registry is looked up
+    (:func:`registry_of`) only when the linearization has a registry-name node: a parent that is
+    a name, or a name further up, which the linearization computed without a registry shows
+    (its ``names``; that entry is cached under ``None``).  A linearization without any name node
+    is the same under every registry (a registry only adds the parents of names), so it is
+    exact as it is, and an unimportable module never breaks such a lookup (Review Focus 4)."""
+    if registry is None:
+        if not any(type(parent) is str for parent in parents):
+            entry = _entry(obj, None, parents)
+            if not entry.names:
+                return entry, None
+        registry = registry_of(obj)
+        if registry is None:
+            return _entry(obj, None, parents), None
+    return _entry(obj, registry, parents), registry
 
 
 def linearize(obj, registry=None) -> tuple:
     """The linearization of ``obj``: ``obj`` itself, then the C3 order of its parents' nodes
     (DBObjects, opaque atoms and registry names), each node once."""
-    registry = _effective(registry)
     parents = _parents_of(obj)
     if not parents:
         return (obj,)
-    return (obj,) + _entry(obj, registry, parents).tail
+    return (obj,) + _entry_and_registry(obj, parents, registry)[0].tail
 
 
 def resolve(obj, name, registry=None) -> tuple:
@@ -185,8 +264,7 @@ def _resolve_inherited(obj, name, registry=None) -> tuple:
     parents = _parents_of(obj)
     if not parents:
         return None, None
-    registry = _effective(registry)
-    entry = _entry(obj, registry, parents)
+    entry, registry = _entry_and_registry(obj, parents, registry)
     _check_python_members(type(obj), entry, registry)
     positions = entry.positions
     if positions is not None:
@@ -314,7 +392,8 @@ def _parents_of(node) -> tuple:
 def super_proxy(obj, code, registry=None) -> "SuperProxy":
     """The lookup proxy ``obj._super()`` returns when called from the code object ``code``: it
     resolves from the position after the running extension in ``obj``'s linearization."""
-    registry = _effective(registry)
+    if registry is None:
+        registry = registry_of(obj)
     where = f"{code.co_qualname} ({code.co_filename}:{code.co_firstlineno})"
     if registry is None:
         raise ProtoUserError(f"_super() called from {where} with no registry current")

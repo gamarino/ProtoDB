@@ -118,10 +118,18 @@ Installing and the commit (spec section 7, 14 items 3 and 4)
     (``installed_modules``, ``catalog_object``) never enters the read set: installs are additive,
     so a transaction that resolved with the older list committed a state that list described.
 
-The current registry
-    Resolution reads the registry of the running code from :func:`current_registry` when none is
-    passed to it.  Until the registry is attached to transactions (Task 8), it is set by
-    :func:`using`, a context manager meant for tests.  It is a :mod:`contextvars` variable, not a
+The registry of a database (Task 8)
+    A transaction resolves through the registry of its database's module list
+    (``Transaction.registry``), built once per list per process by :func:`registry_for`; the
+    space binds each database to the list it first sees, and a different list is an explicit
+    mismatch until ``ObjectSpace.reload_registry`` (spec Q2).  How an object finds its
+    transaction's registry is described in :mod:`proto_db.resolution` ("The registry of an
+    object") and in :mod:`proto_db.transactions`.
+
+The current registry (tests)
+    :func:`using` makes a registry current for a block: resolution falls back on it for an object
+    whose transaction, and whose reader, give none (its database lists no modules, or it has no
+    transaction).  It is a :mod:`contextvars` variable, not a
     thread-local (ruling R169): it follows the code across ``asyncio`` tasks and is restored on
     exit even when ``using`` blocks nest.  A new thread starts from an empty context, unless the
     interpreter copies the starting thread's context into it (``sys.flags.thread_inherit_context``,
@@ -145,7 +153,7 @@ from . import resolution as _resolution
 from .values import canonical, check_text, is_atom
 
 __all__ = ["module", "ModuleHandle", "Extension", "Registry", "METHOD", "DATA", "using",
-           "current_registry", "ModuleList", "Catalog", "MODULES_ROOT", "CATALOG_ROOT"]
+           "current_registry", "registry_for", "ModuleList", "Catalog", "MODULES_ROOT", "CATALOG_ROOT"]
 
 #: The root holding the installed modules (a :class:`ModuleList`).
 MODULES_ROOT = "__currentModules"
@@ -627,8 +635,49 @@ def _check_parent_cycles(parents: dict) -> None:
         raise ProtoValidationError(f"Registry-name parent cycle: {' -> '.join(cycle)}")
 
 
+#: The registries of the process, by module list (see :func:`registry_for`); guarded by
+#: ``_REGISTRIES_LOCK``, which is never held while a registry is built (a build imports).
+_REGISTRIES: dict = {}
+_REGISTRIES_LOCK = threading.Lock()
+
+
+def registry_for(module_names: tuple, *, mapping: Mapping | None = None, allowed: Container | None = None,
+                 fresh: bool = False) -> Registry:
+    """The registry of the module list ``module_names`` (installation order) in this process.
+
+    Registries are cached per process by the **content** of the list (the ordered names) and
+    the import path each name maps to (spec 14 item 4; ruling R192): every transaction, snapshot
+    and space whose database lists the same modules, imported from the same Python modules, gets
+    the same :class:`Registry` object, so the resolution caches keyed by the registry are shared.
+    ``allowed`` is checked on every call, cached or not.  ``fresh=True`` builds anew and replaces
+    the cached registry (``ObjectSpace.reload_registry``; a registry built earlier keeps what it
+    was built from).  The build imports, so no lock is held during it; two threads that race
+    build twice and keep the first one published.  The cache holds one registry per distinct list
+    and mapping the process has used: lists only grow by installs, so it is bounded by them."""
+    if not isinstance(module_names, tuple):
+        raise ProtoValidationError(
+            f"module_names must be a tuple of module names, not {type(module_names).__name__}")
+    mapping = {} if mapping is None else mapping
+    key = (module_names, tuple(mapping.get(name, name) for name in module_names))
+    if not fresh:
+        with _REGISTRIES_LOCK:
+            found = _REGISTRIES.get(key)
+        if found is not None:
+            for name in module_names:
+                if allowed is not None and name not in allowed:
+                    raise ProtoValidationError(f"Module {name!r} is not allowed by this runtime's configuration")
+            return found
+    built = Registry.build(module_names, mapping=mapping, allowed=allowed)
+    with _REGISTRIES_LOCK:
+        if fresh:
+            _REGISTRIES[key] = built
+            return built
+        return _REGISTRIES.setdefault(key, built)
+
+
 def current_registry() -> "Registry | None":
-    """The registry resolution uses when none is passed to it (``None`` outside :func:`using`)."""
+    """The registry :func:`using` made current (``None`` outside it); resolution falls back on it
+    (see :func:`proto_db.resolution.registry_of`)."""
     return _resolution.current_registry()
 
 
@@ -649,8 +698,9 @@ def _declared_method_of_code(code) -> str | None:
 @contextlib.contextmanager
 def using(registry: "Registry | None"):
     """Make ``registry`` the current registry for the body of the ``with`` block (``None`` makes
-    no registry current); the previous one is restored on exit.  Meant for tests until the
-    registry is attached to transactions (Task 8)."""
+    no registry current); the previous one is restored on exit.  Meant for tests: an object of a
+    database that lists modules resolves with its database's registry, not this one (see "The
+    current registry")."""
     if registry is not None and not isinstance(registry, Registry):
         raise ProtoValidationError(f"using() takes a Registry or None, not {type(registry).__name__}")
     token = _resolution.set_current_registry(registry)
