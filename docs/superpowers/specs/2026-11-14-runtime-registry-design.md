@@ -316,7 +316,20 @@ protoBaseST reads and writes the same roots, symbols and the `"p"` field of `DBO
   is already interned in the database without copying it again. Semantically it **is** that string. Section 3a has
   the consequences.
 
-## 3a. Symbols as a storage optimization (Q7, maintainer 2026-11-14)
+## 3a. Symbols as a storage optimization (Q7, maintainer 2026-11-14) (deferred)
+
+**Measurement and deferral (2026-11-14).** The measurement required below was made
+([symbol measurement](../2026-11-14-symbol-measurement.md)). Criterion (R213): symbols pay only if, for some
+minimum length `L`, references plus compression are at least 10 % smaller in total bytes than compression alone,
+on the real segment bytes. Measured on the ERP data set (13,964 objects): inline 11,393,442 B; compression alone
+2,799,544 B per 64 KiB block (-75.4 %). With 17-byte content ids, references plus compression are **larger** than
+compression alone at every `L`: +7.15 % per block at L=8 and L=16, +4.63 % at L=24. The best figure of any
+reference size, a 3-byte sequential id, is -5.99 % per block, short of 10 %. Verdict: **deferred; nothing is
+implemented** (R153). What would reopen it, as stated in the measurement document: data whose long strings repeat
+beyond a compression block and are not otherwise compressible; a short id, whose cost is described below; a
+storage that never compresses (only a short id would then be material); or a different compressor setting
+(a trained dictionary, a higher level, other block sizes), which was not measured. The rest of this section is the
+design of record for a future implementation and is deferred.
 
 Rules:
 - **Transparent.** A symbol-encoded string decodes to the same `str`. It is equal to that string, hashes, orders

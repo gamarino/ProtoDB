@@ -144,7 +144,8 @@ and changes the manifest's line, and raises nothing by itself.
 
 Two extensions were decided after the freeze. Both are **additive**: no existing byte, order,
 hash or token changes, data written without them keeps its version and its meaning, and they
-are marked by the version rule above. The registry is implemented (format 5); symbols are not.
+are marked by the version rule above. The registry is implemented (format 5); symbols are not, and
+symbol references are not part of format 5 (see `Symbol references`_ below).
 
 Symbols (``@sym``)
     A new value kind, ``{"@sym": name}`` (option (c2) of the runtime-symbols investigation; see
@@ -165,13 +166,25 @@ The per-database class registry
     features ``parents`` (an object's parents, the atom envelope key ``p``, `Atom records`_) and
     ``registry`` (the roots ``__currentModules`` and ``__catalog``, whose values are records of
     two new built-in types, `Registry roots`_). A space whose data never uses them keeps its
-    version. ``__currentSymbols`` is reserved for symbols. Data written before the reservation
+    version. ``__currentSymbols`` is **not** a defined root of format 5: it stays reserved only by
+    the general ``__`` rule. Data written before the reservation
     may hold a root named like a registry root: a reader identifies the registry's roots by name
     **and** by the type of their value, and refuses a ``__`` root whose value is not of the
     registry's type (``ProtoCorruptionError``) rather than reading it as registry state. Such
     a database is corrupt for the registry: the application API cannot repair it (it neither
     writes nor removes ``__`` roots), so a repair is the job of tooling that rewrites the root,
     not of the API.
+
+Symbol references
+    Symbol references are **not part of format 5**. The design of 2026-11-14 (a string already
+    interned in the database written as a short content id, transparent to values, keys, hashes
+    and tokens) was measured and deferred: with segment compression, references plus compression
+    were larger than compression alone on the measured data set (the measurement and the verdict
+    are in ``docs/superpowers/2026-11-14-symbol-measurement.md``). No feature named ``symbols``
+    exists: ``FEATURE_VERSIONS`` lists only ``parents`` and ``registry``. The root
+    ``__currentSymbols`` is not defined; a writer MUST NOT write it, and ``proto_db`` refuses to
+    (the ``__`` rule above). Should the feature be adopted later it will be an additive change
+    marked by a new format-5 feature, with its own entry in this page.
 
 Conventions
 -----------
@@ -1949,7 +1962,8 @@ Known gaps
 None of these breaks a round trip between conforming implementations.
 
 - **Symbols** (``@sym``) are decided but not implemented: an implementation cannot store
-  symbols yet without breaking the round trip. The class registry's persisted state is
+  symbols yet without breaking the round trip. Symbol *references* (a storage encoding of strings)
+  are deferred and not part of format 5 (`Symbol references`_). The class registry's persisted state is
   implemented, an object's parents (`Atom records`_) and the registry roots (`Registry roots`_),
   as format-5 features (`Format stability`_).
 - **Format-3 zone datetimes need a tz database** (what remains of B3). Format-4 data never does
