@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [2.0.0rc4] - unreleased
 
+- A cluster owner whose lease renewal was refused by a majority no longer renews again once per round trip
+  until its lease ends (GitHub issue #1). When a majority refused the term for good (it promised or granted a
+  higher term), the owner stops renewing, refuses its queued permission requests with `ending`, lets an
+  outstanding permission end, and releases its lease (new stat `terms_fenced`); after any other renewal that
+  fails, including one a silent member leaves unanswered, it waits for the refusals' `remaining`, at least
+  `request_timeout / 4`, before renewing again (D50 amendment, rulings R149 and R149a).
 - `proto_db.__version__` reports the package version; in 2.0.0rc3 it still said `2.0.0.dev0`.
 - `CloudStorage.publish_root` reports a write refused by its precondition as `ProtoConflictError`, which
   `Database.run` retries, when the object store declares that its refusals are definitive
