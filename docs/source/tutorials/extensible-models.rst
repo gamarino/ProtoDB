@@ -769,6 +769,12 @@ methods (``async def``). In both cases the position comes from the running code,
 coroutine's body also runs after the call returned). The refusal of generators is a choice that may be
 relaxed later; until then, call ``_super()`` in the method and pass the result to the generator.
 
+A method may be decorated when the decorator uses ``functools.wraps``: the registry indexes the method by the
+code of the function the decorator wrapped (``inspect.unwrap``), so ``_super()`` inside its body works, and
+one decorator may wrap any number of methods. A decorator without ``functools.wraps`` hides the method's own
+code: wrapping two methods with it is refused at install, and ``_super()`` inside the one it wraps is
+refused; both errors mention ``functools.wraps``.
+
 A refused definition
 ~~~~~~~~~~~~~~~~~~~~
 

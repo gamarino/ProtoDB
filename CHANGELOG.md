@@ -40,7 +40,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     defaults; a property, staticmethod, classmethod, callable instance, lambda, nested class or a default holding
     a database object is refused at import (`ProtoValidationError`). `self._super()` reaches the next definition
     with the same `self` (a miss is `None`; refused outside a registry method and in generators, allowed in
-    coroutine methods). A registry name no module extends is an empty node; `Registry.unknown_names` lists such
+    coroutine methods). A method wrapped by a `functools.wraps` decorator is indexed by the function it wraps, so
+    one decorator may wrap many methods and `_super()` works in the wrapped body. A registry name no module
+    extends is an empty node; `Registry.unknown_names` lists such
     names. Registry module names are process-global (one name, one Python module per process). A lookup made by a
     module's import-time code through the registry of a database that lists that module raises
     `ModulesBeingImported` (a `ProtoUserError`) and caches nothing; an import-time commit still succeeds.

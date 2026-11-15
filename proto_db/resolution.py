@@ -91,7 +91,9 @@ Positions
 
 ``_super`` (spec section 6, Q3)
     ``o._super()`` reads its caller's code object, which the registry indexes to the extension
-    ``E`` of the running method (:meth:`~proto_db.registry.Registry.extension_of_code`).  With
+    ``E`` of the running method (:meth:`~proto_db.registry.Registry.extension_of_code`; for a
+    method wrapped by a ``functools.wraps`` decorator, the code of the wrapped function, ruling
+    R239).  With
     ``k`` the index of ``E``'s registry name in ``o``'s linearization, the proxy resolves from
     the position ``(k, E.position + 1)``: the older extensions of the same name first, then the
     following nodes, binding methods to ``o``.  A miss through it is ``None`` (R150, ruling
@@ -483,7 +485,8 @@ def super_proxy(obj, code, registry=None) -> "SuperProxy":
                 f"current registry {registry.key!r} does not contain it")
         raise ProtoUserError(
             f"_super() must be called directly in the body of a registry method; it was called "
-            f"from {where}, which is not one (a closure, a helper or a generator expression is not)")
+            f"from {where}, which is not one (a closure, a helper or a generator expression is not, nor "
+            f"the body of a method wrapped by a decorator that does not use functools.wraps)")
     parents = _parents_of(obj)
     entry = _entry(obj, registry, parents) if parents else None
     index = None

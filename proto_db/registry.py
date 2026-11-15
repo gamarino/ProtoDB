@@ -54,7 +54,11 @@ The registry
     the **parents** of the name: the union of the ``parents=`` its extensions declare, in load
     order, each name once (spec Q6).  It indexes each method's code object to its extension
     (for ``_super``, spec section 6), so one function object, or one code object, behind two
-    definitions anywhere in the registry is refused.  A registry name no module extends is an
+    definitions anywhere in the registry is refused.  A method wrapped by a decorator that uses
+    ``functools.wraps`` is indexed by the code of the function it wraps (``inspect.unwrap``,
+    ruling R239), where its ``_super()`` runs: one such decorator may wrap any number of methods.
+    A decorator without ``__wrapped__`` makes its wrapper's code the method's, so it can wrap
+    only one method of a registry, and ``_super()`` in the wrapped body is refused.  A registry name no module extends is an
     empty node for resolution (no definitions, no parents), so a misspelt parent name is not an
     error there; :meth:`Registry.unknown_names` lists such names, for tooling to flag typos.
 
@@ -173,6 +177,7 @@ from __future__ import annotations
 
 import contextlib
 import importlib
+import inspect
 import sys
 import threading
 import types
@@ -408,6 +413,13 @@ def _definition(here: str, value) -> tuple:
         # lambda renamed through ``__name__`` passes, and then behaves as any method.
         if value.__name__ == "<lambda>":
             raise ProtoValidationError(f"{here}: a lambda is refused; define a named function")
+        try:
+            inner = inspect.unwrap(value)
+        except ValueError as e:              # a __wrapped__ cycle
+            raise ProtoValidationError(f"{here}: {e}") from e
+        if type(inner) is not types.FunctionType:
+            raise ProtoValidationError(
+                f"{here}: a decorator's wrapper must wrap a plain function, not {type(inner).__name__}")
         return METHOD, value
     for kind in (property, staticmethod, classmethod):
         if isinstance(value, kind):
@@ -429,6 +441,12 @@ def _definition(here: str, value) -> tuple:
             f"{here}: a data default may not hold an atom (found {type(found).__name__}); a default is "
             f"shared by every object that inherits it (R166)")
     return DATA, value
+
+
+def _method_code(fn) -> types.CodeType:
+    """The code object a method's ``_super()`` runs in: that of ``inspect.unwrap(fn)``, the
+    function a ``functools.wraps`` decorator wrapped (ruling R239), else ``fn``'s own."""
+    return inspect.unwrap(fn).__code__
 
 
 def _atom_in(value):
@@ -720,14 +738,16 @@ def _assemble(order: tuple, declared: dict, sources: Mapping | None = None) -> R
                     continue
                 here = (f"module {name!r}, extension of {item.registry_name!r}, "
                         f"definition {definition!r}")
-                for key, what in ((value, "function object"), (value.__code__, "code object")):
+                code = _method_code(value)
+                for key, what in ((value, "function object"), (code, "code object")):
                     earlier = seen.get(key)
                     if earlier is not None:
                         raise ProtoValidationError(
                             f"One {what} is used by two definitions ({earlier} and {here}); "
-                            f"_super could not tell which extension runs")
+                            f"_super could not tell which extension runs (a decorator applied to "
+                            f"methods must use functools.wraps, so that each method's own function is found)")
                     seen[key] = here
-                codes[value.__code__] = extension
+                codes[code] = extension
     _check_parent_cycles(parents)
     return Registry(order, tuple(extensions), chains, parents, codes, sources)
 
@@ -835,7 +855,7 @@ def _declared_method_of_code(code) -> str | None:
     for module_name, items in declared:
         for item in items:
             for name, (kind, value) in item.definitions.items():
-                if kind is METHOD and value.__code__ is code:
+                if kind is METHOD and _method_code(value) is code:
                     return f"method {name!r} of registry module {module_name!r} (extension of {item.registry_name!r})"
     return None
 

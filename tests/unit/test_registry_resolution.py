@@ -29,7 +29,8 @@ from proto_db.transactions import ObjectSpace
 pytestmark = [pytest.mark.timeout(120)]
 
 _PACKAGE = "tests.unit.registry_modules"
-_FIXTURES = ("reg6_base", "reg6_mid", "reg6_top", "reg6_shadow", "reg6_other")
+_FIXTURES = ("reg6_base", "reg6_mid", "reg6_top", "reg6_shadow", "reg6_other", "reg6_wrapped", "reg6_wrapped_top",
+             "reg6_unwrapped", "reg6_unwrapped_super")
 MAPPING = {name: f"{_PACKAGE}.{name}" for name in _FIXTURES}
 
 
@@ -182,6 +183,35 @@ def test_super_from_a_method_bound_under_another_registry_is_named(active):
         assert method() == "mid-default"
     with pytest.raises(ProtoUserError, match=r"module 'reg6_other'.*bound under another registry"):
         method()
+
+
+# -- final review I5 (ruling R239): decorated methods -----------------------------------------------
+
+def test_methods_wrapped_with_functools_wraps_are_indexed_by_their_own_code():
+    """One ``functools.wraps`` decorator on several methods shares one wrapper code object: the
+    registry indexes each definition by the code of ``inspect.unwrap(f)``, so they are accepted,
+    and ``_super()`` inside a wrapped body (also under a stack of decorators) resolves."""
+    from tests.unit.registry_modules import reg6_wrapped
+    registry = build("reg6_wrapped", "reg6_wrapped_top")
+    with using(registry):
+        o = DBObject(parents=("reg6.Wrapped",))
+        del reg6_wrapped.CALLS[:]
+        assert (o.first(), o.second()) == ("first", "second")
+        assert o.twice() == ["top", "wrapped"]
+        assert reg6_wrapped.CALLS == ["first", "second", "twice", "twice", "twice"]
+        assert o.first.__self__ is o
+
+
+def test_a_decorator_without_wraps_on_two_methods_is_refused_naming_functools_wraps():
+    with pytest.raises(ProtoValidationError, match=r"code object.*functools\.wraps"):
+        build("reg6_unwrapped")
+
+
+def test_super_inside_a_method_wrapped_without_wraps_names_functools_wraps():
+    with using(build("reg6_base", "reg6_unwrapped_super")):
+        o = DBObject(parents=("reg6.Opp",))
+        with pytest.raises(ProtoUserError, match=r"functools\.wraps"):
+            o.title()
 
 
 def test_super_on_foreign_object_raises(active):

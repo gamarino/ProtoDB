@@ -113,7 +113,11 @@ The base module (R204-R209)
     caller's code object, finds that extension's position in ``self``'s linearization, and resolves from the
     next position, binding to the same ``self``. A miss is ``None`` (R170), so the end of a chain is tested
     with ``if self._super().f:``. Code that is not a registry method is refused with ``ProtoUserError``: code
-    at module level, a closure or helper. Generator functions, async generators and generator expressions are
+    at module level, a closure or helper. A method wrapped by a ``functools.wraps`` decorator is indexed by
+    the code of the function it wraps (``inspect.unwrap``, R239), so one decorator may wrap many methods and
+    ``_super()`` works inside the wrapped body; a decorator without ``__wrapped__`` makes its wrapper's code
+    the method's, so wrapping two methods with it is refused at load and ``_super()`` in the wrapped body is
+    refused, both errors naming ``functools.wraps``. Generator functions, async generators and generator expressions are
     refused by design (R172, R229), and coroutine methods are allowed (R176). The position would be found from
     the running code object in both cases, so the refusal of generators is a choice, not a necessity; whether
     to allow them too is an open question for the maintainer. Positions are compared for equality only; they
