@@ -577,8 +577,9 @@ def _corrupting(tc, reader):
 
 
 def test_a_corrupt_peer_answer_is_not_an_answer_that_the_record_is_nowhere(tmp_path):
-    """R235L: the page request stops at the first (here corrupt) answer, so the other peers may
-    not have been heard: with the store lacking the segment, the read is unavailable
+    """R235L: every peer answers corrupt bytes.  A corrupt answer is no answer that the record is
+    absent (since R242L the request asks the other members again, and they answer corrupt
+    bytes too): with the store lacking the segment, the read is unavailable
     (``ProtoUnexpectedError``), not "no reachable peer holds it" (``ProtoCorruptionError``)."""
     with TieredCluster(tmp_path, **NOT_UPLOADED) as tc:
         tc.create_database("n0")
@@ -806,3 +807,243 @@ def test_the_unavailable_error_names_a_corrupt_answer(tmp_path):
         finally:
             restore()
         assert "corrupt bytes" in str(info.value), str(info.value)
+
+
+# -- fix round 4 (re-review 3 of LEASE-READ; rulings R243L-R246L) ------------------------------
+
+def _closing_while_serving(tc, nodes):
+    """``nodes``' spaces close (``ObjectSpace.close``: detach, then the tier's close) after the
+    node's page-request service took its tier and before it reads the record -- the window of
+    re-review 3, R3-A, forced on the reader lane instead of left to timing.  Returns the list
+    of nodes whose service ran the close."""
+    closed = []
+    for n in nodes:
+        st, space = tc.storages[n], tc.spaces[n]
+        read = st.local_record
+
+        def closing(ptr, _n=n, _st=st, _space=space, _read=read):
+            if _n not in closed:
+                closed.append(_n)
+                _space.close()
+            return _read(ptr)
+        st.local_record = closing
+    return closed
+
+
+def test_a_member_whose_space_closes_while_serving_a_fetch_cannot_tell(tmp_path):
+    """R243L: ``n0`` and ``n1`` hold the record (its segment is not uploaded) and each closes its
+    space between taking its tier and reading the record.  Their reply says they cannot tell,
+    so ``n2``'s read is unavailable -- before, the closed tier's ``None`` went out as "I lack
+    the record", and the read called an available record corrupt ("no reachable peer holds
+    it"; probe ``rr3-1795000000/probe_closed_race.py``)."""
+    with TieredCluster(tmp_path, **NOT_UPLOADED) as tc:
+        tc.create_database("n0")
+        _commit_without(tc, "n0", "n2")
+        r = tc["n0"].committed_root()[1]
+        ptr = AtomPointer(r.segment, r.offset)
+        for n in ("n0", "n1"):
+            assert tc.storages[n].local_record(ptr) is not None, f"{n} does not hold the record"
+        closed = _closing_while_serving(tc, ("n0", "n1"))
+        with pytest.raises(ProtoDBError) as info:
+            tc.storages["n2"].get_atom(ptr)
+        assert sorted(closed) == ["n0", "n1"], f"the schedule did not run on every holder: {closed}"
+        assert type(info.value) is ProtoUnexpectedError, \
+            f"members closing while serving made the read {type(info.value).__name__}: {info.value}"
+        assert "unavailable" in str(info.value)
+
+
+def _recording_waiters(node):
+    """Wrap ``node._ask`` to keep every waiter it returns; returns the list."""
+    waiters = []
+    ask = node._ask
+
+    def recording(kind, msg_fields, done, timeout, targets=None):
+        waiter = ask(kind, msg_fields, done, timeout, targets=targets)
+        waiters.append(waiter)
+        return waiter
+    node._ask = recording
+    return waiters
+
+
+def _commit_query_pump(h):
+    def pump():
+        h.net.deliver(src="a", dst={"b", "c"}, kinds=("commit_query",))
+        h.net.deliver(src=None, dst={"a"}, kinds=("commit_info",))
+    return pump
+
+
+def test_a_commit_query_served_while_the_space_closes_counts_no_miss():
+    """R243L, ``commit_info``: ``b`` and ``c`` detach their tier (a closing space) after their
+    service took it and before it looked up the commit's ranges.  They reply that they cannot
+    tell; before, the detached tier's ``None`` was a miss."""
+    h = Harness("abc", records=True)
+    try:
+        h.bootstrap("a")
+        a = h.nodes["a"]
+        closed = []
+        for n in "bc":
+            node = h.nodes[n]
+            tier = node.tier
+            ranges = tier.commit_ranges
+
+            def detaching(root, _n=n, _node=node, _tier=tier, _ranges=ranges):
+                closed.append(_n)
+                _node.detach(_tier)
+                return _ranges(root)
+            tier.commit_ranges = detaching
+        waiters = _recording_waiters(a)
+        assert h._run(lambda: a._ask_commit(1, rec(7)), _commit_query_pump(h)) == (False, None)
+        assert sorted(closed) == ["b", "c"], f"the schedule did not run on every member: {closed}"
+        (waiter,) = waiters
+        assert not waiter.missing, f"members closing while serving counted as misses: {waiter.missing}"
+        assert waiter.unknown == {"b", "c"}, waiter.unknown
+    finally:
+        h.close()
+
+
+def test_a_commit_query_answered_while_attaching_counts_no_miss():
+    """R244L (re-review 3, M3): ``b`` and ``c`` are attaching -- the tier is set, its roots are
+    still loading and no persister runs yet -- and they no longer hold the commit's ranges.
+    They cannot tell whether their persisted root covers the commit, so they reply unknown;
+    before, they answered a miss."""
+    import threading
+    h = Harness("abc", records=True)
+    try:
+        h.bootstrap("a")
+        a = h.nodes["a"]
+        release, loading, attaching = threading.Event(), [], []
+        for n in "bc":
+            node = h.nodes[n]
+            tier = node.tier
+            node.detach(tier)
+            load = tier.load_roots
+
+            def blocked(_n=n, _load=load):
+                loading.append(_n)
+                assert release.wait(30.0), "the test never released the attach"
+                return _load()
+            tier.load_roots = blocked
+            # The attach may refuse the harness's zero startup grace once the roots load; only
+            # the window before that matters here.
+            t = threading.Thread(target=_attempt, args=(node.attach, tier), daemon=True)
+            t.start()
+            attaching.append(t)
+        for _ in range(30000):
+            if len(loading) == 2:
+                break
+            threading.Event().wait(0.001)
+        assert sorted(loading) == ["b", "c"], f"the attaches did not reach load_roots: {loading}"
+        try:
+            waiters = _recording_waiters(a)
+            assert h._run(lambda: a._ask_commit(1, rec(7)), _commit_query_pump(h)) == (False, None)
+        finally:
+            release.set()
+            for t in attaching:
+                t.join(30.0)
+        (waiter,) = waiters
+        assert not waiter.missing, f"members answering while attaching counted as misses: {waiter.missing}"
+        assert waiter.unknown == {"b", "c"}, waiter.unknown
+    finally:
+        h.close()
+
+
+def _attempt(fn, *args):
+    try:
+        fn(*args)
+    except ProtoDBError:
+        pass
+
+
+def _corrupt_from_b(h, r):
+    """``b`` holds ``r`` and answers ``a``'s page request; ``c`` is never heard (slow or cut off)."""
+    h.nodes["b"].tier.held.add((r.segment, r.offset))
+
+    def pump():
+        h.net.deliver(src="a", dst={"b"}, kinds=("fetch",))
+        h.net.drop(src="a", dst={"c"}, kinds=("fetch",))
+        h.net.deliver(src=None, dst={"a"}, kinds=("fetched",))
+    return pump
+
+
+def test_a_node_stopping_before_a_re_ask_reports_the_record_unavailable():
+    """R244L (re-review 3, M1): ``b``'s answer is rejected as corrupt and ``a`` stops before it
+    asks ``c`` again.  The request ends as not complete -- the reader's "unavailable" -- and
+    never raises the stopped coordinator's ``ProtoValidationError``."""
+    h = Harness("abc", records=True)
+    try:
+        h.bootstrap("a")
+        a = h.nodes["a"]
+        r = rec(7)
+
+        def corrupt_and_stop(data):
+            a.stop()
+            return False
+        got = h._run(lambda: a.fetch_answer(AtomPointer(r.segment, r.offset), valid=corrupt_and_stop),
+                     _corrupt_from_b(h, r))
+        assert got == (None, False), f"a stop before the re-ask surfaced as {got!r}"
+    finally:
+        h.close()
+
+
+def test_a_re_ask_with_no_time_left_sends_nothing(monkeypatch):
+    """R244L (re-review 3, M2): ``b``'s answer, rejected as corrupt, arrives once the round's wait
+    has run out.  The request ends (not complete) without asking ``c`` again; before, it sent
+    ``c`` a page request with a wait of 0 that nobody waited for."""
+    import time as real_time
+    from proto_db.cluster import coordinator as coordinator_module
+
+    class Shifted:
+        """``time`` with a monotonic clock the test moves forward (the coordinator's only)."""
+        offset = 0.0
+
+        def __getattr__(self, name):
+            return getattr(real_time, name)
+
+        def monotonic(self):
+            return real_time.monotonic() + self.offset
+    shifted = Shifted()
+    h = Harness("abc", records=True)
+    try:
+        h.bootstrap("a")
+        a = h.nodes["a"]
+        r = rec(7)
+        h.nodes["b"].tier.held.add((r.segment, r.offset))
+        asks = _record_asks(a)
+        monkeypatch.setattr(coordinator_module, "time", shifted)
+
+        def pump():
+            h.net.deliver(src="a", dst={"b"}, kinds=("fetch",))
+            h.net.drop(src="a", dst={"c"}, kinds=("fetch",))
+            replies = h.net.take(None, {"a"}, ("fetched",))
+            if replies and not shifted.offset:
+                shifted.offset = 3600.0     # the round's wait runs out before b's answer arrives
+            for _, to, msg in replies:
+                h.net.handlers[to](msg)
+                h.nodes[to].wait_idle(5.0)
+        got = h._run(lambda: a.fetch_answer(AtomPointer(r.segment, r.offset), valid=lambda data: False), pump)
+        assert shifted.offset, "the schedule did not run: b sent no reply"
+        assert got == (None, False), got
+        assert [k for k, _ in asks] == ["fetch"], f"a re-ask with no time left was sent: {asks}"
+    finally:
+        monkeypatch.undo()
+        h.close()
+
+
+def test_a_plain_fetcher_answering_corrupt_bytes_is_not_a_definitive_miss(tmp_path):
+    """R245L (re-review 3, M5): the tier's own check of a peer's answer.  A plain fetcher (no
+    answer function) does not validate what it returns, so a corrupt answer reaches
+    ``_peer_answer``'s decode: it is no record, and not an answer that the record is nowhere
+    -- with the store lacking the segment, the read is unavailable, not corruption."""
+    with TieredCluster(tmp_path, **NOT_UPLOADED) as tc:
+        tc.create_database("n0")
+        _commit_without(tc, "n0", "n2")
+        r = tc["n0"].committed_root()[1]
+        n2, st = tc["n2"], tc.storages["n2"]
+        st.set_fetcher(lambda ptr: b"\x00" * 64)                 # a plain fetcher, corrupt bytes
+        try:
+            with pytest.raises(ProtoDBError) as info:
+                st.get_atom(AtomPointer(r.segment, r.offset))
+        finally:
+            st.set_fetcher(n2.fetch_record, answer=n2.fetch_answer)
+        assert type(info.value) is ProtoUnexpectedError, \
+            f"a plain fetcher's corrupt answer made the read {type(info.value).__name__}: {info.value}"

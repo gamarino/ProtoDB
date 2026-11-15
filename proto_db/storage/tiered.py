@@ -1248,7 +1248,9 @@ class TieredStorage(SharedStorage):
         """``(record or None, complete)`` from a peer page request; ``complete`` False when
         some peer was not heard (only known with an ``answer`` function, :meth:`set_fetcher`).
         A corrupt answer is no record and not definitive either: the request stopped at it,
-        so the other peers may not have been heard (R235L)."""
+        so the other peers may not have been heard (R235L).  The coordinator's answer function
+        rejects such bytes itself (``valid``, R242L); this check serves a plain fetcher, which
+        validates nothing, and any answer function that ignores ``valid`` (R245L)."""
         fetcher, answer = self._peer
         if answer is not None:
             data, complete = answer(ptr, valid=_decodable)

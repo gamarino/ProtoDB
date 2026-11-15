@@ -605,17 +605,16 @@ def blind_snapshot_of'''),),
     # LEASE-READ fix round 3 (rulings R240L-R242L).
     "lease_read_unattached_fetch_is_miss": Plant((
         ("proto_db/cluster/coordinator.py",
-         "        extra = {\"unknown\": True} if tier is None else {}\n"
-         "        self._transport.send(msg[\"from\"], make_message(\"fetched\"",
-         "        extra = {}   # PLANT: a member without storage answers as one lacking the record\n"
-         "        self._transport.send(msg[\"from\"], make_message(\"fetched\""),),
+         "            unknown = tier is None or (data is None and self._tier is not tier)\n",
+         "            unknown = tier is not None and data is None and self._tier is not tier   # PLANT: no tier, a miss\n"),),
         ("tests/unit/test_cluster_lease_read.py::test_a_member_without_storage_attached_is_never_a_miss",),
         "members without storage counted as lacking the record",
         "product: a member with no tier attached counts as lacking the record (R240L)"),
     "lease_read_unattached_commit_info_is_miss": Plant((
         ("proto_db/cluster/coordinator.py",
-         "        extra = {\"unknown\": True} if tier is None else {}     # cannot tell (R240L)\n",
-         "        extra = {}   # PLANT: a member without storage answers as one not knowing the commit\n"),),
+         "                tier is None or persister is None or self._tier is not tier or self._persister is not persister)\n",
+         "                tier is not None and (persister is None or self._tier is not tier\n"
+         "                                      or self._persister is not persister))   # PLANT: no tier, a miss\n"),),
         ("tests/unit/test_cluster_lease_read.py::test_a_commit_query_to_members_without_storage_counts_no_miss",),
         "members without storage counted as misses",
         "product: a member with no tier attached counts as not knowing the commit (R240L)"),
@@ -626,6 +625,54 @@ def blind_snapshot_of'''),),
         ("tests/unit/test_cluster_lease_read.py::test_a_peer_answering_corrupt_bytes_does_not_end_the_page_request",),
         "is unavailable",
         "product: a peer answering corrupt bytes ends the page request (R242L)"),
+    # LEASE-READ fix round 4 (rulings R243L-R245L).
+    "lease_read_closing_fetch_is_miss": Plant((
+        ("proto_db/cluster/coordinator.py",
+         "            unknown = tier is None or (data is None and self._tier is not tier)\n",
+         "            unknown = tier is None   # PLANT: a space closing while serving answers a miss\n"),),
+        ("tests/unit/test_cluster_lease_read.py::test_a_member_whose_space_closes_while_serving_a_fetch_cannot_tell",),
+        "members closing while serving made the read",
+        "product: a member whose space closes while it serves a fetch answers that it lacks the record (R243L)"),
+    "lease_read_closing_commit_info_is_miss": Plant((
+        ("proto_db/cluster/coordinator.py",
+         "                tier is None or persister is None or self._tier is not tier or self._persister is not persister)\n",
+         "                tier is None or persister is None)   # PLANT: a space closing while serving, a miss\n"),),
+        ("tests/unit/test_cluster_lease_read.py::test_a_commit_query_served_while_the_space_closes_counts_no_miss",),
+        "members closing while serving counted as misses",
+        "product: a member whose space closes while it serves a commit query counts as not knowing it (R243L)"),
+    "lease_read_attaching_commit_info_is_miss": Plant((
+        ("proto_db/cluster/coordinator.py",
+         "                tier is None or persister is None or self._tier is not tier or self._persister is not persister)\n",
+         "                tier is None or self._tier is not tier or self._persister is not persister)   # PLANT\n"),),
+        ("tests/unit/test_cluster_lease_read.py::test_a_commit_query_answered_while_attaching_counts_no_miss",),
+        "members answering while attaching counted as misses",
+        "product: a member still attaching counts as not knowing the commit (R244L)"),
+    "lease_read_stop_before_re_ask_raises": Plant((
+        ("proto_db/cluster/coordinator.py",
+         "                    if stopped:             # stopped before this ask: not heard, as below (R244L)\n"
+         "                        return None, False\n",
+         "                    if stopped:\n"
+         "                        raise   # PLANT: a stop before a re-ask is a validation error\n"),),
+        ("tests/unit/test_cluster_lease_read.py::test_a_node_stopping_before_a_re_ask_reports_the_record_unavailable",),
+        "a stop before the re-ask surfaced as",
+        "product: a node stopping before a re-ask raises ProtoValidationError (R244L)"),
+    "lease_read_re_ask_without_time": Plant((
+        ("proto_db/cluster/coordinator.py",
+         "                    if wait <= 0:\n"
+         "                        break               # no time left: nobody would wait for a re-ask (R244L)\n",
+         "                    wait = max(0.0, wait)   # PLANT: a re-ask with no time left is sent\n"),),
+        ("tests/unit/test_cluster_lease_read.py::test_a_re_ask_with_no_time_left_sends_nothing",),
+        "a re-ask with no time left was sent",
+        "product: a re-ask with no time left still sends page requests (R244L)"),
+    "lease_read_tier_corrupt_answer_definitive": Plant((
+        ("proto_db/storage/tiered.py",
+         "            logger.warning(\"A peer answered a corrupt record for %s: %s\", ptr, e)\n"
+         "            return None, False\n",
+         "            logger.warning(\"A peer answered a corrupt record for %s: %s\", ptr, e)\n"
+         "            return None, True   # PLANT: the tier counts a corrupt answer as definitive\n"),),
+        ("tests/unit/test_cluster_lease_read.py::test_a_plain_fetcher_answering_corrupt_bytes_is_not_a_definitive_miss",),
+        "a plain fetcher's corrupt answer made the read",
+        "product: the tier's own decode counts a corrupt peer answer as definitive (R245L)"),
     "shiplock": Plant((
         ("proto_db/storage/tiered.py", "            data = self._copy_prefix(segment, end)",
          "            with self._ship_lock:   # PLANT: the hole is filled under the ship lock\n"

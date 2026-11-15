@@ -13,13 +13,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   A read of a record whose segment the object store does not hold yet, while some peer did not answer the page
   request in time, now raises `ProtoUnexpectedError` (the record is unavailable) instead of `ProtoCorruptionError`;
   `ProtoCorruptionError` stays for a record that every peer answered it lacks (each peer counted once, however
-  often its reply arrives; a peer that answered corrupt bytes, or one with no storage attached, counts as not
-  heard, and a corrupt answer no longer ends the page request: the members not heard yet are asked again), or
+  often its reply arrives; a peer that answered corrupt bytes, one with no storage attached, one whose space
+  closed while it served the request, or one still attaching its storage (for a commit query), counts as not
+  heard, and a corrupt answer no longer ends the page request: the members not heard yet are asked again while
+  the wait lasts), or
   whose stored copy is wrong. A
   commit whose base read fails with `ProtoUnexpectedError` after its write permission expired, nothing having
   been sent and its local tier not failed, raises `ProtoConflictError`, which `Database.run` retries. A failed
   read of the base a round must first re-commit no longer ends the permission with an unknown outcome, since
-  nothing was sent (D46 amendment, rulings R212, R230-R233, R234L-R236L and R240L-R242L).
+  nothing was sent (D46 amendment, rulings R212, R230-R233, R234L-R236L, R240L-R242L and R243L-R245L).
 - A cluster owner whose lease renewal was refused by a majority no longer renews again once per round trip
   until its lease ends (GitHub issue #1). When a majority refused the term for good (it promised or granted a
   higher term), the owner stops renewing, refuses its queued permission requests with `ending`, lets an

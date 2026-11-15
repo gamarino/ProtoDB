@@ -2714,9 +2714,14 @@ class ClusterCoordinator:
         with self._lock:
             if data is not None:
                 self._stats["fetches_served"] += 1
-        # Without a tier this member cannot tell whether its disk holds the record (a restart
-        # before attach, a closed space): it says so, and is never counted as lacking it (R240L).
-        extra = {"unknown": True} if tier is None else {}
+            # Without a tier this member cannot tell whether its disk holds the record (a
+            # restart before attach, a closed space): it says so, and is never counted as
+            # lacking it (R240L).  Nor can it when its space closed or detached after the tier
+            # was taken: a closed tier reads nothing.  ``detach`` clears ``_tier`` (under this
+            # lock) before the space closes its tier, so a read that saw the tier closed sees
+            # ``_tier`` changed here (R243L).
+            unknown = tier is None or (data is None and self._tier is not tier)
+        extra = {"unknown": True} if unknown else {}
         self._transport.send(msg["from"], make_message("fetched", self._node, rid=msg["rid"], inc=msg["inc"],
                                                        segment=msg["segment"], offset=msg["offset"], data=data,
                                                        **extra))
@@ -2742,7 +2747,14 @@ class ClusterCoordinator:
         ranges = None
         if not persisted and root is not None and tier is not None and getattr(tier, "local_records", False):
             ranges = tier.commit_ranges(root)
-        extra = {"unknown": True} if tier is None else {}     # cannot tell (R240L)
+        with self._lock:
+            # Cannot tell (never a miss): no tier attached (R240L); a tier still attaching,
+            # whose persister -- and so whether the persisted root covers the commit -- is not
+            # there yet (R244L); or a space that closed or detached after the pair was taken
+            # (R243L, as in _serve_fetch).
+            unknown = not persisted and ranges is None and (
+                tier is None or persister is None or self._tier is not tier or self._persister is not persister)
+        extra = {"unknown": True} if unknown else {}
         self._transport.send(msg["from"], make_message("commit_info", self._node, rid=msg["rid"], inc=msg["inc"],
                                                        persisted=persisted,
                                                        ranges=protocol.encode_ranges(ranges), **extra))
@@ -4325,16 +4337,18 @@ class ClusterCoordinator:
         """``(framed record or None, complete)``: the peer page request of :meth:`fetch_record`,
         and whether its ``None`` is definitive -- every other member answered that it does
         not hold the record (``complete`` True), as opposed to a member that was not heard
-        within the wait (a timeout, the cap of a commit's permission, a stopped coordinator),
-        one that cannot tell because it has no storage attached (R240L), or one that answered
-        bytes ``valid`` rejects (``complete`` False).  Each member counts once, however often
+        within the wait (a timeout, the cap of a commit's permission, a coordinator stopped
+        before or during an ask, R244L), one that cannot tell because it has no storage
+        attached or its space closed while it served the request (R240L, R243L), or one that
+        answered bytes ``valid`` rejects (``complete`` False).  Each member counts once, however often
         its reply arrives (R234L).  A record found is ``(data, True)``; with no other member,
         ``(None, True)``.
 
         The members the locator names for the record's segment (the data replicas of the
         commits that wrote it, D54) are asked first; the others only when none of them has
         it.  An answer ``valid`` rejects does not end the request: the members of that round
-        not heard yet are asked again, within what remains of the round's wait (R242L).  A
+        not heard yet are asked again, within what remains of the round's wait (R242L), and not
+        at all when nothing remains (R244L).  A
         tier tells an unavailable record from an absent one by it (R230)."""
         if not self._others:
             return None, True
@@ -4362,10 +4376,16 @@ class ClusterCoordinator:
             deadline = time.monotonic() + timeout
             remaining, wait = list(targets), timeout
             while remaining:
-                waiter = self._ask("fetch", {"segment": ptr.segment.bytes, "offset": ptr.offset},
-                                   lambda w, asked=set(remaining): w.data is not None
-                                   or asked <= w.missing | w.unknown, wait, targets=remaining)
-                wait = max(0.0, deadline - time.monotonic())    # a re-ask: what remains of the round
+                try:
+                    waiter = self._ask("fetch", {"segment": ptr.segment.bytes, "offset": ptr.offset},
+                                       lambda w, asked=set(remaining): w.data is not None
+                                       or asked <= w.missing | w.unknown, wait, targets=remaining)
+                except ProtoValidationError:
+                    with self._lock:
+                        stopped = self._state != "running"
+                    if stopped:             # stopped before this ask: not heard, as below (R244L)
+                        return None, False
+                    raise
                 if waiter.data is not None:
                     if valid is None or valid(waiter.data):
                         return waiter.data, True
@@ -4374,6 +4394,9 @@ class ClusterCoordinator:
                     complete = False        # a corrupt answer is no answer that the record is absent
                     heard = waiter.missing | waiter.unknown | {waiter.data_from}
                     remaining = [m for m in remaining if m not in heard]
+                    wait = deadline - time.monotonic()      # a re-ask: what remains of the round
+                    if wait <= 0:
+                        break               # no time left: nobody would wait for a re-ask (R244L)
                     continue
                 if not set(remaining) <= waiter.missing:
                     complete = False        # some member was not heard, or cannot tell
