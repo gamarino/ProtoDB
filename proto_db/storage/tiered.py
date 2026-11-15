@@ -450,6 +450,30 @@ def _decode_root_object(data: bytes) -> tuple:
     return label, record
 
 
+def _decodable(data: bytes) -> bool:
+    """True when ``data`` starts with a well-formed framed record (a peer's answer, R242L)."""
+    try:
+        read_record(data, 0)
+        return True
+    except ProtoCorruptionError:
+        return False
+
+
+def _well_framed(data: bytes) -> bool:
+    """True when ``data`` is exactly one well-formed framed record (a commit's records)."""
+    try:
+        kind, payload = read_record(data, 0)
+    except ProtoCorruptionError:
+        return False
+    return len(encode_record(kind, payload)) == len(data)
+
+
+class _SegmentAbsent(ProtoCorruptionError):
+    """The object store holds neither the sealed object nor a part of a segment.  Corrupt only
+    when no peer holds the record either; a read that could not hear every peer reports it
+    unavailable instead (:meth:`TieredStorage._store_record`, ruling R230)."""
+
+
 class TieredStorage(SharedStorage):
     """A cluster node's storage: local WAL tier plus object-store tier (see the module docstring).
 
@@ -561,7 +585,7 @@ class TieredStorage(SharedStorage):
         self._cache = BoundedCache(cache_bytes)
         self._segments = BoundedCache(segment_cache_bytes)
         self._tls = threading.local()
-        self._fetcher = None
+        self._peer = (None, None)      # (fetcher, answer): installed together (set_fetcher, R236L)
         self._own = {}                 # UUID -> _Own, in creation order (dicts keep it)
         self._live_own = {}            # UUID -> _Own of the own segments not released (I1)
         self._copies = {}              # UUID -> root_key of the newest commit that wrote into the copy
@@ -1121,9 +1145,23 @@ class TieredStorage(SharedStorage):
         finally:
             self._tls.critical = previous
 
-    def set_fetcher(self, fetcher: Optional[Callable]) -> None:
-        """Install the peer page request function (``fetcher(ptr) -> framed bytes or None``)."""
-        self._fetcher = fetcher
+    def set_fetcher(self, fetcher: Optional[Callable], answer: Optional[Callable] = None) -> None:
+        """Install the peer page request: ``fetcher(ptr) -> framed bytes or None`` and, with it,
+        ``answer(ptr, valid=None) -> (framed bytes or None, complete)``, the same request saying whether
+        its ``None`` is definitive (every peer answered without the record; the cluster
+        coordinator's ``fetch_answer``; ``valid`` rejects a corrupt answer, which does not end
+        the request, R242L).  The two are installed together, so they cannot be
+        split (R236L).  With ``answer``, a record whose segment the object store does not hold
+        while some peer was not heard is unavailable (``ProtoUnexpectedError``), not corrupt
+        (ruling R230); without it (a plain fetcher), a ``None`` counts as definitive.
+        ``set_fetcher(None)`` removes both."""
+        self._peer = (fetcher, answer if fetcher is not None else None)
+
+    @property
+    def failure(self) -> Optional[BaseException]:
+        """The local write error that poisoned this tier (module docstring), or ``None``."""
+        with self._lock:
+            return self._failed
 
     def in_critical(self) -> bool:
         """True when the calling thread is inside a commit's critical section (it holds a write
@@ -1183,26 +1221,31 @@ class TieredStorage(SharedStorage):
             self._count("reads_local")
         else:
             asked = not self._known_remote(ptr)
-            found = self._from_peer(ptr) if asked else None
+            found, complete = self._peer_answer(ptr) if asked else (None, True)
             if found is not None:
                 self._count("reads_peer")
             else:
-                found = self._store_record(ptr, ask_peers=not asked)
+                found = self._store_record(ptr, ask_peers=not asked, peers_complete=complete)
         self._cache.put(key, encode_record(found[0], found[1]))
         return found
 
-    def _store_record(self, ptr: AtomPointer, *, ask_peers: bool) -> tuple:
+    def _store_record(self, ptr: AtomPointer, *, ask_peers: bool, peers_complete: bool = True) -> tuple:
         """The record at ``ptr`` from the object store.  When the store's object turns out
         short or corrupt there, the record is read from the peers (unless they were just asked,
-        ``ask_peers`` False), then from a part; ``ProtoCorruptionError`` when no full copy is
-        anywhere -- never short data."""
+        ``ask_peers`` False; ``peers_complete`` then says whether every one answered), then from
+        a part; ``ProtoCorruptionError`` when no full copy is anywhere -- never short data.
+        A segment the store does not hold (not uploaded yet) while some peer did not answer is
+        unavailable, not corrupt: ``ProtoUnexpectedError`` (ruling R230)."""
         try:
             found = self._remote_record(ptr)
             self._count("reads_remote")
             return found
         except ProtoCorruptionError as e:
             failure = e
-        found = self._from_peer(ptr) if ask_peers else None
+        if ask_peers:
+            found, peers_complete = self._peer_answer(ptr)
+        else:
+            found = None
         if found is not None:
             logger.warning("The object store's copy of the record at %s is short or corrupt (%s); read "
                            "from a peer", ptr, failure)
@@ -1214,6 +1257,11 @@ class TieredStorage(SharedStorage):
                            "read from a part", ptr, failure)
             self._count("reads_remote")
             return found
+        if isinstance(failure, _SegmentAbsent) and not peers_complete:
+            raise ProtoUnexpectedError(f"The record at {ptr} is unavailable: the object store does not hold "
+                                       f"its segment (not uploaded yet), and some peer was not heard within the "
+                                       f"wait, could not tell (no storage attached), or answered corrupt bytes "
+                                       f"(logged)") from failure
         raise ProtoCorruptionError(f"There is no full copy of the record at {ptr}: the object store's "
                                    f"copy is short or corrupt ({failure}) and no reachable peer holds "
                                    f"it") from failure
@@ -1251,17 +1299,29 @@ class TieredStorage(SharedStorage):
         self._list_remote()
 
     def _from_peer(self, ptr: AtomPointer) -> Optional[tuple]:
-        fetcher = self._fetcher
-        if fetcher is None:
-            return None
-        data = fetcher(ptr)
+        return self._peer_answer(ptr)[0]
+
+    def _peer_answer(self, ptr: AtomPointer) -> tuple:
+        """``(record or None, complete)`` from a peer page request; ``complete`` False when
+        some peer was not heard (only known with an ``answer`` function, :meth:`set_fetcher`).
+        A corrupt answer is no record and not definitive either: the request stopped at it,
+        so the other peers may not have been heard (R235L).  The coordinator's answer function
+        rejects such bytes itself (``valid``, R242L); this check serves a plain fetcher, which
+        validates nothing, and any answer function that ignores ``valid`` (R245L)."""
+        fetcher, answer = self._peer
+        if answer is not None:
+            data, complete = answer(ptr, valid=_decodable)
+        elif fetcher is not None:
+            data, complete = fetcher(ptr), True
+        else:
+            return None, True
         if data is None:
-            return None
+            return None, complete
         try:
-            return read_record(data, 0)
+            return read_record(data, 0), True
         except ProtoCorruptionError as e:
             logger.warning("A peer answered a corrupt record for %s: %s", ptr, e)
-            return None
+            return None, False
 
     def _segment_object(self, segment: uuid.UUID, *, reload: bool = False) -> bytes:
         """The sealed object of ``segment``, else its largest part; cached (``reload`` skips the cache)."""
@@ -1277,7 +1337,7 @@ class TieredStorage(SharedStorage):
             with self._lock:
                 end = self._parts.get(segment)
             if end is None:
-                raise ProtoCorruptionError(f"Segment {segment.hex} is in no tier (local, peers, object store)") from e
+                raise _SegmentAbsent(f"Segment {segment.hex} is in no tier (local, peers, object store)") from e
             part = self._part_key(segment, end)
             data, _ = self._retrying(lambda: self._store.get(part), f"Reading segment part {part}")
             sealed = False
@@ -1532,8 +1592,11 @@ class TieredStorage(SharedStorage):
 
     def _peer_framed(self, ptr: AtomPointer) -> Optional[bytes]:
         """The framed record at ``ptr`` from a peer (page request), validated, or ``None``."""
-        fetcher = self._fetcher
-        data = fetcher(ptr) if fetcher is not None else None
+        fetcher, answer = self._peer
+        if answer is not None:
+            data = answer(ptr, valid=_well_framed)[0]       # a corrupt answer: ask the others (R242L)
+        else:
+            data = fetcher(ptr) if fetcher is not None else None
         if data is None:
             return None
         try:

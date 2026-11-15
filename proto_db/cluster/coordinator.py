@@ -462,7 +462,7 @@ class _Waiter:
     """Replies gathered for one replicate, query or fetch (guarded by the coordinator lock)."""
 
     __slots__ = ("kind", "term", "acks", "nacks", "answers", "promised", "states", "ballots", "data", "missing",
-                 "stored", "unstored", "key")
+                 "stored", "unstored", "key", "unknown", "data_from")
 
     def __init__(self, kind: str, term: int = 0):
         self.kind = kind
@@ -477,7 +477,13 @@ class _Waiter:
         self.states = {}
         self.ballots = {}
         self.data = None
-        self.missing = 0
+        # The members that answered a fetch or commit_query without it: a set, so that a
+        # duplicated reply never counts twice (transport duplication; R234L).
+        self.missing = set()
+        # Members that answered they cannot tell (no storage attached, R240L): heard, but never
+        # a miss.  ``data_from``: the member whose bytes are ``data``.
+        self.unknown = set()
+        self.data_from = None
 
 
 class _PermitWait:
@@ -1146,7 +1152,7 @@ class ClusterCoordinator:
             self._hint = max(self._hint, top)
             self._grants.restore(max(promised, accepted[0] if accepted is not None else 0))
             self._logged_promise = (tier, promised)
-            tier.set_fetcher(self.fetch_record)
+            tier.set_fetcher(self.fetch_record, answer=self.fetch_answer)   # R230: unavailable vs. absent
             self._confirmed = False
             self._rejoining = rejoin
             self._rejoin_blocked = None
@@ -1544,20 +1550,36 @@ class ClusterCoordinator:
             return None, (f"some records of {what} are on no reachable peer and not in the object store"), None
         return "records", records, ranges
 
+    def _read_wait(self, permitted: bool) -> float:
+        """Under the lock: how long a peer read (``fetch``, ``commit_query``) waits for its
+        answers.  ``fetch_timeout``; a read made inside a commit's critical section
+        (``permitted``) waits no longer than what remains of the permission and the lease
+        this node holds, so that a commit never waits past its permission.  Every other read
+        gets the full ``fetch_timeout``, also while an expired term lease is not yet released
+        (ruling R212)."""
+        timeout = self._fetch_timeout
+        if permitted:
+            for lease in (self._held, self._permit):
+                if lease is not None:
+                    timeout = min(timeout, max(0.0, lease.remaining()))
+        return timeout
+
     def _ask_commit(self, label: int, root: RootRecord) -> tuple:
         """``(persisted, ranges)`` for the commit of ``root`` from the first peer that knows
-        (``commit_query``), within ``fetch_timeout`` (and what remains of a held lease)."""
+        (``commit_query``), within ``fetch_timeout`` (inside a commit, within what remains of
+        its permission: :meth:`_read_wait`)."""
         others = len(self._others)
         if not others:
             return False, None
+        tier = self._tier
+        permitted = bool(tier is not None and getattr(tier, "in_critical", lambda: False)())
         with self._lock:
             if self._state != "running":
                 return False, None
-            timeout = self._fetch_timeout
-            if self._held is not None:
-                timeout = min(timeout, max(0.0, self._held.remaining()))
+            timeout = self._read_wait(permitted)
+        asked = set(self._others)
         waiter = self._ask("commit_query", {"root": encode_root(root, known=True, term=label)},
-                           lambda w: w.data is not None or w.missing >= others, timeout)
+                           lambda w: w.data is not None or asked <= w.missing | w.unknown, timeout)
         if waiter.data is None:
             return False, None
         return waiter.data
@@ -2191,21 +2213,26 @@ class ClusterCoordinator:
         elif kind == "fetched":
             if waiter.kind != "fetch" or waiter.key != (msg["segment"], msg["offset"]):
                 return              # the bytes of another record are never this one's (review C2)
-            if msg["data"] is not None and waiter.data is None:
-                waiter.data = msg["data"]
+            if msg.get("unknown", False):
+                waiter.unknown.add(sender)          # cannot tell: not a miss (R240L)
+            elif msg["data"] is not None:
+                if waiter.data is None:
+                    waiter.data, waiter.data_from = msg["data"], sender
             else:
-                waiter.missing += 1
+                waiter.missing.add(sender)
         elif kind == "commit_info":
             if waiter.kind != "commit_query":
                 return
             if waiter.data is not None:
                 return
-            if msg["persisted"]:
+            if msg.get("unknown", False):
+                waiter.unknown.add(sender)          # cannot tell: not a miss (R240L)
+            elif msg["persisted"]:
                 waiter.data = (True, None)
             elif msg["ranges"] is not None:
                 waiter.data = (False, protocol.decode_ranges(msg["ranges"]))
             else:
-                waiter.missing += 1
+                waiter.missing.add(sender)
         self._cond.notify_all()
 
     def _broadcast(self, msg: dict) -> None:
@@ -2687,8 +2714,17 @@ class ClusterCoordinator:
         with self._lock:
             if data is not None:
                 self._stats["fetches_served"] += 1
+            # Without a tier this member cannot tell whether its disk holds the record (a
+            # restart before attach, a closed space): it says so, and is never counted as
+            # lacking it (R240L).  Nor can it when its space closed or detached after the tier
+            # was taken: a closed tier reads nothing.  ``detach`` clears ``_tier`` (under this
+            # lock) before the space closes its tier, so a read that saw the tier closed sees
+            # ``_tier`` changed here (R243L).
+            unknown = tier is None or (data is None and self._tier is not tier)
+        extra = {"unknown": True} if unknown else {}
         self._transport.send(msg["from"], make_message("fetched", self._node, rid=msg["rid"], inc=msg["inc"],
-                                                       segment=msg["segment"], offset=msg["offset"], data=data))
+                                                       segment=msg["segment"], offset=msg["offset"], data=data,
+                                                       **extra))
 
     def _warm(self, msg: dict) -> None:
         """Cache the records of another member's commit (ruling R89): memory only, never
@@ -2711,9 +2747,17 @@ class ClusterCoordinator:
         ranges = None
         if not persisted and root is not None and tier is not None and getattr(tier, "local_records", False):
             ranges = tier.commit_ranges(root)
+        with self._lock:
+            # Cannot tell (never a miss): no tier attached (R240L); a tier still attaching,
+            # whose persister -- and so whether the persisted root covers the commit -- is not
+            # there yet (R244L); or a space that closed or detached after the pair was taken
+            # (R243L, as in _serve_fetch).
+            unknown = not persisted and ranges is None and (
+                tier is None or persister is None or self._tier is not tier or self._persister is not persister)
+        extra = {"unknown": True} if unknown else {}
         self._transport.send(msg["from"], make_message("commit_info", self._node, rid=msg["rid"], inc=msg["inc"],
                                                        persisted=persisted,
-                                                       ranges=protocol.encode_ranges(ranges)))
+                                                       ranges=protocol.encode_ranges(ranges), **extra))
 
     # -- acquiring and releasing -------------------------------------------------------------
 
@@ -4285,40 +4329,79 @@ class ClusterCoordinator:
 
     def fetch_record(self, ptr) -> Optional[bytes]:
         """Peer page request: the framed record at ``ptr`` from the first peer that has it, or
-        ``None`` (no peer answered with it within ``fetch_timeout``, nor within what remains
-        of a lease this node holds).  The members the locator names for the record's segment
-        (the data replicas of the commits that wrote it, D54) are asked first; the others only
-        when none of them has it."""
+        ``None`` (no peer answered with it within ``fetch_timeout``; inside a commit, within
+        what remains of its permission: :meth:`_read_wait`).  See :meth:`fetch_answer`."""
+        return self.fetch_answer(ptr)[0]
+
+    def fetch_answer(self, ptr, valid: Optional[Callable[[bytes], bool]] = None) -> tuple:
+        """``(framed record or None, complete)``: the peer page request of :meth:`fetch_record`,
+        and whether its ``None`` is definitive -- every other member answered that it does
+        not hold the record (``complete`` True), as opposed to a member that was not heard
+        within the wait (a timeout, the cap of a commit's permission, a coordinator stopped
+        before or during an ask, R244L), one that cannot tell because it has no storage
+        attached or its space closed while it served the request (R240L, R243L), or one that
+        answered bytes ``valid`` rejects (``complete`` False).  Each member counts once, however often
+        its reply arrives (R234L).  A record found is ``(data, True)``; with no other member,
+        ``(None, True)``.
+
+        The members the locator names for the record's segment (the data replicas of the
+        commits that wrote it, D54) are asked first; the others only when none of them has
+        it.  An answer ``valid`` rejects does not end the request: the members of that round
+        not heard yet are asked again, within what remains of the round's wait (R242L), and not
+        at all when nothing remains (R244L).  A
+        tier tells an unavailable record from an absent one by it (R230)."""
         if not self._others:
-            return None
+            return None, True
         tier = self._tier
         permitted = bool(tier is not None and getattr(tier, "in_critical", lambda: False)())
         with self._lock:
             if self._state != "running":
-                return None
+                return None, False
             self._stats["fetches_requested"] += 1
             self._stats["record_fetches"] += 1
             if permitted:
                 self._stats["record_fetches_permitted"] += 1
-            timeout = self._fetch_timeout
-            if self._held is not None:
-                timeout = min(timeout, self._held.remaining())
+            timeout = self._read_wait(permitted)
             located = [m for m in self._locator.get(ptr.segment, ()) if m != self._node]
             if located:
                 self._stats["fetches_located"] += 1
         rounds = [located, [m for m in self._others if m not in located]] if located else [list(self._others)]
+        complete = True
         for i, targets in enumerate(rounds):
             if not targets:
                 continue
             if i:
                 with self._lock:
                     self._stats["fetch_fallbacks"] += 1
-            waiter = self._ask("fetch", {"segment": ptr.segment.bytes, "offset": ptr.offset},
-                               lambda w, n=len(targets): w.data is not None or w.missing >= n, timeout,
-                               targets=targets)
-            if waiter.data is not None:
-                return waiter.data
-        return None
+            deadline = time.monotonic() + timeout
+            remaining, wait = list(targets), timeout
+            while remaining:
+                try:
+                    waiter = self._ask("fetch", {"segment": ptr.segment.bytes, "offset": ptr.offset},
+                                       lambda w, asked=set(remaining): w.data is not None
+                                       or asked <= w.missing | w.unknown, wait, targets=remaining)
+                except ProtoValidationError:
+                    with self._lock:
+                        stopped = self._state != "running"
+                    if stopped:             # stopped before this ask: not heard, as below (R244L)
+                        return None, False
+                    raise
+                if waiter.data is not None:
+                    if valid is None or valid(waiter.data):
+                        return waiter.data, True
+                    logger.warning("Node %s: member %s answered corrupt bytes for the record at %s; asking the "
+                                   "others", self._node, waiter.data_from, ptr)
+                    complete = False        # a corrupt answer is no answer that the record is absent
+                    heard = waiter.missing | waiter.unknown | {waiter.data_from}
+                    remaining = [m for m in remaining if m not in heard]
+                    wait = deadline - time.monotonic()      # a re-ask: what remains of the round
+                    if wait <= 0:
+                        break               # no time left: nobody would wait for a re-ask (R244L)
+                    continue
+                if not set(remaining) <= waiter.missing:
+                    complete = False        # some member was not heard, or cannot tell
+                break
+        return None, complete
 
 
 class _LeaseContext:

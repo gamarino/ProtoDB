@@ -386,7 +386,7 @@ def test_filling_a_hole_from_peers_never_blocks_the_nodes_own_shipping(tmp_path)
             return n1_ensure(needs, **kw)
         n1.ensure_remote = gated_ensure
         st = tc.storages["n2"]
-        fetcher = st._fetcher
+        fetcher, fetch_answer = st._peer                # the coordinator's pair (R236L)
         filling, answer = threading.Event(), threading.Event()
 
         def slow_fetcher(ptr):
@@ -394,7 +394,12 @@ def test_filling_a_hole_from_peers_never_blocks_the_nodes_own_shipping(tmp_path)
             answer.wait(30)                             # a peer answer that has not come yet
             return fetcher(ptr)
 
-        st.set_fetcher(slow_fetcher)
+        def slow_answer(ptr, **kw):
+            filling.set()
+            answer.wait(30)
+            return fetch_answer(ptr, **kw)
+
+        st.set_fetcher(slow_fetcher, answer=slow_answer)
         try:
             tc.store.set_outage(False)                  # n2's persister now fills its front hole
             assert filling.wait(10), "no fill started"
@@ -410,6 +415,6 @@ def test_filling_a_hole_from_peers_never_blocks_the_nodes_own_shipping(tmp_path)
             answer.set()
             n1_may_upload.set()
             n1.ensure_remote = n1_ensure
-        st.set_fetcher(fetcher)
+        st.set_fetcher(fetcher, answer=fetch_answer)
         for node in ("n1", "n2"):
             tc.spaces[node].sync(timeout=20)

@@ -493,6 +493,186 @@ def blind_snapshot_of'''),),
         ("tests/unit/test_cluster_renew_backoff.py::test_a_fenced_term_resends_an_outstanding_permit_to_a_retry",),
         "a retry of an outstanding permit was refused",
         "product: a fenced term refuses an O7 retry of its outstanding permit (review M1)"),
+    # LEASE-READ (ruling R212).
+    "lease_read_cap_every_read": Plant((
+        ("proto_db/cluster/coordinator.py",
+         "        if permitted:\n            for lease in (self._held, self._permit):\n",
+         "        if True:   # PLANT: every read is capped at the held lease\n"
+         "            for lease in (self._held, self._permit):\n"),),
+        ("tests/unit/test_cluster_lease_read.py::test_a_read_after_the_held_lease_expired_waits_the_full_fetch_timeout",
+         "tests/unit/test_cluster_lease_read.py::"
+         "test_a_commit_query_after_the_held_lease_expired_waits_the_full_fetch_timeout"),
+        "capped at the expired lease",
+        "product: a read outside a commit is capped at an expired, unreleased term lease"),
+    "lease_read_expired_unexpected": Plant((
+        ("proto_db/transactions.py",
+         "    if type(error) is ProtoUnexpectedError and getattr(tier, \"failure\", None) is None \\\n",
+         "    if False and getattr(tier, \"failure\", None) is None \\\n"),),
+        ("tests/unit/test_cluster_lease_read.py::"
+         "test_a_base_read_failing_after_the_permission_expired_is_a_retryable_conflict",
+         "tests/unit/test_cluster_lease_read.py::"
+         "test_database_run_retries_a_commit_whose_permission_expired_before_its_base_read"),
+        ("was not retryable", "store unreachable (injected)"),
+        "product: a base read failing after the permission expired is not retried (R212)"),
+    "lease_read_subclasses": Plant((
+        ("proto_db/transactions.py",
+         "    if type(error) is ProtoUnexpectedError and getattr(tier, \"failure\", None) is None \\\n",
+         "    if isinstance(error, ProtoUnexpectedError) and getattr(tier, \"failure\", None) is None \\\n"),),
+        ("tests/unit/test_cluster_lease_read.py::test_a_subclass_of_the_unexpected_error_is_never_made_retryable",),
+        "became",
+        "product: a subclass of ProtoUnexpectedError (an unknown outcome) is made retryable"),
+    # LEASE-READ fix round 1 (rulings R230-R233).
+    "lease_read_absent_is_corrupt": Plant((
+        ("proto_db/storage/tiered.py",
+         "        if isinstance(failure, _SegmentAbsent) and not peers_complete:\n",
+         "        if False:   # PLANT: a segment not uploaded yet is corruption whatever the peers said\n"),),
+        ("tests/unit/test_cluster_lease_read.py::"
+         "test_a_segment_not_uploaded_yet_with_peers_unheard_is_unavailable_not_corrupt",
+         "tests/unit/test_cluster_lease_read.py::"
+         "test_database_run_retries_a_commit_whose_base_segment_is_not_uploaded_and_permission_expired"),
+        "ProtoCorruptionError",
+        "product: an unavailable record (store lacks the segment, peers unheard) is reported corrupt (R230)"),
+    "lease_read_poisoned_converted": Plant((
+        ("proto_db/transactions.py",
+         "    if type(error) is ProtoUnexpectedError and getattr(tier, \"failure\", None) is None \\\n",
+         "    if type(error) is ProtoUnexpectedError and True \\\n"),),
+        ("tests/unit/test_cluster_lease_read.py::"
+         "test_a_poisoned_tier_keeps_its_own_error_under_an_expired_permission",),
+        "a poisoned tier's write error became",
+        "product: a poisoned tier's write error is made a retryable conflict (R231)"),
+    "lease_read_cap_without_permit": Plant((
+        ("proto_db/cluster/coordinator.py",
+         "            for lease in (self._held, self._permit):\n",
+         "            for lease in (self._held,):   # PLANT: the permission does not cap a commit read\n"),),
+        ("tests/unit/test_cluster_lease_read.py::test_a_non_owner_commit_read_waits_no_longer_than_its_permission",),
+        "waited beyond its permission",
+        "product: a non-owner's commit read is not capped at its permission (R232)"),
+    "lease_read_commit_base_sent_early": Plant((
+        ("proto_db/transactions.py",
+         "    where, records, ranges = coordinator.commit_records(label, base)\n",
+         "    if sending is not None:\n        sending()   # PLANT: marked sent before the base's reads\n"
+         "    where, records, ranges = coordinator.commit_records(label, base)\n"),),
+        ("tests/unit/test_cluster_lease_read.py::test_a_base_re_commit_whose_read_fails_sent_nothing",
+         "tests/unit/test_cluster_lease_read.py::"
+         "test_a_base_re_commit_read_failing_after_the_permission_expired_is_retryable"),
+        ("ended its permission unknown", "isinstance("),
+        "product: a base re-commit counts as sent before its reads (R233)"),
+    # LEASE-READ fix round 2 (rulings R234L-R238L).
+    "lease_read_fetch_miss_per_message": Plant((
+        ("proto_db/cluster/coordinator.py",
+         "            else:\n                waiter.missing.add(sender)\n        elif kind == \"commit_info\":\n",
+         "            else:   # PLANT: a duplicated miss counts as another member's\n"
+         "                waiter.missing.add(sender if sender not in waiter.missing else next(iter(set(self._others) - waiter.missing), sender))\n"
+         "        elif kind == \"commit_info\":\n"),),
+        ("tests/unit/test_cluster_lease_read.py::test_a_duplicated_miss_never_makes_every_peer_answered",),
+        "a duplicated miss counted as c's answer",
+        "product: fetch misses are counted per message, so a duplicate makes every peer look answered (R234L)"),
+    "lease_read_commit_info_miss_per_message": Plant((
+        ("proto_db/cluster/coordinator.py",
+         "            else:\n                waiter.missing.add(sender)\n        self._cond.notify_all()\n",
+         "            else:   # PLANT: a duplicated miss counts as another member's\n"
+         "                waiter.missing.add(sender if sender not in waiter.missing else next(iter(set(self._others) - waiter.missing), sender))\n"
+         "        self._cond.notify_all()\n"),),
+        ("tests/unit/test_cluster_lease_read.py::test_a_duplicated_commit_info_miss_never_ends_the_wait_as_answered",),
+        "made every peer look answered",
+        "product: commit_info misses are counted per message (R234L)"),
+    "lease_read_corrupt_answer_definitive": Plant((
+        # Since R242L the coordinator checks a peer's answer (fetch_answer's ``valid``), so the
+        # defect is planted where the corrupt answer is classified.
+        ("proto_db/cluster/coordinator.py",
+         "                    complete = False        # a corrupt answer is no answer that the record is absent\n",
+         "                    pass   # PLANT: a corrupt answer counts as definitive\n"),),
+        ("tests/unit/test_cluster_lease_read.py::"
+         "test_a_corrupt_peer_answer_is_not_an_answer_that_the_record_is_nowhere",),
+        "a corrupt peer answer made the read ProtoCorruptionError",
+        "product: a corrupt peer answer makes the record look absent everywhere (R235L)"),
+    "lease_read_failure_hidden": Plant((
+        ("proto_db/storage/tiered.py",
+         "            return self._failed\n",
+         "            return None   # PLANT: the poisoning is not reported\n"),),
+        ("tests/unit/test_cluster_lease_read.py::"
+         "test_a_really_poisoned_tier_reports_its_failure_and_keeps_its_error",),
+        "the poisoned tier reports None",
+        "product: TieredStorage.failure hides a poisoned tier, so its error is converted (R237L)"),
+    "lease_read_commit_base_never_sent": Plant((
+        ("proto_db/transactions.py",
+         "    if sending is not None:\n        sending()\n    coordinator.replicate(",
+         "    coordinator.replicate("),),
+        ("tests/unit/test_cluster_lease_read.py::"
+         "test_a_base_re_commit_that_sent_its_root_is_never_a_retryable_conflict",),
+        "became a retryable conflict",
+        "product: a base re-commit never marks the round sent (R238L)"),
+    # LEASE-READ fix round 3 (rulings R240L-R242L).
+    "lease_read_unattached_fetch_is_miss": Plant((
+        ("proto_db/cluster/coordinator.py",
+         "            unknown = tier is None or (data is None and self._tier is not tier)\n",
+         "            unknown = tier is not None and data is None and self._tier is not tier   # PLANT: no tier, a miss\n"),),
+        ("tests/unit/test_cluster_lease_read.py::test_a_member_without_storage_attached_is_never_a_miss",),
+        "members without storage counted as lacking the record",
+        "product: a member with no tier attached counts as lacking the record (R240L)"),
+    "lease_read_unattached_commit_info_is_miss": Plant((
+        ("proto_db/cluster/coordinator.py",
+         "                tier is None or persister is None or self._tier is not tier or self._persister is not persister)\n",
+         "                tier is not None and (persister is None or self._tier is not tier\n"
+         "                                      or self._persister is not persister))   # PLANT: no tier, a miss\n"),),
+        ("tests/unit/test_cluster_lease_read.py::test_a_commit_query_to_members_without_storage_counts_no_miss",),
+        "members without storage counted as misses",
+        "product: a member with no tier attached counts as not knowing the commit (R240L)"),
+    "lease_read_corrupt_ends_request": Plant((
+        ("proto_db/cluster/coordinator.py",
+         "                    remaining = [m for m in remaining if m not in heard]\n",
+         "                    remaining = []   # PLANT: a corrupt answer ends the round\n"),),
+        ("tests/unit/test_cluster_lease_read.py::test_a_peer_answering_corrupt_bytes_does_not_end_the_page_request",),
+        "is unavailable",
+        "product: a peer answering corrupt bytes ends the page request (R242L)"),
+    # LEASE-READ fix round 4 (rulings R243L-R245L).
+    "lease_read_closing_fetch_is_miss": Plant((
+        ("proto_db/cluster/coordinator.py",
+         "            unknown = tier is None or (data is None and self._tier is not tier)\n",
+         "            unknown = tier is None   # PLANT: a space closing while serving answers a miss\n"),),
+        ("tests/unit/test_cluster_lease_read.py::test_a_member_whose_space_closes_while_serving_a_fetch_cannot_tell",),
+        "members closing while serving made the read",
+        "product: a member whose space closes while it serves a fetch answers that it lacks the record (R243L)"),
+    "lease_read_closing_commit_info_is_miss": Plant((
+        ("proto_db/cluster/coordinator.py",
+         "                tier is None or persister is None or self._tier is not tier or self._persister is not persister)\n",
+         "                tier is None or persister is None)   # PLANT: a space closing while serving, a miss\n"),),
+        ("tests/unit/test_cluster_lease_read.py::test_a_commit_query_served_while_the_space_closes_counts_no_miss",),
+        "members closing while serving counted as misses",
+        "product: a member whose space closes while it serves a commit query counts as not knowing it (R243L)"),
+    "lease_read_attaching_commit_info_is_miss": Plant((
+        ("proto_db/cluster/coordinator.py",
+         "                tier is None or persister is None or self._tier is not tier or self._persister is not persister)\n",
+         "                tier is None or self._tier is not tier or self._persister is not persister)   # PLANT\n"),),
+        ("tests/unit/test_cluster_lease_read.py::test_a_commit_query_answered_while_attaching_counts_no_miss",),
+        "members answering while attaching counted as misses",
+        "product: a member still attaching counts as not knowing the commit (R244L)"),
+    "lease_read_stop_before_re_ask_raises": Plant((
+        ("proto_db/cluster/coordinator.py",
+         "                    if stopped:             # stopped before this ask: not heard, as below (R244L)\n"
+         "                        return None, False\n",
+         "                    if stopped:\n"
+         "                        raise   # PLANT: a stop before a re-ask is a validation error\n"),),
+        ("tests/unit/test_cluster_lease_read.py::test_a_node_stopping_before_a_re_ask_reports_the_record_unavailable",),
+        "a stop before the re-ask surfaced as",
+        "product: a node stopping before a re-ask raises ProtoValidationError (R244L)"),
+    "lease_read_re_ask_without_time": Plant((
+        ("proto_db/cluster/coordinator.py",
+         "                    if wait <= 0:\n"
+         "                        break               # no time left: nobody would wait for a re-ask (R244L)\n",
+         "                    wait = max(0.0, wait)   # PLANT: a re-ask with no time left is sent\n"),),
+        ("tests/unit/test_cluster_lease_read.py::test_a_re_ask_with_no_time_left_sends_nothing",),
+        "a re-ask with no time left was sent",
+        "product: a re-ask with no time left still sends page requests (R244L)"),
+    "lease_read_tier_corrupt_answer_definitive": Plant((
+        ("proto_db/storage/tiered.py",
+         "            logger.warning(\"A peer answered a corrupt record for %s: %s\", ptr, e)\n"
+         "            return None, False\n",
+         "            logger.warning(\"A peer answered a corrupt record for %s: %s\", ptr, e)\n"
+         "            return None, True   # PLANT: the tier counts a corrupt answer as definitive\n"),),
+        ("tests/unit/test_cluster_lease_read.py::test_a_plain_fetcher_answering_corrupt_bytes_is_not_a_definitive_miss",),
+        "a plain fetcher's corrupt answer made the read",
+        "product: the tier's own decode counts a corrupt peer answer as definitive (R245L)"),
     "shiplock": Plant((
         ("proto_db/storage/tiered.py", "            data = self._copy_prefix(segment, end)",
          "            with self._ship_lock:   # PLANT: the hole is filled under the ship lock\n"

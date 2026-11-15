@@ -346,7 +346,7 @@ def _steady_state(tmp_path, rounds: int, per_round: int) -> dict:
             {n: (lambda n=n: snapshot_of(tc.db(n), lambda tr: tr.get_root_object("n"))) for n in tc.ids}, tokens)
         assert set(res.values.values()) == {len(res.present)}, (res.values, len(res.present), outcomes)
         committer_calls = [op for name, op in calls if name.startswith("committer-")]
-        assert set(committer_calls) <= {"get"}, committer_calls[:5]       # reads only, never writes
+        assert set(committer_calls) <= {"get", "list"}, committer_calls[:5]   # reads only, never writes (R239L)
         for n in tc.ids:
             assert tc.storages[n].stats()["root_writes_in_critical"] == 0
         fetched = {k: sum(tc[n].stats()[k] - base_coord[n][k] for n in tc.ids)
