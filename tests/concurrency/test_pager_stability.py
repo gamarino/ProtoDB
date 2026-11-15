@@ -22,6 +22,9 @@ RUN_KW = dict(retries=500, backoff=(0.0005, 0.005))
 #: writers add makes each reader's next query longer, so on a slow runner unbounded writers grow
 #: the readers' work faster than the readers finish it.  A local run commits about 130 times.
 MAX_COMMITS = 1500
+#: Commits a pager reader waits for before each of its later snapshots: its last snapshot is taken
+#: after at least 3 * 8 = 24 commits, so the final ``> 20`` check holds on any scheduling.
+COMMITS_PER_READ = 8
 
 
 def _plain(value):
@@ -71,9 +74,17 @@ def test_pagers_and_cached_queries_stay_on_their_snapshot_under_writers():
                 errors.append(e)
                 return
 
+    def writers_reached(target):
+        """Wait until the writers committed ``target`` times (or the test is ending).  Each reader
+        iteration starts only after more commits, so readers overlap writers by construction and
+        not by how a runner schedules the threads (one CI run saw only 15 commits in all)."""
+        while commits[0] < target and not stop.is_set() and not errors:
+            time.sleep(0.001)
+
     def pager_reader(where, order, page_size):
         try:
-            for _ in range(4):
+            for k in range(4):
+                writers_reached(COMMITS_PER_READ * k)
                 if stop.is_set():                       # the test ended (timeout): stop early
                     return
                 with db.new_transaction() as tx:
