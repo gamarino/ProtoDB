@@ -55,6 +55,16 @@ The registry of an object (Task 8, ruling R201)
        ``ProtoUserError``;
     3. :func:`proto_db.registry.using` (tests), when the above give none.
 
+    An object of a transaction keeps that transaction's registry for life: after the
+    transaction ended (committed or aborted), after a later install of its database (also by
+    the same space) and after :meth:`ObjectSpace.reload_registry`, it still resolves with the
+    module list its transaction started on, also inside a newer block of the same database
+    (where a freshly loaded copy of the same record resolves with the newer list).  It is the
+    registry of the version the object was derived from, as running transactions keep the
+    registry they started with.  A commit's lock step (:meth:`Transaction._build_root`, run by
+    the committing thread, a group-commit leader or a cluster round leader) resolves with the
+    transaction being built as the reader.
+
     A source whose database lists no modules has no registry and passes to the next one.  The
     registry is looked up only when the linearization has a registry-name node: one computed
     without a registry shows whether it has any (its names), and one with none is the same

@@ -960,3 +960,189 @@ def test_a_commit_error_is_never_replaced_by_a_block_misuse(monkeypatch):
     assert resolution.current_reader() is inner and not other.is_active     # committed, then reported
     inner.__exit__(None, None, None)
     space.close()
+
+
+# -- fix round 3, I1: every root build resolves through the transaction being built ------------------
+
+def _two_spaces_records(**kw):
+    """A space where ``a`` lists reg8_base and ``b`` reg8_other, each with a root ``rec``."""
+    space = _space(**kw)
+    a, b = space.new_database("a"), space.new_database("b")
+    _install(a, "reg8_base")
+    _install(b, "reg8_other")
+    _put(a, rec=_thing)
+    _put(b, rec=_thing)
+    return space, a, b
+
+
+def _resolving_lock_step(monkeypatch, who, loaded, seen):
+    """Wrap ``Transaction._build_root`` so that, for transaction ``who()``, it resolves ``loaded()``
+    as an index extractor replayed by a merge does, recording the answer (or the error)."""
+    from proto_db import transactions
+    lock_step = transactions.Transaction._build_root
+
+    def resolving_build_root(self, current, stamp=None):
+        if self is who():
+            try:
+                seen.append((threading.current_thread().name, loaded().greet()))
+            except ProtoUserError as e:
+                seen.append((threading.current_thread().name, e))
+        return lock_step(self, current, stamp)
+
+    monkeypatch.setattr(transactions.Transaction, "_build_root", resolving_build_root)
+
+
+def test_database_run_scopes_its_lock_step(monkeypatch):
+    space, a, b = _two_spaces_records()
+    state, seen = {}, []
+    _resolving_lock_step(monkeypatch, lambda: state.get("tr"), lambda: state["rec"], seen)
+
+    def fn(tr):
+        state["tr"], state["rec"] = tr, tr.get_root_object("rec")
+        tr.set_root_object("w", 1)
+        return state["rec"].greet()
+
+    assert b.run(fn) == "other"
+    assert [answer for _, answer in seen] == ["other"]
+    space.close()
+
+
+def test_a_commit_inside_another_databases_block_builds_with_its_own(monkeypatch):
+    space, a, b = _two_spaces_records()
+    tb = b.new_transaction()
+    rec = tb.get_root_object("rec")
+    tb.set_root_object("w", 1)
+    seen = []
+    _resolving_lock_step(monkeypatch, lambda: tb, lambda: rec, seen)
+    with a.new_transaction():
+        tb.commit()
+    assert [answer for _, answer in seen] == ["other"]
+    space.close()
+
+
+def _group_round(monkeypatch, space, a, b):
+    """One group-commit round: a slow commit of ``a`` holds the root lock, then a commit of ``a``
+    from inside ``with ta:`` and ``tb.commit()`` queue; whichever leads builds ``tb``'s root."""
+    from proto_db import transactions
+    hold, held = threading.Event(), threading.Event()
+    tb = b.new_transaction()
+    rec = tb.get_root_object("rec")
+    tb.set_root_object("w", 1)
+    seen = []
+    lock_step = transactions.Transaction._build_root
+
+    def build_root(self, current, stamp=None):
+        if getattr(self, "_test_slow", False):
+            held.set()
+            hold.wait(5)
+        if self is tb:
+            try:
+                seen.append((threading.current_thread().name, rec.greet()))
+            except ProtoUserError as e:
+                seen.append((threading.current_thread().name, e))
+        return lock_step(self, current, stamp)
+
+    monkeypatch.setattr(transactions.Transaction, "_build_root", build_root)
+    slow = a.new_transaction()
+    slow.set_root_object("x", 1)
+    slow._test_slow = True
+    ta = a.new_transaction()
+    ta.set_root_object("y", 1)
+
+    def in_block():
+        with ta:
+            pass
+
+    threads = [threading.Thread(target=slow.commit, name="slow"),
+               threading.Thread(target=in_block, name="in-with-ta"),
+               threading.Thread(target=tb.commit, name="tb-own")]
+    threads[0].start()
+    held.wait(5)
+    threads[1].start()
+    threads[2].start()
+    import time
+    time.sleep(0.05)
+    hold.set()
+    for thread in threads:
+        thread.join(10)
+    monkeypatch.setattr(transactions.Transaction, "_build_root", lock_step)
+    return seen
+
+
+def test_a_group_commit_leader_builds_a_followers_root_with_the_followers_registry(monkeypatch):
+    space, a, b = _two_spaces_records()
+    seen = []
+    for _ in range(40):
+        seen += _group_round(monkeypatch, space, a, b)
+    assert seen and all(answer == "other" for _, answer in seen), seen
+    space.close()
+
+
+def test_a_cluster_round_builds_with_the_committing_transaction(monkeypatch):
+    from tests.support.cluster import Cluster
+    with Cluster(1, lease_duration=0.9, request_timeout=0.1, startup_grace=0.0, backoff=(0.001, 0.02)) as cl:
+        space, a, b = _two_spaces_records(coordinator=cl["n0"])
+        tb = b.new_transaction()
+        rec = tb.get_root_object("rec")
+        tb.set_root_object("w", 1)
+        seen = []
+        _resolving_lock_step(monkeypatch, lambda: tb, lambda: rec, seen)
+        with a.new_transaction():
+            tb.commit()
+        assert [answer for _, answer in seen] == ["other"]
+        space.close()
+
+
+# -- fix round 3, M1/M2: an exit without a block in this context ------------------------------------
+
+def _in_other_context(fn):
+    import contextvars
+    return contextvars.Context().run(fn)
+
+
+def test_a_transaction_exit_without_its_block_raises_unless_an_exception_propagates(caplog):
+    space = _space()
+    db = space.new_database("db")
+    tr = db.new_transaction()
+    tr.set_root_object("x", 1)
+    with pytest.raises(ProtoUserError, match="no reader block"):
+        _in_other_context(lambda: tr.__exit__(None, None, None))
+    assert not tr.is_active                             # committed first, then the misuse raised
+    other = db.new_transaction()
+    body = ValueError("body")
+    assert _in_other_context(lambda: other.__exit__(ValueError, body, None)) is False
+    assert not other.is_active                          # aborted; the body's exception propagates
+    assert "no reader block" in caplog.text
+    space.close()
+
+
+def test_a_snapshot_exit_without_its_block_never_replaces_the_body_exception(caplog):
+    space = _space()
+    db = space.new_database("db")
+    snapshot = db.snapshot_at(db.history()[0])
+    with pytest.raises(ProtoUserError, match="no reader block"):
+        _in_other_context(lambda: snapshot.__exit__(None, None, None))
+    assert _in_other_context(lambda: snapshot.__exit__(ValueError, ValueError("body"), None)) is False
+    assert "no reader block" in caplog.text
+    space.close()
+
+
+# -- fix round 3, M3: the remembered failure says so ------------------------------------------------
+
+def test_a_remembered_failure_says_how_to_retry(monkeypatch):
+    from proto_db import registry as registry_module
+    monkeypatch.setattr(registry_module, "_FAILED", {})
+    storage = MemoryStorage()
+    good = _space(storage)
+    _install(good.new_database("db"), "reg8_base")
+    broken = _space(storage, mapping=BROKEN)
+    db = broken.open_database("db")
+    with pytest.raises(ProtoNotSupportedError, match="cannot be imported") as first:
+        db.new_transaction().registry
+    assert "remembered" not in str(first.value)
+    with pytest.raises(ProtoNotSupportedError,
+                       match=r"remembered for this module list in this process.*"
+                             r"ObjectSpace\.reload_registry\('db'\) retries"):
+        db.new_transaction().registry
+    good.close()
+    broken.close()

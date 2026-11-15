@@ -694,7 +694,9 @@ def registry_for(module_names: tuple, *, mapping: Mapping | None = None,
                 raise ProtoValidationError(f"Module {name!r} is not allowed by this runtime's configuration")
         return found
     if failed is not None:
-        raise ProtoNotSupportedError(failed)
+        error = ProtoNotSupportedError(f"{failed} (this failure is remembered for this module list in this process)")
+        error.remembered = True
+        raise error
     if getattr(_NO_BUILDS, "depth", 0):
         raise ProtoUserError(
             f"The registry of the modules {list(module_names)} is not built, and a commit's lock step never "

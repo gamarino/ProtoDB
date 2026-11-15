@@ -453,7 +453,15 @@ class Snapshot:
         return self
 
     def __exit__(self, exc_type, exc, tb):
-        if not exit_reader(self) and exc_type is None:
+        # A block misuse never replaces the body's exception (review M2): raised only when none is.
+        try:
+            nested = exit_reader(self)
+        except ProtoUserError as e:
+            if exc_type is None:
+                raise
+            logger.warning("Ending the reader block of %r: %s", self, e)
+            return False
+        if not nested and exc_type is None:
             raise _not_nested(self)
         return False
 
@@ -820,7 +828,10 @@ class _SpaceRegistries:
         try:
             return _registry.registry_for(names, mapping=self._mapping, allowed=self._allowed)
         except ProtoNotSupportedError as e:
-            raise ProtoNotSupportedError(f"Database {database!r} lists modules this process cannot load: {e}") from e
+            retry = (f"; ObjectSpace.reload_registry({database!r}) retries it"
+                     if getattr(e, "remembered", False) else "")
+            raise ProtoNotSupportedError(
+                f"Database {database!r} lists modules this process cannot load: {e}{retry}") from e
 
     def build_fresh(self, database: str, names: tuple):
         """A new registry of ``names`` for ``database`` only (``reload_registry``): never published
@@ -2999,7 +3010,8 @@ class Transaction:
         for _ in range(_IMPORT_ROUNDS):
             self._import_needed = None
             with _registry.no_builds():
-                published = _commit_root(self.storage, space.lock_timeout, self._build_root, space.coordinator)
+                published = _commit_root(self.storage, space.lock_timeout, self._scoped_build_root,
+                                         space.coordinator)
             if self._import_needed is None:
                 break
             # The build published nothing: it needs modules this process has not fully imported,
@@ -3022,6 +3034,17 @@ class Transaction:
                 # This space installed: it binds the database to the list it committed (the
                 # merged one), built on need, so it never mismatches itself (spec 14 item 4).
                 space._registries.rebind(self._database.name, self._committed_modules)
+
+    def _scoped_build_root(self, current, stamp: Optional[_ClusterStamp] = None) -> AtomPointer:
+        """:meth:`_build_root` with this transaction as the reader (review I1, ruling R201): what
+        the build resolves (an index extractor replayed by a merge or a D33 rebase) is decided by
+        the transaction being built, whichever thread builds it (its own, a group-commit leader
+        or a cluster round leader) and whatever reader that thread has."""
+        token = set_reader(self)
+        try:
+            return self._build_root(current, stamp)
+        finally:
+            reset_reader(token)
 
     def _build_root(self, current, stamp: Optional[_ClusterStamp] = None) -> AtomPointer:
         """Under the root lock (or the cluster lease): check the read set, merge, save and return
@@ -3114,19 +3137,23 @@ class Transaction:
     def __exit__(self, exc_type, exc, tb):
         # The reader is always cleared (finally), and a block-nesting misuse never replaces the
         # exception of the body or of the commit (review N6): it is raised only when none is.
-        nested = True
+        nested, failed = True, False
         try:
-            if exc_type is None:
-                if self.is_active:
-                    self.commit()
-            elif self.is_active:
-                self.abort()
+            try:
+                if exc_type is None:
+                    if self.is_active:
+                        self.commit()
+                elif self.is_active:
+                    self.abort()
+            except BaseException:
+                failed = True
+                raise
         finally:
             try:
                 nested = exit_reader(self)
             except ProtoUserError as e:
-                if exc_type is None and sys.exc_info()[1] is None:
-                    raise               # nothing else is propagating: the misuse is the error
+                if exc_type is None and not failed:
+                    raise               # nothing else is propagating: the misuse is the error (M1)
                 logger.warning("Ending the reader block of %r: %s", self, e)
         if not nested and exc_type is None:
             raise _not_nested(self)
