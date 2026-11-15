@@ -47,11 +47,28 @@ it.
 2. Parents between objects
 --------------------------
 
-The obvious way to share data between records is to copy it. A record that holds a default for many others
-(a company's address, a price list's currency) is then copied into each of them, and a correction of the
-default reaches none of the copies. The alternative is to *refer* to the shared record and to look a missing
-attribute up there. A ``DBObject`` may list other objects as its parents; an attribute it does not hold
-itself is looked up along them.
+The obvious way to share data between records is to copy it: the fields of a shared record (a company's name
+and city) are copied into each record that needs them, and the record then sets the ones it overrides. It
+works until the shared record is corrected. The copy cannot tell which of its fields were copied and which
+were its own, so refreshing it overwrites its own choices:
+
+.. code-block:: python
+
+   with db.new_transaction() as tr:
+       company = tr.new_object(company="ACME", city="Rosario")
+       carl = tr.new_object(name="carl", company=company.company, city=company.city).with_(city="Funes")
+       corrected = company.with_(company="ACME Ltd")
+       refreshed = carl.with_(company=corrected.company, city=corrected.city)   # re-copy the shared fields
+       print(refreshed.company, refreshed.city)
+
+.. code-block:: text
+   :caption: Output
+
+   ACME Ltd Rosario
+
+``carl`` lived in Funes, and the refresh moved him back to Rosario. The alternative is to *refer* to the
+shared record and to look a missing attribute up there. A ``DBObject`` may list other objects as its
+parents; an attribute it does not hold itself is looked up along them, and what it holds itself is its own.
 
 .. code-block:: python
 
@@ -74,6 +91,25 @@ itself is looked up along them.
 ``bob.x`` and ``bob["x"]`` run the same lookup. The item form exists for names computed at run time (a form
 field, a report column, a name read from a configuration).
 
+A parent is a reference to one *version* of a record, like any reference between immutable records: a
+corrected company is a new version, and ``bob`` keeps reading the version he lists until he is pointed at
+the new one. Pointing him there is safe, because his own attributes are kept apart from what he inherits:
+
+.. code-block:: python
+
+   with db.new_transaction() as tr:
+       bob = tr.get_root_object("bob")
+       corrected = bob.parents[0].with_(company="ACME Ltd")
+       print(bob.company, "->", bob.with_parents(corrected).company, bob.with_parents(corrected).city)
+
+.. code-block:: text
+   :caption: Output
+
+   ACME -> ACME Ltd Funes
+
+A value that every record must see the moment it changes belongs in a ``MutableObject``, a cell whose value
+changes by commit (section 10 and :doc:`modelling-data`).
+
 A miss returns ``None``, in both forms, with or without parents. That is a deliberate choice for models that
 grow over time: an object written before a module added a field is read by the module's code without an
 error, and the code decides what an absent field means. The price is that ``None`` does not tell an absent
@@ -86,7 +122,7 @@ attribute from one explicitly set to ``None``. Two tests do:
        print(bob.fax, bob.pager)                       # both None: one inherited, one absent
        print("fax" in bob, "pager" in bob)             # `in` searches the whole linearization
        print(bob.has_defined_attr("fax"), bob.has_defined_attr("name"))   # own attributes only
-       print(sorted(bob._own))                         # the own attributes, never inherited ones
+       print([n for n in ("name", "city", "company", "fax") if bob.has_defined_attr(n)])   # own ones
 
 .. code-block:: text
    :caption: Output
@@ -94,10 +130,11 @@ attribute from one explicitly set to ``None``. Two tests do:
    None None
    True False
    False True
-   ['city', 'name']
+   ['name', 'city']
 
 ``"fax" in bob`` is true because a parent defines ``fax`` (as ``None``); ``"pager" in bob`` is false because
-nothing does. ``has_defined_attr`` keeps its earlier meaning, the object's *own* attributes, which is what
+nothing does. The obvious alternative, raising on a miss as Python's attribute access does, would make every
+object written before a field existed an error for the code that reads the field. ``has_defined_attr`` keeps its earlier meaning, the object's *own* attributes, which is what
 index keys and query paths read too: an index never sees an inherited value.
 
 Writes never climb the parents. ``with_`` sets an attribute on the new version of the object itself, and the
@@ -127,7 +164,7 @@ is refused rather than answered with something that is not an attribute:
 
    with db.new_transaction() as tr:
        bob = tr.get_root_object("bob")
-       for name in ("oid", "with_", "_own"):
+       for name in ("oid", "with_", "_private"):
            try:
                bob[name]
            except Exception as error:
@@ -139,7 +176,7 @@ is refused rather than answered with something that is not an attribute:
 
    ProtoValidationError 'oid' is part of the DBObject API, not an attribute name: read it as o.oid
    ProtoValidationError 'with_' is part of the DBObject API, not an attribute name: read it as o.with_
-   ProtoValidationError '_own' is not an attribute name
+   ProtoValidationError '_private' is not an attribute name
    None 1
 
 ``bob["parents"]`` is ``None``, not the parents: ``parents`` and ``with_parents`` were ordinary field names
@@ -284,12 +321,14 @@ object's data, and from there into the registry chain of the name, which is sear
 
 .. code-block:: python
 
+   from proto_db.resolution import linearize
+
    with db.new_transaction() as tr:
        partner_class = tr.catalog_object("tutorial.Partner")
        dora = tr.new_object(parents=(partner_class,), name="dora perez", company="Globex")
        tr.set_root_object("dora", dora)
        print(dora.display_name(), "|", dora.greeting(), "|", dora.currency)
-       print([type(node).__name__ if not isinstance(node, str) else node for node in dora._linearization()])
+       print([type(node).__name__ if not isinstance(node, str) else node for node in linearize(dora)])
 
 .. code-block:: text
    :caption: Output
@@ -503,10 +542,27 @@ changes the currency default of every partner; one partner sets its own:
    FrozenList ['retail']
    ProtoValidationError
 
-The instance's own ``currency`` comes first, then the newest module's default. A mutable default is a trap in
-Python classes, where every instance shares the one list; here a default passes through the value model when
-the module is loaded, so it is an immutable value and nothing can change it behind the objects that inherit
-it.
+The instance's own ``currency`` comes first, then the newest module's default. The obvious way to write a
+shared default in Python, a class attribute, is a trap when the default is mutable: every instance shares the
+one list, so a change made through one instance reaches all of them.
+
+.. code-block:: python
+
+   class PythonPartner:
+       price_lists = ["retail"]
+
+   first, second = PythonPartner(), PythonPartner()
+   first.price_lists.append("wholesale")               # meant for `first` only
+   print(second.price_lists)
+
+.. code-block:: text
+   :caption: Output
+
+   ['retail', 'wholesale']
+
+A registry default passes through the value model when the module is loaded, so it is an immutable value
+(``FrozenList`` above), and nothing can change it behind the objects that inherit it: an object that needs
+another list sets its own with ``with_``.
 
 Between the instance and the registry sits the catalog object. Its data is ordinary application data: a
 transaction replaces it with ``set_catalog_object``, and the new version is found before the registry's
@@ -611,7 +667,7 @@ Each ``trail`` method appends its own name and passes on to the next definition,
    with db.new_transaction() as tr:
        eva = tr.get_root_object("eva")
        print(eva.trail())
-       print([node for node in eva._linearization() if isinstance(node, str)])
+       print([node for node in linearize(eva) if isinstance(node, str)])
 
 .. code-block:: text
    :caption: Output
@@ -686,16 +742,21 @@ position, so it is refused, never resolved from the start:
        try:
            eva._super()
        except Exception as error:
-           print(type(error).__name__, error)
+           # The message goes on to name the calling code and its file and line; only its start is printed.
+           print(type(error).__name__, str(error).split(";")[0])
 
 .. code-block:: text
    :caption: Output
 
-   ProtoUserError _super() must be called directly in the body of a registry method; it was called from <module> (extensible-models.rst:682:1), which is not one (a closure, a helper or a generator expression is not)
+   ProtoUserError _super() must be called directly in the body of a registry method
 
-The same refusal covers a closure or a helper function defined inside a method, a generator expression, and a
-generator method: each of these may run after the method returned, or from another place, so their position
-would be a guess. A coroutine method (``async def``) is a method, and ``_super()`` works in it.
+The same refusal covers a closure or a helper function defined inside a method: its code is not a registry
+method's, so it has no position. Generators are a separate case. A generator method's code *is* indexed to its
+extension, so its position could be found exactly as in any method; ``_super()`` is nevertheless refused in
+generator functions, async generators and generator expressions, **by design**, and allowed in coroutine
+methods (``async def``). In both cases the position comes from the running code, not from when it runs (a
+coroutine's body also runs after the call returned). The refusal of generators is a choice that may be
+relaxed later; until then, call ``_super()`` in the method and pass the result to the generator.
 
 A refused definition
 ~~~~~~~~~~~~~~~~~~~~
@@ -826,7 +887,8 @@ that forgot the module would:
 
 The failure is remembered for that module list until ``reload_registry``, which tries the import again:
 Python does not cache a failed import, and every commit would otherwise retry it; retrying only on request is
-the same rule as for a mismatch.
+the same rule as for a mismatch. A failed reload is not remembered itself: after it, the next lookup tries the
+import once more, and remembers that failure.
 
 And one thing that is not an error
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -851,13 +913,28 @@ means a misspelt name is silent. ``Registry.unknown_names`` finds such names, fo
 9. As-of reads use the modules of their time
 --------------------------------------------
 
-Every committed version of a database stays readable. The module list is part of each version, so an as-of
-read resolves with the modules that were installed then. Section 5 remembered the version just before
-``tut_crm`` was installed:
+Every committed version of a database stays readable. Section 5 remembered the version just before
+``tut_crm`` was installed. The obvious way to rebuild a report of that time is to read the old version's
+data and run it through the code the process has now:
 
 .. code-block:: python
 
    old = db.snapshot_at(before_crm)
+   print(old.get_root_object("dora").display_name())   # old data, today's modules
+
+.. code-block:: text
+   :caption: Output
+
+   Dora Perez (Globex)
+
+The data is the old version's, but the behaviour is today's: the display name shows the company, and showing
+it is what ``tut_crm`` added, after that version. A report of last quarter would mix last quarter's records with this
+quarter's rules. The module list is part of each version, so an as-of read can resolve with the modules that
+were installed then. Inside ``with old:`` the snapshot is the reader of the block, and the objects read from
+it resolve with its registry:
+
+.. code-block:: python
+
    print(old.registry.key)
    with old:
        print(old.get_root_object("dora").display_name())
@@ -871,19 +948,9 @@ read resolves with the modules that were installed then. Section 5 remembered th
    Dora Perez
    Dora Perez (Globex)
 
-Inside ``with old:`` the snapshot is the reader of the block, so the objects read from it resolve with its
-registry: the display name has no company, because ``tut_crm`` did not exist yet. An as-of read never changes
-how other code resolves. Outside the block, an object resolves with the database's current binding, the
-snapshot's objects included:
-
-.. code-block:: python
-
-   print(old.get_root_object("dora").display_name())
-
-.. code-block:: text
-   :caption: Output
-
-   Dora Perez (Globex)
+Outside the block, as in the first attempt, an object resolves with the database's current binding, the
+snapshot's objects included. The block is explicit on purpose: an as-of read never changes how other code
+resolves, so reading an old version for one report cannot switch the rest of the process to old behaviour.
 
 Which registry an object uses is decided by the code doing the resolving, never by the order in which records
 were loaded:
@@ -988,9 +1055,37 @@ attribute that is queried or indexed on the object itself.
 11. What is never persisted, and the multi-language rule
 --------------------------------------------------------
 
-The database stores data and the names of the installed modules, nothing language-specific: no Python code,
-no Python class of a module or an extension, no import path. A record lists its parents as other records and
-registry names; the module list holds module names and the dependencies each declared when it was installed.
+The obvious way to make a stored object come back with its behaviour is to store, with the data, where its
+code lives: Python's ``pickle`` does exactly that.
+
+.. code-block:: python
+
+   import pickle
+
+   write_module("tut_invoice", '''
+       class Invoice:
+           def __init__(self, number):
+               self.number = number
+
+           def label(self):
+               return f"INV-{self.number}"
+   ''')
+   import tut_invoice
+
+   data = pickle.dumps(tut_invoice.Invoice(7))
+   print([name for name in (b"tut_invoice", b"Invoice", b"number") if name in data])
+
+.. code-block:: text
+   :caption: Output
+
+   [b'tut_invoice', b'Invoice', b'number']
+
+The bytes name the Python module and the class. Only a Python process that can import ``tut_invoice`` can
+read them back; a Smalltalk process cannot, and renaming or moving the module makes the stored data
+unreadable. The data would be tied to one language and to one layout of its code. ``proto_db`` stores data
+and the names of the installed modules, nothing language-specific: no Python code, no Python class of a
+module or an extension, no import path. A record lists its parents as other records and registry names; the
+module list holds module names and the dependencies each declared when it was installed.
 
 .. code-block:: python
 
@@ -1029,7 +1124,8 @@ The methods exist only in the processes that imported the modules. That has two 
 * **Every language has its own version of each module.** One module is not written in several languages, and
   code of one language is not run from another. A database used from Python and from Smalltalk lists module
   names; each runtime maps a name to its own code (in Python, ``modules_mapping`` maps a name to an import
-  path, and by default the name is the import path), and resolves by its own rules over the same parents. A
+  path, and by default the name is the import path, except ``base``, which maps to ``proto_db.modules.base``),
+  and resolves by its own rules over the same parents. A
   process that cannot load a listed module raises, as section 8 showed: it never runs with part of the model
   missing.
 * **Methods are never stale and never travel.** Changing a method is deploying new code and calling

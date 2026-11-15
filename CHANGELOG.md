@@ -37,10 +37,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     permanent. The module `base` (`proto_db.modules.base`, with `read_data_file`) is installed first,
     implicitly, and is the last parent of every registry name. Catalog updates follow normal conflict rules
     (the first updater wins) and reach only objects created after them.
-  - `ObjectSpace(modules_mapping=..., modules_allowed=...)` and `ObjectSpace.reload_registry(database_name)`. A
-    database whose module list changed under a running space raises `ProtoValidationError` at its next
-    registry lookup (no automatic rebuild); a listed module that cannot be imported raises
-    `ProtoNotSupportedError` at the first lookup that needs it, and is remembered until `reload_registry`. As-of
+  - `ObjectSpace(modules_mapping=..., modules_allowed=...)` and `ObjectSpace.reload_registry(database_name)`. When
+    another process installs a module, a space bound to the older list raises `ProtoValidationError` at the
+    next registry lookup inside one of its transactions on the new list (no automatic rebuild; a snapshot
+    resolves with its own version's list and never mismatches).
+    A loaded object resolved outside any block keeps using the space's bound list until a transaction of the
+    space has seen the new list, and then raises the same mismatch. A listed module that cannot be imported
+    raises `ProtoNotSupportedError` at the first lookup that needs it, and is remembered until
+    `reload_registry`; a failed reload is not remembered, so the next lookup tries the import once more. As-of
     reads (`with snapshot:`) resolve with the modules of their version.
   - Format: `FORMAT_VERSION` 5 (`FEATURE_VERSIONS`: `parents`, `registry`); a space that uses neither keeps
     writing version 4, and a reader of format 4 refuses version-5 segments and roots with

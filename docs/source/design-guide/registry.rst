@@ -108,9 +108,11 @@ The base module (R204-R209)
     caller's code object, finds that extension's position in ``self``'s linearization, and resolves from the
     next position, binding to the same ``self``. A miss is ``None`` (R170), so the end of a chain is tested
     with ``if self._super().f:``. Code that is not a registry method is refused with ``ProtoUserError``: code
-    at module level, a closure or helper, a generator expression, a generator method (its frame may run after
-    the call returned, R172). A coroutine method is a method and may use it (R176). Positions are compared for
-    equality only; they are not ordered values (R175).
+    at module level, a closure or helper. Generator functions, async generators and generator expressions are
+    refused by design (R172, R229), and coroutine methods are allowed (R176). The position would be found from
+    the running code object in both cases, so the refusal of generators is a choice, not a necessity; whether
+    to allow them too is an open question for the maintainer. Positions are compared for equality only; they
+    are not ordered values (R175).
 
 Installs merge add-if-absent
     At commit the two registry roots are merged against the root current at that moment, never through the
@@ -131,12 +133,16 @@ Which registry resolves an object (R201)
 
 A mismatch is an error (Q2)
     A space binds each database to the module list it first sees. When another process installs a module,
-    the next lookup through the registry raises ``ProtoValidationError`` naming both lists. There is no
+    the next lookup through the registry in a transaction on the new list raises
+    ``ProtoValidationError`` naming both lists. A loaded object resolved outside any block keeps the bound
+    list until a transaction of the space has seen the new one, and then raises the same error. A snapshot
+    resolves with its own version's list and never mismatches. There is no
     automatic rebuild: rebuilding between two lines of a running program would interleave transactions on two
     behaviours. ``ObjectSpace.reload_registry(database_name)`` is the explicit rebuild. A module that cannot be
     imported raises ``ProtoNotSupportedError`` at the first lookup that needs the registry (opening the
     database and reading data never do), and the failure is remembered for that list until
-    ``reload_registry`` (R202): Python does not cache a failed import, and every commit would retry it.
+    ``reload_registry`` (R202): Python does not cache a failed import, and every commit would retry it. A
+    failed reload is not itself remembered: the next lookup tries the import once more.
 
 **The invariant behind the caches: what a cache entry is keyed by never changes.** The linearization of a
 tuple of saved parents is cached by the parents' pointers and the registry. A record at a pointer never

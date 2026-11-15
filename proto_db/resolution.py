@@ -95,10 +95,11 @@ Positions
     calling ``None`` does).  ``ProtoUserError`` (naming the caller) when the object has no
     registry (see above), when the code is not a registry method's (outside a method, a closure, a helper, a generator
     expression), when it is a method of a module the current registry does not contain (a method
-    bound under another registry), when it is a generator's or an async generator's (ruling
-    R172: such a frame may run after the call returned), and when ``o``'s linearization does not
-    contain ``E``'s registry name.  A coroutine method (``async def``) is a method: its frame's
-    code is the function's, and ``_super()`` works in it (ruling R176).
+    bound under another registry), when it is a generator's or an async generator's (refused by
+    design, rulings R172 and R229), and when ``o``'s linearization does not
+    contain ``E``'s registry name.  A coroutine method (``async def``) is allowed (ruling R176).  In
+    both cases the position is found from the running code object; refusing generators is a
+    choice, not a necessity.
 
 Errors
     An inconsistent hierarchy (no C3 order exists) raises ``ProtoValidationError`` naming the
@@ -180,8 +181,10 @@ _CURRENT_REGISTRY: contextvars.ContextVar = contextvars.ContextVar("proto_db_reg
 #: ``_reader_names()`` (:func:`registry_of`).
 _READER: contextvars.ContextVar = contextvars.ContextVar("proto_db_reader", default=None)
 
-#: The code flags of a frame that may run after its call returned (R172): a generator (also set
-#: on a generator-based coroutine) or an async generator.  A coroutine method is allowed (R176).
+#: The code flags of a generator function (also set on a generator-based coroutine) or an async
+#: generator: ``_super()`` is refused in them by design (R172, R229).  The position would be found
+#: from the running code there as in any method; the refusal is a choice, kept for now.  A
+#: coroutine method (``async def``) is allowed (R176).
 _SUSPENDABLE = inspect.CO_GENERATOR | inspect.CO_ASYNC_GENERATOR
 
 
@@ -457,8 +460,8 @@ def super_proxy(obj, code, registry=None) -> "SuperProxy":
         raise ProtoUserError(f"_super() called from {where} with no registry current")
     if code.co_flags & _SUSPENDABLE:
         raise ProtoUserError(
-            f"_super() called from {where}, a generator or coroutine: its frame may run after the "
-            f"method returned; call _super() in the method and pass the result to the generator")
+            f"_super() called from {where}, a generator: _super() is not available in generator "
+            f"methods; call it in the method and pass the result in")
     extension = registry.extension_of_code(code)
     if extension is None:
         from .registry import _declared_method_of_code

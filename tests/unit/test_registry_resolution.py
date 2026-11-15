@@ -164,9 +164,9 @@ def test_super_from_generator_raises(active):
     o = DBObject(parents=("reg6.Opp",))
     with pytest.raises(ProtoUserError, match=r"genexpr"):
         o.from_genexpr()
-    # A generator method is a registry method, but its frame may run after the call returned (on
-    # another thread, or after the registry changed): refused too (R172; coroutines are allowed, R176).
-    with pytest.raises(ProtoUserError, match=r"generator"):
+    # A generator method is a registry method, and _super() is refused in it by design (R172, R229);
+    # coroutine methods are allowed (R176).
+    with pytest.raises(ProtoUserError, match=r"a generator: _super\(\) is not available in generator methods"):
         next(o.generator_method())
 
 
