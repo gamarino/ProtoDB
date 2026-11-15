@@ -371,7 +371,7 @@ def test_run_scopes_its_transaction():
 
 # -- several databases in one space -----------------------------------------------------------------
 
-def test_two_databases_with_different_lists_resolve_by_their_database():
+def test_two_databases_with_different_lists_need_a_block():
     space = _space()
     a, b = space.new_database("a"), space.new_database("b")
     _install(a, "reg8_base")
@@ -379,17 +379,16 @@ def test_two_databases_with_different_lists_resolve_by_their_database():
     _put(a, thing=_thing)
     _put(b, thing=_thing)
     ta, tb = a.new_transaction(), b.new_transaction()
-    assert ta.new_object(parents=("reg8.Thing",)).greet() == "base"
+    assert ta.new_object(parents=("reg8.Thing",)).greet() == "base"     # an object of a transaction
     assert tb.new_object(parents=("reg8.Thing",)).greet() == "other"
     with ta:
         assert ta.get_root_object("thing").greet() == "base"
     with tb:
         assert tb.get_root_object("thing").greet() == "other"
-    loose_a, loose_b = a.new_transaction(), b.new_transaction()
-    assert loose_a.get_root_object("thing").greet() == "base"       # its database's binding
-    assert loose_b.get_root_object("thing").greet() == "other"
-    loose_a.abort()
-    loose_b.abort()
+    loose = a.new_transaction()
+    with pytest.raises(ProtoUserError, match="inside a transaction or a block"):
+        loose.get_root_object("thing").greet()          # loaded, outside a block, two lists (R201)
+    loose.abort()
     space.close()
 
 
@@ -436,11 +435,14 @@ def _two_databases(other_module):
 def test_an_object_of_another_database_inside_a_block_raises_when_lists_differ():
     space, a, b = _two_databases("reg8_other")
     ta = a.new_transaction()
-    obj = ta.get_root_object("thing")
-    tb = b.new_transaction()
-    with pytest.raises(ProtoUserError, match="database 'a' resolved inside a block of database 'b'"), tb:
-        obj.greet()
-    assert obj.greet() == "base"                        # outside the block: its own database
+    mine = ta.new_object(parents=("reg8.Thing",))        # an object of a's transaction
+    loaded = ta.get_root_object("thing")                # a loaded object: no database of its own
+    with pytest.raises(ProtoUserError, match="database 'a' resolved inside a block of database 'b'"):
+        with b.new_transaction():
+            mine.greet()
+    with b.new_transaction():
+        assert loaded.greet() == "other"                # the reader decides (R201)
+    assert mine.greet() == "base"                       # outside the block: its transaction
     ta.abort()
     space.close()
 
@@ -483,7 +485,7 @@ def _pointer(db, name):
 
 def _undetermined(space, ptr):
     """The DBObject at ``ptr`` loaded through ``space``'s own shared atom cache, not below a
-    database's tables: what a query result loaded by pointer is (ruling R199).  ``ptr`` must not
+    database's tables: what a query result loaded by pointer is: it records no database (ruling R201).  ``ptr`` must not
     have been read through ``space`` before."""
     obj = space._space_load(ptr, DBObject.__type_name__)
     assert obj.context is space._atoms
@@ -515,11 +517,14 @@ def test_an_undetermined_database_in_a_space_of_several_lists_raises():
     ra.new_transaction().abort()
     rb.new_transaction().abort()
     obj = _undetermined(reader, _pointer(a, "thing"))
-    with pytest.raises(ProtoUserError, match="undetermined.*list different modules"):
+    with pytest.raises(ProtoUserError, match="records no database.*list different modules"):
         obj.greet()
     tb = rb.new_transaction()
-    with pytest.raises(ProtoUserError, match="undetermined.*inside a block of database 'b'"), tb:
-        obj.greet()
+    with tb:
+        assert obj.greet() == "other"                   # the reader decides (R201)
+    ta = ra.new_transaction()
+    with ta:
+        assert obj.greet() == "base"
     writer.close()
     reader.close()
 
@@ -598,11 +603,12 @@ def test_one_snapshot_entered_by_two_asyncio_tasks():
         order.append((name, "out", resolution.current_reader()))
 
     async def main():
-        await asyncio.gather(task("a", 0.01, 0.03), task("b", 0.02, 0.0))
+        await asyncio.gather(task("a", 0.01, 0.0), task("b", 0.02, 0.02))
 
     asyncio.run(main())
     assert ("a", "out", None) in order and ("b", "out", None) in order
-    assert order.index(("b", "out", None)) < order.index(("a", "out", None))   # they interleaved
+    # Not LIFO: a entered first and also left first (review N5; a shared token list fails here).
+    assert order.index(("a", "out", None)) < order.index(("b", "out", None))
     assert all(item[2] is True for item in order if item[1] == "in")
     space.close()
 
@@ -615,9 +621,11 @@ def test_reader_blocks_must_nest():
     two.__enter__()
     with pytest.raises(ProtoUserError, match="innermost"):
         one.__exit__(None, None, None)
+    assert resolution.current_reader() is two           # one's block was removed, two's kept (N6)
     two.__exit__(None, None, None)
-    one.__exit__(None, None, None)
     assert resolution.current_reader() is None
+    with pytest.raises(ProtoUserError, match="no reader block"):
+        one.__exit__(None, None, None)
     space.close()
 
 
@@ -710,3 +718,245 @@ def test_a_commit_that_needs_no_registry_ignores_an_unimportable_module():
     check.abort()
     good.close()
     broken.close()
+
+
+# -- fix round 2: the resolving code decides (ruling R201) ---------------------------------------------
+
+def _shared_record():
+    """One storage; database ``a`` lists reg8_base, ``b`` reg8_other; one record created in ``a``
+    and also stored as a root of ``b`` (the same pointer: P2, an object may be stored by a later
+    transaction of another database)."""
+    storage = MemoryStorage()
+    writer = _space(storage)
+    a, b = writer.new_database("a"), writer.new_database("b")
+    _install(a, "reg8_base")
+    _install(b, "reg8_other")
+    _put(a, rec=_thing)
+    ta = a.new_transaction()
+    rec = ta.get_root_object("rec")
+    ta.abort()
+    tb = b.new_transaction()
+    tb.set_root_object("rec", rec)
+    tb.commit()
+    return storage, writer
+
+
+@pytest.mark.parametrize("order", ["a-first", "b-first", "a-first-evicted"])
+def test_a_shared_record_resolves_by_the_reader_whatever_the_load_order(order):
+    import gc
+    storage, writer = _shared_record()
+    space = _space(storage)
+    a, b = space.open_database("a"), space.open_database("b")
+    first, second = (a, b) if order.startswith("a") else (b, a)
+    t1 = first.new_transaction()
+    t1.get_root_object("rec")
+    t1.abort()
+    del t1
+    if order.endswith("evicted"):
+        space._atoms._unload_all()
+        gc.collect()
+    ta, tb = a.new_transaction(), b.new_transaction()
+    rec_a, rec_b = ta.get_root_object("rec"), tb.get_root_object("rec")
+    with ta:
+        assert rec_a.greet() == "base" and rec_b.greet() == "base"
+    with tb:
+        assert rec_a.greet() == "other" and rec_b.greet() == "other"
+    for rec in (rec_a, rec_b):
+        with pytest.raises(ProtoUserError, match="inside a transaction or a block"):
+            rec.greet()
+    space.close()
+    writer.close()
+
+
+def test_query_rows_reloaded_after_eviction_resolve_through_the_block():
+    import gc
+    from proto_db.query.linq import F, from_collection
+    space = _space()
+    a, b = space.new_database("a"), space.new_database("b")
+    _install(a, "reg8_base")
+    _install(b, "reg8_other")
+    tr = a.new_transaction()
+    d = tr.new_dictionary()
+    for i in range(5):
+        d = d.set_at(i, tr.new_object(g=i % 2, parents=("reg8.Thing",)))
+    tr.set_root_object("objs", d)
+    tr.commit()
+    b.new_transaction().abort()
+    ta = a.new_transaction()
+    result = space.query_cache.result(from_collection(ta.get_root_object("objs")).where(F.g == 1))
+    ta.abort()
+    del ta
+    with a.new_transaction() as ta:
+        assert result[0].greet() == "base"
+    space._atoms._unload_all()
+    gc.collect()
+    with a.new_transaction() as ta:
+        assert result[0].greet() == "base"              # reloaded by pointer: the block decides
+    space.close()
+
+
+def test_a_plain_database_changes_nothing():
+    space = _space()
+    a = space.new_database("a")
+    _install(a, "reg8_base")
+    _put(a, thing=_thing)
+    def check():
+        ta = a.new_transaction()
+        loaded = ta.get_root_object("thing")
+        mine = ta.new_object(parents=("reg8.Thing",))
+        assert loaded.greet() == "base" and mine.greet() == "base"
+        with a.new_transaction():
+            assert loaded.greet() == "base"
+        return ta, mine, loaded
+    check()[0].abort()
+    c = space.new_database("c")                          # lists no modules
+    c.new_transaction().abort()                          # bound to the empty list
+    ta, mine, loaded = check()
+    tc = c.new_transaction()
+    with tc:
+        assert mine.greet() == "base" and loaded.greet() == "base"
+    ta.abort()
+    space.close()
+
+
+# -- fix round 2, N4: the real error, remembered per list --------------------------------------------
+
+def test_the_lock_step_raises_the_real_import_error(monkeypatch):
+    from proto_db import transactions
+    storage = MemoryStorage()
+    good = _space(storage)
+    _install(good.new_database("db"), "reg8_base")
+    _put(good.open_database("db"), thing=_thing)
+    broken = _space(storage, mapping=BROKEN)
+    db = broken.open_database("db")
+    tr = db.new_transaction()
+    loaded = tr.get_root_object("thing")
+    tr.set_root_object("other", 1)
+    lock_step = transactions.Transaction._build_root
+
+    def resolving_build_root(self, current, stamp=None):
+        loaded.greet()                                   # an extractor resolving an element, unscoped
+        return lock_step(self, current, stamp)
+
+    monkeypatch.setattr(transactions.Transaction, "_build_root", resolving_build_root)
+    with pytest.raises(ProtoNotSupportedError, match="'db'.*reg8_base.*cannot be imported"):
+        tr.commit()
+    good.close()
+    broken.close()
+
+
+def test_a_failed_build_is_remembered_until_reload(monkeypatch):
+    from proto_db import registry as registry_module
+    storage = MemoryStorage()
+    good = _space(storage)
+    _install(good.new_database("db"), "reg8_base")
+    broken = _space(storage, mapping=BROKEN)
+    db = broken.open_database("db")
+    monkeypatch.setattr(registry_module, "_FAILED", {})            # no failure remembered yet
+    builds = []
+    original = registry_module.Registry.build.__func__
+    monkeypatch.setattr(registry_module.Registry, "build",
+                        classmethod(lambda cls, *a, **k: builds.append(a) or original(cls, *a, **k)))
+    for i in range(20):
+        tr = db.new_transaction()
+        tr.set_root_object(f"plain{i}", i)
+        tr.commit()                                      # nothing needs the registry
+    assert len(builds) <= 1                              # one failed import, then remembered (R202)
+    with pytest.raises(ProtoNotSupportedError, match="cannot be imported"):
+        db.new_transaction().registry
+    assert len(builds) <= 1
+    with pytest.raises(ProtoNotSupportedError, match="cannot be imported"):
+        broken.reload_registry("db")                     # forgets the failure and tries again
+    assert len(builds) == 2
+    good.close()
+    broken.close()
+
+
+# -- fix round 2, N5/N6: reader blocks per context, non-LIFO exits ------------------------------------
+
+def test_one_transaction_entered_by_two_asyncio_tasks_exiting_in_entry_order():
+    import asyncio
+    space = _space()
+    db = space.new_database("db")
+    _install(db, "reg8_base")
+    _put(db, thing=_thing)
+    tr = db.new_transaction()
+    order = []
+
+    async def task(name, first_pause, second_pause):
+        tr.__enter__()
+        try:
+            await asyncio.sleep(first_pause)
+            order.append((name, tr.get_root_object("thing").greet()))
+            await asyncio.sleep(second_pause)
+        finally:
+            tr.__exit__(None, None, None)
+        order.append((name, "out", resolution.current_reader()))
+
+    async def main():
+        await asyncio.gather(task("a", 0.01, 0.03), task("b", 0.02, 0.03))   # both read before a commits
+
+    asyncio.run(main())
+    assert order.index(("a", "out", None)) < order.index(("b", "out", None))    # a entered and left first
+    assert ("a", "base") in order and ("b", "base") in order
+    space.close()
+
+
+def test_one_snapshot_entered_by_two_threads_exiting_in_entry_order():
+    space = _space()
+    db = space.new_database("db")
+    _install(db, "reg8_base")
+    _put(db, thing=_thing)
+    snapshot = db.snapshot_at(db.history()[0])
+    entered, first_left = threading.Event(), threading.Event()
+    errors, seen = [], []
+
+    def body(first):
+        try:
+            with snapshot:
+                if first:
+                    entered.set()
+                else:
+                    entered.wait(10)
+                    first_left.wait(10)
+                seen.append(snapshot.get_root_object("thing").greet())
+            if first:
+                first_left.set()
+            seen.append(resolution.current_reader())
+        except Exception as e:          # reported below
+            errors.append(e)
+
+    one = threading.Thread(target=body, args=(True,))
+    two = threading.Thread(target=body, args=(False,))
+    two.start()
+    one.start()
+    one.join()
+    two.join()
+    assert errors == [] and sorted(map(str, seen)) == sorted(map(str, ["base", "base", None, None]))
+    space.close()
+
+
+def test_a_commit_error_is_never_replaced_by_a_block_misuse(monkeypatch):
+    from proto_db.errors import ProtoConflictError
+    space = _space()
+    db = space.new_database("db")
+    tr = db.new_transaction()
+    inner = db.snapshot_at(db.history()[0])
+
+    def conflict():
+        raise ProtoConflictError("planted")
+
+    monkeypatch.setattr(tr, "commit", conflict)
+    with pytest.raises(ProtoConflictError, match="planted"):
+        with tr:
+            inner.__enter__()                            # never ended inside: not nested
+    assert resolution.current_reader() is inner         # tr's block was removed, the inner one kept
+    inner.__exit__(None, None, None)
+    assert resolution.current_reader() is None
+    other = db.new_transaction()
+    with pytest.raises(ProtoUserError, match="innermost"):
+        with other:
+            inner.__enter__()
+    assert resolution.current_reader() is inner and not other.is_active     # committed, then reported
+    inner.__exit__(None, None, None)
+    space.close()

@@ -640,6 +640,9 @@ def _check_parent_cycles(parents: dict) -> None:
 #: ``_REGISTRIES_LOCK``, which is never held while a registry is built (a build imports).
 _REGISTRIES: dict = {}
 _REGISTRIES_LOCK = threading.Lock()
+#: The lists whose build failed because a module cannot be loaded (ruling R202), by the same key:
+#: the message, raised again without importing until :func:`forget_failure` (``reload_registry``).
+_FAILED: dict = {}
 
 #: Per thread: inside :func:`no_builds` (a commit's lock step), :func:`registry_for` never builds.
 _NO_BUILDS = threading.local()
@@ -670,7 +673,13 @@ def registry_for(module_names: tuple, *, mapping: Mapping | None = None,
     during it; two threads that race build twice and keep the first one published.  The cache
     holds one registry per distinct list and mapping the process has used: lists only grow by
     installs, so it is bounded by them.  ``ObjectSpace.reload_registry`` builds a registry of its
-    own (:meth:`Registry.build`) and never replaces an entry here (ruling R200)."""
+    own (:meth:`Registry.build`) and never replaces an entry here (ruling R200).
+
+    A list whose build fails because a module cannot be loaded (``ProtoNotSupportedError``) is
+    remembered with its error, per list and process (ruling R202): later calls raise the same
+    error again without importing (Python does not cache failed imports, and a commit tries to
+    build before its lock step), until ``ObjectSpace.reload_registry`` forgets it.  Inside
+    :func:`no_builds` such a list raises that error, never a generic refusal."""
     if not isinstance(module_names, tuple):
         raise ProtoValidationError(
             f"module_names must be a tuple of module names, not {type(module_names).__name__}")
@@ -678,19 +687,33 @@ def registry_for(module_names: tuple, *, mapping: Mapping | None = None,
     key = (module_names, tuple(mapping.get(name, name) for name in module_names))
     with _REGISTRIES_LOCK:
         found = _REGISTRIES.get(key)
+        failed = _FAILED.get(key)
     if found is not None:
         for name in module_names:
             if allowed is not None and name not in allowed:
                 raise ProtoValidationError(f"Module {name!r} is not allowed by this runtime's configuration")
         return found
+    if failed is not None:
+        raise ProtoNotSupportedError(failed)
     if getattr(_NO_BUILDS, "depth", 0):
         raise ProtoUserError(
             f"The registry of the modules {list(module_names)} is not built, and a commit's lock step never "
-            f"builds one (building imports, which may deadlock under the root lock): resolve through the "
-            f"registry before committing")
-    built = Registry.build(module_names, mapping=mapping, allowed=allowed)
+            f"builds one (building imports, which may deadlock under the root lock)")
+    try:
+        built = Registry.build(module_names, mapping=mapping, allowed=allowed)
+    except ProtoNotSupportedError as e:
+        with _REGISTRIES_LOCK:
+            _FAILED[key] = str(e)
+        raise
     with _REGISTRIES_LOCK:
         return _REGISTRIES.setdefault(key, built)
+
+
+def forget_failure(module_names: tuple, mapping: Mapping | None = None) -> None:
+    """Let :func:`registry_for` try to build ``module_names`` again (``ObjectSpace.reload_registry``)."""
+    mapping = {} if mapping is None else mapping
+    with _REGISTRIES_LOCK:
+        _FAILED.pop((module_names, tuple(mapping.get(name, name) for name in module_names)), None)
 
 
 def current_registry() -> "Registry | None":

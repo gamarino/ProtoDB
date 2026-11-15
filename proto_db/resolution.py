@@ -40,21 +40,20 @@ Registry names
     (memoized per class and registry name on the registry, so it runs once per pair even when
     the object's context caches no linearization).
 
-The registry of an object (Task 8, rulings R191-R199)
-    With no registry passed, :func:`registry_of` takes the first of these that has one:
+The registry of an object (Task 8, ruling R201)
+    The registry is decided by the code doing the resolving, never by load order or cache
+    state.  With no registry passed, :func:`registry_of` uses:
 
-    1. the transaction the object belongs to (its ``context``: an object created or derived in
-       it, or loaded through it when the space's atom cache is off): ``Transaction.registry``;
-    2. the **reader** of the running code (:func:`current_reader`): the transaction of a
-       ``with tr:`` block or of ``Database.run``, or the snapshot of a ``with snapshot:`` block,
-       for an object of its own space only: of its own database, or of another database bound
-       to the same list (another list is ``ProtoUserError``); an object of another space ignores
-       it (ruling R198);
-    3. the binding of the object's database in its space: an object read through the space's
-       shared atom cache records its database in its context (a database view, ruling R197);
-       one whose database is undetermined uses the one list the space bound, else raises
-       (ruling R199);
-    4. :func:`proto_db.registry.using` (tests).
+    1. for an object of a transaction (its ``context``: created or derived in it, or loaded
+       through it when the space's atom cache is off): that transaction's registry; inside a
+       block of another database of the space whose list differs, ``ProtoUserError``;
+    2. for any other object (a loaded one, read through the space's shared atom cache or a
+       space-level context, which records no database): the **reader** of the running code
+       (:func:`current_reader`: the transaction of a ``with tr:`` block or of ``Database.run``,
+       or the snapshot of a ``with snapshot:`` block) when it is of the object's space; outside
+       any reader, the space's fallback: its one distinct non-empty bound list, else
+       ``ProtoUserError``;
+    3. :func:`proto_db.registry.using` (tests), when the above give none.
 
     A source whose database lists no modules has no registry and passes to the next one.  The
     registry is looked up only when the linearization has a registry-name node: one computed
@@ -162,7 +161,8 @@ _CURRENT_REGISTRY: contextvars.ContextVar = contextvars.ContextVar("proto_db_reg
 #: transaction of a ``with tr:`` block or of ``Database.run``, or the snapshot of a ``with snapshot:``
 #: block (Task 8).  Its value is ``None`` or a link ``(reader, previous link)``: each context
 #: (thread, ``asyncio`` task) holds its own chain, so no reader state is shared between them.
-#: A reader has ``_registry_for(space, database)`` (:func:`registry_of`).
+#: A reader has ``_reader_space``, ``_reader_database``, ``_reader_registry()`` and
+#: ``_reader_names()`` (:func:`registry_of`).
 _READER: contextvars.ContextVar = contextvars.ContextVar("proto_db_reader", default=None)
 
 #: The code flags of a frame that may run after its call returned (R172): a generator (also set
@@ -207,15 +207,27 @@ def enter_reader(reader) -> None:
     _READER.set((reader, _READER.get()))
 
 
-def exit_reader(reader) -> None:
+def exit_reader(reader) -> bool:
     """End the innermost block of ``reader`` in this context (``__exit__``): the reader before it
-    is current again.  ``ProtoUserError`` when ``reader`` is not the innermost reader here
-    (blocks that do not nest, or an exit in another context than the entry)."""
+    is current again.  The block is always removed from this context's chain, even when it is
+    not the innermost one (blocks that do not nest); returns whether it was the innermost.
+    ``ProtoUserError`` only when ``reader`` has no block in this context."""
     link = _READER.get()
-    if link is None or link[0] is not reader:
-        raise ProtoUserError(f"The block of {reader!r} is not the innermost reader block of this context: "
-                             f"reader blocks must nest and end in the context they started in")
-    _READER.set(link[1])
+    if link is not None and link[0] is reader:
+        _READER.set(link[1])
+        return True
+    kept = []
+    while link is not None and link[0] is not reader:
+        kept.append(link[0])
+        link = link[1]
+    if link is None:
+        raise ProtoUserError(f"{reader!r} has no reader block in this context: a block ends in the context "
+                             f"it started in")
+    rest = link[1]
+    for other in reversed(kept):
+        rest = (other, rest)
+    _READER.set(rest)
+    return False
 
 
 def reset_reader(token: contextvars.Token) -> None:
@@ -224,26 +236,29 @@ def reset_reader(token: contextvars.Token) -> None:
 
 
 def registry_of(obj):
-    """The registry resolution uses for ``obj`` when none is passed (see "The registry of an
-    object" in the module docstring): the first of these that has one -- the transaction ``obj``
-    belongs to, the current reader (when it may read ``obj``), the binding of ``obj``'s database
-    in its space, :func:`proto_db.registry.using` -- else ``None``.  Building it may import
-    modules and raise (an unimportable module, a module-list mismatch, an object of another
-    database inside a reader block, an undetermined database in a space of several lists)."""
+    """The registry resolution uses for ``obj`` when none is passed (ruling R201: the code doing
+    the resolving decides, never load order or cache state).  An object of a transaction (its
+    ``context``) resolves with that transaction's registry, and raises inside a block of another
+    database of the space whose list differs.  Any other object (loaded through the space's
+    shared atom cache or a space-level context, or never bound) resolves with the current
+    reader of its space, else with its space's fallback (one distinct bound list), else
+    :func:`proto_db.registry.using` (tests).  Building it may import modules and raise."""
     context = obj.context
+    link = _READER.get()
+    reader = None if link is None else link[0]
     if isinstance(context, _transaction_class()):
+        if reader is not None and reader is not context:
+            context._check_reader(reader)
         found = context._resolution_registry()
         if found is not None:
-            return found
+            return found                # else: its database lists no modules, as a loaded object
     space = getattr(context, "_space_registries", None)
-    database = getattr(context, "_database_name", None)
-    link = _READER.get()
-    if link is not None:
-        found = link[0]._registry_for(space, database)
+    if reader is not None and (space is None or space is reader._reader_space):
+        found = reader._reader_registry()
         if found is not None:
             return found
     if space is not None:
-        found = space.fallback(database)
+        found = space.fallback()
         if found is not None:
             return found
     return _CURRENT_REGISTRY.get()

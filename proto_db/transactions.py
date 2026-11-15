@@ -64,11 +64,12 @@ The registry of a database (runtime registry, Task 8)
     :meth:`ObjectSpace.reload_registry` rebuilds it (spec Q2: no automatic rebuild).  A commit of
     this space that installs modules rebinds the database to the list it committed.  An as-of
     read resolves with its own version's list inside ``with snapshot:`` (:attr:`Snapshot.registry`)
-    and never changes the binding.  An object read through the space's shared atom cache is
-    bound to its database's view of the cache (:class:`_DatabaseView`), so outside any block it
-    resolves with its database's binding; inside ``with tr:``, ``Database.run`` or ``with
-    snapshot:`` it resolves with that reader's registry when it is of the reader's database, or
-    of another one bound to the same list; another list raises (:class:`_SpaceRegistries`).
+    and never changes the binding.  The resolving code decides the registry,
+    never load order or cache state (ruling R201): an object of a transaction resolves with that
+    transaction's registry (inside a block of another database whose list differs it raises); an
+    object read through the space's shared atom cache belongs to no database and resolves with
+    the current reader (``with tr:``, ``Database.run``, ``with snapshot:``), else, outside any
+    block, with the space's one distinct non-empty list, else raises (:class:`_SpaceRegistries`).
 
 Mutable cells (D11, D35)
     The mutable table is a second namespace beside the roots: ``new_mutable``,
@@ -416,9 +417,6 @@ class Snapshot:
         self._database = database
         self._root = root
         self._registry = _ABSENT
-        view = database._view()
-        if view is not None:
-            view.adopt(root.objects, root.mutables)
 
     @property
     def registry(self) -> Optional[_registry.Registry]:
@@ -433,12 +431,19 @@ class Snapshot:
             self._registry = found
         return found
 
-    def _registry_for(self, space, database):
-        """The reader's answer to :func:`proto_db.resolution.registry_of` for an object of
-        ``space`` whose context records ``database`` (see ``_SpaceRegistries.for_reader``)."""
-        return _reader_registry(self._database, space, database, self._version_names, lambda: self.registry)
+    # The reader protocol of proto_db.resolution.registry_of (ruling R201).
+    @property
+    def _reader_space(self) -> "_SpaceRegistries":
+        return self._database.space._registries
 
-    def _version_names(self) -> tuple:
+    @property
+    def _reader_database(self) -> str:
+        return self._database.name
+
+    def _reader_registry(self):
+        return self.registry
+
+    def _reader_names(self) -> tuple:
         listed = _registry.registry_root(self._root.objects, _registry.MODULES_ROOT, _registry.ModuleList)
         return listed.names() if listed is not None else ()
 
@@ -448,7 +453,8 @@ class Snapshot:
         return self
 
     def __exit__(self, exc_type, exc, tb):
-        exit_reader(self)
+        if not exit_reader(self) and exc_type is None:
+            raise _not_nested(self)
         return False
 
     @property
@@ -525,14 +531,12 @@ def _save_atom(context, atom: Atom) -> AtomPointer:
 
 class _SpaceContext:
     """PersistenceContext of space-level work (database creation, history, listing).
-    ``_space_registries`` is the space's :class:`_SpaceRegistries` and ``_database_name`` the
-    database when the context reads values an application resolves (history, and snapshots with
-    the atom cache off), else ``None``."""
+    ``_space_registries`` is the space's :class:`_SpaceRegistries` when the context reads values
+    an application resolves (history, and snapshots with the atom cache off), else ``None``."""
 
-    def __init__(self, storage, registries: Optional["_SpaceRegistries"] = None, database: Optional[str] = None):
+    def __init__(self, storage, registries: Optional["_SpaceRegistries"] = None):
         self.storage = storage
         self._space_registries = registries
-        self._database_name = database
 
     def save(self, atom: Atom) -> AtomPointer:
         """Persist ``atom`` (children first) and return its pointer."""
@@ -591,7 +595,6 @@ class _AtomCache:
         # The space's registries (set by the ObjectSpace): what resolution falls back on for an
         # atom read through this cache (proto_db.resolution.registry_of).
         self._space_registries: Optional["_SpaceRegistries"] = None
-        self._views: dict = {}          # database name -> _DatabaseView (guarded by _lock)
         self.hits = 0
         self.misses = 0
         self.unloads = 0
@@ -602,24 +605,9 @@ class _AtomCache:
         """Persist ``atom`` (children first) and return its pointer."""
         return _save_atom(self, atom)
 
-    def view(self, database: str) -> "_DatabaseView":
-        """The context of the atoms of ``database`` read or saved through this cache (one per
-        database name; a name is never removed nor reused for another database)."""
-        found = self._views.get(database)
-        if found is None:
-            with self._lock:
-                found = self._views.setdefault(database, _DatabaseView(self, database))
-        return found
-
-    def views(self) -> tuple:
-        """Every database view of this cache."""
-        with self._lock:
-            return tuple(self._views.values())
-
-    def load(self, ptr: AtomPointer, type_name: str, context=None) -> Atom:
+    def load(self, ptr: AtomPointer, type_name: str) -> Atom:
         """The shared atom stored at ``ptr``: the object already served for it while anything holds
-        it, else a new lazy stub bound to ``context`` (a :class:`_DatabaseView`; this cache when
-        ``None``)."""
+        it, else a new lazy stub."""
         with self._lock:
             ref = self._ident.get(ptr)
             atom = ref() if ref is not None else None
@@ -631,7 +619,7 @@ class _AtomCache:
         if hit:
             self._cache.touch(ptr)
             return atom
-        stub = Atom._stub(self if context is None else context, ptr, type_name)
+        stub = Atom._stub(self, ptr, type_name)
         if atom is not None:
             # Another type for a known pointer (corrupt reference): a one-off stub, never marked,
             # so its load can never be admitted and displace the shared atom (review 8.3m M2).
@@ -671,10 +659,9 @@ class _AtomCache:
         """The :meth:`Atom._load` hook: ``atom`` was just loaded (published by this call)."""
         self._admit(atom, loaded=True)
 
-    def _atom_saved(self, atom: Atom, ptr: AtomPointer, state: dict, context=None) -> None:
+    def _atom_saved(self, atom: Atom, ptr: AtomPointer, state: dict) -> None:
         """``atom`` was just pushed at ``ptr`` with ``state`` (the :meth:`Atom._save` hook,
-        Task 8.3i; ``context``: the database view the twin is bound to, this cache when
-        ``None``): cache what a load of ``ptr`` would produce, decoded already
+        Task 8.3i): cache what a load of ``ptr`` would produce, decoded already
         (:meth:`Atom._decoded_twin`), so the next build on the root that references it neither
         reads nor decodes it.  The live ``atom`` is never cached (its runtime state, an op log
         for example, is not what a load produces)."""
@@ -682,7 +669,7 @@ class _AtomCache:
         if not cls._cache_on_save or self._closed:
             return
         inline = [0]
-        twin = atom._decoded_twin(self if context is None else context, ptr, state, inline)
+        twin = atom._decoded_twin(self, ptr, state, inline)
         if inline[0] > SAVED_INLINE_MAX and not cls._cache_large_on_save:
             # Review 8.3i I1: an entry is one atom of any size (the bound counts atoms, not bytes),
             # so an atom holding large values inline is left to the read path: a parent cached
@@ -763,79 +750,29 @@ class _Binding:
         self.seq = seq
 
 
-class _DatabaseView:
-    """The persistence context of the atoms of one database read or saved through the space's
-    shared atom cache (Task 8, ruling R197): it loads and saves through the cache (one decoded
-    object per pointer, shared by every transaction), and it records the database, so that
-    resolution can tell which database's registry an object needs.
-
-    A stub takes the view of the database it was first reached in: a transaction or a snapshot
-    of the database gives its view to the unloaded tables of its version (``objects``,
-    ``mutables``, :meth:`adopt`), and everything decoded below them inherits it.  An atom shared
-    by two databases (an application stored an object of one database in another) keeps the
-    view of the first database that reached it in this process; an atom reached otherwise (the
-    space root, a query result loaded by pointer) has the cache itself as its context, and its
-    database is undetermined (see :meth:`_SpaceRegistries.fallback`)."""
-
-    __slots__ = ("_cache", "storage", "_database_name", "_space_registries")
-
-    def __init__(self, cache: "_AtomCache", database: str):
-        self._cache = cache
-        self.storage = cache.storage
-        self._database_name = database
-        self._space_registries = cache._space_registries
-
-    def save(self, atom: Atom) -> AtomPointer:
-        """Persist ``atom`` (children first) and return its pointer."""
-        return _save_atom(self, atom)
-
-    def load(self, ptr: AtomPointer, type_name: str) -> Atom:
-        """The shared atom stored at ``ptr`` (a new stub is bound to this view)."""
-        return self._cache.load(ptr, type_name, self)
-
-    def _atom_loaded(self, atom: Atom) -> None:
-        self._cache._admit(atom, loaded=True)
-
-    def _atom_saved(self, atom: Atom, ptr: AtomPointer, state: dict) -> None:
-        self._cache._atom_saved(atom, ptr, state, self)
-
-    @property
-    def _linearizations(self) -> BoundedCache:
-        return self._cache._linearizations
-
-    def adopt(self, *atoms) -> None:
-        """Give this view to each unloaded stub of ``atoms`` whose context is the cache or a view
-        of another database (see the class docstring)."""
-        replaceable = None
-        for atom in atoms:
-            if not isinstance(atom, Atom) or atom.context is self:
-                continue
-            if replaceable is None:
-                replaceable = (self._cache,) + self._cache.views()
-            atom._adopt_context(self, replaceable)
-
-    def __repr__(self) -> str:
-        return f"<_DatabaseView {self._database_name!r}>"
+def _not_nested(reader) -> ProtoUserError:
+    return ProtoUserError(f"The block of {reader!r} was not the innermost reader block of this context: reader "
+                          f"blocks must nest (it was ended, and the blocks inside it kept)")
 
 
-def _reader_registry(database: "Database", space, object_database, reader_names: Callable, registry: Callable):
-    """What a reader of ``database`` answers for an object of ``space`` whose context records
-    ``object_database`` (Task 8, ruling R198): ``None`` (not applicable) for an object of
-    another space; the reader's registry for one of its own database, for an object without a
-    space (never bound to one: it would be saved through the reader), and for one of another
-    database of the space bound to the same list; otherwise ``ProtoUserError``."""
-    mine = database.space._registries
-    if space is not None and space is not mine:
-        return None
-    if space is None or object_database == database.name:
-        return registry()
-    mine.for_reader(database.name, reader_names(), object_database)
-    return registry()
+def _check_block(space: "_SpaceRegistries", database: str, names: tuple, reader) -> None:
+    """``ProtoUserError`` when an object of a transaction of ``database`` (on the list ``names``)
+    of ``space`` is resolved inside the block of ``reader`` of another database of the same space
+    whose list differs (ruling R201).  A database that lists no modules never differs (review N3):
+    it has no registry to disagree with."""
+    if reader._reader_space is not space or reader._reader_database == database:
+        return
+    other = reader._reader_names()
+    if names and other and names != other:
+        raise ProtoUserError(
+            f"An object of database {database!r} resolved inside a block of database "
+            f"{reader._reader_database!r}: their module lists differ ({list(names)} and {list(other)}); "
+            f"resolve it outside that block or inside a block of {database!r}")
 
 
 class _SpaceRegistries:
     """The registry of each database of one :class:`ObjectSpace` in this process (Task 8, spec
-    section 8, Q2; rulings R191-R200).
+    section 8, Q2; rulings R191-R203).
 
     Binding
         The first transaction of a database in the space **binds** it to the module list of its
@@ -852,16 +789,18 @@ class _SpaceRegistries:
         As-of reads (snapshots, history, pagers) never bind, rebind or take part in the fallback
         (ruling R196).
 
-    The fallback (:meth:`fallback`)
-        An object outside any reader block resolves with the binding of its database (its
-        context's ``_database_name``).  An object whose database is undetermined (the cache
-        itself is its context) resolves with the one non-empty list the space bound, and raises
-        when the space bound several (ruling R199).
+    Who decides (ruling R201)
+        The registry is decided by the code doing the resolving, never by load order or cache
+        state.  An object of a transaction (created or derived in it, or loaded through it with
+        the atom cache off) resolves with that transaction's registry.  A loaded object (read
+        through the space's shared atom cache, or a space-level context) belongs to no database:
+        it resolves with the current reader (``with tr:``, ``Database.run``, ``with snapshot:``)
+        of its space; outside any reader, with :meth:`fallback`.
 
-    Readers (:meth:`for_reader`)
-        A ``with tr:`` / ``Database.run`` / ``with snapshot:`` block of database ``B`` is used for
-        objects of the same space only, and for those of another database only when that
-        database is bound to the same list; otherwise ``ProtoUserError`` (ruling R198).
+    The fallback (:meth:`fallback`)
+        The one distinct non-empty list the space bound (a database that lists no modules is
+        ignored); several lists raise ``ProtoUserError`` (resolve inside a transaction or a
+        block of the intended database).
 
     Thread-safe; ``_lock`` is never held while a registry is built."""
 
@@ -872,7 +811,7 @@ class _SpaceRegistries:
         self._bound: dict = {}          # database name -> _Binding
         self._stale: dict = {}          # database name -> a list a transaction saw, unlike the bound one
         self._seq = 0                   # last _Binding.seq given
-        self._generation = 0            # +1 on every change; the undetermined fallback's memo
+        self._generation = 0            # +1 on every change; the fallback's memo
         self._memo = (-1, None)
 
     def build(self, database: str, names: tuple):
@@ -945,74 +884,36 @@ class _SpaceRegistries:
             self._new_binding(database, names, registry)
             self._stale.pop(database, None)
 
-    def binding_names(self, database: str) -> Optional[tuple]:
-        """The list ``database`` is bound to, or ``None`` when it is not bound."""
-        binding = self._bound.get(database)
-        return None if binding is None else binding.names
-
-    def fallback(self, database: Optional[str]):
-        """The registry of an object outside any reader block whose context records
-        ``database`` (``None``: undetermined); ``None`` when there is none to use."""
-        if database is not None:
-            binding = self._bound.get(database)
-            if binding is None:
-                return None             # not bound here: only as-of reads reached it (R196)
-            stale = self._stale.get(database)
-            if stale is not None:
-                raise _mismatch(database, binding.names, stale)
-            return self.registry(database, binding)
+    def fallback(self):
+        """The registry of a loaded object resolved outside any reader block (see the class
+        docstring); ``None`` when no database of the space lists modules."""
         memo = self._memo
         if memo[0] == self._generation:
             return memo[1]
         with self._lock:
             generation = self._generation
-            bound = dict(self._bound)
+            bound = {name: binding for name, binding in self._bound.items() if binding.names}
             stale = dict(self._stale)
         for name in sorted(stale):              # the specific error first (review minor 3)
-            if name in bound and bound[name].names:
+            if name in bound:
                 raise _mismatch(name, bound[name].names, stale[name])
-        lists = {binding.names for binding in bound.values() if binding.names}
+        lists = {binding.names for binding in bound.values()}
         if not lists:
             found = None
         elif len(lists) > 1:
             raise ProtoUserError(
-                f"An object read through this space's shared atom cache, whose database is undetermined (it "
-                f"was not reached below a database's tables), needs a registry, and the databases of this "
-                f"space list different modules ({', '.join(repr(n) for n in sorted(bound))}): read it through "
-                f"a transaction or a snapshot of its database")
+                f"A loaded object (read through this space's shared atom cache, which records no database) "
+                f"needs a registry outside any block, and the databases of this space list different modules "
+                f"({', '.join(repr(n) for n in sorted(bound))}): resolve it inside a transaction or a block "
+                f"(with tr:, Database.run, with snapshot:) of the intended database")
         else:
             # One list: the most recent binding's registry (a reload of one database builds another
             # registry of the same list; it is the newest declarations, ruling R200).
-            name, binding = max(((n, b) for n, b in bound.items() if b.names), key=lambda item: item[1].seq)
+            name, binding = max(bound.items(), key=lambda item: item[1].seq)
             found = self.registry(name, binding)
         if self._generation == generation:
             self._memo = (generation, found)
         return found
-
-    def for_reader(self, reader_database: str, reader_names: tuple, database: Optional[str]) -> bool:
-        """Whether a reader block of ``reader_database`` (on the list ``reader_names``) may resolve an
-        object of this space whose context records ``database`` (``None``: undetermined): yes for
-        its own database, and for another bound to the same list; otherwise ``ProtoUserError``
-        (ruling R198)."""
-        if database == reader_database:
-            return True
-        if database is not None:
-            names = self.binding_names(database)
-            if names == reader_names:
-                return True
-            raise ProtoUserError(
-                f"An object of database {database!r} resolved inside a block of database {reader_database!r}: "
-                f"their module lists differ ({list(names) if names is not None else 'not bound'} and "
-                f"{list(reader_names)}); resolve it inside a block of its own database")
-        with self._lock:
-            lists = {binding.names for binding in self._bound.values()}
-        if lists <= {reader_names}:
-            return True
-        raise ProtoUserError(
-            f"An object whose database is undetermined (read through this space's shared atom cache, not "
-            f"below a database's tables) resolved inside a block of database {reader_database!r}, and the "
-            f"databases of this space list different modules: read it through a transaction or a snapshot "
-            f"of its database")
 
 
 def _forget_dead(ident: dict, ref) -> None:
@@ -2092,6 +1993,7 @@ class ObjectSpace:
         root = Database(self, database_name)._root_in(_SpaceContext(self._storage), self._read_storage_root())
         listed = _registry.registry_root(root.objects, _registry.MODULES_ROOT, _registry.ModuleList)
         names = listed.names() if listed is not None else ()
+        _registry.forget_failure(names, self._modules_mapping)
         registry = self._registries.build_fresh(database_name, names) if names else None
         self._registries.rebind(database_name, names, registry)
         return registry
@@ -2286,19 +2188,6 @@ class Database:
             raise ProtoValidationError(f"Database {self._name!r} does not exist")
         return root
 
-    def _view(self) -> Optional[_DatabaseView]:
-        """The context of this database's atoms in the space's shared atom cache (``None`` when
-        the cache is off)."""
-        atoms = self._space._atoms
-        return None if atoms is None else atoms.view(self._name)
-
-    def _load(self, ptr: AtomPointer, type_name: str) -> Atom:
-        """Load an atom of this database outside a transaction (references, snapshots)."""
-        view = self._view()
-        if view is not None:
-            return view.load(ptr, type_name)
-        return Atom._stub(_SpaceContext(self._space.storage, self._space._registries, self._name), ptr, type_name)
-
     def new_transaction(self) -> "Transaction":
         """Start a transaction on the current snapshot."""
         self._space._check_open()
@@ -2307,7 +2196,7 @@ class Database:
     def history(self) -> list:
         """The committed versions of this database, newest first, as :class:`HistoryEntry` objects."""
         self._space._check_open()
-        context = _SpaceContext(self._space.storage, self._space._registries, self._name)
+        context = _SpaceContext(self._space.storage, self._space._registries)
         root = self._root_in(context, self._space._read_storage_root())
         entries = []
         while root is not None:
@@ -2359,7 +2248,7 @@ class Database:
         elif isinstance(ref, HistoryEntry):
             name, root = ref._database, ref.root
         else:
-            return self._snapshot_of(decode_ref(ref, self._load))
+            return self._snapshot_of(decode_ref(ref, self._space._space_load))
         self._check_owned(name, root)
         return Snapshot(self, root)
 
@@ -2371,7 +2260,7 @@ class Database:
         if fields["origin"] != self._origin():
             raise ProtoReferenceError(f"The reference names another database than {self._name!r} "
                                       f"(another incarnation of the name, or another space)")
-        root = self._load(fields["root"], DatabaseRoot.__type_name__)
+        root = self._space._space_load(fields["root"], DatabaseRoot.__type_name__)
         try:
             root._load()
             root.origin, root.version            # a pointer that does not hold a DatabaseRoot fails here
@@ -2390,7 +2279,7 @@ class Database:
         no longer plans as it did (another query semantics version, planner or extractor
         version), since its pages could then come in another order."""
         self._space._check_open()
-        fields = decode_ref(token, self._load)
+        fields = decode_ref(token, self._space._space_load)
         arguments = pager_arguments(fields)
         snapshot = self._snapshot_of(fields)
         root_name = arguments.pop("root_name")
@@ -2482,11 +2371,8 @@ class Transaction:
         atoms = database.space._atoms
         # Shared decoded atoms only when they read the storage this transaction writes to.
         self._atoms = atoms if atoms is not None and atoms.storage is self.storage else None
-        # The context of this database's atoms in that cache (Task 8, ruling R197).
-        self._view = self._atoms.view(database.name) if self._atoms is not None else None
         # What resolution reads from an object's context (proto_db.resolution.registry_of).
         self._space_registries = database.space._registries
-        self._database_name = database.name
         self._lock = threading.RLock()
         self._state = _ACTIVE
         self._reads: dict = {}
@@ -2513,8 +2399,6 @@ class Transaction:
         self._db_root = database._root_in(self, record)
         self._objects = self._db_root.objects
         self._mutables = self._db_root.mutables
-        if self._view is not None:
-            self._view.adopt(self._objects, self._mutables)
         # The registry (Task 8): the space's binding of this database when it is for this
         # snapshot's list (kept for the transaction's life), else None (a mismatch, raised at the
         # first resolution through the registry); nothing is imported here.
@@ -2546,17 +2430,17 @@ class Transaction:
     def load(self, ptr: AtomPointer, type_name: str) -> Atom:
         """Return the atom stored at ``ptr``: the space's shared decoded atom (R75), or a lazy
         stub of this transaction when the space's atom cache is disabled."""
-        view = self._view
-        if view is not None:
-            return view.load(ptr, type_name)
+        atoms = self._atoms
+        if atoms is not None:
+            return atoms.load(ptr, type_name)
         return Atom._stub(self, ptr, type_name)
 
     def _atom_saved(self, atom: Atom, ptr: AtomPointer, state: dict) -> None:
         """The :meth:`Atom._save` hook: the space's atom cache receives what this transaction
         pushes (Task 8.3i), when it shares decoded atoms with this transaction."""
-        view = self._view
-        if view is not None:
-            view._atom_saved(atom, ptr, state)
+        atoms = self._atoms
+        if atoms is not None:
+            atoms._atom_saved(atom, ptr, state)
 
     # -- state ------------------------------------------------------------------------------
 
@@ -2855,17 +2739,34 @@ class Transaction:
         self._registry_memo = (installs, found)
         return found
 
-    def _registry_for(self, space, database):
-        """The reader's answer to :func:`proto_db.resolution.registry_of` for an object of
-        ``space`` whose context records ``database`` (see ``_SpaceRegistries.for_reader``)."""
-        return _reader_registry(self._database, space, database, lambda: self._listed, self._resolution_registry)
+    # The reader protocol of proto_db.resolution.registry_of (ruling R201).
+    @property
+    def _reader_space(self) -> "_SpaceRegistries":
+        return self._space_registries
+
+    @property
+    def _reader_database(self) -> str:
+        return self._database.name
+
+    def _reader_registry(self):
+        return self._resolution_registry()
+
+    def _reader_names(self) -> tuple:
+        return self._listed
+
+    def _check_reader(self, reader) -> None:
+        """Called for an object of this transaction resolved inside the block of ``reader``."""
+        _check_block(self._space_registries, self._database.name, self._listed, reader)
 
     def _prebuild_registries(self) -> None:
         """Before the commit's lock step, outside every lock: build the registries resolution may
         need while the lock is held (an index extractor replayed by a merge resolves its
-        elements, review minor 4): this transaction's and its database's binding.  A registry
-        that cannot be built is kept and raised only if the lock step does need it; the lock step
-        never builds one (:func:`proto_db.registry.no_builds`)."""
+        elements, review minor 4): this transaction's and its database's binding.  The lock step
+        never builds one (:func:`proto_db.registry.no_builds`).  A registry that cannot be built
+        does not fail the commit: its error is remembered (this transaction's, and per list in
+        the process, ruling R202) and raised where a resolution needs that registry.  So the
+        first commit of a database with modules imports them, and their import-time code runs
+        then, even if nothing resolves."""
         try:
             self._resolution_registry()
         except ProtoDBError as e:
@@ -2874,8 +2775,8 @@ class Transaction:
         if binding is not None and binding.names:
             try:
                 self._space_registries.registry(self._database.name, binding)
-            except ProtoDBError as e:
-                logger.debug("Registry of %r not prebuilt: %s", self._database.name, e)
+            except ProtoNotSupportedError:
+                pass                # remembered by registry_for (R202), raised where resolution needs it
 
     def catalog_object(self, registry_name: str) -> Optional[DBObject]:
         """The catalog object of ``registry_name`` as this transaction sees it (its own update or
@@ -3211,6 +3112,9 @@ class Transaction:
         return self
 
     def __exit__(self, exc_type, exc, tb):
+        # The reader is always cleared (finally), and a block-nesting misuse never replaces the
+        # exception of the body or of the commit (review N6): it is raised only when none is.
+        nested = True
         try:
             if exc_type is None:
                 if self.is_active:
@@ -3218,5 +3122,12 @@ class Transaction:
             elif self.is_active:
                 self.abort()
         finally:
-            exit_reader(self)
+            try:
+                nested = exit_reader(self)
+            except ProtoUserError as e:
+                if exc_type is None and sys.exc_info()[1] is None:
+                    raise               # nothing else is propagating: the misuse is the error
+                logger.warning("Ending the reader block of %r: %s", self, e)
+        if not nested and exc_type is None:
+            raise _not_nested(self)
         return False
