@@ -477,7 +477,9 @@ class _Waiter:
         self.states = {}
         self.ballots = {}
         self.data = None
-        self.missing = 0
+        # The members that answered a fetch or commit_query without it: a set, so that a
+        # duplicated reply never counts twice (transport duplication; R234L).
+        self.missing = set()
 
 
 class _PermitWait:
@@ -1146,9 +1148,7 @@ class ClusterCoordinator:
             self._hint = max(self._hint, top)
             self._grants.restore(max(promised, accepted[0] if accepted is not None else 0))
             self._logged_promise = (tier, promised)
-            tier.set_fetcher(self.fetch_record)
-            if hasattr(tier, "set_fetch_answer"):
-                tier.set_fetch_answer(self.fetch_answer)    # R230: unavailable vs. absent
+            tier.set_fetcher(self.fetch_record, answer=self.fetch_answer)   # R230: unavailable vs. absent
             self._confirmed = False
             self._rejoining = rejoin
             self._rejoin_blocked = None
@@ -1573,8 +1573,9 @@ class ClusterCoordinator:
             if self._state != "running":
                 return False, None
             timeout = self._read_wait(permitted)
+        asked = set(self._others)
         waiter = self._ask("commit_query", {"root": encode_root(root, known=True, term=label)},
-                           lambda w: w.data is not None or w.missing >= others, timeout)
+                           lambda w: w.data is not None or asked <= w.missing, timeout)
         if waiter.data is None:
             return False, None
         return waiter.data
@@ -1677,8 +1678,6 @@ class ClusterCoordinator:
             if persister is not None:
                 persister.stop()
             tier.set_fetcher(None)
-            if hasattr(tier, "set_fetch_answer"):
-                tier.set_fetch_answer(None)
 
     # -- known roots -------------------------------------------------------------------------
 
@@ -2210,10 +2209,11 @@ class ClusterCoordinator:
         elif kind == "fetched":
             if waiter.kind != "fetch" or waiter.key != (msg["segment"], msg["offset"]):
                 return              # the bytes of another record are never this one's (review C2)
-            if msg["data"] is not None and waiter.data is None:
-                waiter.data = msg["data"]
+            if msg["data"] is not None:
+                if waiter.data is None:
+                    waiter.data = msg["data"]
             else:
-                waiter.missing += 1
+                waiter.missing.add(sender)
         elif kind == "commit_info":
             if waiter.kind != "commit_query":
                 return
@@ -2224,7 +2224,7 @@ class ClusterCoordinator:
             elif msg["ranges"] is not None:
                 waiter.data = (False, protocol.decode_ranges(msg["ranges"]))
             else:
-                waiter.missing += 1
+                waiter.missing.add(sender)
         self._cond.notify_all()
 
     def _broadcast(self, msg: dict) -> None:
@@ -4341,11 +4341,11 @@ class ClusterCoordinator:
                 with self._lock:
                     self._stats["fetch_fallbacks"] += 1
             waiter = self._ask("fetch", {"segment": ptr.segment.bytes, "offset": ptr.offset},
-                               lambda w, n=len(targets): w.data is not None or w.missing >= n, timeout,
+                               lambda w, asked=set(targets): w.data is not None or asked <= w.missing, timeout,
                                targets=targets)
             if waiter.data is not None:
                 return waiter.data, True
-            if waiter.missing < len(targets):
+            if not set(targets) <= waiter.missing:
                 complete = False        # some member did not answer: says nothing about it
         return None, complete
 

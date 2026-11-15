@@ -75,7 +75,7 @@ class RecordTier(MemoryTier):
         """The ``(segment, offset)`` of the records on this node's disk."""
         return _held.setdefault(self.disk, set())
 
-    def set_fetcher(self, fetcher) -> None:
+    def set_fetcher(self, fetcher, answer=None) -> None:
         self._fetcher = fetcher
 
     def local_record(self, ptr):

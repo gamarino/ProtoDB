@@ -557,6 +557,51 @@ def blind_snapshot_of'''),),
          "test_a_base_re_commit_read_failing_after_the_permission_expired_is_retryable"),
         ("ended its permission unknown", "isinstance("),
         "product: a base re-commit counts as sent before its reads (R233)"),
+    # LEASE-READ fix round 2 (rulings R234L-R238L).
+    "lease_read_fetch_miss_per_message": Plant((
+        ("proto_db/cluster/coordinator.py",
+         "            else:\n                waiter.missing.add(sender)\n        elif kind == \"commit_info\":\n",
+         "            else:   # PLANT: a duplicated miss counts as another member's\n"
+         "                waiter.missing.add(sender if sender not in waiter.missing else next(iter(set(self._others) - waiter.missing), sender))\n"
+         "        elif kind == \"commit_info\":\n"),),
+        ("tests/unit/test_cluster_lease_read.py::test_a_duplicated_miss_never_makes_every_peer_answered",),
+        "a duplicated miss counted as c's answer",
+        "product: fetch misses are counted per message, so a duplicate makes every peer look answered (R234L)"),
+    "lease_read_commit_info_miss_per_message": Plant((
+        ("proto_db/cluster/coordinator.py",
+         "            else:\n                waiter.missing.add(sender)\n        self._cond.notify_all()\n",
+         "            else:   # PLANT: a duplicated miss counts as another member's\n"
+         "                waiter.missing.add(sender if sender not in waiter.missing else next(iter(set(self._others) - waiter.missing), sender))\n"
+         "        self._cond.notify_all()\n"),),
+        ("tests/unit/test_cluster_lease_read.py::test_a_duplicated_commit_info_miss_never_ends_the_wait_as_answered",),
+        "made every peer look answered",
+        "product: commit_info misses are counted per message (R234L)"),
+    "lease_read_corrupt_answer_definitive": Plant((
+        ("proto_db/storage/tiered.py",
+         "            logger.warning(\"A peer answered a corrupt record for %s: %s\", ptr, e)\n"
+         "            return None, False\n",
+         "            logger.warning(\"A peer answered a corrupt record for %s: %s\", ptr, e)\n"
+         "            return None, True   # PLANT: a corrupt answer counts as definitive\n"),),
+        ("tests/unit/test_cluster_lease_read.py::"
+         "test_a_corrupt_peer_answer_is_not_an_answer_that_the_record_is_nowhere",),
+        "a corrupt peer answer made the read ProtoCorruptionError",
+        "product: a corrupt peer answer makes the record look absent everywhere (R235L)"),
+    "lease_read_failure_hidden": Plant((
+        ("proto_db/storage/tiered.py",
+         "            return self._failed\n",
+         "            return None   # PLANT: the poisoning is not reported\n"),),
+        ("tests/unit/test_cluster_lease_read.py::"
+         "test_a_really_poisoned_tier_reports_its_failure_and_keeps_its_error",),
+        "the poisoned tier reports None",
+        "product: TieredStorage.failure hides a poisoned tier, so its error is converted (R237L)"),
+    "lease_read_commit_base_never_sent": Plant((
+        ("proto_db/transactions.py",
+         "    if sending is not None:\n        sending()\n    coordinator.replicate(",
+         "    coordinator.replicate("),),
+        ("tests/unit/test_cluster_lease_read.py::"
+         "test_a_base_re_commit_that_sent_its_root_is_never_a_retryable_conflict",),
+        "became a retryable conflict",
+        "product: a base re-commit never marks the round sent (R238L)"),
     "shiplock": Plant((
         ("proto_db/storage/tiered.py", "            data = self._copy_prefix(segment, end)",
          "            with self._ship_lock:   # PLANT: the hole is filled under the ship lock\n"

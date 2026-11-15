@@ -44,12 +44,11 @@ The cluster tier
     Methods: ``storage``, ``outgoing()``, ``flush_local()``, ``shipped(records, root, label)``,
     ``apply(records, root, label)``, ``prefetch(records)``, ``log_root(kind, label, record)``,
     ``log_promise(term)``, ``log_rejoined()``, ``load_roots()`` (a :class:`~proto_db.cluster.rootlog.LoggedRoots`),
-    ``local_record(ptr)``, ``set_fetcher(fn)``, ``read_persisted()``,
+    ``local_record(ptr)``, ``set_fetcher(fn, answer=None)``, ``read_persisted()``,
     ``persist(label, record)``, ``ship(force)``, ``refresh_remote()``, ``commit_ranges(root)``,
     ``ensure_remote(needs, upload_copies=)``,
     ``release_local(persisted_key)``, ``check_backlog()``, ``check_commit_allowed()``,
-    ``critical_section()``, ``remember_commit(records, root, label)``; optionally
-    ``set_fetch_answer(fn)`` (the coordinator's ``fetch_answer``, R230).  A tier whose records live
+    ``critical_section()``, ``remember_commit(records, root, label)``.  A tier whose records live
     on each node's disk sets ``local_records = True`` and also provides
     ``commit_records(ranges)``, ``store_commit(records, root, label, ranges)`` and
     ``parent_root(record)``: a root adopted without its replication then travels with its
@@ -191,7 +190,7 @@ class PlainTier:
         """Peers read the shared storage themselves."""
         return None
 
-    def set_fetcher(self, fetcher) -> None:
+    def set_fetcher(self, fetcher, answer=None) -> None:
         """Peer page requests are not needed."""
 
     def read_persisted(self) -> Optional[tuple]:

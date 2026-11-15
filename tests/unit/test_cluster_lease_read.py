@@ -499,3 +499,187 @@ def test_a_base_re_commit_read_failing_after_the_permission_expired_is_retryable
         assert not sent and permission.outcome != "unknown"
     finally:
         h.close()
+
+
+# -- fix round 2 (re-review 1 of LEASE-READ; rulings R234L-R239L) ------------------------------
+
+def _duplicating_pump(h, name, duplicated, silent, kinds, replies):
+    """Deliver ``name``'s ``kinds`` requests to ``duplicated`` twice each (the transport may
+    duplicate, transport.py), never to ``silent`` (slow or cut off), and the replies back."""
+    def pump():
+        for _, to, msg in h.net.take(name, set(duplicated), kinds):
+            for _ in range(2):
+                h.net.handlers[to](msg)
+                h.nodes[to].wait_idle(5.0)
+        h.net.take(name, set(silent), kinds)
+        h.net.deliver(src=None, dst={name}, kinds=replies)
+    return pump
+
+
+def test_a_duplicated_miss_never_makes_every_peer_answered():
+    """R234L: ``b``'s miss arrives twice and ``c``, which holds the record, is never heard: the
+    page request is not complete.  Counted per message, two misses from one member made
+    ``(None, True)`` -- every peer answered -- so an available record was called corrupt
+    (re-review 1, N-A; probe ``rr1-1794800000/probe/probe_dup.py``)."""
+    h = Harness("abc", records=True)
+    try:
+        h.bootstrap("a")
+        a = h.nodes["a"]
+        r = rec(7)
+        h.nodes["c"].tier.held.add((r.segment, r.offset))
+        got = h._run(lambda: a.fetch_answer(AtomPointer(r.segment, r.offset)),
+                     _duplicating_pump(h, "a", "b", "c", ("fetch",), ("fetched",)))
+        assert got == (None, False), f"a duplicated miss counted as c's answer: {got}"
+    finally:
+        h.close()
+
+
+def test_a_duplicated_commit_info_miss_never_ends_the_wait_as_answered():
+    """R234L, the ``commit_query`` counter: with ``b``'s "unknown" twice and ``c`` silent, the
+    ask's wait ends by its timeout, never because its "every peer answered" condition holds."""
+    h = Harness("abc", records=True)
+    try:
+        h.bootstrap("a")
+        a = h.nodes["a"]
+        seen = []
+        ask = a._ask
+
+        def recording(kind, msg_fields, done, timeout, targets=None):
+            waiter = ask(kind, msg_fields, done, timeout, targets=targets)
+            seen.append(done(waiter))
+            return waiter
+
+        a._ask = recording
+        r = rec(7)
+        got = h._run(lambda: a._ask_commit(1, r),
+                     _duplicating_pump(h, "a", "b", "c", ("commit_query",), ("commit_info",)))
+        assert got == (False, None)
+        assert seen == [False], "a duplicated commit_info miss made every peer look answered"
+    finally:
+        h.close()
+
+
+def _corrupting(tc, reader):
+    """The other members answer ``reader``'s page requests with corrupt bytes; returns a
+    function restoring them."""
+    sends = {n: tc[n]._transport.send for n in tc.ids if n != reader}
+    for n, send in sends.items():
+        def corrupt(to, msg, _send=send):
+            if to == reader and msg["type"] == "fetched" and msg["data"] is not None:
+                msg = dict(msg, data=b"\x00" * len(msg["data"]))
+            _send(to, msg)
+        tc[n]._transport.send = corrupt
+
+    def restore():
+        for n, send in sends.items():
+            tc[n]._transport.send = send
+    return restore
+
+
+def test_a_corrupt_peer_answer_is_not_an_answer_that_the_record_is_nowhere(tmp_path):
+    """R235L: the page request stops at the first (here corrupt) answer, so the other peers may
+    not have been heard: with the store lacking the segment, the read is unavailable
+    (``ProtoUnexpectedError``), not "no reachable peer holds it" (``ProtoCorruptionError``)."""
+    with TieredCluster(tmp_path, **NOT_UPLOADED) as tc:
+        tc.create_database("n0")
+        _commit_without(tc, "n0", "n2")
+        r = tc["n0"].committed_root()[1]
+        st = tc.storages["n2"]
+        restore = _corrupting(tc, "n2")
+        try:
+            with pytest.raises(ProtoDBError) as info:
+                st.get_atom(AtomPointer(r.segment, r.offset))
+        finally:
+            restore()
+        assert type(info.value) is ProtoUnexpectedError, \
+            f"a corrupt peer answer made the read {type(info.value).__name__}: {info.value}"
+
+
+def test_the_fetcher_and_its_answer_function_are_installed_together(tmp_path):
+    """R236L: one setter installs the page request and its answer function, so re-installing
+    the coordinator's pair (as a test that wraps the fetcher does) keeps R230; a fetcher
+    installed alone is a plain fetcher whose ``None`` is definitive."""
+    with TieredCluster(tmp_path, **NOT_UPLOADED) as tc:
+        tc.create_database("n0")
+        _commit_without(tc, "n0", "n2")
+        r = tc["n0"].committed_root()[1]
+        n2, st = tc["n2"], tc.storages["n2"]
+        st.set_fetcher(n2.fetch_record, answer=n2.fetch_answer)
+        restore = _silence_fetches_to(tc, "n2")
+        try:
+            with pytest.raises(ProtoUnexpectedError, match="unavailable"):
+                st.get_atom(AtomPointer(r.segment, r.offset))
+            st.set_fetcher(n2.fetch_record)                     # alone: definitive misses
+            with pytest.raises(ProtoCorruptionError):
+                st.get_atom(AtomPointer(r.segment, r.offset))
+        finally:
+            restore()
+            st.set_fetcher(n2.fetch_record, answer=n2.fetch_answer)
+
+
+def test_a_really_poisoned_tier_reports_its_failure_and_keeps_its_error(tmp_path, monkeypatch):
+    """R237L: ``TieredStorage.failure`` on a tier poisoned by a failed manifest sync, and the
+    R231 skip it drives: that tier's exact ``ProtoUnexpectedError`` is never converted, even
+    under an expired permission."""
+    import os
+    from proto_db import transactions
+    from proto_db.storage import tiered
+    from proto_db.storage.tiered import TieredStorage
+    from tests.support.fake_object_store import FakeObjectStore
+    st = TieredStorage(str(tmp_path / "t"), FakeObjectStore(), durability="none")
+    try:
+        assert st.failure is None
+        st.push_atom({"k": 1})                                  # registers an own segment
+        fsync = os.fsync
+        broken = OSError(5, "injected EIO")
+
+        def failing(fd):
+            if fd == st._manifest_fd:
+                raise broken
+            return fsync(fd)
+        monkeypatch.setattr(tiered.os, "fsync", failing)
+        with pytest.raises(ProtoUnexpectedError, match="Syncing"):
+            st.flush_local(force=True)
+        monkeypatch.setattr(tiered.os, "fsync", fsync)
+        assert st.failure is broken, f"the poisoned tier reports {st.failure!r}"
+
+        class Expired:
+            def is_valid(self):
+                return False
+        error = ProtoUnexpectedError("Writing manifest failed")
+        transactions._check_expired_read(Expired(), error, st)  # no conversion: returns
+        with pytest.raises(ProtoConflictError):
+            transactions._check_expired_read(Expired(), error, None)
+    finally:
+        st.close()
+
+
+def test_a_base_re_commit_that_sent_its_root_is_never_a_retryable_conflict(monkeypatch):
+    """R238L: ``_commit_base``'s replicate sends its root, then fails with exactly
+    ``ProtoUnexpectedError`` after the permission expired.  Something a voter may accept left
+    the node, so the outcome is unknown and the error is never turned into a retryable
+    conflict -- whatever its type (not only the subclass ``replicate`` raises in practice)."""
+    from proto_db import transactions
+    from proto_db.collections.dictionaries import Dictionary
+    h = Harness("abc", records=True)
+    try:
+        permission = _owner_permission(h)
+        a = h.nodes["a"]
+        monkeypatch.setattr(transactions, "_base_needs_commit", lambda coordinator, permission, current: True)
+        monkeypatch.setattr(a, "commit_records", lambda label, root: ("persisted", None, None))
+        monkeypatch.setattr(transactions, "_load_space", lambda context, record: transactions._new_space_root(
+            Dictionary(context=context), context, None, None))
+        cause = ProtoUnexpectedError("the link failed after the root was sent")
+
+        def replicate(lease, record, base=None, tier=None):
+            a._transport.send("b", {"type": "replicate", "from": "a", "planted": True})   # the root left
+            h.clock.t = max(h.clock.t, permission.valid_until + 0.001)
+            raise cause
+        monkeypatch.setattr(a, "replicate", replicate)
+        entry, sent = _round(h, "a", permission, lambda current, stamp: None, "bc")
+        assert sent, "the stand-in replicate sent nothing"
+        assert not isinstance(entry.error, ProtoConflictError), \
+            f"a re-commit that sent its root became a retryable conflict: {entry.error!r}"
+        assert permission.outcome == "unknown", permission.outcome
+    finally:
+        h.close()

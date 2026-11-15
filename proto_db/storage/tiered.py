@@ -531,8 +531,7 @@ class TieredStorage(SharedStorage):
         self._cache = BoundedCache(cache_bytes)
         self._segments = BoundedCache(segment_cache_bytes)
         self._tls = threading.local()
-        self._fetcher = None
-        self._fetch_answer = None      # the coordinator's fetch_answer, when attached (R230)
+        self._peer = (None, None)      # (fetcher, answer): installed together (set_fetcher, R236L)
         self._own = {}                 # UUID -> _Own, in creation order (dicts keep it)
         self._live_own = {}            # UUID -> _Own of the own segments not released (I1)
         self._copies = {}              # UUID -> root_key of the newest commit that wrote into the copy
@@ -1071,22 +1070,16 @@ class TieredStorage(SharedStorage):
         finally:
             self._tls.critical = previous
 
-    def set_fetcher(self, fetcher: Optional[Callable]) -> None:
-        """Install the peer page request function (``fetcher(ptr) -> framed bytes or None``).
-        It also removes the answer function of :meth:`set_fetch_answer`, which belongs to the
-        fetcher it was installed with: a fetcher installed alone is then used for every peer
-        read, and its ``None`` counts as definitive."""
-        self._fetcher = fetcher
-        self._fetch_answer = None
-
-    def set_fetch_answer(self, answer: Optional[Callable]) -> None:
-        """Install the peer page request that also says whether its ``None`` is definitive
-        (``answer(ptr) -> (framed bytes or None, complete)``; the cluster coordinator's
-        ``fetch_answer``).  With it, a record whose segment the object store does not hold
-        while some peer did not answer is unavailable (``ProtoUnexpectedError``), not
-        corrupt (ruling R230).  Without it, a fetcher's ``None`` counts as definitive.  Installed
-        after :meth:`set_fetcher`, as the pair's second half."""
-        self._fetch_answer = answer
+    def set_fetcher(self, fetcher: Optional[Callable], answer: Optional[Callable] = None) -> None:
+        """Install the peer page request: ``fetcher(ptr) -> framed bytes or None`` and, with it,
+        ``answer(ptr) -> (framed bytes or None, complete)``, the same request saying whether
+        its ``None`` is definitive (every peer answered without the record; the cluster
+        coordinator's ``fetch_answer``).  The two are installed together, so they cannot be
+        split (R236L).  With ``answer``, a record whose segment the object store does not hold
+        while some peer was not heard is unavailable (``ProtoUnexpectedError``), not corrupt
+        (ruling R230); without it (a plain fetcher), a ``None`` counts as definitive.
+        ``set_fetcher(None)`` removes both."""
+        self._peer = (fetcher, answer if fetcher is not None else None)
 
     @property
     def failure(self) -> Optional[BaseException]:
@@ -1233,9 +1226,10 @@ class TieredStorage(SharedStorage):
 
     def _peer_answer(self, ptr: AtomPointer) -> tuple:
         """``(record or None, complete)`` from a peer page request; ``complete`` False when
-        some peer did not answer (only known with :meth:`set_fetch_answer`).  A corrupt
-        answer is no record, and definitive: a peer holds wrong bytes."""
-        answer, fetcher = self._fetch_answer, self._fetcher
+        some peer was not heard (only known with an ``answer`` function, :meth:`set_fetcher`).
+        A corrupt answer is no record and not definitive either: the request stopped at it,
+        so the other peers may not have been heard (R235L)."""
+        fetcher, answer = self._peer
         if answer is not None:
             data, complete = answer(ptr)
         elif fetcher is not None:
@@ -1248,7 +1242,7 @@ class TieredStorage(SharedStorage):
             return read_record(data, 0), True
         except ProtoCorruptionError as e:
             logger.warning("A peer answered a corrupt record for %s: %s", ptr, e)
-            return None, True
+            return None, False
 
     def _segment_object(self, segment: uuid.UUID, *, reload: bool = False) -> bytes:
         """The sealed object of ``segment``, else its largest part; cached (``reload`` skips the cache)."""
@@ -1519,7 +1513,7 @@ class TieredStorage(SharedStorage):
 
     def _peer_framed(self, ptr: AtomPointer) -> Optional[bytes]:
         """The framed record at ``ptr`` from a peer (page request), validated, or ``None``."""
-        fetcher = self._fetcher
+        fetcher = self._peer[0]
         data = fetcher(ptr) if fetcher is not None else None
         if data is None:
             return None
