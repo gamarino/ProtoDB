@@ -1090,9 +1090,10 @@ class TieredStorage(SharedStorage):
 
     def set_fetcher(self, fetcher: Optional[Callable], answer: Optional[Callable] = None) -> None:
         """Install the peer page request: ``fetcher(ptr) -> framed bytes or None`` and, with it,
-        ``answer(ptr) -> (framed bytes or None, complete)``, the same request saying whether
+        ``answer(ptr, valid=None) -> (framed bytes or None, complete)``, the same request saying whether
         its ``None`` is definitive (every peer answered without the record; the cluster
-        coordinator's ``fetch_answer``).  The two are installed together, so they cannot be
+        coordinator's ``fetch_answer``; ``valid`` rejects a corrupt answer, which does not end
+        the request, R242L).  The two are installed together, so they cannot be
         split (R236L).  With ``answer``, a record whose segment the object store does not hold
         while some peer was not heard is unavailable (``ProtoUnexpectedError``), not corrupt
         (ruling R230); without it (a plain fetcher), a ``None`` counts as definitive.

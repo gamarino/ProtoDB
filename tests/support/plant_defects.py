@@ -577,11 +577,11 @@ def blind_snapshot_of'''),),
         "made every peer look answered",
         "product: commit_info misses are counted per message (R234L)"),
     "lease_read_corrupt_answer_definitive": Plant((
-        ("proto_db/storage/tiered.py",
-         "            logger.warning(\"A peer answered a corrupt record for %s: %s\", ptr, e)\n"
-         "            return None, False\n",
-         "            logger.warning(\"A peer answered a corrupt record for %s: %s\", ptr, e)\n"
-         "            return None, True   # PLANT: a corrupt answer counts as definitive\n"),),
+        # Since R242L the coordinator checks a peer's answer (fetch_answer's ``valid``), so the
+        # defect is planted where the corrupt answer is classified.
+        ("proto_db/cluster/coordinator.py",
+         "                    complete = False        # a corrupt answer is no answer that the record is absent\n",
+         "                    pass   # PLANT: a corrupt answer counts as definitive\n"),),
         ("tests/unit/test_cluster_lease_read.py::"
          "test_a_corrupt_peer_answer_is_not_an_answer_that_the_record_is_nowhere",),
         "a corrupt peer answer made the read ProtoCorruptionError",

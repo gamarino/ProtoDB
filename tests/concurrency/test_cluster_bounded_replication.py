@@ -394,10 +394,10 @@ def test_filling_a_hole_from_peers_never_blocks_the_nodes_own_shipping(tmp_path)
             answer.wait(30)                             # a peer answer that has not come yet
             return fetcher(ptr)
 
-        def slow_answer(ptr):
+        def slow_answer(ptr, **kw):
             filling.set()
             answer.wait(30)
-            return fetch_answer(ptr)
+            return fetch_answer(ptr, **kw)
 
         st.set_fetcher(slow_fetcher, answer=slow_answer)
         try:
