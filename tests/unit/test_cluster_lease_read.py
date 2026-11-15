@@ -19,13 +19,13 @@ advanced by hand and every message held until delivered, so the lease's expiry i
 step and the wait a read is given is the ``timeout`` it passes to ``_ask`` (recorded; no wall
 time is measured).
 """
-import threading
+import uuid
 
 import pytest
 
 from proto_db.core.atom import AtomPointer
-from proto_db.errors import (ProtoConflictError, ProtoOutcomeUnknownError, ProtoUnexpectedError,
-                             ProtoWriteRefusedError)
+from proto_db.errors import (ProtoConflictError, ProtoCorruptionError, ProtoDBError, ProtoOutcomeUnknownError,
+                             ProtoUnexpectedError, ProtoWriteRefusedError)
 from proto_db.transactions import _Entry, _Group, _permit_round
 from tests.support.manual_cluster import GRACE, Harness, rec
 from tests.support.tiered_cluster import RUN_KW, TieredCluster, incr
@@ -272,3 +272,227 @@ def test_database_run_retries_a_commit_whose_permission_expired_before_its_base_
         assert tc.value("n2") == 3
         for node in ("n0", "n1"):
             assert tc.eventually(node, 3), f"{node} does not see the retried commit"
+
+
+# -- fix round 1 (review of LEASE-READ; rulings R230-R233) ------------------------------------
+
+NOT_UPLOADED = dict(persist_interval=3600.0, storage_kw=dict(ship_interval=3600.0))    # nothing ships
+
+
+def _commit_without(tc, node, missing, fn=incr):
+    """Commit ``fn`` on ``node`` while its replication never reaches ``missing`` (the other
+    members are a majority): ``missing`` holds none of its records."""
+    send = tc[node]._transport.send
+
+    def hold_back(to, msg):
+        if to == missing and msg["type"] in ("replicate", "records", "warm"):
+            return
+        send(to, msg)
+
+    tc[node]._transport.send = hold_back
+    try:
+        tc.commit(node, fn)
+    finally:
+        tc[node]._transport.send = send
+
+
+def _silence_fetches_to(tc, reader):
+    """The other members' page-request replies to ``reader`` are lost (slow or cut-off peers);
+    returns a function restoring them."""
+    sends = {n: tc[n]._transport.send for n in tc.ids if n != reader}
+    for n, send in sends.items():
+        def lossy(to, msg, _send=send):
+            if to == reader and msg["type"] == "fetched":
+                return
+            _send(to, msg)
+        tc[n]._transport.send = lossy
+
+    def restore():
+        for n, send in sends.items():
+            tc[n]._transport.send = send
+    return restore
+
+
+def test_a_segment_not_uploaded_yet_with_peers_unheard_is_unavailable_not_corrupt(tmp_path):
+    """R230: the store does not hold the segment yet (nothing ships), and the peers that hold
+    the record do not answer the page request: the read is ``ProtoUnexpectedError``
+    (unavailable).  Before, it was ``ProtoCorruptionError`` ("in no tier"), a verdict the
+    timeout produced."""
+    with TieredCluster(tmp_path, **NOT_UPLOADED) as tc:
+        tc.create_database("n0")
+        _commit_without(tc, "n0", "n2")
+        r = tc["n0"].committed_root()[1]
+        ptr = AtomPointer(r.segment, r.offset)
+        st = tc.storages["n2"]
+        assert st.local_record(ptr) is None, "n2 holds the record"
+        assert not any(r.segment.hex in k for k in tc.store.keys()), "the segment was uploaded"
+        restore = _silence_fetches_to(tc, "n2")
+        try:
+            with pytest.raises(ProtoDBError) as info:
+                st.get_atom(ptr)
+        finally:
+            restore()
+        assert type(info.value) is ProtoUnexpectedError, \
+            f"an unavailable record was reported as {type(info.value).__name__}: {info.value}"
+        assert "unavailable" in str(info.value)
+        assert isinstance(info.value.__cause__, ProtoCorruptionError)
+
+
+def test_a_record_every_peer_and_the_store_lack_is_still_corruption(tmp_path):
+    """The other half of R230: every peer answered that it lacks the record and the store has
+    no such segment -- the record is in no tier: ``ProtoCorruptionError``."""
+    with TieredCluster(tmp_path, **NOT_UPLOADED) as tc:
+        tc.create_database("n0")
+        ptr = AtomPointer(uuid.uuid4(), 64)
+        with pytest.raises(ProtoCorruptionError, match="no full copy"):
+            tc.storages["n2"].get_atom(ptr)
+
+
+def test_database_run_retries_a_commit_whose_base_segment_is_not_uploaded_and_permission_expired(tmp_path):
+    """R230 with R212, on one natural schedule: a concurrent commit's records never reached
+    n2 and its segment is not in the store.  n2's commit reads that base inside its critical
+    section; the permission expires as the page request starts (the injectable lease clock),
+    so the request is capped at 0 s, the store lacks the segment, and the read is
+    unavailable -- a retryable conflict.  ``Database.run`` retries and the commit lands once.
+    Before, the read raised ``ProtoCorruptionError`` and the commit failed."""
+    with TieredCluster(tmp_path, **NOT_UPLOADED) as tc:
+        tc.create_database("n0")
+        tc.commit("n0", incr)
+        n2, st = tc["n2"], tc.storages["n2"]
+        wait = n2._read_wait
+        state = {"attempts": 0, "fired": None}
+
+        def expiring_wait(permitted):                   # called under n2's lock, per page request
+            permission = n2._permit
+            if state["fired"] is None and permitted and permission is not None:
+                permission._clock = lambda: permission.valid_until + 1.0
+                state["fired"] = permission
+            return wait(permitted)
+
+        n2._read_wait = expiring_wait
+        read, raised = st._record, []
+
+        def observed(ptr):                              # observes only: records what a read raised
+            try:
+                return read(ptr)
+            except ProtoDBError as e:
+                raised.append(e)
+                raise
+        st._record = observed
+
+        def step(tr):
+            state["attempts"] += 1
+            if state["attempts"] == 1:
+                _commit_without(tc, "n0", "n2")         # the base moves; n2 lacks its records
+            incr(tr)
+
+        try:
+            tc.db("n2").run(step, **RUN_KW)
+        finally:
+            n2._read_wait = wait
+            st._record = read
+        assert state["fired"] is not None, "the schedule did not run: no page request inside the commit"
+        assert raised and type(raised[0]) is ProtoUnexpectedError and "unavailable" in str(raised[0]), \
+            f"the capped read did not fail as unavailable: {raised!r}"
+        assert state["attempts"] >= 2
+        assert tc.value("n2") == 3
+        for node in ("n0", "n1"):
+            assert tc.eventually(node, 3), f"{node} does not see the retried commit"
+
+
+def test_a_poisoned_tier_keeps_its_own_error_under_an_expired_permission():
+    """R231: a build whose write poisoned the tier raises exactly ``ProtoUnexpectedError``; once
+    the permission expired it is still that error, not "expired before its base could be
+    read"."""
+    h = Harness("abc", records=True)
+    try:
+        permission = _owner_permission(h)
+        cause = ProtoUnexpectedError("Writing manifest failed: disk full")
+        h.nodes["a"].tier.failure = cause            # the local tier poisoned by that write
+        entry, sent = _round(h, "a", permission, _expiring_build(h, permission, cause), "bc")
+        assert entry.error is cause, f"a poisoned tier's write error became {entry.error!r}"
+        assert not sent
+    finally:
+        h.close()
+
+
+def test_a_non_owner_commit_read_waits_no_longer_than_its_permission():
+    """R232: ``b`` holds a permission from the owner ``a`` and no term lease of its own; a read
+    inside its commit waits at most what remains of that permission.  At 88ca21d it waited
+    the full ``fetch_timeout`` (only a held term lease capped it)."""
+    h = Harness("abc", records=True)
+    try:
+        h.own("a")
+        permission, _ = h.permit_from("b", "a")
+        b = h.nodes["b"]
+        assert b._held is None and b._permit is permission
+        h.clock.t = permission.valid_until - b._fetch_timeout / 4
+        left = permission.remaining()
+        assert 0 < left < b._fetch_timeout
+        r = rec(9)
+        for n in "ac":
+            h.nodes[n].tier.held.add((r.segment, r.offset))
+        asks = _record_asks(b)
+
+        def in_commit():
+            with b.tier.critical_section():
+                return b.fetch_record(AtomPointer(r.segment, r.offset))
+
+        assert h._run(in_commit, _serve(h, "b", "ac")) == b"record"
+        assert asks and all(t == pytest.approx(left) for _, t in asks), \
+            f"a non-owner's commit read waited beyond its permission ({left} s left): {asks}"
+    finally:
+        h.close()
+
+
+def _failing_base_commit(h, monkeypatch, permission, error):
+    """A round that must re-commit its base (:func:`_commit_base`) whose read of the base's
+    records fails with ``error``; returns ``(entry, sent)``."""
+    from proto_db import transactions
+    a = h.nodes["a"]
+    monkeypatch.setattr(transactions, "_base_needs_commit", lambda coordinator, permission, current: True)
+
+    def failing(label, root):
+        raise error
+    monkeypatch.setattr(a, "commit_records", failing)
+    built = []
+    return _round(h, "a", permission, lambda current, stamp: built.append(current), "bc")
+
+
+def test_a_base_re_commit_whose_read_fails_sent_nothing(monkeypatch):
+    """R233: the reads of ``_commit_base`` come before anything a voter may accept leaves the
+    node, so a failed read there does not make the outcome unknown (the owner does not
+    abandon the term for it), and the error stands under a valid permission."""
+    h = Harness("abc", records=True)
+    try:
+        permission = _owner_permission(h)
+        cause = ProtoUnexpectedError("store unreachable")
+        entry, sent = _failing_base_commit(h, monkeypatch, permission, cause)
+        assert not sent
+        assert entry.error is cause, entry.error
+        assert permission.outcome != "unknown", \
+            "a base re-commit that sent nothing ended its permission unknown"
+    finally:
+        h.close()
+
+
+def test_a_base_re_commit_read_failing_after_the_permission_expired_is_retryable(monkeypatch):
+    """R233 with R212: the same failed read once the permission expired is a retryable
+    conflict."""
+    h = Harness("abc", records=True)
+    try:
+        permission = _owner_permission(h)
+        cause = ProtoUnexpectedError("store unreachable")
+
+        def expire_then_fail(label, root):
+            h.clock.t = max(h.clock.t, permission.valid_until + 0.001)
+            raise cause
+        from proto_db import transactions
+        monkeypatch.setattr(transactions, "_base_needs_commit", lambda coordinator, permission, current: True)
+        monkeypatch.setattr(h.nodes["a"], "commit_records", expire_then_fail)
+        entry, sent = _round(h, "a", permission, lambda current, stamp: None, "bc")
+        assert isinstance(entry.error, ProtoConflictError), entry.error
+        assert entry.error.__cause__ is cause
+        assert not sent and permission.outcome != "unknown"
+    finally:
+        h.close()

@@ -560,9 +560,9 @@ def test_the_first_root_of_every_term_is_accepted_through_the_older_label_exempt
     reproposals = []
     commit_base = transactions._commit_base
 
-    def spy(coordinator, tier, lease, label, base):
+    def spy(coordinator, tier, lease, label, base, **kw):
         reproposals.append((label, lease.term))
-        return commit_base(coordinator, tier, lease, label, base)
+        return commit_base(coordinator, tier, lease, label, base, **kw)
     monkeypatch.setattr(transactions, "_commit_base", spy)
     with _cluster(tmp_path) as tc:
         tc.commit("n0", incr)

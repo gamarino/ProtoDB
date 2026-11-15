@@ -506,8 +506,8 @@ def blind_snapshot_of'''),),
         "product: a read outside a commit is capped at an expired, unreleased term lease"),
     "lease_read_expired_unexpected": Plant((
         ("proto_db/transactions.py",
-         "    if type(error) is ProtoUnexpectedError and not sent and not permission.is_valid():\n",
-         "    if False:   # PLANT: an expired permission's failed base read stays unexpected\n"),),
+         "    if type(error) is ProtoUnexpectedError and getattr(tier, \"failure\", None) is None \\\n",
+         "    if False and getattr(tier, \"failure\", None) is None \\\n"),),
         ("tests/unit/test_cluster_lease_read.py::"
          "test_a_base_read_failing_after_the_permission_expired_is_a_retryable_conflict",
          "tests/unit/test_cluster_lease_read.py::"
@@ -516,11 +516,47 @@ def blind_snapshot_of'''),),
         "product: a base read failing after the permission expired is not retried (R212)"),
     "lease_read_subclasses": Plant((
         ("proto_db/transactions.py",
-         "    if type(error) is ProtoUnexpectedError and not sent and not permission.is_valid():\n",
-         "    if isinstance(error, ProtoUnexpectedError) and not sent and not permission.is_valid():  # PLANT\n"),),
+         "    if type(error) is ProtoUnexpectedError and getattr(tier, \"failure\", None) is None \\\n",
+         "    if isinstance(error, ProtoUnexpectedError) and getattr(tier, \"failure\", None) is None \\\n"),),
         ("tests/unit/test_cluster_lease_read.py::test_a_subclass_of_the_unexpected_error_is_never_made_retryable",),
         "became",
         "product: a subclass of ProtoUnexpectedError (an unknown outcome) is made retryable"),
+    # LEASE-READ fix round 1 (rulings R230-R233).
+    "lease_read_absent_is_corrupt": Plant((
+        ("proto_db/storage/tiered.py",
+         "        if isinstance(failure, _SegmentAbsent) and not peers_complete:\n",
+         "        if False:   # PLANT: a segment not uploaded yet is corruption whatever the peers said\n"),),
+        ("tests/unit/test_cluster_lease_read.py::"
+         "test_a_segment_not_uploaded_yet_with_peers_unheard_is_unavailable_not_corrupt",
+         "tests/unit/test_cluster_lease_read.py::"
+         "test_database_run_retries_a_commit_whose_base_segment_is_not_uploaded_and_permission_expired"),
+        "ProtoCorruptionError",
+        "product: an unavailable record (store lacks the segment, peers unheard) is reported corrupt (R230)"),
+    "lease_read_poisoned_converted": Plant((
+        ("proto_db/transactions.py",
+         "    if type(error) is ProtoUnexpectedError and getattr(tier, \"failure\", None) is None \\\n",
+         "    if type(error) is ProtoUnexpectedError and True \\\n"),),
+        ("tests/unit/test_cluster_lease_read.py::"
+         "test_a_poisoned_tier_keeps_its_own_error_under_an_expired_permission",),
+        "a poisoned tier's write error became",
+        "product: a poisoned tier's write error is made a retryable conflict (R231)"),
+    "lease_read_cap_without_permit": Plant((
+        ("proto_db/cluster/coordinator.py",
+         "            for lease in (self._held, self._permit):\n",
+         "            for lease in (self._held,):   # PLANT: the permission does not cap a commit read\n"),),
+        ("tests/unit/test_cluster_lease_read.py::test_a_non_owner_commit_read_waits_no_longer_than_its_permission",),
+        "waited beyond its permission",
+        "product: a non-owner's commit read is not capped at its permission (R232)"),
+    "lease_read_commit_base_sent_early": Plant((
+        ("proto_db/transactions.py",
+         "    where, records, ranges = coordinator.commit_records(label, base)\n",
+         "    if sending is not None:\n        sending()   # PLANT: marked sent before the base's reads\n"
+         "    where, records, ranges = coordinator.commit_records(label, base)\n"),),
+        ("tests/unit/test_cluster_lease_read.py::test_a_base_re_commit_whose_read_fails_sent_nothing",
+         "tests/unit/test_cluster_lease_read.py::"
+         "test_a_base_re_commit_read_failing_after_the_permission_expired_is_retryable"),
+        ("ended its permission unknown", "isinstance("),
+        "product: a base re-commit counts as sent before its reads (R233)"),
     "shiplock": Plant((
         ("proto_db/storage/tiered.py", "            data = self._copy_prefix(segment, end)",
          "            with self._ship_lock:   # PLANT: the hole is filled under the ship lock\n"

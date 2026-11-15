@@ -1194,9 +1194,15 @@ def _permit_round(coordinator, tier, permission, entries: list, group: _Group, *
             # root on top, so that transactions starting from the committed root see it.  The
             # base travels with its records.  Never for a proposal base (D55, H2): it is not
             # committed yet by construction, and only the gate may let a root follow it.
-            sent = True
+            def sending():
+                # R233: set just before the re-proposal's replicate, the first message a voter
+                # may accept; the reads before it (commit_records, the base's space) send only
+                # read-only page requests and commit queries.
+                nonlocal sent
+                sent = True
+
             try:
-                current = _commit_base(coordinator, tier, permission, label, current)
+                current = _commit_base(coordinator, tier, permission, label, current, sending=sending)
             except _BaseUnreachable:
                 # Re-review 3 of 8.3n, I1: abandon the term (O6), never end "none".  Rule O5
                 # would issue the same base again, and every round of the term would stall on
@@ -1204,6 +1210,10 @@ def _permit_round(coordinator, tier, permission, entries: list, group: _Group, *
                 # (argument at _BaseUnreachable).  Nothing was sent: the commits get a
                 # retryable conflict.  Planted test ``unreachable_base_none`` breaks this.
                 permission.outcome = "unknown"
+                raise
+            except ProtoUnexpectedError as e:
+                if not sent:
+                    _check_expired_read(permission, e, tier)     # a base read, nothing sent (R233)
                 raise
             permission.outcome, permission.committed = "committed", (permission.term, current)
             permission.bind_root(current, permission.term)
@@ -1215,7 +1225,7 @@ def _permit_round(coordinator, tier, permission, entries: list, group: _Group, *
                 try:
                     ptr = entry.build(current, stamp)
                 except (ProtoCorruptionError, ProtoUnexpectedError) as e:
-                    _check_expired_read(permission, e, sent)
+                    _check_expired_read(permission, e, tier)
                     # A base read failed.  On a proposal base (``after``) that is not corruption:
                     # its records may be nowhere yet, or never -- the predecessor died or stalled
                     # before any copy left it.  Wait for the gate: once it opens the base is
@@ -1232,7 +1242,7 @@ def _permit_round(coordinator, tier, permission, entries: list, group: _Group, *
                     try:
                         ptr = entry.build(current, stamp)
                     except ProtoUnexpectedError as again:
-                        _check_expired_read(permission, again, sent)
+                        _check_expired_read(permission, again, tier)
                         raise
             except ProtoConflictError as e:
                 entry.error = e
@@ -1294,14 +1304,22 @@ def _permit_round(coordinator, tier, permission, entries: list, group: _Group, *
         return []
 
 
-def _check_expired_read(permission, error: BaseException, sent: bool) -> None:
+def _check_expired_read(permission, error: BaseException, tier) -> None:
     """Raise a retryable ``ProtoConflictError`` (chained from ``error``) when a base read failed
     with exactly ``ProtoUnexpectedError`` (never a subclass: an unknown outcome, a refused
-    write or a corruption keeps its meaning), nothing was sent and the write permission is no
-    longer valid.  Such a read was cut at the permission's end, or outlived it; nothing a
-    voter may accept left this node, so the commit may be retried (ruling R212).  Under a
-    valid permission the error stands: an honest failure."""
-    if type(error) is ProtoUnexpectedError and not sent and not permission.is_valid():
+    write or a corruption keeps its meaning), the commit's tier has not failed (a poisoned
+    tier's write error keeps its own, R231) and the write permission is no longer valid.  Such
+    a read was cut at the permission's end, or outlived it (ruling R212).
+
+    Called only where nothing was sent, and that is structural, not a flag: a build (and the
+    reads of :func:`_commit_base` before its replicate, R233) runs before the round's
+    ``replicate``, writes only to the local tier and sends only read-only ``fetch`` and
+    ``commit_query`` requests, which no voter accepts; the failing commit's records are never
+    part of what is replicated.  So the commit may be retried.  The permission's validity only
+    chooses between a retryable and a non-retryable error; it decides no outcome (R82).  Under
+    a valid permission the error stands: an honest failure."""
+    if type(error) is ProtoUnexpectedError and getattr(tier, "failure", None) is None \
+            and not permission.is_valid():
         raise ProtoConflictError("the write permission expired before its base could be read; "
                                  "nothing was sent") from error
 
@@ -1472,7 +1490,8 @@ class _BaseUnreachable(ProtoConflictError):
     ``none``, the owner renewing while demand lasts) ends after one abandoned term."""
 
 
-def _commit_base(coordinator, tier, lease, label: int, base: RootRecord) -> RootRecord:
+def _commit_base(coordinator, tier, lease, label: int, base: RootRecord, *,
+                 sending: Optional[Callable] = None) -> RootRecord:
     """Replicate a root equal to ``base`` (labelled ``label``; same databases), labelled with the
     lease term, on top of it, together with the base's records the object store lacks; return
     the new root's record (see :func:`_commit_under_lease`).
@@ -1480,7 +1499,8 @@ def _commit_base(coordinator, tier, lease, label: int, base: RootRecord) -> Root
     Re-proposing the base is what makes it committed; without its records, a base whose
     records lived only on its holder's disk would be lost with that disk (ruling R50).
     :class:`_BaseUnreachable` (a ``ProtoConflictError``: nothing replicated) when they are on
-    no reachable peer.
+    no reachable peer.  ``sending()`` is called just before the replicate: nothing a voter
+    may accept leaves this node before it (R233).
     """
     where, records, ranges = coordinator.commit_records(label, base)
     if where is None:
@@ -1490,6 +1510,8 @@ def _commit_base(coordinator, tier, lease, label: int, base: RootRecord) -> Root
     stamp = _ClusterStamp(lease.term, base.epoch + 1)
     ptr = context.save(_new_space_root(space.databases, context, stamp, space))
     record = RootRecord(WRITE_FORMAT_VERSION, ptr.segment, ptr.offset, stamp.epoch)
+    if sending is not None:
+        sending()
     coordinator.replicate(lease, record, base=(label, base, records, ranges) if where == "records" else None,
                           tier=tier)
     return record

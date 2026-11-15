@@ -1147,6 +1147,8 @@ class ClusterCoordinator:
             self._grants.restore(max(promised, accepted[0] if accepted is not None else 0))
             self._logged_promise = (tier, promised)
             tier.set_fetcher(self.fetch_record)
+            if hasattr(tier, "set_fetch_answer"):
+                tier.set_fetch_answer(self.fetch_answer)    # R230: unavailable vs. absent
             self._confirmed = False
             self._rejoining = rejoin
             self._rejoin_blocked = None
@@ -1675,6 +1677,8 @@ class ClusterCoordinator:
             if persister is not None:
                 persister.stop()
             tier.set_fetcher(None)
+            if hasattr(tier, "set_fetch_answer"):
+                tier.set_fetch_answer(None)
 
     # -- known roots -------------------------------------------------------------------------
 
@@ -4301,16 +4305,25 @@ class ClusterCoordinator:
     def fetch_record(self, ptr) -> Optional[bytes]:
         """Peer page request: the framed record at ``ptr`` from the first peer that has it, or
         ``None`` (no peer answered with it within ``fetch_timeout``; inside a commit, within
-        what remains of its permission: :meth:`_read_wait`).  The members the locator names for the record's segment
-        (the data replicas of the commits that wrote it, D54) are asked first; the others only
-        when none of them has it."""
+        what remains of its permission: :meth:`_read_wait`).  See :meth:`fetch_answer`."""
+        return self.fetch_answer(ptr)[0]
+
+    def fetch_answer(self, ptr) -> tuple:
+        """``(framed record or None, complete)``: the peer page request of :meth:`fetch_record`,
+        and whether its ``None`` is definitive -- every other member answered that it does
+        not hold the record (``complete`` True), as opposed to a member that did not answer
+        within the wait (a timeout, the cap of a commit's permission, a stopped coordinator:
+        ``complete`` False).  A record found is ``(data, True)``; with no other member,
+        ``(None, True)``.  The members the locator names for the record's segment (the data
+        replicas of the commits that wrote it, D54) are asked first; the others only when none
+        of them has it.  A tier tells an unavailable record from an absent one by it (R230)."""
         if not self._others:
-            return None
+            return None, True
         tier = self._tier
         permitted = bool(tier is not None and getattr(tier, "in_critical", lambda: False)())
         with self._lock:
             if self._state != "running":
-                return None
+                return None, False
             self._stats["fetches_requested"] += 1
             self._stats["record_fetches"] += 1
             if permitted:
@@ -4320,6 +4333,7 @@ class ClusterCoordinator:
             if located:
                 self._stats["fetches_located"] += 1
         rounds = [located, [m for m in self._others if m not in located]] if located else [list(self._others)]
+        complete = True
         for i, targets in enumerate(rounds):
             if not targets:
                 continue
@@ -4330,8 +4344,10 @@ class ClusterCoordinator:
                                lambda w, n=len(targets): w.data is not None or w.missing >= n, timeout,
                                targets=targets)
             if waiter.data is not None:
-                return waiter.data
-        return None
+                return waiter.data, True
+            if waiter.missing < len(targets):
+                complete = False        # some member did not answer: says nothing about it
+        return None, complete
 
 
 class _LeaseContext:
