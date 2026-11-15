@@ -192,7 +192,8 @@ from . import resolution as _resolution
 from .values import canonical, check_text, is_atom
 
 __all__ = ["module", "ModuleHandle", "Extension", "Registry", "METHOD", "DATA", "using", "ModulesBeingImported",
-           "current_registry", "registry_for", "no_builds", "ModuleList", "Catalog", "MODULES_ROOT", "CATALOG_ROOT"]
+           "current_registry", "registry_for", "no_builds", "ModuleList", "Catalog", "MODULES_ROOT", "CATALOG_ROOT",
+           "listed_modules"]
 
 #: The root holding the installed modules (a :class:`ModuleList`).
 MODULES_ROOT = "__currentModules"
@@ -981,6 +982,15 @@ def registry_root(objects, name: str, cls: type):
         raise _corrupt(name, f"its value is a {type(value).__name__}, not a {cls.__type_name__}: it is not "
                              f"registry state")
     return value
+
+
+def listed_modules(objects) -> tuple:
+    """The module names the roots dictionary ``objects`` (a version's roots) lists in
+    :data:`MODULES_ROOT`, ``base`` first (:meth:`ModuleList.names`), ``()`` when the root is
+    absent; a value that is not a :class:`ModuleList` is ``ProtoCorruptionError``.  The one
+    reader of the module-list root for resolution (final review M6)."""
+    listed = registry_root(objects, MODULES_ROOT, ModuleList)
+    return listed.names() if listed is not None else ()
 
 
 def merged_module_list(current: ModuleList | None, additions: Mapping, context) -> ModuleList | None:

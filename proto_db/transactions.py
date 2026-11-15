@@ -427,8 +427,7 @@ class Snapshot:
         (spec section 8)."""
         found = self._registry
         if found is _ABSENT:
-            listed = _registry.registry_root(self._root.objects, _registry.MODULES_ROOT, _registry.ModuleList)
-            names = listed.names() if listed is not None else ()
+            names = _registry.listed_modules(self._root.objects)
             found = self._database.space._registries.build(self._database.name, names) if names else None
             self._registry = found
         return found
@@ -446,8 +445,7 @@ class Snapshot:
         return self.registry
 
     def _reader_names(self) -> tuple:
-        listed = _registry.registry_root(self._root.objects, _registry.MODULES_ROOT, _registry.ModuleList)
-        return listed.names() if listed is not None else ()
+        return _registry.listed_modules(self._root.objects)
 
     def __enter__(self):
         """Make this snapshot the reader of the block (see the class docstring)."""
@@ -735,10 +733,9 @@ def _listed_modules(objects: Dictionary) -> Optional[tuple]:
     none, or ``None`` when that root is not registry state (reading it for resolution raises
     ``ProtoCorruptionError`` then; recording a transaction's list never does)."""
     try:
-        listed = _registry.registry_root(objects, _registry.MODULES_ROOT, _registry.ModuleList)
+        return _registry.listed_modules(objects)
     except ProtoCorruptionError:
         return None
-    return listed.names() if listed is not None else ()
 
 
 def _mismatch(database: str, bound: tuple, listed: tuple) -> ProtoValidationError:
@@ -2050,8 +2047,7 @@ class ObjectSpace:
         _check_name(database_name, "database")
         self._check_open()
         root = Database(self, database_name)._root_in(_SpaceContext(self._storage), self._read_storage_root())
-        listed = _registry.registry_root(root.objects, _registry.MODULES_ROOT, _registry.ModuleList)
-        names = listed.names() if listed is not None else ()
+        names = _registry.listed_modules(root.objects)
         _registry.forget_failure(names, self._modules_mapping)
         return self._registries.reload(database_name, names)
 
@@ -2764,8 +2760,7 @@ class Transaction:
             return self._installed_names()
 
     def _installed_names(self) -> tuple:
-        listed = _registry.registry_root(self._objects, _registry.MODULES_ROOT, _registry.ModuleList)
-        return (listed.names() if listed is not None else ()) + tuple(self._installs)
+        return _registry.listed_modules(self._objects) + tuple(self._installs)
 
     @property
     def registry(self) -> Optional[_registry.Registry]:

@@ -467,6 +467,10 @@ def _probe_node(node, name):
     return node._own_probe(name)
 
 
+# ``_lookup`` and ``_read`` are one probe (:func:`_probe_node`) under two names on purpose: a frame
+# probe of a walk and the read of a cached position are observed apart (the per-name cache tests
+# count the frames a repeated lookup walks: none), so they are kept as separate hooks.
+
 def _lookup(node, name):
     """A frame probe of a walk: the own definition of ``name`` in ``node``, or ``_ABSENT``."""
     return _probe_node(node, name)
