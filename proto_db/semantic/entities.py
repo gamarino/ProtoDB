@@ -93,7 +93,11 @@ The query engine (preflight F17, F18)
     answers ``"members"``: the version each row reads, row by row (the agent interface names each row's
     entity and type with it, :mod:`proto_db.agent.operations`).  With ``selection``, a callable from a member's
     type name to the paths to select for it, a member's row evaluates only those paths (the agent interface
-    never evaluates a path it withholds), and a failure is reported by its kind and path only.
+    never evaluates a path it withholds).  With ``scrubbed=True`` an evaluation failure (see
+    :data:`_EVALUATION_FAILURES`) of a selected path, of the ``where`` or of the aggregate is reported by the
+    part and the kind of the failure only, never by its message (the agent interface); any other failure (a
+    storage error, a closed space) propagates unchanged.  Raw planning (no catalog) reads the kind of every
+    element of the collection once, and only when some conjunct could plan (see :meth:`Operations._indexed`).
 """
 from __future__ import annotations
 
@@ -110,7 +114,8 @@ from ..collections.lists import List
 from ..collections.sets import Set
 from ..core.atom import Atom
 from ..core.dbobject import DBObject
-from ..errors import ProtoCorruptionError, ProtoNotSupportedError, ProtoUserError, ProtoValidationError
+from ..errors import ProtoClosedError, ProtoCorruptionError, ProtoNotSupportedError, ProtoUserError, \
+    ProtoValidationError
 from ..indexing.keyspec import _step as _stored_step
 from ..indexing.range import RangeIndex
 from ..query.expressions import And
@@ -119,8 +124,8 @@ from ..query.terms import Term
 from ..values import MISSING, MutableObject, is_atom, values_equal
 from . import compose as _compose
 from .descriptors import RegistryReader
-from .expressions import (Reader, _arithmetic, _identity, _number, _truth, check_ast, evaluate, to_planner,
-                          unwrap_entry)
+from .expressions import (Reader, _arithmetic, _identity, _number, _truth, check_ast, describe_operand, evaluate,
+                          to_planner, unwrap_entry)
 
 __all__ = ["Version", "Members", "Operations", "Schema", "StoredReader", "check_query", "query_stored"]
 
@@ -132,6 +137,28 @@ _QUERY_KEYS = frozenset({"from", "of_type", "where", "select", "aggregate", "as_
 
 def _invalid(detail: str) -> ProtoValidationError:
     return ProtoValidationError(detail)
+
+
+#: What evaluating an expression over unexpected values raises: the expression language's own errors, and
+#: what a Python-only computed attribute raises over a value it does not expect.  A scrubbed query reports
+#: these by their kind only; anything else (a storage or a corruption error, a closed space) propagates.
+_EVALUATION_FAILURES = (ProtoValidationError, ProtoNotSupportedError, ProtoUserError, ArithmeticError, TypeError,
+                        ValueError)
+
+
+def _scrubbed(scrub: bool, part: str, run, *args):
+    """``run(*args)``; with ``scrub``, an evaluation failure becomes a ``ProtoValidationError`` naming ``part``
+    and the failure's kind, raised outside the handler so that no exception holding a value is chained."""
+    if not scrub:
+        return run(*args)
+    try:
+        return run(*args)
+    except _EVALUATION_FAILURES as error:
+        if isinstance(error, ProtoClosedError):
+            raise
+        kind = type(error).__name__
+    raise _invalid(f"Evaluating {part} failed ({kind}); the failure's message is not reported, since it may "
+                   f"hold a value")
 
 
 def _kind(element: Mapping) -> str:
@@ -544,7 +571,8 @@ class Operations:
             return Version(self.session, raw["version"], raw["entity"])
         if is_atom(raw):
             return Version(self.session, raw, None)
-        raise _invalid(f"A role holds records, identity handles or version-bound references, not {raw!r}")
+        raise _invalid(f"A role holds records, identity handles or version-bound references, not "
+                       f"{describe_operand(raw)}")
 
     def _write(self, handle: MutableObject, old, new) -> None:
         """Write ``new`` in ``handle``'s cell and move the aggregates ``old`` contributed to."""
@@ -708,14 +736,14 @@ class Operations:
         where = f"The end {end!r} of {type_name!r}"
         if add:
             if found is not None:
-                raise _invalid(f"{where} already holds {raw!r}")
+                raise _invalid(f"{where} already holds {describe_operand(raw)}")
             if collection is None:
                 collection = self._new_collection(info)
             element = self._entry(raw, key) if info.entries else raw
             collection = collection.append_last(element) if info.ordered else collection.add(element)
         else:
             if found is None:
-                raise _invalid(f"{where}: {raw!r} is not linked to it")
+                raise _invalid(f"{where}: {describe_operand(raw)} is not linked to it")
             position, element = found
             collection = collection.remove_at(position) if info.ordered else collection.remove(element)
         sign = "+" if add else "-"
@@ -732,8 +760,8 @@ class Operations:
         collection = _stored_step(owner, info.end)
         found = self._find(None if _unset(collection) else collection, info, raw, old_key)
         if found is None:
-            raise ProtoCorruptionError(f"The end {info.end!r} of {owner_handle.name!r} lacks the entry of {raw!r}, "
-                                       f"which its inverse end holds")
+            raise ProtoCorruptionError(f"The end {info.end!r} of {owner_handle.name!r} lacks the entry of "
+                                       f"{describe_operand(raw)}, which its inverse end holds")
         position, element = found
         entry = self._entry(raw, new_key)
         collection = collection.set_at(position, entry) if info.ordered else collection.remove(element).add(entry)
@@ -988,30 +1016,30 @@ class Operations:
             return self.session.version()
         return {"number": self.source.version, "ref": base64.b64encode(self.source.ref).decode("ascii")}
 
-    def _selected(self, member, select, selection) -> dict:
+    def _selected(self, member, select, selection, scrub: bool) -> dict:
         """The row of ``member``: the paths ``select`` names, or, with ``selection``, the paths
-        ``selection(member's type name)`` gives -- the only paths evaluated -- each failure reported by its
-        kind and path, never by the value that failed (no value of the member reaches the message)."""
+        ``selection(member's type name)`` gives -- the only paths evaluated; with ``scrub``, a failure is
+        reported by its kind and path, never by the value that failed."""
         if selection is None:
             names = select
         else:
             names = selection(getattr(type(member), "__type_name__", None))
         row = {}
         for name in names:
-            if selection is None:
-                value = evaluate(["attr", *name.split(".")], member, reader=self.reader)
-            else:
-                try:
-                    value = evaluate(["attr", *name.split(".")], member, reader=self.reader)
-                except Exception as error:      # reported without its message, which may hold a value
-                    raise _invalid(f"Evaluating the selected path {name!r} failed ({type(error).__name__})") \
-                        from None
+            value = _scrubbed(scrub, f"the selected path {name!r}", self._path, name, member)
             if value is not MISSING:
                 row[name] = value
         return row
 
+    def _path(self, name: str, member):
+        return evaluate(["attr", *name.split(".")], member, reader=self.reader)
+
+    def _summed(self, total, node, member):
+        value = _number("sum", evaluate(node, member, reader=self.reader))
+        return total if value is MISSING else _arithmetic("+", total, value)
+
     @_consistent
-    def query(self, tree: Mapping, *, with_members: bool = False, selection=None) -> dict:
+    def query(self, tree: Mapping, *, with_members: bool = False, selection=None, scrubbed: bool = False) -> dict:
         check_query(tree)
         version = self._version()
         if "as_of" in tree and tree["as_of"] != version["ref"]:
@@ -1022,7 +1050,7 @@ class Operations:
         if of_type is not None and self.schema is not None:
             self.schema.entity(of_type)
         with self.reading():
-            members, explain, member_type, used = self._members(origin, where)
+            members, explain, member_type, used = self._members(origin, where, scrubbed)
             if of_type is not None:
                 allowed = self.schema.subtypes(of_type) if self.schema is not None else frozenset({of_type})
                 members = [(raw, m) for raw, m in members if getattr(type(m), "__type_name__", None) in allowed]
@@ -1032,12 +1060,10 @@ class Operations:
             elif aggregate is not None:
                 total = 0
                 for _, member in members:
-                    value = _number("sum", evaluate(aggregate[1], member, reader=self.reader))
-                    if value is not MISSING:
-                        total = _arithmetic("+", total, value)
+                    total = _scrubbed(scrubbed, "the query's aggregate", self._summed, total, aggregate[1], member)
                 rows = [{"sum": total}]
             elif select is not None:
-                rows = [self._selected(member, select, selection) for _, member in members]
+                rows = [self._selected(member, select, selection, scrubbed) for _, member in members]
             else:
                 rows = [self._row_version(raw, member) for raw, member in members]
         reads = [t for t in (where, aggregate[1] if aggregate and aggregate[0] == "sum" else None) if t is not None]
@@ -1092,7 +1118,7 @@ class Operations:
             type_name = element["target"]
         return used, type_name
 
-    def _members(self, origin, where) -> tuple:
+    def _members(self, origin, where, scrub: bool) -> tuple:
         """``(members as (stored value, record) pairs, explain, members' type, roles crossed)``."""
         conjuncts = [] if where is None else list(where[1:]) if where[0] == "and" else [where]
         used, member_type = self._static_types(origin)
@@ -1105,33 +1131,36 @@ class Operations:
                 collection = _stored_step(record, last)
                 if self.schema is None:
                     if isinstance(collection, (List, Set)):
-                        return (*self._indexed(collection, None, conjuncts, source), None, used)
+                        return (*self._indexed(collection, None, conjuncts, source, scrub), None, used)
                 else:
                     owner_type = getattr(type(record), "__type_name__", None)
                     element = self.schema.element(owner_type, last) if self.schema.has(owner_type) else None
                     if element is not None and "target" in element and not _single(element):
                         info = self.schema.end_index(owner_type, last)
-                        return (*self._indexed(None if _unset(collection) else collection, info, conjuncts, source),
-                                member_type or info.member_type, used)
+                        return (*self._indexed(None if _unset(collection) else collection, info, conjuncts, source,
+                                               scrub), member_type or info.member_type, used)
             reached = self._traverse(origin[1], origin[2:])
         else:
             reached = self._traverse(origin, ())
-        kept = [(raw, m) for raw, m in reached if is_atom(m) and self._passes(conjuncts, m)]
+        kept = [(raw, m) for raw, m in reached if is_atom(m) and self._passes(conjuncts, m, scrub)]
         return kept, {**source, "plan": None, "indexed": [], "residual": copy.deepcopy(conjuncts)}, member_type, used
 
     def _row_version(self, raw, member) -> Version:
         return Version(self.session, member, _handle_of(raw))
 
-    def _passes(self, conjuncts, member) -> bool:
-        return all(_truth("where", evaluate(c, member, reader=self.reader), "a conjunct of the where")
-                   for c in conjuncts)
+    def _passes(self, conjuncts, member, scrub: bool) -> bool:
+        return all(_scrubbed(scrub, "the query's 'where'", self._holds, c, member) for c in conjuncts)
 
-    def _indexed(self, collection, info: _EndIndex | None, conjuncts, source) -> tuple:
+    def _holds(self, conjunct, member) -> bool:
+        return _truth("where", evaluate(conjunct, member, reader=self.reader), "a conjunct of the where")
+
+    def _indexed(self, collection, info: _EndIndex | None, conjuncts, source, scrub: bool) -> tuple:
         """The members of the stored ``collection`` of the end ``info`` that satisfy ``conjuncts``: what the
         planner can answer exactly goes to it over the collection (its indexes), the rest is a residual.
         With ``info=None`` (no catalog) the collection's stored structure decides: over records, a conjunct
         on one stored attribute plans (evaluation reads stored values only, as the planner does); over
-        entries or handles, nothing does."""
+        entries or handles, nothing does.  Deciding that costs one pass over the elements' kinds, made only
+        when some conjunct could plan."""
         planned, indexed, residual = [], [], []
         allowed = None
         if info is None:
@@ -1139,8 +1168,9 @@ class Operations:
             # plans only when every element is a record (a handle or an entry would be read by the planner
             # as itself, where evaluation follows it to its member); entries are unwrapped either way.
             entries = True
-            if collection is not None and collection.count and all(
-                    is_atom(element) and unwrap_entry(element) is element for element in collection.elements()):
+            if collection is not None and collection.count \
+                    and any(to_planner(conjunct) is not None for conjunct in conjuncts) \
+                    and all(is_atom(element) and unwrap_entry(element) is element for element in collection.elements()):
                 allowed = _ANY_NAME
         elif info.entries:
             entries = True
@@ -1167,7 +1197,7 @@ class Operations:
         plan = query.explain()
         members = []
         for raw, member in self._reached(unwrap_entry(element) if entries else element for element in query.to_list()):
-            if self._passes(residual, member):
+            if self._passes(residual, member, scrub):
                 members.append((raw, member))
         return members, {**source, "plan": plan, "indexed": copy.deepcopy(indexed), "residual": copy.deepcopy(residual)}
 
@@ -1267,13 +1297,13 @@ def check_query(tree) -> None:
         raise _invalid(f"A query's 'of_type' is a type name, not {of_type!r}")
 
 
-def query_stored(snapshot, tree, *, with_members: bool = False, selection=None) -> dict:
+def query_stored(snapshot, tree, *, with_members: bool = False, selection=None, scrubbed: bool = False) -> dict:
     """Run the query ``tree`` with the session's engine over the stored structure of ``snapshot`` alone:
     no catalog (no defaults, ``of_type`` is the stored type, no terms), the stored collections' indexes
     where their structure allows (see :meth:`Operations._indexed`), and no reserved root.  The agent
     interface's raw mode (:mod:`proto_db.agent.operations`)."""
     return Operations(None, snapshot, None, reader=StoredReader(snapshot)).query(tree, with_members=with_members,
-                                                                                 selection=selection)
+                                                                                 selection=selection, scrubbed=scrubbed)
 
 
 def _reads_only(node, names) -> bool:

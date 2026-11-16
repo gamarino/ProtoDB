@@ -556,6 +556,25 @@ def test_history_lists_versions_newest_first(db):
     assert history[-1].root_names == ()
 
 
+
+def test_version_names_iterate_lazily_in_name_order_after_a_name(db):
+    def build(tr):
+        for name in ("b", "a", "c"):
+            tr.set_root_object(name, 1)
+        for name in ("n2", "n1"):
+            tr.new_mutable(name, 1)
+    db.run(build)
+    entry = db.history()[0]
+    snapshot = db.snapshot_at(entry)
+    for view in (snapshot, entry):
+        assert list(view.iter_root_names()) == ["a", "b", "c"] == list(view.root_names)
+        assert list(view.iter_root_names(after="a")) == ["b", "c"]
+        assert list(view.iter_root_names(after="bb")) == ["c"]
+        assert list(view.iter_root_names(after="c")) == []
+        assert list(view.iter_mutable_names()) == ["n1", "n2"] == list(view.mutable_names)
+        assert list(view.iter_mutable_names(after="n1")) == ["n2"]
+
+
 # -- run() -----------------------------------------------------------------------------------
 
 def test_run_returns_the_result_and_commits(db):

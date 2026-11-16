@@ -49,10 +49,16 @@ Sensitivity (spec section 11; ``describe`` lists every attribute, ``query`` omit
     - A value a row would show is checked against that row's own type before anything is evaluated: a
       selected path that reads a withheld attribute is left out of that row's selection (the default
       selection the same way) and is never evaluated, so a withheld Python-only computed attribute never
-      runs and no failure over a withheld value can reach the agent.  ``terms`` lists the withheld element
-      with ``"sensitivity"`` and ``"withheld": True``, so the agent knows what it did not get and why.
-    - A selected path whose evaluation fails is reported by the kind of the failure and the path, never by
-      the message of the failure, which may hold a value.
+      runs.  ``terms`` gives every element the query used with its own declared ``"sensitivity"`` (one of
+      ``public``, ``internal``, ``personal``, ``secret``); a withheld element adds ``"withheld": True`` and
+      ``"withheld_because"``, either ``{"reads": {"type_name", "name", "sensitivity"}}`` (the first withheld
+      attribute it reads, itself included) or ``{"python_only": True}``, so the agent knows what it did not
+      get and why.
+    - No value reaches the agent through an error.  The evaluator names a record, a collection or a handle by
+      its kind, never by its contents, and a selected path, a ``where`` or an aggregate whose evaluation fails
+      (a ``via`` or a ``root`` reaches records whatever attributes the query names) is reported by the part
+      and the kind of the failure only, never by the failure's message.  A storage failure propagates
+      unchanged.
 
 Raw mode (``raw=True``; the agent experiment's control group)
     The catalog is not reported.  :func:`list_entities` lists the names of the roots (reserved ``__`` roots
@@ -74,7 +80,6 @@ import json
 from collections.abc import Mapping
 from decimal import Decimal, InvalidOperation
 
-from ..collections import avl
 from ..collections.lists import List
 from ..collections.sets import Set
 from ..core.dbobject import DBObject
@@ -259,16 +264,14 @@ class _Withholding:
         type_name = name.rsplit("#", 1)[0] if "#" in name else None
         return self.subtypes(type_name) if type_name in self.entities else None
 
-    def entry(self, type_name: str, name: str, sensitivity: str) -> dict:
-        element = self.elements[type_name][name]
-        certification = element.get("certification", self.entities[type_name].get("certification"))
-        kind = "role" if "target" in element else element.get("kind", "field")
-        return {"type_name": type_name, "name": name, "kind": kind, "certification": certification,
-                "sensitivity": sensitivity, "withheld": True}
+    def sensitivity(self, type_name: str, name: str) -> str:
+        """The element's own declared sensitivity (``internal`` when not stated)."""
+        return self.elements.get(type_name, {}).get(name, {}).get("sensitivity", "internal")
 
     def path(self, types, steps, seen: frozenset = frozenset()) -> tuple:
         """``(finding, types reached)`` for the path ``steps`` read on members of ``types`` (``None``: any):
-        the first withheld ``(type, name, sensitivity)`` the path reads, else ``None``; and the types its
+        the first withheld ``(type, name, sensitivity)`` the path reads (``sensitivity`` is ``None`` for a
+        Python-only computed attribute), else ``None``; and the types its
         last step reaches when every step is a role (``None`` when not known)."""
         for step in steps:
             following = set()
@@ -298,8 +301,7 @@ class _Withholding:
             return None                         # a cycle: its other reads are checked where it started
         element = self.elements[type_name][name]
         if "expression" not in element:
-            found = (type_name, name, "Python-only (what it reads cannot be checked for personal or secret "
-                                      "attributes)")
+            found = (type_name, name, None)
         else:
             found = self.tree(element["expression"]["ast"], frozenset({type_name}), seen | {key})
         if found is not None or not seen:
@@ -352,9 +354,23 @@ class _Withholding:
             raise ProtoValidationError(f"The query's {part} reads an attribute that is not available")
         if finding is not None:
             type_name, name, sensitivity = finding
-            raise ProtoValidationError(f"The query's {part} reads the attribute {name!r} of {type_name}, which is "
-                                       f"{sensitivity}: personal and secret attributes are kept from agents "
-                                       f"(spec section 11)")
+            why = (f"is {sensitivity}" if sensitivity is not None else
+                   "is computed in Python only, so what it reads cannot be checked")
+            raise ProtoValidationError(f"The query's {part} reads the attribute {name!r} of {type_name}, which {why}: "
+                                       f"personal and secret attributes are kept from agents (spec section 11)")
+
+    def term(self, term: dict) -> dict:
+        """``term`` of the engine with the element's own ``sensitivity``; a withheld element adds
+        ``"withheld": True`` and ``"withheld_because"``: ``{"reads": {"type_name", "name", "sensitivity"}}``,
+        the first withheld attribute it reads (itself included), or ``{"python_only": True}``."""
+        out = {**term, "sensitivity": self.sensitivity(term["type_name"], term["name"])}
+        finding = self.path(frozenset({term["type_name"]}), [term["name"]])[0]
+        if finding is not None:
+            type_name, name, sensitivity = finding
+            out["withheld"] = True
+            out["withheld_because"] = {"python_only": True} if sensitivity is None else \
+                {"reads": {"type_name": type_name, "name": name, "sensitivity": sensitivity}}
+        return out
 
     def allowed(self, type_name: str) -> list:
         """The attributes and ``one`` roles of ``type_name`` a row shows (none withheld)."""
@@ -397,11 +413,9 @@ _KINDS = ("root", "cell")
 
 def _names(snapshot, kind: str, after):
     """The names of the roots or of the cells of ``snapshot`` after ``after`` (``None``: from the first), in
-    the stored key order of the version's table: a cursor from the last name given, O(log n) to start and
-    O(1) per name, never a sort of every name."""
-    table = snapshot._root.objects if kind == "root" else snapshot._root.mutables
-    pairs = avl.key_iter(table.root) if after is None else avl.key_iter_range(table.root, lo=after, lo_inc=False)
-    return (name for name, _ in pairs)
+    name (code point) order: a cursor from the last name given, never a sort of every name."""
+    names = snapshot.iter_root_names if kind == "root" else snapshot.iter_mutable_names
+    return names() if after is None else names(after=after)
 
 
 def _page(snapshot, kinds, start, keep, limit: int) -> tuple:
@@ -435,7 +449,7 @@ def list_entities(db, filter: str | None = None, *, limit: int = LIST_LIMIT, aft
     types are those the catalog describes, filtered as :meth:`SemanticSession.list_entities
     <proto_db.semantic.session.SemanticSession.list_entities>` does; ``cells`` are the names of the cells
     holding entities of exactly that type (R260: ``<type name>#<hex>``), at most ``limit`` names in all, in
-    the version's stored order.  ``next`` is ``None`` when the listing is complete, else the token to pass as
+    name (code point) order.  ``next`` is ``None`` when the listing is complete, else the token to pass as
     ``after`` for the next page, which reads the same version.
 
     Raw mode lists the stored structure only (spec section 11): ``{"roots", "cells", "next"}``, the names of
@@ -643,8 +657,8 @@ def query(db, tree: Mapping, *, raw: bool = False) -> dict:
     if default and not raw:
         run["select"] = sorted({name for type_name in policy.candidates(types) for name in policy.allowed(type_name)})
     use = None if aggregate is not None or (default and raw) else selection
-    answer = query_stored(snapshot, run, with_members=True, selection=use) if raw else \
-        session.query(run, members=True, selection=use)
+    answer = query_stored(snapshot, run, with_members=True, selection=use, scrubbed=True) if raw else \
+        session.query(run, members=True, selection=use, scrubbed=True)
     if aggregate is not None:
         rows = to_json(answer["rows"])
     else:
@@ -658,9 +672,6 @@ def query(db, tree: Mapping, *, raw: bool = False) -> dict:
             rows.append({"entity": None if version.entity is None else {"cell": version.entity.name},
                          "type_name": type_name,
                          "values": {name: _value(value, policy) for name, value in values.items()}})
-    terms = []
-    for term in answer["terms"]:
-        finding = policy.path(frozenset({term["type_name"]}), [term["name"]])[0]
-        terms.append(term if finding is None else {**term, "sensitivity": finding[2], "withheld": True})
+    terms = [policy.term(term) for term in answer["terms"]]
     return {"rows": rows, "explain": to_json(answer["explain"]), "version": to_json(answer["version"]),
             "query": to_json(dict(tree)), "terms": to_json(terms)}

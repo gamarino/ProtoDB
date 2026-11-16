@@ -19,14 +19,20 @@ indexed answer and a scanned one cannot diverge (D28, preflight F14).  An absent
 stored own attribute, then the catalogued default, else ``MISSING``; never a language's ``None``
 (preflight F15).  A predicate on a field with a catalogued default is never given to the planner,
 because an index sees ``MISSING`` where evaluation sees the default (preflight F16).
+
+An evaluation error names a scalar operand by its value and any other operand by its kind
+(:func:`describe_operand`): a record, a collection or a handle may hold personal values, and an error
+message never shows them.
 """
 from __future__ import annotations
 
+import datetime
 import keyword
 from collections.abc import Collection
 from decimal import Context, Decimal, DecimalException, Inexact, InvalidOperation, MAX_EMAX, MAX_PREC, MIN_EMIN, \
     Overflow, Rounded
 
+from ..collections.base import IndexedCollection
 from ..collections.lists import List
 from ..collections.sets import Set
 from ..core.dbobject import DBObject
@@ -36,7 +42,7 @@ from ..query.expressions import And, Expression, Not, Or
 from ..query.terms import MIRRORED, Term, compare
 from ..values import MISSING, MutableObject, canonical, is_atom
 
-__all__ = ["Reader", "check_ast", "evaluate", "to_planner", "dependencies", "parse", "unwrap_entry",
+__all__ = ["Reader", "check_ast", "evaluate", "to_planner", "dependencies", "parse", "unwrap_entry", "describe_operand",
            "ARITHMETIC", "COMPARISONS", "RESERVED", "MAX_EXPRESSION_DEPTH"]
 
 #: The arithmetic operators (R264); division is not specified.
@@ -279,14 +285,43 @@ def _read_path(element, steps, reader: Reader):
     return reader.default(value, steps[-1]) if found is MISSING and is_atom(value) else found
 
 
+#: The operands an error message shows by value: scalars, which hold nothing beyond themselves.
+_SCALARS = (type(None), bool, int, float, Decimal, str, bytes, datetime.date, datetime.time, datetime.timedelta)
+
+
+def describe_operand(value) -> str:
+    """How an error message names ``value``: a scalar by its ``repr``; anything else by its kind and never
+    by its contents (a record's ``repr`` shows every field, personal ones included): ``a record of type
+    T``, ``a collection of n members``, ``the identity handle of the cell 'name'``, ``a version-bound
+    reference``, else ``a value of type T``."""
+    if value is MISSING:
+        return "a missing value"
+    if isinstance(value, _SCALARS):
+        return repr(value)
+    if isinstance(value, MutableObject):
+        return f"the identity handle of the cell {value.name!r}"
+    if isinstance(value, dict) and value.keys() == {"entity", "version"}:
+        return "a version-bound reference"
+    if isinstance(value, IndexedCollection):
+        n = value.count
+    elif isinstance(value, Collection) and not is_atom(value):
+        n = len(value)
+    elif is_atom(value):
+        type_name = getattr(type(value), "__type_name__", None) or type(value).__name__
+        return f"a record of type {type_name}"
+    else:
+        return f"a value of type {type(value).__name__}"
+    return f"a collection of {n} member{'' if n == 1 else 's'}"
+
+
 def _number(op: str, value):
     if value is MISSING or (type(value) is not bool and isinstance(value, int)):
         return value
     if isinstance(value, Decimal):
         if not value.is_finite():
-            raise ProtoValidationError(f"Operator {op!r} needs a finite decimal, not {value!r}")
+            raise ProtoValidationError(f"Operator {op!r} needs a finite decimal, not {describe_operand(value)}")
         return value
-    raise ProtoValidationError(f"Operator {op!r} takes int and decimal operands only, not {value!r} "
+    raise ProtoValidationError(f"Operator {op!r} takes int and decimal operands only, not {describe_operand(value)} "
                                f"({type(value).__name__})")
 
 
@@ -310,7 +345,7 @@ def _truth(op: str, value, what: str = "an operand") -> bool:
         return value
     if value is MISSING:
         return False
-    raise ProtoValidationError(f"Operator {op!r} needs a boolean as {what}, not {value!r}")
+    raise ProtoValidationError(f"Operator {op!r} needs a boolean as {what}, not {describe_operand(value)}")
 
 
 def _identity(member):
@@ -325,7 +360,7 @@ def _identity(member):
     if is_atom(member):
         return "record", member.oid
     raise ProtoValidationError(f"A role holds records, identity handles or version-bound references, "
-                               f"not {member!r}")
+                               f"not {describe_operand(member)}")
 
 
 def _reach(raws, reached: list, seen: set, reader: Reader) -> None:

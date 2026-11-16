@@ -216,7 +216,8 @@ def test_product_sales_in_june(db):
     tr.abort()
     assert answer["version"] == {"number": snapshot.version, "ref": base64.b64encode(snapshot.ref).decode("ascii")}
     assert answer["query"]["where"][1][2] == ["const", "2026-06-01"]
-    assert {"type_name": LINE, "name": "quantity", "kind": "field", "certification": None} in answer["terms"]
+    assert {"type_name": LINE, "name": "quantity", "kind": "field", "certification": None,
+            "sensitivity": "internal"} in answer["terms"]
     total = query(db, {**tree, "select": None, "aggregate": ["sum", ["attr", "quantity"]]})
     assert total["rows"] == [{"sum": "7"}]
 
@@ -286,7 +287,9 @@ def test_personal_attributes_are_omitted(db):
     selected = query(db, {"from": customers, "select": ["name", "credit_limit"]})
     assert all(set(r["values"]) == {"credit_limit"} for r in selected["rows"])
     assert {"type_name": CUSTOMER, "name": "name", "kind": "field", "certification": None,
-            "sensitivity": "personal", "withheld": True} in selected["terms"]
+            "sensitivity": "personal", "withheld": True,
+            "withheld_because": {"reads": {"type_name": CUSTOMER, "name": "name", "sensitivity": "personal"}}} \
+        in selected["terms"]
     through = query(db, {"from": ["via", ["cell", world["company"].name], "orders"], "select": ["customer.name"]})
     assert all(r["values"] == {} for r in through["rows"])                 # a path to a personal attribute
     for tree in ({"from": customers, "where": ["==", ["attr", "name"], ["const", "Ann"]]},
@@ -483,3 +486,95 @@ def test_raw_planning_reads_the_kind_of_the_whole_collection(db):
                    raw=True)
     assert len(answer["rows"]) == 2                       # the handle is followed, as a residual follows it
     assert answer["explain"]["indexed"] == []
+
+
+# -- fix round 3: no value through an error; term sensitivity is the element's own ---------------------------
+
+def _person_cell(db, org) -> str:
+    [row] = query(db, {"from": ["via", ["cell", org.name], "people"], "select": ["org"]})["rows"]
+    return row["entity"]["cell"]
+
+
+def _never_discloses(db, tree, raw):
+    """Run ``tree``: an answer, or a failure, that holds no personal value (nor a chained exception that does)."""
+    try:
+        answer = query(db, tree, raw=raw)
+    except ProtoValidationError as error:
+        assert SECRET not in str(error), (tree, str(error))
+        assert error.__cause__ is None and error.__context__ is None, tree
+        return error
+    assert SECRET not in json.dumps(answer), tree
+    return None
+
+
+@pytest.mark.parametrize("raw", [False, True])
+def test_an_evaluation_failure_never_carries_a_value_to_the_agent(leaky, raw):
+    db, org, _ = leaky
+    person = _person_cell(db, org)
+
+    def everyone(tr):
+        tr.set_root_object("everyone", tr.new_list().append_last(tr.get_mutable(person)))
+    db.run(everyone)
+    people = ["via", ["cell", org.name], "people"]
+    to_org = ["via", ["cell", person], "org"]
+    failing = {
+        "where via +": ({"from": people, "where": ["==", ["+", ["via", ["cell", org.name], "people"], ["const", 1]],
+                                                     ["const", 1]]}, "'where'"),
+        "where root +": ({"from": people, "where": ["==", ["+", ["root", "everyone"], ["const", 1]], ["const", 1]]},
+                         "'where'"),
+        "sum via": ({"from": to_org, "aggregate": ["sum", ["via", ["self"], "people"]]}, "aggregate"),
+        "where via truth": ({"from": people, "where": ["via", ["cell", person], "org"]}, "'where'"),
+    }
+    for label, (tree, part) in failing.items():
+        error = _never_discloses(db, tree, raw)
+        assert error is not None, label
+        assert part in str(error) and "ProtoValidationError" in str(error), (label, str(error))
+    for tree in ({"from": to_org, "where": [">", ["via", ["self"], "people"], ["const", 1]]},
+                 {"from": ["root", "everyone"], "select": ["org"]}):
+        _never_discloses(db, tree, raw)
+
+
+def test_the_evaluator_describes_a_record_or_a_collection_by_kind(leaky):
+    db, org, _ = leaky
+    session = semantic(db.snapshot_at(db.history()[0]))
+    tree = {"from": ["via", ["cell", org.name], "people"],
+            "where": ["==", ["+", ["via", ["cell", org.name], "people"], ["const", 1]], ["const", 1]]}
+    with pytest.raises(ProtoValidationError) as refused:
+        session.query(tree)
+    assert SECRET not in str(refused.value) and "a collection of 1 member" in str(refused.value)
+    from proto_db.semantic.expressions import describe_operand
+    record = db.snapshot_at(db.history()[0]).get_mutable(_person_cell(db, org))
+    assert describe_operand(record) == "a record of type leak.Person"
+    assert SECRET not in describe_operand((record,)) and SECRET not in describe_operand([record])
+    assert describe_operand(MutableObject("leak.Person#1")) == "the identity handle of the cell 'leak.Person#1'"
+    assert describe_operand(Decimal("1.5")) == "Decimal('1.5')" and describe_operand("text") == "'text'"
+
+
+def test_a_term_carries_its_own_sensitivity_and_why_it_was_withheld(leaky):
+    from proto_db.semantic.descriptors import SENSITIVITIES
+    db, org, _ = leaky
+    answer = query(db, {"from": ["via", ["cell", org.name], "people"], "select": ["bad", "py", "name", "org"]})
+    terms = {term["name"]: term for term in answer["terms"] if term["type_name"] == "leak.Person"}
+    assert all(term["sensitivity"] in SENSITIVITIES for term in answer["terms"]), answer["terms"]
+    reads = {"reads": {"type_name": "leak.Person", "name": "name", "sensitivity": "personal"}}
+    assert terms["name"]["sensitivity"] == "personal" and terms["name"]["withheld_because"] == reads
+    assert terms["bad"]["sensitivity"] == "internal" and terms["bad"]["withheld"] is True
+    assert terms["bad"]["withheld_because"] == reads
+    assert terms["py"]["sensitivity"] == "internal" and terms["py"]["withheld_because"] == {"python_only": True}
+    assert terms["org"]["sensitivity"] == "internal" and "withheld" not in terms["org"]
+    assert "withheld_because" not in terms["org"]
+
+
+@pytest.mark.parametrize("raw", [False, True])
+def test_a_storage_failure_during_evaluation_propagates_unchanged(leaky, monkeypatch, raw):
+    from proto_db.semantic import entities
+    db, org, _ = leaky
+    people = ["via", ["cell", org.name], "people"]
+
+    def broken(*args, **kwargs):
+        raise OSError("the object store is unreachable")
+    monkeypatch.setattr(entities, "evaluate", broken)
+    for tree in ({"from": people, "select": ["org"]}, {"from": people, "where": ["==", ["attr", "org"], ["const", 1]]},
+                 {"from": people, "aggregate": ["sum", ["const", 1]]}):
+        with pytest.raises(OSError, match="unreachable"):
+            query(db, tree, raw=raw)

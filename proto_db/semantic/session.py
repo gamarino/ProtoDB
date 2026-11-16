@@ -22,6 +22,7 @@ from __future__ import annotations
 import base64
 import copy
 
+from ..catalog.atoms import SEMANTIC_CATALOG_ROOT, semantic_catalog_value
 from ..errors import ProtoUserError
 from . import compose as _compose
 from . import entities as _entities
@@ -69,7 +70,7 @@ class SemanticSession:
         source = self._source
         if isinstance(source, Snapshot):
             listed = source._reader_names()
-            stored, key = _store.read_stored(source._root.objects)
+            stored, key = _store.read_catalog(semantic_catalog_value(source.get_root_object(SEMANTIC_CATALOG_ROOT)))
             return stored, source.registry if listed else None, listed, key
         with source._lock:
             source._check_active()
@@ -196,11 +197,12 @@ class SemanticSession:
         :class:`~proto_db.semantic.entities.Members` of a ``many`` end (members, never entries)."""
         return self._operations().navigate(source, role)
 
-    def query(self, tree, *, members: bool = False, selection=None) -> dict:
+    def query(self, tree, *, members: bool = False, selection=None, scrubbed: bool = False) -> dict:
         """Run the query ``tree`` (spec section 11) on the session's version: ``{"rows", "explain", "version",
         "query", "terms"}``.  The session's single query engine (preflight F18): see
         :mod:`proto_db.semantic.entities`, "The query engine".  With ``members=True``, a query without an
         aggregate also answers ``"members"``, the :class:`~proto_db.semantic.entities.Version` each row reads.
         With ``selection`` (a callable from a member's type name to the paths to select), each row evaluates
-        only the paths it gives for that member's type."""
-        return self._operations().query(tree, with_members=members, selection=selection)
+        only the paths it gives for that member's type.  With ``scrubbed=True``, an evaluation failure is
+        reported by the part that failed and its kind only, never by its message (the agent interface)."""
+        return self._operations().query(tree, with_members=members, selection=selection, scrubbed=scrubbed)

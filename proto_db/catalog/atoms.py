@@ -29,7 +29,8 @@ from ..errors import ProtoCorruptionError, ProtoValidationError
 
 __all__ = ["SEMANTIC_CATALOG_ROOT", "INTENT_LOG_ROOT", "SemanticCatalog", "Module", "Extension", "Entity",
            "Relationship", "Attribute", "Role", "Intent", "Constraint", "Expression", "IntentRecord",
-           "CATALOG_RECORD_TYPES", "semantic_catalog_root", "intent_log_root", "intent_records"]
+           "CATALOG_RECORD_TYPES", "semantic_catalog_root", "semantic_catalog_value", "intent_log_root",
+           "intent_records"]
 
 #: The root holding the semantic catalog (a :class:`SemanticCatalog`).
 SEMANTIC_CATALOG_ROOT = "__semanticCatalog"
@@ -270,7 +271,12 @@ def semantic_catalog_root(objects) -> SemanticCatalog | None:
     """The value of :data:`SEMANTIC_CATALOG_ROOT` in the roots dictionary ``objects`` (a version's roots),
     or ``None`` when it is absent; a value that is not a :class:`SemanticCatalog` is
     ``ProtoCorruptionError``."""
-    value = objects.get_at(SEMANTIC_CATALOG_ROOT, None)
+    return semantic_catalog_value(objects.get_at(SEMANTIC_CATALOG_ROOT, None))
+
+
+def semantic_catalog_value(value) -> SemanticCatalog | None:
+    """``value``, the value of :data:`SEMANTIC_CATALOG_ROOT` read from a version (``None``: absent), checked:
+    a value that is not a :class:`SemanticCatalog` is ``ProtoCorruptionError``."""
     if value is not None and not isinstance(value, SemanticCatalog):
         raise _corrupt(SEMANTIC_CATALOG_ROOT, f"its value is a {type(value).__name__}, not a "
                                               f"{SemanticCatalog.__type_name__}")

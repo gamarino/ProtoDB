@@ -35,7 +35,8 @@ from ..registry import Registry
 from .compose import _semantic_extension, compose_modules, module_contributions
 from .expressions import check_ast
 
-__all__ = ["has_contributions", "read_stored", "merged_model", "merged_semantic_catalog", "verified_model",
+__all__ = ["has_contributions", "read_stored", "read_catalog",
+           "merged_model", "merged_semantic_catalog", "verified_model",
            "NO_CATALOG"]
 
 #: The message of a database whose modules are installed and that has no semantic catalog (spec 5).
@@ -51,7 +52,12 @@ def read_stored(objects) -> tuple:
     """``(model, record pointer)`` of the ``__semanticCatalog`` of the roots dictionary ``objects`` (a
     version's roots), ``(None, None)`` when the root is absent.  Read from the version itself, never
     through a read set.  A value of another type, or malformed records, are ``ProtoCorruptionError``."""
-    catalog = semantic_catalog_root(objects)
+    return read_catalog(semantic_catalog_root(objects))
+
+
+def read_catalog(catalog) -> tuple:
+    """``(model, record pointer)`` of the checked ``__semanticCatalog`` value ``catalog`` (``None``: absent,
+    ``(None, None)``)."""
     return (None, None) if catalog is None else (from_atoms(catalog), catalog.atom_pointer)
 
 

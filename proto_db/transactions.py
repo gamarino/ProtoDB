@@ -153,7 +153,7 @@ import uuid
 import weakref
 from _weakref import _remove_dead_weakref
 from collections.abc import Mapping
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Iterator, Optional
 
 from .collections.base import ConcurrentOptimized, _Immutable
 from .collections.dictionaries import Dictionary, RepeatedKeysDictionary
@@ -255,6 +255,11 @@ def _check_name(name, what: str = "root") -> str:
         return check_text(name)
     except ProtoValidationError as e:
         raise ProtoValidationError(f"Invalid {what} name {name!r}: {e}") from e
+
+
+def _names_after(table, after: str | None):
+    """The keys of a version's name table (roots or mutables), in order, strictly after ``after`` if given."""
+    return table.keys() if after is None else table.keys(after=_check_name(after))
 
 
 def _modules_mapping(mapping) -> Mapping:
@@ -386,12 +391,21 @@ class HistoryEntry:
     @property
     def root_names(self) -> tuple:
         """Sorted names of the roots present in this version."""
-        return tuple(sorted(self._root.objects.keys()))
+        return tuple(self._root.objects.keys())
 
     @property
     def mutable_names(self) -> tuple:
         """Sorted names of the mutable cells present in this version."""
-        return tuple(sorted(self._root.mutables.keys()))
+        return tuple(self._root.mutables.keys())
+
+    def iter_root_names(self, *, after: str | None = None) -> Iterator[str]:
+        """The names of the roots of this version in name (code point) order, lazily; with ``after``, those
+        strictly after it (a cursor: never a sort of every name)."""
+        return _names_after(self._root.objects, after)
+
+    def iter_mutable_names(self, *, after: str | None = None) -> Iterator[str]:
+        """The names of the mutable cells of this version, as :meth:`iter_root_names` gives the roots'."""
+        return _names_after(self._root.mutables, after)
 
     def get_mutable(self, name: str):
         """Value of the mutable cell ``name`` in this version (``None`` if absent).  A value read
@@ -503,7 +517,12 @@ class Snapshot:
     @property
     def root_names(self) -> tuple:
         """Sorted names of the roots present in this version."""
-        return tuple(sorted(self._root.objects.keys()))
+        return tuple(self._root.objects.keys())
+
+    def iter_root_names(self, *, after: str | None = None) -> Iterator[str]:
+        """The names of the roots of this version in name (code point) order, lazily; with ``after``, those
+        strictly after it (a cursor: never a sort of every name)."""
+        return _names_after(self._root.objects, after)
 
     def get_root_object(self, name: str):
         """Value of root ``name`` in this version (``None`` if absent)."""
@@ -512,7 +531,11 @@ class Snapshot:
     @property
     def mutable_names(self) -> tuple:
         """Sorted names of the mutable cells present in this version."""
-        return tuple(sorted(self._root.mutables.keys()))
+        return tuple(self._root.mutables.keys())
+
+    def iter_mutable_names(self, *, after: str | None = None) -> Iterator[str]:
+        """The names of the mutable cells of this version, as :meth:`iter_root_names` gives the roots'."""
+        return _names_after(self._root.mutables, after)
 
     def get_mutable(self, name: str):
         """Value of the mutable cell ``name`` in this version (``None`` if absent)."""

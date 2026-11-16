@@ -33,7 +33,10 @@ _QUERY_HELP = (
     "[\"const\", value], [\"==\" | \"!=\" | \"<\" | \"<=\" | \">\" | \">=\", a, b], [\"+\" | \"-\" | \"*\", a, b], "
     "[\"and\", ...], [\"or\", ...], [\"not\", a].  A constant that JSON cannot spell is a one-key object: "
     "{\"decimal\": \"10.50\"}, {\"date\": \"2026-06-01\"}, {\"datetime\": ...}, {\"time\": ...}, {\"cell\": name}.  "
-    "Answers decimals as strings and dates in ISO 8601.")
+    "Answers decimals as strings and dates in ISO 8601.  'terms' lists the catalog elements the query used, each "
+    "with its own 'sensitivity' (public, internal, personal or secret); one whose values were kept from you adds "
+    "\"withheld\": true and 'withheld_because': {\"reads\": {type_name, name, sensitivity}} or "
+    "{\"python_only\": true}.")
 
 
 def _dump(value) -> str:
