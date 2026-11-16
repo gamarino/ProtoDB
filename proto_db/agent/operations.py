@@ -54,11 +54,13 @@ Sensitivity (spec section 11; ``describe`` lists every attribute, ``query`` omit
       ``"withheld_because"``, either ``{"reads": {"type_name", "name", "sensitivity"}}`` (the first withheld
       attribute it reads, itself included) or ``{"python_only": True}``, so the agent knows what it did not
       get and why.
-    - No value reaches the agent through an error.  The evaluator names a record, a collection or a handle by
-      its kind, never by its contents, and a selected path, a ``where`` or an aggregate whose evaluation fails
-      (a ``via`` or a ``root`` reaches records whatever attributes the query names) is reported by the part
-      and the kind of the failure only, never by the failure's message.  A storage failure propagates
-      unchanged.
+    - No stored value reaches the agent through an error.  Each operation first opens the version (its
+      snapshot and catalog) and checks the agent's own arguments, whose mistakes are explained plainly; then
+      everything that reads the version runs inside one scrub (:func:`~proto_db.semantic.entities.scrubbed`):
+      a failure of that evaluation (the ``from`` traversal, the ``where``, the aggregate, a selected path, a
+      ``describe`` or a listing; a ``via`` or a ``root`` reaches values whatever the query names) is reported
+      by the part it arose in, its kind and its operand's type ("a str", "a record of type T"), never by its
+      message or a value.  A storage failure, a corruption or a closed space propagates unchanged.
 
 Raw mode (``raw=True``; the agent experiment's control group)
     The catalog is not reported.  :func:`list_entities` lists the names of the roots (reserved ``__`` roots
@@ -86,7 +88,7 @@ from ..core.dbobject import DBObject
 from ..errors import ProtoNotSupportedError, ProtoUserError, ProtoValidationError
 from ..semantic import semantic
 from ..semantic import compose as _compose
-from ..semantic.entities import check_query, query_stored
+from ..semantic.entities import check_query, query_stored, scrubbed
 from ..semantic.expressions import unwrap_entry
 from ..values import MutableObject, is_atom
 
@@ -109,11 +111,11 @@ def to_json(value):
         return value
     if isinstance(value, float):
         if value != value or value in (float("inf"), float("-inf")):
-            raise ProtoValidationError(f"{value!r} has no JSON form")
+            raise ProtoValidationError("A float that is not finite has no JSON form")
         return value
     if isinstance(value, Decimal):
         if not value.is_finite():
-            raise ProtoValidationError(f"{value!r} has no JSON form")
+            raise ProtoValidationError("A Decimal that is not finite has no JSON form")
         return str(value)
     if isinstance(value, (datetime.datetime, datetime.date, datetime.time)):
         return value.isoformat()
@@ -463,18 +465,24 @@ def list_entities(db, filter: str | None = None, *, limit: int = LIST_LIMIT, aft
 
         def wanted(kind: str, name: str) -> bool:
             return not (kind == "root" and name.startswith("__")) and (needle is None or needle in name.casefold())
-        page, token = _page(snapshot, _KINDS, start, wanted, limit)
-        return {"roots": page["root"], "cells": page["cell"], "next": token}
+
+        def listing() -> dict:
+            page, token = _page(snapshot, _KINDS, start, wanted, limit)
+            return {"roots": page["root"], "cells": page["cell"], "next": token}
+        return scrubbed("list_entities", listing)
     if start is not None and start[0] != "cell":
         raise ProtoValidationError("after is the 'next' token a list_entities answer gave")
     listed = semantic(snapshot).list_entities(filter)
     types = {entity["type_name"] for entity in listed}
-    page, token = _page(snapshot, ("cell",), start, lambda kind, name: _cell_type(name) in types, limit)
-    by_type: dict = {}
-    for name in page["cell"]:
-        by_type.setdefault(_cell_type(name), []).append(name)
-    return {"entities": [{**to_json(entity), "cells": by_type.get(entity["type_name"], [])} for entity in listed],
-            "next": token}
+
+    def cells() -> dict:
+        page, token = _page(snapshot, ("cell",), start, lambda kind, name: _cell_type(name) in types, limit)
+        by_type: dict = {}
+        for name in page["cell"]:
+            by_type.setdefault(_cell_type(name), []).append(name)
+        return {"entities": [{**to_json(entity), "cells": by_type.get(entity["type_name"], [])} for entity in listed],
+                "next": token}
+    return scrubbed("list_entities", cells)
 
 
 def describe(db, type_name: str, *, raw: bool = False) -> dict:
@@ -482,11 +490,23 @@ def describe(db, type_name: str, *, raw: bool = False) -> dict:
     certification (personal and secret attributes are listed, with their sensitivity).  Raw mode: what the
     stored records of the type hold, ``{"type_name", "cells", "records", "attributes": {name: [kinds]}}``
     (``records`` counts those held inside other records' collections)."""
-    snapshot = _snapshot(db)
-    if not raw:
-        return to_json(semantic(snapshot).describe(type_name))
     if not isinstance(type_name, str):
         raise ProtoValidationError(f"A type name is a str, not {type(type_name).__name__}")
+    snapshot = _snapshot(db)
+    if not raw:
+        model = semantic(snapshot).catalog()
+        if type_name not in model["entities"]:
+            raise ProtoValidationError(f"The semantic catalog describes no type {type_name!r}; list_entities gives "
+                                       f"the types it describes")
+        return scrubbed("describe", lambda: to_json(_compose.describe(model, type_name)))
+    answer = scrubbed("describe", _stored_description, snapshot, type_name)
+    if not answer["cells"] and not answer["records"]:
+        raise ProtoValidationError(f"No stored record has the type {type_name!r}")
+    return answer
+
+
+def _stored_description(snapshot, type_name: str) -> dict:
+    """What the stored records of ``type_name`` hold (raw :func:`describe`)."""
     cells, nested, attributes = 0, 0, {}
 
     def take(record):
@@ -505,8 +525,6 @@ def describe(db, type_name: str, *, raw: bool = False) -> dict:
                         if is_atom(element) and _stored_type(element) == type_name:
                             nested += 1
                             take(element)
-    if not cells and not nested:
-        raise ProtoValidationError(f"No stored record has the type {type_name!r}")
     return {"type_name": type_name, "cells": cells, "records": nested,
             "attributes": {name: sorted(kinds) for name, kinds in sorted(attributes.items())}}
 
@@ -554,10 +572,11 @@ def _texts(item: Mapping) -> list:
             + [("synonym", text) for text in item.get("synonyms", ())])
 
 
-def _vocabulary(snapshot, raw: bool) -> list:
-    """``(candidate, [(via, text)])`` for everything a term may name."""
+def _vocabulary(snapshot, model: Mapping | None) -> list:
+    """``(candidate, [(via, text)])`` for everything a term may name: in the catalog ``model``, or, without one
+    (raw mode), in the stored records."""
     out = []
-    if raw:
+    if model is None:
         types: dict = {}
         for name in _names(snapshot, "cell", None):
             record = snapshot.get_mutable(name)
@@ -570,7 +589,7 @@ def _vocabulary(snapshot, raw: bool) -> list:
             out.extend(({"kind": "attribute", "type_name": type_name, "name": name}, [("stored", name)])
                        for name in sorted(names))
         return out
-    for type_name, entity in sorted(semantic(snapshot).catalog()["entities"].items()):
+    for type_name, entity in sorted(model["entities"].items()):
         texts = [("name", type_name), ("name", type_name.rsplit(".", 1)[-1])]
         texts += [("label", text) for text in entity.get("label", {}).values()]
         texts += [("synonym", text) for text in entity.get("synonyms", ())]
@@ -590,7 +609,12 @@ def check_answerable(db, terms: list, *, raw: bool = False) -> dict:
     if isinstance(terms, str) or not isinstance(terms, (list, tuple)) \
             or not all(isinstance(term, str) and term.strip() for term in terms):
         raise ProtoValidationError(f"check_answerable takes a list of non-empty terms (str), not {terms!r}")
-    vocabulary = _vocabulary(_snapshot(db), raw)
+    snapshot = _snapshot(db)
+    return scrubbed("check_answerable", _answerable, snapshot, None if raw else semantic(snapshot).catalog(), terms)
+
+
+def _answerable(snapshot, model: Mapping | None, terms) -> dict:
+    vocabulary = _vocabulary(snapshot, model)
     matches, unmatched, suggestions = {}, [], {}
     for term in terms:
         wanted = term.strip().casefold()
@@ -613,6 +637,18 @@ def check_answerable(db, terms: list, *, raw: bool = False) -> dict:
 
 # -- query ---------------------------------------------------------------------------------------------------
 
+def _reserved_root(tree: Mapping):
+    """The first reserved (``__``) root the ``from``, ``where`` or aggregate of ``tree`` names, else ``None``."""
+    stack = [tree["from"], tree.get("where"), tree.get("aggregate")]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, list) and node and isinstance(node[0], str) and node[0] != "const":
+            if node[0] == "root" and len(node) > 1 and isinstance(node[1], str) and node[1].startswith("__"):
+                return node[1]
+            stack.extend(node[1:])
+    return None
+
+
 def _screen(policy: _Withholding, tree) -> frozenset | None:
     """Refuse a ``from``, ``where`` or ``aggregate`` that reads a withheld attribute (see "Sensitivity");
     return the types the members may have (``None``: any), for the default selection."""
@@ -633,12 +669,18 @@ def query(db, tree: Mapping, *, raw: bool = False) -> dict:
     "terms"}`` as JSON-ready data (see the module docstring: rows, sensitivity, raw mode).  ``tree["as_of"]``
     is the ``ref`` of a version an earlier answer gave; without it the current version is read."""
     check_query(tree)
+    reserved = _reserved_root(tree) if raw else None
+    if reserved is not None:
+        raise ProtoValidationError(f"The root {reserved!r} is not available")
     snapshot = _snapshot(db, tree.get("as_of"))
     run = dict(tree)
     if "as_of" in tree:
         run["as_of"] = _version(snapshot)["ref"]
     session = None if raw else semantic(snapshot)
     policy = _Withholding(_catalog_or_none(snapshot) if raw else session.catalog(), raw=raw)
+    of_type = tree.get("of_type")
+    if not raw and of_type is not None and of_type not in policy.entities:
+        raise ProtoValidationError(f"The semantic catalog describes no type {of_type!r}")
     types = _screen(policy, tree)
     aggregate, select = tree.get("aggregate"), tree.get("select")
     default = select is None and aggregate is None
@@ -657,8 +699,18 @@ def query(db, tree: Mapping, *, raw: bool = False) -> dict:
     if default and not raw:
         run["select"] = sorted({name for type_name in policy.candidates(types) for name in policy.allowed(type_name)})
     use = None if aggregate is not None or (default and raw) else selection
-    answer = query_stored(snapshot, run, with_members=True, selection=use, scrubbed=True) if raw else \
-        session.query(run, members=True, selection=use, scrubbed=True)
+
+    def answered() -> dict:
+        answer = query_stored(snapshot, run, with_members=True, selection=use) if raw else \
+            session.query(run, members=True, selection=use)
+        return _answer(answer, tree, policy, raw)
+    return scrubbed("the query", answered)
+
+
+def _answer(answer: dict, tree: Mapping, policy: _Withholding, raw: bool) -> dict:
+    """The engine's ``answer`` to ``tree`` as the agent receives it (see the module docstring, "Rows")."""
+    aggregate = tree.get("aggregate")
+    default = tree.get("select") is None and aggregate is None
     if aggregate is not None:
         rows = to_json(answer["rows"])
     else:
@@ -667,8 +719,8 @@ def query(db, tree: Mapping, *, raw: bool = False) -> dict:
             record = version.record
             type_name = _stored_type(record)
             if default and raw:             # the record's stored attributes: read, never evaluated
-                values = {name: value for name, value in record._own.items()
-                          if not policy.withheld(type_name, [name])}
+                stored = record._own if isinstance(record, DBObject) else {}      # a collection has none
+                values = {name: value for name, value in stored.items() if not policy.withheld(type_name, [name])}
             rows.append({"entity": None if version.entity is None else {"cell": version.entity.name},
                          "type_name": type_name,
                          "values": {name: _value(value, policy) for name, value in values.items()}})

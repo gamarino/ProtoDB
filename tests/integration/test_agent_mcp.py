@@ -72,3 +72,28 @@ def test_mcp_server_lists_the_four_tools_and_answers_describe(tmp_path):
          "meaning": "The company that sells: it has customers, products and orders", "cells": [company]}],
         "next": None}
     assert json.loads(raw.content[0].text) == {"roots": [], "cells": [company], "next": None}
+
+
+@pytest.mark.parametrize("raw", [False, True])
+def test_a_root_of_strings_reaches_the_agent_as_a_type_only(raw):
+    from proto_db import MemoryStorage
+    from proto_db.agent.mcp_server import build_server
+    secret = "123-45-6789"
+    space = ObjectSpace(MemoryStorage(), modules_mapping=MAPPING)
+    try:
+        db = space.new_database("acme")
+        db.run(lambda tr: tr.install_module("acme_sales"))
+
+        def build(tr):
+            tr.set_root_object("ssns", tr.new_list().append_last(secret))
+            tr.set_root_object("scalar", secret)
+        db.run(build)
+        server = build_server(db, raw=raw)
+        for tree in ({"from": ["root", "ssns"]}, {"from": ["root", "ssns"], "aggregate": ["count"]},
+                     {"from": ["via", ["root", "scalar"], "org"]}):
+            with pytest.raises(Exception) as refused:
+                asyncio.run(server.call_tool("query", {"tree": tree}))
+            message = str(refused.value)
+            assert secret not in message and "the query's 'from'" in message and "a str" in message, message
+    finally:
+        space.close()

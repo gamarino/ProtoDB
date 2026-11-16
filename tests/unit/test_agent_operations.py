@@ -541,13 +541,14 @@ def test_the_evaluator_describes_a_record_or_a_collection_by_kind(leaky):
             "where": ["==", ["+", ["via", ["cell", org.name], "people"], ["const", 1]], ["const", 1]]}
     with pytest.raises(ProtoValidationError) as refused:
         session.query(tree)
-    assert SECRET not in str(refused.value) and "a collection of 1 member" in str(refused.value)
+    assert SECRET not in str(refused.value) and "a collection (tuple)" in str(refused.value)
     from proto_db.semantic.expressions import describe_operand
     record = db.snapshot_at(db.history()[0]).get_mutable(_person_cell(db, org))
     assert describe_operand(record) == "a record of type leak.Person"
-    assert SECRET not in describe_operand((record,)) and SECRET not in describe_operand([record])
-    assert describe_operand(MutableObject("leak.Person#1")) == "the identity handle of the cell 'leak.Person#1'"
-    assert describe_operand(Decimal("1.5")) == "Decimal('1.5')" and describe_operand("text") == "'text'"
+    assert describe_operand((record,)) == "a collection (tuple)" and describe_operand([record]) == "a collection (list)"
+    assert describe_operand(MutableObject("leak.Person#1")) == "an identity handle"
+    assert describe_operand(Decimal("1.5")) == "a Decimal" and describe_operand("text") == "a str"
+    assert describe_operand(7) == "an int" and describe_operand(None) == "None"
 
 
 def test_a_term_carries_its_own_sensitivity_and_why_it_was_withheld(leaky):
@@ -578,3 +579,208 @@ def test_a_storage_failure_during_evaluation_propagates_unchanged(leaky, monkeyp
                  {"from": people, "aggregate": ["sum", ["const", 1]]}):
         with pytest.raises(OSError, match="unreachable"):
             query(db, tree, raw=raw)
+
+
+# -- fix round 4: no stored value through any error of any agent operation -------------------------------------
+
+#: Every stored scalar of the sentinel fixture holds this marker; no error, explain or terms may show it.
+MARK = "SNTNL"
+
+
+def _sentinels():
+    count = iter(range(1000))
+    return lambda: f"{MARK}{next(count):03d}"
+
+
+@pytest.fixture
+def sentinel_db(space):
+    """A catalogued database (``acme_leaky``) whose every stored scalar is a unique sentinel string: the
+    fields of its entities, the items of its root lists and sets, a root that is a scalar, the keys and values
+    of a root dictionary, and the fields of an uncatalogued record cell."""
+    from proto_db.core.dbobject import DBObject
+    database = space.new_database("sentinel")
+    database.run(lambda tr: tr.install_module("acme_leaky"))
+    s = _sentinels()
+
+    def build(tr):
+        session = semantic(tr)
+        org = session.create("leak.Org", name=s())
+        person = session.create("leak.Person", name=s(), org=org)
+        loose = DBObject(x=s(), note=s())
+        tr.set_root_object("ssns", tr.new_list().append_last(s()).append_last(s()))
+        tr.set_root_object("scalar", s())
+        tr.set_root_object("mixed", tr.new_list().append_last(tr.get_mutable(person.name)).append_last(loose)
+                           .append_last(s()))
+        tr.set_root_object("nested", tr.new_list().append_last(tr.new_list().append_last(s())))
+        tr.set_root_object("tags", tr.new_set().add(s()))
+        tr.set_root_object("dict", tr.new_dictionary().set_at(s(), s()))
+        tr.new_mutable("holder", DBObject(note=s(), items=tr.new_list().append_last(DBObject(x=s())),
+                                          tags=tr.new_list().append_last(s())))
+        return org.name, person.name
+    org, person = database.run(build)
+    return database, org, person
+
+
+def _no_mark_in_error(error: BaseException, label) -> None:
+    """Neither ``error`` nor any exception chained to it shows a sentinel."""
+    seen = set()
+    while error is not None and id(error) not in seen:
+        seen.add(id(error))
+        assert MARK not in str(error) and MARK not in repr(error.args), (label, type(error).__name__, str(error))
+        error = error.__cause__ or error.__context__
+
+
+def _sentinel_trees(org: str, person: str) -> list:
+    froms = [["root", "ssns"], ["root", "scalar"], ["root", "mixed"], ["root", "nested"], ["root", "tags"],
+             ["root", "dict"], ["via", ["root", "scalar"], "org"], ["via", ["root", "ssns"], "org"],
+             ["via", ["root", "mixed"], "org"], ["via", ["root", "nested"], "x"], ["via", ["root", "dict"], "x"],
+             ["via", ["cell", org], "people"], ["via", ["cell", org], "name"], ["via", ["cell", person], "org"],
+             ["via", ["cell", person], "org", "name"], ["via", ["cell", "holder"], "note"],
+             ["via", ["cell", "holder"], "items"], ["via", ["cell", "holder"], "tags"],
+             ["via", ["cell", "holder"], "items", "x"]]
+    wheres = [["attr", "x"], ["attr", "note"], ["not", ["attr", "note"]], ["and", ["attr", "x"], ["const", True]],
+              ["==", ["+", ["attr", "x"], ["const", 1]], ["const", 1]],
+              ["==", ["*", ["attr", "note"], ["attr", "x"]], ["const", 1]],
+              ["<", ["attr", "x"], ["root", "ssns"]], [">", ["attr", "x"], ["const", 1]],
+              ["==", ["count", ["root", "ssns"]], ["const", 1]], ["==", ["count", ["root", "scalar"]], ["const", 1]],
+              ["==", ["sum", ["root", "mixed"], ["attr", "x"]], ["const", 1]],
+              ["via", ["root", "scalar"], "org"], ["==", ["attr", "oops"], ["const", 1]],
+              ["==", ["-", ["via", ["root", "ssns"], "x"], ["const", 1]], ["const", 0]],
+              ["==", ["count", ["via", ["self"], "org"], ["attr", "oops"]], ["const", 1]]]
+    aggregates = [["count"], ["sum", ["attr", "x"]], ["sum", ["attr", "note"]], ["sum", ["root", "scalar"]],
+                  ["sum", ["count", ["root", "ssns"]]], ["sum", ["attr", "oops"]],
+                  ["sum", ["via", ["root", "ssns"], "x"]], ["sum", ["+", ["attr", "x"], ["root", "dict"]]]]
+    selects = [["x"], ["note"], ["oops"], ["org.oops"], ["org.name"], ["x.y"], ["items"], ["tags"]]
+    trees = []
+    for origin in froms:
+        trees.append({"from": origin})
+        trees += [{"from": origin, "where": where} for where in wheres]
+        trees += [{"from": origin, "aggregate": aggregate} for aggregate in aggregates]
+        trees += [{"from": origin, "select": select} for select in selects]
+        trees.append({"from": origin, "of_type": "leak.Org", "where": wheres[4], "select": ["oops"]})
+    return trees
+
+
+@pytest.mark.parametrize("raw", [False, True])
+def test_no_agent_operation_shows_a_stored_value_through_an_error_explain_or_terms(sentinel_db, raw):
+    db, org, person = sentinel_db
+    failures = 0
+    for tree in _sentinel_trees(org, person):
+        try:
+            answer = query(db, tree, raw=raw)
+        except Exception as error:      # noqa: BLE001 -- every failure, whatever its kind, is checked
+            failures += 1
+            _no_mark_in_error(error, tree)
+            continue
+        assert MARK not in json.dumps(answer["explain"]) and MARK not in json.dumps(answer["terms"]), tree
+    assert failures > 100                               # the battery reaches the failing paths
+    for type_name in ("leak.Org", "leak.Person", "DBObject", "no.Such", 5, None):
+        try:
+            describe(db, type_name, raw=raw)
+        except Exception as error:      # noqa: BLE001
+            _no_mark_in_error(error, type_name)
+    for terms in (["name", "x", "note", "org"], ["zz"], [MARK.lower()], "x", [5]):
+        try:
+            check_answerable(db, terms, raw=raw)
+        except Exception as error:      # noqa: BLE001
+            _no_mark_in_error(error, terms)
+    for filter_ in (None, "leak", "x", "holder"):
+        after = None
+        while True:
+            page = list_entities(db, filter_, limit=1, after=after, raw=raw)
+            after = page["next"]
+            if after is None:
+                break
+    for bad in ({"limit": 0}, {"after": "bm90IGEgdG9rZW4="}, {"filter": 5}):
+        try:
+            list_entities(db, **bad, raw=raw)
+        except Exception as error:      # noqa: BLE001
+            _no_mark_in_error(error, bad)
+
+
+@pytest.mark.parametrize("raw", [False, True])
+def test_a_root_of_strings_fails_the_from_by_type_only(sentinel_db, raw):
+    db, _, _ = sentinel_db
+    for origin in (["root", "ssns"], ["via", ["root", "scalar"], "org"]):
+        for tree in ({"from": origin}, {"from": origin, "aggregate": ["count"]}):
+            with pytest.raises(ProtoValidationError) as refused:
+                query(db, tree, raw=raw)
+            message = str(refused.value)
+            assert MARK not in message, message
+            assert "the query's 'from'" in message and "ProtoValidationError" in message, message
+            assert "a str" in message, message
+            assert refused.value.__cause__ is None and refused.value.__context__ is None
+
+
+def test_the_engine_describes_a_role_holding_a_scalar_by_its_type(sentinel_db):
+    db, _, _ = sentinel_db
+    session = semantic(db.snapshot_at(db.history()[0]))
+    with pytest.raises(ProtoValidationError) as refused:
+        session.query({"from": ["root", "ssns"]})
+    message = str(refused.value)
+    assert MARK not in message and message.endswith("not a str"), message
+
+
+@pytest.mark.parametrize("raw", [False, True])
+def test_a_scrubbed_failure_names_the_part_the_kind_and_the_operand_type(sentinel_db, raw):
+    db, org, person = sentinel_db
+    cases = [({"from": ["via", ["cell", "holder"], "items"], "where": ["==", ["+", ["attr", "x"], ["const", 1]],
+                                                                       ["const", 1]]}, "the query's 'where'", "a str"),
+             ({"from": ["via", ["cell", "holder"], "items"], "aggregate": ["sum", ["attr", "x"]]},
+              "the query's aggregate", "a str"),
+             ({"from": ["via", ["cell", "holder"], "items"], "where": ["attr", "x"]}, "the query's 'where'", "a str"),
+             ({"from": ["via", ["cell", "holder"], "note"]}, "the query's 'from'", "a str")]
+    for tree, part, operand in cases:
+        with pytest.raises(ProtoValidationError) as refused:
+            query(db, tree, raw=raw)
+        message = str(refused.value)
+        assert MARK not in message and part in message and operand in message, (tree, message)
+
+
+@pytest.mark.parametrize("raw", [False, True])
+def test_a_mistake_in_the_agents_own_input_is_still_explained(sentinel_db, raw):
+    db, _, _ = sentinel_db
+    with pytest.raises(ProtoValidationError, match="no.Such"):
+        describe(db, "no.Such", raw=raw)
+    with pytest.raises(ProtoValidationError, match="'from'"):
+        query(db, {"from": ["attr", "x"]}, raw=raw)
+    if not raw:
+        with pytest.raises(ProtoValidationError, match="no.Such"):
+            query(db, {"from": ["root", "ssns"], "of_type": "no.Such"})
+
+
+def test_raw_planning_skips_the_element_scan_when_no_conjunct_could_plan(db, monkeypatch):
+    from proto_db.core.dbobject import DBObject
+    from proto_db.semantic import entities
+
+    def build(tr):
+        items = tr.new_list()
+        for x in range(5):
+            items = items.append_last(DBObject(x=x))
+        tr.new_mutable("holder", DBObject(items=items))
+    db.run(build)
+    scans = []
+    scan = entities._holds_records_only
+
+    def counted(collection):
+        scans.append(collection.count)
+        return scan(collection)
+    monkeypatch.setattr(entities, "_holds_records_only", counted)
+    items = ["via", ["cell", "holder"], "items"]
+    answer = query(db, {"from": items, "where": ["==", ["+", ["attr", "x"], ["const", 1]], ["const", 3]]}, raw=True)
+    assert len(answer["rows"]) == 1 and answer["explain"]["indexed"] == []
+    assert scans == []                                    # no conjunct could plan: the elements are not scanned
+    answer = query(db, {"from": items, "where": ["==", ["attr", "x"], ["const", 2]]}, raw=True)
+    assert len(answer["rows"]) == 1 and len(answer["explain"]["indexed"]) == 1
+    assert scans == [5]                                   # a plannable conjunct: one scan of the whole collection
+
+
+@pytest.mark.parametrize("raw", [False, True])
+def test_a_member_that_is_a_stored_collection_is_a_row_without_values(sentinel_db, raw):
+    db, _, _ = sentinel_db
+    for root in ("nested", "dict"):
+        [row] = query(db, {"from": ["root", root]}, raw=raw)["rows"]
+        assert row["entity"] is None and row["values"] == {}, row
+    from proto_db.collections.lists import List
+    from proto_db.semantic.expressions import describe_operand
+    assert describe_operand(List()) == "a collection (List)"

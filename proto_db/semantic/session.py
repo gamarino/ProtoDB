@@ -197,12 +197,12 @@ class SemanticSession:
         :class:`~proto_db.semantic.entities.Members` of a ``many`` end (members, never entries)."""
         return self._operations().navigate(source, role)
 
-    def query(self, tree, *, members: bool = False, selection=None, scrubbed: bool = False) -> dict:
+    def query(self, tree, *, members: bool = False, selection=None) -> dict:
         """Run the query ``tree`` (spec section 11) on the session's version: ``{"rows", "explain", "version",
         "query", "terms"}``.  The session's single query engine (preflight F18): see
         :mod:`proto_db.semantic.entities`, "The query engine".  With ``members=True``, a query without an
         aggregate also answers ``"members"``, the :class:`~proto_db.semantic.entities.Version` each row reads.
         With ``selection`` (a callable from a member's type name to the paths to select), each row evaluates
-        only the paths it gives for that member's type.  With ``scrubbed=True``, an evaluation failure is
-        reported by the part that failed and its kind only, never by its message (the agent interface)."""
-        return self._operations().query(tree, with_members=members, selection=selection, scrubbed=scrubbed)
+        only the paths it gives for that member's type.  An evaluation failure propagates tagged with the part
+        of the query it arose in (see :func:`~proto_db.semantic.entities.scrubbed`)."""
+        return self._operations().query(tree, with_members=members, selection=selection)

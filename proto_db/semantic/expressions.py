@@ -20,13 +20,13 @@ stored own attribute, then the catalogued default, else ``MISSING``; never a lan
 (preflight F15).  A predicate on a field with a catalogued default is never given to the planner,
 because an index sees ``MISSING`` where evaluation sees the default (preflight F16).
 
-An evaluation error names a scalar operand by its value and any other operand by its kind
-(:func:`describe_operand`): a record, a collection or a handle may hold personal values, and an error
-message never shows them.
+An evaluation error names an operand by its type only, never by its value (:func:`describe_operand`):
+a scalar may be a personal value, and a record, a collection or a handle may hold one.  Such an error
+also carries that description as its ``semantic_operand``, so a report that withholds the message (the
+agent interface) can still name the operand's type.
 """
 from __future__ import annotations
 
-import datetime
 import keyword
 from collections.abc import Collection
 from decimal import Context, Decimal, DecimalException, Inexact, InvalidOperation, MAX_EMAX, MAX_PREC, MIN_EMIN, \
@@ -285,33 +285,35 @@ def _read_path(element, steps, reader: Reader):
     return reader.default(value, steps[-1]) if found is MISSING and is_atom(value) else found
 
 
-#: The operands an error message shows by value: scalars, which hold nothing beyond themselves.
-_SCALARS = (type(None), bool, int, float, Decimal, str, bytes, datetime.date, datetime.time, datetime.timedelta)
-
-
 def describe_operand(value) -> str:
-    """How an error message names ``value``: a scalar by its ``repr``; anything else by its kind and never
-    by its contents (a record's ``repr`` shows every field, personal ones included): ``a record of type
-    T``, ``a collection of n members``, ``the identity handle of the cell 'name'``, ``a version-bound
-    reference``, else ``a value of type T``."""
+    """How an error message names ``value``: by its type, never by its value or its contents (a scalar may
+    be a personal value, and a record's ``repr`` shows every field): ``a missing value``, ``None``, ``an
+    identity handle``, ``a version-bound reference``, ``a record of type T`` (its type name), ``a collection
+    (T)`` (its Python type), else the article and the Python type (``a str``, ``an int``, ``a Decimal``)."""
     if value is MISSING:
         return "a missing value"
-    if isinstance(value, _SCALARS):
-        return repr(value)
+    if value is None:
+        return "None"
     if isinstance(value, MutableObject):
-        return f"the identity handle of the cell {value.name!r}"
+        return "an identity handle"
     if isinstance(value, dict) and value.keys() == {"entity", "version"}:
         return "a version-bound reference"
-    if isinstance(value, IndexedCollection):
-        n = value.count
-    elif isinstance(value, Collection) and not is_atom(value):
-        n = len(value)
-    elif is_atom(value):
-        type_name = getattr(type(value), "__type_name__", None) or type(value).__name__
-        return f"a record of type {type_name}"
-    else:
-        return f"a value of type {type(value).__name__}"
-    return f"a collection of {n} member{'' if n == 1 else 's'}"
+    name = type(value).__name__
+    if isinstance(value, IndexedCollection) or \
+            (isinstance(value, Collection) and not is_atom(value) and not isinstance(value, (str, bytes))):
+        return f"a collection ({name})"
+    if is_atom(value):
+        type_name = getattr(type(value), "__type_name__", None)
+        return f"a record of type {type_name if isinstance(type_name, str) else name}"
+    return f"{'an' if name[:1].lower() in 'aeiou' else 'a'} {name}"
+
+
+def _operand_error(message: str, value) -> ProtoValidationError:
+    """A ``ProtoValidationError`` with ``message`` (which names ``value`` by :func:`describe_operand`) that
+    carries that description as ``semantic_operand``."""
+    error = ProtoValidationError(message)
+    error.semantic_operand = describe_operand(value)
+    return error
 
 
 def _number(op: str, value):
@@ -319,10 +321,9 @@ def _number(op: str, value):
         return value
     if isinstance(value, Decimal):
         if not value.is_finite():
-            raise ProtoValidationError(f"Operator {op!r} needs a finite decimal, not {describe_operand(value)}")
+            raise _operand_error(f"Operator {op!r} needs a finite decimal, not an infinite or NaN one", value)
         return value
-    raise ProtoValidationError(f"Operator {op!r} takes int and decimal operands only, not {describe_operand(value)} "
-                               f"({type(value).__name__})")
+    raise _operand_error(f"Operator {op!r} takes int and decimal operands only, not {describe_operand(value)}", value)
 
 
 def _arithmetic(op: str, left, right):
@@ -336,7 +337,8 @@ def _arithmetic(op: str, left, right):
     try:
         return _DECIMAL_OPS[op](Decimal(left), Decimal(right))
     except DecimalException as e:
-        raise ProtoValidationError(f"Operator {op!r} cannot give {left!r} {op} {right!r} exactly") from e
+        raise ProtoValidationError(f"Operator {op!r} cannot give its result exactly: it needs more digits than "
+                                   f"exact decimal arithmetic keeps") from e
 
 
 def _truth(op: str, value, what: str = "an operand") -> bool:
@@ -345,7 +347,7 @@ def _truth(op: str, value, what: str = "an operand") -> bool:
         return value
     if value is MISSING:
         return False
-    raise ProtoValidationError(f"Operator {op!r} needs a boolean as {what}, not {describe_operand(value)}")
+    raise _operand_error(f"Operator {op!r} needs a boolean as {what}, not {describe_operand(value)}", value)
 
 
 def _identity(member):
@@ -359,8 +361,8 @@ def _identity(member):
         return "version", member["entity"].name, member["version"].oid
     if is_atom(member):
         return "record", member.oid
-    raise ProtoValidationError(f"A role holds records, identity handles or version-bound references, "
-                               f"not {describe_operand(member)}")
+    raise _operand_error(f"A role holds records, identity handles or version-bound references, "
+                         f"not {describe_operand(member)}", member)
 
 
 def _reach(raws, reached: list, seen: set, reader: Reader) -> None:
