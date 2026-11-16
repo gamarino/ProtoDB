@@ -48,7 +48,7 @@ class SemanticSession:
     def __init__(self, source):
         """Bind the session to ``source`` (use :func:`semantic`)."""
         self._source = source
-        self._model = None
+        self._model = None          # (stamp, verified model): see _stamp
 
     # -- the source -------------------------------------------------------------------------------------
 
@@ -80,12 +80,24 @@ class SemanticSession:
                 return merged, registry, listed, None           # this transaction's own, not memoized
         return stored, registry, listed, key
 
+    def _stamp(self):
+        """What the catalog a session sees depends on besides its version: for a transaction, its own
+        installs (a session kept across ``install_module`` sees the new catalog); nothing for a snapshot."""
+        from ..transactions import Snapshot
+        source = self._source
+        if isinstance(source, Snapshot):
+            return None
+        with source._lock:
+            source._check_active()
+            return source._installed_names(), source._semantic_pending
+
     def _verified(self) -> dict:
-        model = self._model
-        if model is None:
+        stamp = self._stamp()
+        memo = self._model
+        if memo is None or memo[0] != stamp:
             stored, registry, listed, key = self._read()
-            model = self._model = _store.verified_model(stored, registry, listed, key=key)
-        return model
+            memo = self._model = (stamp, _store.verified_model(stored, registry, listed, key=key))
+        return memo[1]
 
     # -- reading ----------------------------------------------------------------------------------------
 

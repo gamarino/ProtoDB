@@ -15,6 +15,7 @@ from __future__ import annotations
 import base64
 import os
 import subprocess
+import threading
 import sys
 from pathlib import Path
 
@@ -441,5 +442,105 @@ def test_the_binding_ends_on_the_newest_committed_list():
         _install(db, "acme_delivery")                        # version 2
         space._registries.rebind("db", ("base", "acme_sales"), version=1)
         assert "delivery_date" in _attributes(db.run(lambda tr: Order.describe(tr)))
+    finally:
+        space.close()
+
+
+# -- fix round 1 ----------------------------------------------------------------------------------------------
+
+def test_a_transaction_started_between_publish_and_rebind_resolves():
+    # Review I1 (R82): the rebind of an install commit runs after its publish; a transaction of this space
+    # that starts in between is on the published list and must resolve with it.  The order is decided by
+    # events, never by a sleep: the committing thread is held right before its rebind.
+    space = _space()
+    try:
+        db = space.new_database("db")
+        _install(db, "acme_sales")
+        registries = space._registries
+        original = registries.rebind
+        held, release = threading.Event(), threading.Event()
+
+        def gated(*args, **kwargs):
+            held.set()
+            assert release.wait(60)
+            return original(*args, **kwargs)
+
+        registries.rebind = gated
+        writer = threading.Thread(target=lambda: _install(db, "acme_delivery"))
+        writer.start()
+        try:
+            assert held.wait(60)                             # published, not yet rebound
+            tr = db.new_transaction()
+            try:
+                assert tr.installed_modules()[-1] == "acme_delivery"
+                assert "delivery_date" in _attributes(Order.describe(tr))
+            finally:
+                tr.abort()
+        finally:
+            release.set()
+            writer.join(60)
+        assert not writer.is_alive()
+        assert "delivery_date" in _attributes(db.run(lambda tr: Order.describe(tr)))
+    finally:
+        space.close()
+
+
+def test_a_reload_that_loses_to_a_newer_commit_still_builds_fresh():
+    # Review minor 1, R243: a reload invalidates every registry of the database built before it, also when
+    # its own rebind is ignored because a newer commit's binding won.
+    from proto_db.transactions import _SpaceRegistries
+    registries = _SpaceRegistries(MAPPING, None)
+    older, newer = ("base", "acme_sales"), ("base", "acme_sales", "acme_delivery")
+    registries.rebind("x", newer, None, 7)
+    before = registries.registry("x", registries._bound["x"])
+    registries.reload("x", older, 6)
+    binding = registries._bound["x"]
+    assert binding.names == newer
+    assert registries.registry("x", binding) is not before
+
+
+def test_reinstall_on_a_database_without_a_catalog_keeps_rc4_behaviour(tmp_path):
+    # Review I2: a database with no semantic catalog reinstalls exactly as before the semantic layer, even
+    # when a listed module cannot be imported in this process.
+    space = _space(tmp_path / "s", mapping=PLAIN)
+    try:
+        _install(space.new_database("db"), "reg8_base")
+    finally:
+        space.close()
+    space = _space(tmp_path / "s", mapping=MAPPING)          # this process lacks reg8_base's code
+    try:
+        db = space.open_database("db")
+        versions = len(db.history())
+        _install(db, "base")
+        assert len(db.history()) == versions and _stored(db) is None
+    finally:
+        space.close()
+
+
+def test_a_session_kept_across_an_install_sees_the_new_catalog():
+    space = _space()
+    try:
+        db = space.new_database("db")
+        _install(db, "acme_sales")
+        tr = db.new_transaction()
+        try:
+            session = semantic(tr)
+            assert "delivery_date" not in _attributes(session.describe("acme.sales.Order"))
+            tr.install_module("acme_delivery")
+            assert "delivery_date" in _attributes(session.describe("acme.sales.Order"))
+        finally:
+            tr.abort()
+    finally:
+        space.close()
+
+
+def test_a_catalog_holding_modules_the_database_does_not_list_names_them():
+    space = _space()
+    try:
+        db = space.new_database("db")
+        _install(db, "acme_sales")
+        _overwrite(db, _code("acme_sales", "acme_delivery"))
+        with pytest.raises(ProtoNotSupportedError, match=r"does not list \['acme_delivery'\]"):
+            db.run(lambda tr: semantic(tr).catalog())
     finally:
         space.close()

@@ -192,11 +192,15 @@ def verified_model(stored: dict | None, registry: Registry | None, listed: tuple
             return found
     _checked_stored(stored)
     lacking = sorted(set(listed) - set(stored["module_set"]))
-    if lacking or sorted(set(listed)) != stored["module_set"]:
+    if lacking:
         raise ProtoNotSupportedError(
             f"The semantic catalog does not hold the contributions of the installed module(s) {lacking} (installed "
-            f"by a writer without the semantic layer), or holds modules the database does not list; install a "
-            f"module to add them")
+            f"by a writer without the semantic layer); install a module to add them")
+    extra = sorted(set(stored["module_set"]) - set(listed))
+    if extra:
+        raise ProtoNotSupportedError(
+            f"The semantic catalog holds the contributions of module(s) the database does not list {extra}; its "
+            f"semantic model is not supported until those modules are installed")
     for name in stored["module_set"]:
         stored_item = _plain(stored["modules"][name])
         code_item = _plain(module_contributions(registry, name))
