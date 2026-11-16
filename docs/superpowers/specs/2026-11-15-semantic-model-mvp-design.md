@@ -312,11 +312,15 @@ language.
   - division is deferred.
 - Comparison `["==", "!=", "<", "<=", ">", ">=", a, b]`: D28's semantics (`values_equal`, type ranks,
   `order_key`). A comparison involving MISSING is false.
-- Logic `["and", ...]`, `["or", ...]`, `["not", a]` over booleans.
+- Logic `["and", ...]`, `["or", ...]`, `["not", a]`. Logic operands are booleans, evaluated left to right, `and` stopping at the first false and `or` at the first
+  true. A MISSING operand counts as false (as in a comparison), so `not` of MISSING is true. Any other
+  non-boolean operand that is reached raises `ProtoValidationError`.
 - Aggregates `["sum", over, term, where?]` and `["count", over, where?]`:
   - `over` is a role name of the current element, or a `via` expression;
   - `term` and `where` are evaluated with each member as the current element;
-  - `sum` of nothing is 0.
+  - `sum` of no members is the int 0 (and `count` of none the int 0); otherwise the terms are added as `+` does.
+  A member whose `term` is MISSING contributes nothing, and a member for which `where` is not true is not a
+  member of the aggregate.
 - Traversal `["via", origin, role, role...]`: the set reached through each end's own collection. Origins
   *(R265)*: `["self"]`; in queries only, `["root", name]` and `["cell", name]`.
 - **Text form** *(R277)*: a Python convenience, parsed into the tree. It covers identifiers and dotted paths
@@ -349,6 +353,53 @@ them uses the feature `catalog` and is version 6; data that uses none stays vers
 | `proto_db.catalog.Expression` | `ast` (the tree of section 7) |
 | `proto_db.catalog.IntentRecord` | `intent` (`(type name, intent name)`), `target` (handle), `arguments` (map), `transaction` (the database version the commit produced) |
 
+**Field encodings** (the same in the design spec, section 8). A field is **required** where listed under "Required fields" below;
+every other listed field is **optional**, and absent means its default (below) or, where none is
+given, "not declared". The value kinds are those of the format (`str`, `bool`, `int`, `@tup`, `@map`,
+refs):
+- Text fields (`meaning`, `message`, `group`, `unit`, `certification`, `caveats`, `on_delete`,
+  `sensitivity`, `scope`, `kind`, `binding`, `value_type`, `type_name`, `name`, `module`, `extends`,
+  `version`, `inverse`, `inherited_from`, `target`) are `str`.
+- Lists of names are a `@tup` of `str`, in declaration order: `supertypes` (the direct supertypes, in the
+  language's base order), `key` (attribute names), `synonyms`, `depends`, `commutes_with` (intent names),
+  `index_by` (attribute paths, dotted), `values` (the enumeration), `languages` (language names, non-empty
+  when present), `effects` (free text, informative) and `provenance` (module names: the module that defined
+  the element first, then those that modified it, in load order). `module_set` is a `@tup` of `str` in
+  code-point order.
+- Lists of elements are a `@tup` of refs: `attributes` (Attribute and Role records), `intents`,
+  `constraints`, `roles`, `extensions`, `elements`. A composed list keeps the position of an element's first
+  definition, and an element added by a later module goes after the existing ones, in load order.
+  `modules` and `entities` are refs to Dictionaries from `str` to a ref (module name to Module, type name to
+  Entity or Relationship).
+- `label` and `help` are a `@map` from a language tag to `str` (a plain string is `{"und": text}`).
+- `examples` is a `@tup` of canonical values. `default` is a canonical value; its absence means no default
+  is declared (a declared default of nil is present as nil). `order` is an `int`. `parameters` is a `@tup`
+  of `(name, value_type)` pairs, each a `@tup` of two `str`.
+- `required`, `indexed`, `ordered`, `enforced` and `deprecated` are `bool`.
+- `cardinality` and `inverse_cardinality` are the two ends of the relation as `str`, one of `one`, `many`,
+  `0..1` and `1..*`: `cardinality` is the end at the role's own entity, `inverse_cardinality` the end at its
+  `target`. A declaration written as a pair (`many-to-one`, `one-to-many`, `one-to-one`, `many-to-many`)
+  is stored as these two. `binding` is `identity` or `version`. `kind` is `field`, `computed` or
+  `computed_stored`. `scope` is `attribute`, `entity`, `relation` or `aggregate`.
+- `expression` and `requires` are refs to an Expression record; `ast` is the tree of the expression
+  language, nested `list` values whose operator and names are `str`.
+- `Extension.entity` is a `@map` whose keys are among `meaning`, `label`, `help`, `synonyms`, `key`,
+  `supertypes` and `certification`, each with the encoding of the Entity field of that name.
+- `IntentRecord.intent` is a `@tup` of two `str`; `target` is the `str` name of the target's cell
+  (`<type name>#<32 hex digits>`); `arguments` is a `@map` from parameter name to canonical value (an entity
+  argument is carried as its cell name); `transaction` is an `int`.
+- **Required fields.** `SemanticCatalog`: `modules`, `module_set`, `entities`. `Module`: `name`, `version`.
+  `Extension`: `module`, `extends`. `Entity` and `Relationship`: `type_name` (and `roles` for a
+  Relationship). `Attribute`: `name`, `kind`. `Role`: `name`, `target`, `cardinality`. `Intent`: `name`.
+  `Constraint`: `name`, `scope`, `expression`. `Expression`: `ast`. `IntentRecord`: all four.
+- A Role carries the Attribute fields except `kind`, `value_type`, `values`, `default`, `unit` and
+  `expression`: a role is stored and holds entities, not a value of a kind.
+- **Omission.** Defaults are omitted, in the records and in the canonical form: absent text, an empty `@tup`
+  or `@map`, `required` false, `indexed` false, `enforced` true, `sensitivity` `internal`, `binding`
+  `identity`, `ordered` false and `deprecated` false. A writer writes no field at its default; a reader
+  that meets one accepts it and its canonical form omits it. Every other optional field is written when it is
+  declared.
+
 Field rules:
 - `values`, `languages`, `inverse_cardinality` and `inherited_from` are additions to the brief's field lists (R268, R276, section
   5).
@@ -360,9 +411,6 @@ Field rules:
 - `value_type` names a canonical value kind *(R268)*: `bool`, `int`, `decimal`, `str`, `bytes`, `date`, `time`,
   `datetime`, `timedelta`, `uuid`, `float`, `list`, `tuple`, `map`. Smalltalk's `#integer` and `#decimal` are
   `int` and `decimal`.
-- **Defaults are omitted.** A field at its default is not written. The defaults are: absent text, an empty tuple,
-  `required` false, `enforced` true, `sensitivity` `internal`, `binding` `identity`, `ordered` false,
-  `deprecated` false.
 - **`ext`.** Every record may carry `ext` (a map from string to value). Readers keep it byte for byte and never
   interpret it.
 - **Single-language elements.** An intent or computed implemented in one language only carries `languages`.
