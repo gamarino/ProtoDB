@@ -79,11 +79,12 @@ Mixed raw access (spec section 9)
 Replay failures
     Each operation succeeded on the record view when it was recorded, so one that fails at the replay,
     on a version other than the snapshot, fails because a concurrent commit changed the state it was
-    recorded on: ``ProtoConflictError`` (``Database.run`` retries it), whatever the operation reports (an
-    entity no longer linked, a raw-written cell the replay reaches, a creation that diverges from the
-    recorded one).  A ``ProtoConstraintError`` keeps its class (a false ``requires``, F26; a violated
-    invariant or cardinality, checked after the replay): the rule decides on the combined result, and
-    retrying would decide the same.  So does a closed space.
+    recorded on: ``ProtoConflictError`` (``Database.run`` retries it), whatever the operation reports as a
+    ``ProtoValidationError`` or a ``ProtoUserError`` (an entity no longer linked, a raw-written cell the
+    replay reaches, a creation that diverges from the recorded one); any other failure keeps its class.  A
+    ``ProtoConstraintError`` keeps its class (a false ``requires``, F26; a violated invariant or cardinality,
+    checked after the replay): the rule decides on the combined result, and retrying would decide the same.
+    So does a closed space.
 
 Determinism
     An intent reads nothing external during the replay: external values travel as arguments.  This is
@@ -544,11 +545,13 @@ class IntentLog:
 
 
 def _changed_state(error, db_root, tr) -> bool:
-    """Whether ``error``, raised by a replayed operation that succeeded when it was recorded, comes from the
-    state a concurrent commit changed (the replay runs on another version than the snapshot): a conflict.
-    A ``ProtoConstraintError`` (an intent's false ``requires``, F26) keeps its class, never retried (R273),
-    and so does a closed space."""
-    return (db_root is not tr._db_root and not isinstance(error, (ProtoConstraintError, ProtoClosedError)))
+    """Whether ``error``, a ``ProtoValidationError`` or ``ProtoUserError`` raised by a replayed operation that
+    succeeded when it was recorded, comes from the state a concurrent commit changed (the replay runs on
+    another version of the database than the snapshot's, by version number: a reload of the same version is
+    the same state): a conflict.  A ``ProtoConstraintError`` (an intent's false ``requires``, F26) keeps its
+    class, never retried (R273), and so does a closed space."""
+    return (db_root.version != tr._db_root.version
+            and not isinstance(error, (ProtoConstraintError, ProtoClosedError)))
 
 
 def without_intent_log(objects):

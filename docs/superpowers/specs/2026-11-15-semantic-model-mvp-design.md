@@ -496,9 +496,9 @@ Requirements:
   them. A session access to a cell the transaction wrote raw is refused too. Other raw reads and writes keep
   today's rules.
 - **Replay failures.** An operation that succeeded when it was recorded and fails at replay, on a state a
-  concurrent commit changed, is `ProtoConflictError` (retryable), whatever the operation reports: an entity no
-  longer linked, a raw-written cell the replay reaches, a creation that diverges. A false `requires` keeps its
-  own class (section 10).
+  concurrent commit changed, is `ProtoConflictError` (retryable), whatever the operation reports as a
+  `ProtoValidationError` or a `ProtoUserError`: an entity no longer linked, a raw-written cell the replay reaches,
+  a creation that diverges. A false `requires` keeps its own class (section 10), and so does any other failure.
 
 ## 10. Constraints and invariants
 

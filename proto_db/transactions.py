@@ -100,7 +100,9 @@ Intent transactions (spec section 9, R269; Task 8)
     before the raw cell writes, the log validates the reads its caller decided on and replays the
     operations on the cells current then (``ProtoConflictError`` on a changed read), and the commit
     writes the operations' IntentRecords in ``__intentLog``.  A commit that logged nothing removes an
-    older ``__intentLog`` (the root holds the records of the commit that wrote its version); a database
+    older ``__intentLog`` (the root holds the records of the commit that wrote its version), unless it
+    wrote that root itself (an internal writer, such as the conformance generator; applications cannot
+    write reserved roots); a database
     that never used intents has none, so without the flag nothing changes.  A space with a cluster
     coordinator refuses the flag (``ProtoNotSupportedError``).
 

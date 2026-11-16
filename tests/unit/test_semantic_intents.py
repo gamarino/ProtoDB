@@ -705,6 +705,19 @@ def test_a_replay_touching_a_raw_written_cell_conflicts(db):
         tr.commit()
 
 
+def test_a_replay_failure_is_a_conflict_only_when_this_database_changed():
+    # Deferred minor 163: whether the replay ran on another state is decided by the database's version, not
+    # by the identity of the root object (a reload of the same version, after a cache eviction, is another
+    # object); a replay failure on an unchanged version is the operation's own error, never a conflict.
+    from types import SimpleNamespace
+    from proto_db.semantic.intents import _changed_state
+    tr = SimpleNamespace(_db_root=SimpleNamespace(version=7))
+    error = ProtoValidationError("the operation's own refusal")
+    assert _changed_state(error, SimpleNamespace(version=7), tr) is False
+    assert _changed_state(error, SimpleNamespace(version=8), tr) is True
+    assert _changed_state(ProtoConstraintError("rule"), SimpleNamespace(version=8), tr) is False
+
+
 def test_a_catalog_root_change_during_an_intent_transaction_conflicts(db):
     # The replay composes with the catalog and registry the log was recorded with: a concurrent install
     # changes them, and the commit is a conflict naming the root.
