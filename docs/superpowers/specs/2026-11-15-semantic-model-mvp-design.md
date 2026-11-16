@@ -15,7 +15,7 @@ Sources:
     from the registry's `__catalog`);
   - modules are never uninstalled: they evolve, and the database is perennial.
 
-Section 17 lists the confirmed rulings (R258-R280); section 17a lists the two subclass items still open.
+Section 17 lists the confirmed rulings (R258-R280); section 17a lists the two subclass rulings, confirmed on 2026-11-15.
 
 **Scope rule (the script).** The MVP is a demo script, and only what the script needs is built. Everything else
 in the brief is respected, and nothing built may contradict it: incomplete but coherent, never lame. The catalog
@@ -303,6 +303,8 @@ language.
 - `["const", v]`: a canonical value.
 - `["attr", name, ...]`: a path from the current element. Each step but the last is a `one` role or relation. An
   absent step gives MISSING.
+- **Absent values**: `["attr", name]` reads the element's stored own attribute, then the field's catalogued
+  `default` when there is one, else MISSING. It never yields the registry's `None` (R150).
 - Arithmetic `["+"|"-"|"*", a, b]` *(R264)*:
   - int with int gives int; any decimal gives decimal (exact);
   - MISSING in gives MISSING;
@@ -553,10 +555,10 @@ Those marked **changes the brief** alter what the brief's examples wrote; the ma
   placeholders are attribute names, `{entity}`, the type's short name, `{left}`, `{right}` and `{excess}`.
 - **R280** (maintainer) Subclasses are supported with minimal limits (section 4, "Subclasses").
 
-### 17a. Subclass items still open (PROPOSED — maintainer to confirm)
+### 17a. Subclass rulings (confirmed 2026-11-15)
 
-- **R281** Inherited elements of a composed subtype carry the new field `inherited_from`.
-- **R282** The one limit kept, for soundness: a subclass cannot change an inherited element's `kind`, stored
+- **R281** (confirmed 2026-11-15) Inherited elements of a composed subtype carry the new field `inherited_from`.
+- **R282** (confirmed 2026-11-15) The one limit kept, for soundness: a subclass cannot change an inherited element's `kind`, stored
   `value_type`, or a role's `cardinality`, `target` or `binding` (section 4 gives the reason).
 
 Conflicts with the brief found while writing, resolved above:

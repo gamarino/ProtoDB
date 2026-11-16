@@ -83,3 +83,37 @@ instead of inventing a variant. A rule that departs from its reference says why.
 - A slower correct mechanism beats a faster one with a gap.
 - The failure model is never narrowed to escape a finding.
 - Optimizations are attributed to measured causes: per-commit time budgets, before and after.
+
+## Semantic model (S1-S7)
+
+These principles extend P1-P7 for the semantic layer (decisions D63-D72). They constrain what a catalog,
+an expression or an intent may be; the P-principles still bind every one of them.
+
+**S1. The class describes itself.** Structure, behaviour and meaning are declared in one place, the entity's
+declaration. A fact about an entity that lives only in a wiki, a comment or a developer's head is not available to
+a planner, a validator or an agent, so it does not count as declared.
+
+**S2. Meaning is operational.** What is declared is used: by the planner, by the commit, by validation or by
+agents. A declaration that nothing reads is documentation that will drift, and the catalog does not carry it as if
+it were a contract. Where an element is catalogued but not yet enforced (an enumeration's `values` in the MVP), the
+catalog says so.
+
+**S3. The intent is the unit of work.** A transaction is what it read plus what it wants to do. Recording the
+intent, not only the resulting writes, lets the commit replay it on the current state instead of failing because a
+neighbouring writer touched the same record.
+
+**S4. Transactions collide by meaning.** Two transactions conflict only if one changed what the other used to
+decide, or if together they violate a declared invariant. Touching the same record is not a conflict by itself.
+This refines P2: the commit still concerns only its own work, and what it validates is what it read.
+
+**S5. Everything is optional and degrades cleanly.** A class without semantic elements behaves as it does today,
+and data that uses no semantic feature is written byte for byte as before (P1, the lowest-sufficient-version
+rule). An element that is absent from a catalog is absent, never an error.
+
+**S6. Language neutral.** What is published in the database is read the same way by Python and by protoST. A
+feature that cannot be described as neutral data (a tree, a canonical value) does not enter the catalog: it stays
+a local convenience of one language and is catalogued as such, so no other language mistakes it for a contract.
+
+**S7. The vector suggests, the data decides.** Anything inferred, whether by an embedding, a model or a heuristic,
+is a hypothesis and is never written as a fact. What the database states is what was declared or committed, and an
+agent that infers must be able to tell the two apart.

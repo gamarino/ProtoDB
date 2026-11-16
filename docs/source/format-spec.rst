@@ -1566,6 +1566,195 @@ detection between concurrent writers (read sets, merges of concurrently written 
 is the library's job and leaves no trace in the format, except the epoch check of the publish.
 
 
+Semantic catalog (format 6)
+---------------------------
+
+**Not yet written by any release.** This chapter is normative and specifies the semantic model of
+decisions D63 to D72. Its status is *development branch; no release yet*: the repository's
+development branch is the first writer, and no tagged release has written format 6. A reader
+that implements it **MUST** read what this chapter specifies, and a writer **MUST** write it
+exactly. Data that uses none of it stays version 4 or 5, byte for byte (S5).
+
+What is normative is what lives in the database: the catalog and its canonical form, the
+expression language and the intent log. The declaration syntax a language offers (Python's
+``Field``, ``Relation`` and ``@intent``, Smalltalk's own) is not part of this chapter: each
+language declares the same thing its own way and **MUST** produce the same catalog. A feature
+that cannot be described as neutral data does not enter the catalog; it stays a local
+convenience of one language and is catalogued as such (``languages``, below).
+
+The feature and the types
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The format-6 feature is ``catalog``. A record whose type tag is one of the built-in types below
+(alias or name) uses it, is version 6, and so lands in a segment of version 6 or later; the
+lowest-sufficient-version rule of `Format stability`_ applies. The types are appended to the
+alias table in this order, from alias 24 (the table is append-only): 24
+``proto_db.catalog.SemanticCatalog``, 25 ``Module``, 26 ``Extension``, 27 ``Entity``, 28
+``Relationship``, 29 ``Attribute``, 30 ``Role``, 31 ``Intent``, 32 ``Constraint``, 33
+``Expression`` and 34 ``IntentRecord`` (each in the package ``proto_db.catalog``). None carries
+parents (no ``p``). A field that is not listed for a type is ``ProtoCorruptionError``, except
+``ext``.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Type
+     - Fields
+   * - ``proto_db.catalog.SemanticCatalog``
+     - The value of the root ``__semanticCatalog``. ``modules``: a ref to a Dictionary from module
+       name to Module. ``module_set``: a ``@tup`` of the module names in code-point order
+       (`Registry roots`_).
+       ``entities``: a ref to a Dictionary from type name to Entity or Relationship, the
+       composition for ``module_set``.
+   * - ``proto_db.catalog.Module``
+     - ``name``; ``version``, a string (the first writer writes ``"1"``); ``depends``, a ``@tup``
+       of module names; ``extensions``, a ``@tup`` of refs to Extension records in declaration
+       order.
+   * - ``proto_db.catalog.Extension``
+     - ``module``; ``extends``, a type name; ``entity``, a map of the entity-level elements it
+       contributes; ``elements``, a ``@tup`` of refs to the Attribute, Role, Intent and
+       Constraint records it declares, with the fields it states.
+   * - ``proto_db.catalog.Entity``
+     - ``type_name``; ``supertypes``; ``meaning``; ``label``; ``help``; ``synonyms``; ``key``;
+       ``attributes`` (refs to Attribute and Role records); ``intents``; ``constraints``;
+       ``certification``; ``provenance``.
+   * - ``proto_db.catalog.Relationship``
+     - The Entity fields plus ``roles``: refs to its Role records, two or more.
+   * - ``proto_db.catalog.Attribute``
+     - ``name``; ``inherited_from``; ``kind`` (``field``, ``computed`` or ``computed_stored``);
+       ``value_type``; ``values``; ``required``; ``default``; ``unit``; ``indexed``;
+       ``expression`` (a ref to an Expression); ``languages``; ``meaning``; ``label``; ``help``;
+       ``group``; ``order``; ``synonyms``; ``examples``; ``caveats``; ``sensitivity``;
+       ``certification``; ``deprecated``; ``provenance``.
+   * - ``proto_db.catalog.Role``
+     - The Attribute fields plus ``target``, ``inverse``, ``cardinality``,
+       ``inverse_cardinality``, ``ordered``, ``index_by``, ``binding`` and ``on_delete``.
+   * - ``proto_db.catalog.Intent``
+     - ``name``; ``meaning``; ``parameters``, a ``@tup`` of ``(name, value_type)`` pairs;
+       ``requires`` (a ref to an Expression); ``commutes_with``; ``effects``; ``languages``;
+       ``provenance``.
+   * - ``proto_db.catalog.Constraint``
+     - ``name``; ``scope`` (``attribute``, ``entity``, ``relation`` or ``aggregate``);
+       ``expression`` (a ref to an Expression); ``enforced``; ``meaning``; ``message``;
+       ``provenance``.
+   * - ``proto_db.catalog.Expression``
+     - ``ast``: the tree of `The expression language`_.
+   * - ``proto_db.catalog.IntentRecord``
+     - ``intent``, the pair ``(type name, intent name)``; ``target``, a handle; ``arguments``, a
+       map; ``transaction``, the version number of the database version the commit produced.
+
+Field rules:
+
+- ``values`` (an enumeration of the permitted values of a ``str`` attribute), ``languages``,
+  ``inverse_cardinality`` and ``inherited_from`` are part of the format. ``inherited_from``
+  appears only on the elements of a composed subtype entity and names the type that declared the
+  element. ``values`` is catalogued and not enforced by the first writer; the catalog is how a
+  reader learns that.
+- ``label`` and ``help`` are maps from a language tag to text. A declaration that gives a plain
+  string is stored as ``{"und": text}`` (BCP 47 *undetermined*); a declaration that gives a map
+  states its languages. Translations are not specified further.
+- ``value_type`` names a canonical value kind: ``bool``, ``int``, ``decimal``, ``str``, ``bytes``,
+  ``date``, ``time``, ``datetime``, ``timedelta``, ``uuid``, ``float``, ``list``, ``tuple`` or
+  ``map``. A language maps its own types onto them (Smalltalk's ``#integer`` and ``#decimal`` are
+  ``int`` and ``decimal``).
+- **Defaults are omitted.** A field at its default is not written, and a reader supplies it. The
+  defaults are: absent text, an empty ``@tup``, ``required`` false, ``enforced`` true,
+  ``sensitivity`` ``internal``, ``binding`` ``identity``, ``ordered`` false and ``deprecated``
+  false. A writer that writes a field at its default is non-conforming (the canonical form below
+  would differ).
+- **``ext``.** Every record **MAY** carry ``ext``, a map from string to value. A reader keeps it
+  byte for byte, re-writes it unchanged, and never interprets it.
+- **Single-language elements.** An intent or a computed attribute implemented in one language
+  only carries ``languages``, a ``@tup`` of language names. Invoking or evaluating it from another
+  language **MUST** raise ``ProtoNotSupportedError``; describing it is allowed.
+- **Roots by name and type.** ``__semanticCatalog`` and ``__intentLog`` are reserved root names
+  (`Space and database roots`_). ``__semanticCatalog`` is identified by name and by type: a value
+  that is not a SemanticCatalog is ``ProtoCorruptionError``.
+
+Composition and the canonical form
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The composed ``entities`` are a cache. A reader **MAY** use them when ``module_set`` equals the
+set of module names of ``__currentModules`` (`Registry roots`_) and **MUST** otherwise compose
+from the modules' contributions. A runtime that has the modules' code recomposes from it in the
+registry's load order and verifies that the result equals the stored catalog; a difference is an
+explicit error, never corrected silently. Contributions fold in the load order: the last module
+that defines an element wins. Every composed element lists, in ``provenance``, the module that
+defined it and then the modules that modified it, in load order. Nothing is deleted: a module
+never removes another's element, it **MAY** mark it ``deprecated``, and a module is never
+uninstalled.
+
+A module **MAY** freely redefine ``label``, ``help``, ``group``, ``meaning``, ``synonyms``,
+``caveats``, ``examples``, ``default``, ``sensitivity``, ``deprecated``, the expression of a
+computed attribute, the ``enforced`` of a constraint and the implementation of an intent. It
+**MAY** add attributes, roles, intents and constraints. It **MUST NOT** change, without a
+declared migration (which this chapter does not specify, so always), the ``kind`` of an
+attribute, the ``value_type`` of a stored attribute, or the ``cardinality``, ``target`` or
+``binding`` of a role. A redefinition that restates a structural field **MUST** equal the
+composed one. A subtype entity (``supertypes`` is not empty) is composed as the fold of its
+registry linearization from the last to the first; its inherited elements carry
+``inherited_from``, and it **MUST NOT** change what a module may not change (the same list),
+because a role, query, aggregate or invariant typed by the supertype reads and writes subtype
+instances through the supertype's declaration.
+
+**The canonical form** of a catalog is the composed catalog expanded into one value: every ref
+replaced by the fields of the record it names, oids and pointers dropped, every Dictionary a
+map sorted by key, the whole encoded canonically (`Canonical values`_). Two implementations
+conform when their canonical forms are equal byte for byte. Record bytes are **not** compared:
+oids and placement differ by writer.
+
+The expression language
+~~~~~~~~~~~~~~~~~~~~~~~
+
+An expression is a nested list ``[operator, argument...]``, stored as data in an Expression
+record's ``ast`` and evaluated the same way in every language. Its operators:
+
+``["const", v]``
+    A canonical value.
+
+``["attr", name, ...]``
+    A path from the current element. Each step but the last is a ``one`` role or relation; an
+    absent step gives MISSING. The last step reads the element's stored own attribute, then the
+    field's catalogued ``default`` when it has one, else MISSING. It never yields a language's
+    own ``None`` for an absent value.
+
+Arithmetic ``["+", a, b]``, ``["-", a, b]``, ``["*", a, b]``
+    ``int`` with ``int`` gives ``int``; when either operand is a ``decimal`` the result is a
+    ``decimal`` (exact). MISSING in gives MISSING. A ``bool``, a ``float``, a string or any other
+    kind raises ``ProtoValidationError``. Division is not specified.
+
+Comparison ``["==", a, b]`` and ``"!="``, ``"<"``, ``"<="``, ``">"``, ``">="``
+    The semantics of `Order, equality and hashing`_ (equality, type ranks, order keys). A
+    comparison that involves MISSING is false.
+
+Logic ``["and", ...]``, ``["or", ...]``, ``["not", a]``
+    Over booleans.
+
+Aggregates ``["sum", over, term, where?]`` and ``["count", over, where?]``
+    ``over`` is a role name of the current element or a ``via`` expression. ``term`` and
+    ``where`` are evaluated with each member as the current element. ``sum`` of no members is 0.
+
+Traversal ``["via", origin, role, role...]``
+    The set reached through each end's own collection. The origin ``["self"]`` is the current
+    element; ``["root", name]`` and ``["cell", name]`` are valid in queries only.
+
+Reserved, not specified by this revision: ``in``, ``is_missing``, ``min``, ``max``, ``exists``,
+``all``, ``reach`` and ``valid_at``. A reader that meets an operator it does not implement
+**MUST** raise ``ProtoNotSupportedError``. A text form (``"committed <= credit_limit"``) is a
+convenience of one language that is parsed into this tree; it is never stored.
+
+The intent log
+~~~~~~~~~~~~~~
+
+``__intentLog`` is a root of a database's ``objects`` whose value is a ``List`` of IntentRecord
+records: those of the commit that wrote this version of the database, in the order the operations
+ran, and nothing older (history is the chain of versions, `Space and database roots`_). A value
+that is not a ``List``, or an element that is not an IntentRecord, is ``ProtoCorruptionError``
+when read. ``IntentRecord.transaction`` is the ``version`` of the DatabaseRoot the commit
+produced. A database that never used intents has no ``__intentLog``.
+
+
 Framed log files
 ----------------
 
@@ -1889,7 +2078,8 @@ What is normative and what is not
 Normative: every byte layout on this page; the type names and the alias table; the value
 encoding with its one spelling per value, the map-key rule and the nesting limit; the order, hash and exact-token
 functions (for writers of keyed structures); the structure invariants of the AVL trees and
-collections; the index maintenance contract and the IVF list assignment; the field names,
+collections; the index maintenance contract and the IVF list assignment; the semantic catalog chapter (types, fields, canonical form, expression
+language and intent log); the field names,
 their optionality, the meaning of absence and the reserved attribute names (accessors
 excepted); the root names reserved by ``__``; what readers and writers do with opaque atoms and
 the name a reference carries; the format stability rules (what each version number covers, the
