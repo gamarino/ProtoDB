@@ -393,6 +393,17 @@ def register_atom_class(cls: type) -> type:
     return cls
 
 
+def _forget_atom_class(cls: type) -> None:
+    """Undo :func:`register_atom_class` for ``cls``: its names and aliases are released.  For a class
+    whose creation failed after it was registered (a refused semantic declaration), so that a corrected
+    declaration of the same type name can be made in the same process; entries of other classes are
+    never touched."""
+    with _registry_lock:
+        for key in [key for key, found in _registry.items() if found is cls]:
+            del _registry[key]
+            _alias_target.pop(key, None)
+
+
 def _declared_aliases(cls: type, name: str) -> tuple:
     """The ``__type_aliases__`` of ``cls``'s own body, validated (D57)."""
     aliases = cls.__dict__.get("__type_aliases__", ())

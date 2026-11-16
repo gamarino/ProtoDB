@@ -26,6 +26,13 @@ tells a definition (even ``None``) anywhere along the linearization from a miss;
 index paths keep reading own attributes only.  Writes never reach a parent: ``with_`` sets own
 attributes.
 
+Semantic classes (spec section 4, :mod:`proto_db.semantic.classes`): a subclass whose body holds a
+semantic element -- a semantic descriptor (``Field``, ``Computed``, ``Relation``, ...), an intent,
+one of :data:`SEMANTIC_DUNDERS` or ``__validity__`` -- or one of whose bases is a semantic class is
+handed, once created, to :func:`proto_db.semantic.classes.semantic_class`, which moves its semantic
+elements into the registry.  Its instances resolve its ``__type_name__`` as an implicit last parent
+(``_implicit_parent``), never persisted.  Every other subclass is untouched.
+
 ``list`` and ``dict`` values are stored as ``FrozenList`` and ``FrozenDict``
 (by :func:`proto_db.values.canonical`, D25): attempts to mutate them raise
 ``ProtoValidationError``; use ``.copy()`` to get a mutable copy.
@@ -38,13 +45,22 @@ gives versions of a record a shared entity identity (D18).  The class is defined
 from __future__ import annotations
 
 import sys
+import types
 
 from .. import resolution
 from ..errors import ProtoAttributeNameError, ProtoUserError, ProtoValidationError
 from ..values import FrozenDict, MutableObject, canonical, check_text
-from .atom import _ABSENT, RESERVED_NAMES, Atom, PersistenceContext, _check_context, class_defines
+from .atom import _ABSENT, RESERVED_NAMES, Atom, PersistenceContext, _check_context, _forget_atom_class, class_defines
 
 __all__ = ["DBObject", "MutableObject"]
+
+#: The semantic dunders of a class body (spec section 4): entity-level semantic declarations.  The
+#: registry keeps them apart from definitions (``proto_db.registry.Extension.semantic``).
+SEMANTIC_DUNDERS = frozenset({"__meaning__", "__label__", "__help__", "__synonyms__", "__key__",
+                              "__certification__", "__constraints__"})
+#: A semantic dunder the MVP refuses (D72): its presence still makes the class semantic, so the
+#: semantic layer names the refusal.
+_DEFERRED_DUNDERS = frozenset({"__validity__"})
 
 _osa = object.__setattr__
 
@@ -108,6 +124,21 @@ class DBObject(Atom):
 
     __type_name__ = "proto_db.core.dbobject.DBObject"
     _parented = True
+    #: The registry name an instance resolves as its implicit last parent, never persisted: the
+    #: ``__type_name__`` of a semantic class (set by :mod:`proto_db.semantic.classes`), ``None`` for
+    #: every other class.
+    _implicit_parent = None
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        if not _is_semantic(cls):
+            return
+        from ..semantic.classes import semantic_class
+        try:
+            semantic_class(cls)
+        except BaseException:
+            _forget_atom_class(cls)     # the class does not exist: its type name stays free
+            raise
     #: Fields that format-4 records may hold under the names of the parents API (ruling R157):
     #: they load and are carried over by ``with_``, but no new value is ever written under them.
     _legacy_fields = {"parents": "_legacy_parents", "with_parents": "_legacy_with_parents"}
@@ -176,7 +207,7 @@ class DBObject(Atom):
     def _absent_attribute(self, name: str):
         # Python found no member and no own attribute: resolution over the parents (a miss is
         # None, R150; an object without parents answers None at once, as before parents existed).
-        if self._probe("_parents") is _ABSENT:
+        if self._probe("_parents") is _ABSENT and type(self)._implicit_parent is None:
             return None
         return resolution._resolve_inherited(self, name)[0]
 
@@ -339,6 +370,21 @@ class DBObject(Atom):
         if parents:
             fields.insert(0, f"parents={parents!r}")
         return f"{type(self).__name__}({', '.join(fields)})"
+
+
+def _is_semantic(cls) -> bool:
+    """Whether the new subclass ``cls`` is a semantic class (spec section 4, R280, preflight F2): one
+    of its bases is one, or its own body holds a semantic element.  Only the class's own namespace
+    and its bases are read."""
+    if any(getattr(base, "_implicit_parent", None) is not None for base in cls.__bases__):
+        return True
+    for name, value in cls.__dict__.items():
+        if name in SEMANTIC_DUNDERS or name in _DEFERRED_DUNDERS:
+            return True
+        if getattr(type(value), "__proto_descriptor__", False) or (
+                type(value) is types.FunctionType and value.__dict__.get("__proto_intent__") is not None):
+            return True
+    return False
 
 
 #: What :meth:`DBObject._item_kind` answers.

@@ -30,6 +30,14 @@ Extensions
     ``__doc__``, ``__firstlineno__``, ...) are not definitions.  ``extends`` may only be called
     from the Python module that declared the module.
 
+    The semantic layer (:mod:`proto_db.semantic`, preflight F34) adds two accepted inputs, in this
+    spelling and in its own (``proto_db.semantic.Extension`` subclasses and semantic ``DBObject``
+    classes, declared through :meth:`ModuleHandle._extend_with`): a semantic descriptor (``Field``,
+    ``Computed``, ``Relation``, ...) is a definition of kind :data:`DESCRIPTOR`, and the semantic
+    dunders (:data:`~proto_db.core.dbobject.SEMANTIC_DUNDERS`: ``__meaning__``, ``__label__``, ...)
+    are kept apart, as the extension's ``semantic`` declarations.  Every other input keeps its
+    refusal and its message.
+
 Declarations
     ``module(name)`` records the declaration under ``name`` in the process, with its call site
     (the Python module, the calling code object and the line).  The same site run again (a
@@ -189,12 +197,13 @@ from collections.abc import Container, Mapping
 from .collections.base import _Immutable
 from .collections.dictionaries import Dictionary
 from .core.atom import RESERVED_NAMES, Atom, PersistenceContext
+from .core.dbobject import SEMANTIC_DUNDERS
 from .errors import (ProtoConflictError, ProtoCorruptionError, ProtoDBError, ProtoNotSupportedError, ProtoUserError,
                      ProtoValidationError)
 from . import resolution as _resolution
 from .values import canonical, check_text, is_atom
 
-__all__ = ["module", "ModuleHandle", "Extension", "Registry", "METHOD", "DATA", "using", "ModulesBeingImported",
+__all__ = ["module", "ModuleHandle", "Extension", "Registry", "METHOD", "DATA", "DESCRIPTOR", "using", "ModulesBeingImported",
            "current_registry", "registry_for", "no_builds", "ModuleList", "Catalog", "MODULES_ROOT", "CATALOG_ROOT",
            "listed_modules"]
 
@@ -211,6 +220,10 @@ _REGISTRY_FEATURE = frozenset({"registry"})
 #: The kinds of a definition.
 METHOD = "method"
 DATA = "data"
+#: A semantic descriptor (``proto_db.semantic``: ``Field``, ``Computed``, ``Relation``, ...): resolution
+#: calls its ``resolve(receiver)`` (see :mod:`proto_db.resolution`).  A value is one when its class
+#: sets ``__proto_descriptor__``, so this module never imports the semantic layer.
+DESCRIPTOR = "descriptor"
 
 #: Names Python's class machinery puts in a class body; they are not definitions.
 _CLASS_MACHINERY = frozenset({
@@ -331,15 +344,21 @@ class _Site:
 
 
 class _Declared:
-    """An extension as declared: validated definitions, before a registry places it."""
+    """An extension as declared: validated definitions and semantic declarations, before a registry
+    places it."""
 
-    __slots__ = ("registry_name", "parents", "definitions", "qualname")
+    __slots__ = ("registry_name", "parents", "definitions", "qualname", "semantic")
 
-    def __init__(self, registry_name, parents, definitions, qualname):
+    def __init__(self, registry_name, parents, definitions, qualname, semantic=None):
         self.registry_name = registry_name
         self.parents = parents
         self.definitions = definitions
         self.qualname = qualname
+        self.semantic = _NO_SEMANTIC if semantic is None else semantic
+
+
+#: The semantic declarations of an extension that makes none.
+_NO_SEMANTIC = types.MappingProxyType({})
 
 
 class ModuleHandle:
@@ -362,6 +381,53 @@ class ModuleHandle:
     def extends(self, registry_name: str, *, parents: tuple = ()):
         """A class decorator: the class's attributes become an extension of ``registry_name``,
         which gains the registry-name parents ``parents``."""
+        registry_name, parents = self._checked_target(registry_name, parents)
+        caller = _caller_module()
+        if caller != self.source:
+            raise ProtoValidationError(
+                f"Extensions of module {self.name!r} are declared by its Python module "
+                f"{self.source!r}, not from {caller!r}")
+        self._check_current()
+
+        def decorate(cls):
+            definitions, semantic = self._definitions(registry_name, cls)
+            declared = _Declared(registry_name, parents, definitions, getattr(cls, "__qualname__", repr(cls)),
+                                 semantic)
+            with _LOCK:
+                self._declared.append(declared)
+            return cls
+
+        return decorate
+
+    def _extend_with(self, registry_name: str, definitions, semantic, qualname: str, parents: tuple = (), *,
+                     source: str) -> None:
+        """Declare an extension of ``registry_name`` from definitions the semantic layer has already
+        collected and checked (``proto_db.semantic``: an ``Extension`` subclass or a semantic
+        ``DBObject`` class, whose bases the decorator's container check would refuse).
+
+        ``definitions`` maps a name to ``(kind, value)``; ``semantic`` maps the semantic dunders
+        (:data:`SEMANTIC_DUNDERS`, plus the entity ``kind`` the semantic layer states) to their
+        values.  ``source`` is the Python module of the declaring class (``cls.__module__``,
+        preflight F35): it must be the Python module that declared this registry module, as for
+        :meth:`extends`.  The registry name, the parents and every definition name are checked as
+        :meth:`extends` checks them."""
+        registry_name, parents = self._checked_target(registry_name, parents)
+        if source != self.source:
+            raise ProtoValidationError(
+                f"Extensions of module {self.name!r} are declared by its Python module "
+                f"{self.source!r}, not from {source!r}")
+        self._check_current()
+        where = f"Module {self.name!r}, extension of {registry_name!r}"
+        api = _api_names()
+        for name in definitions:
+            _check_definition_name(where, name, api)
+        declared = _Declared(registry_name, parents, types.MappingProxyType(dict(definitions)), qualname,
+                             types.MappingProxyType(dict(semantic)))
+        with _LOCK:
+            self._declared.append(declared)
+
+    def _checked_target(self, registry_name, parents) -> tuple:
+        """``(registry_name, parents)`` checked for an extension of this module."""
         _check_name(f"The registry name of an extension in module {self.name!r}", registry_name)
         parents = _check_names(f"The parents of {registry_name!r} in module {self.name!r}",
                                parents, exclude=registry_name,
@@ -370,25 +436,18 @@ class ModuleHandle:
             raise ProtoValidationError(
                 f"Module {self.name!r}: an extension of {BASE!r} may not declare parents ({list(parents)}): "
                 f"{BASE!r} is the implicit last parent of every other registry name (review I1)")
-        caller = _caller_module()
-        if caller != self.source:
-            raise ProtoValidationError(
-                f"Extensions of module {self.name!r} are declared by its Python module "
-                f"{self.source!r}, not from {caller!r}")
+        return registry_name, parents
+
+    def _check_current(self) -> None:
         if self._superseded:
             raise ProtoValidationError(
                 f"This handle of module {self.name!r} was replaced by a later declaration (a reload)")
 
-        def decorate(cls):
-            declared = _Declared(registry_name, parents, self._definitions(registry_name, cls),
-                                 getattr(cls, "__qualname__", repr(cls)))
-            with _LOCK:
-                self._declared.append(declared)
-            return cls
-
-        return decorate
-
-    def _definitions(self, registry_name: str, cls) -> types.MappingProxyType:
+    def _definitions(self, registry_name: str, cls) -> tuple:
+        """``(definitions, semantic)`` of the decorated container class ``cls``: its attributes as
+        definitions, and its semantic dunders (:data:`SEMANTIC_DUNDERS`, preflight F34), which the
+        semantic layer checks (``proto_db.semantic.classes``) when there are any, or when a
+        definition is a semantic descriptor or an intent."""
         where = f"Module {self.name!r}, extension of {registry_name!r}"
         if type(cls) is not type:
             raise ProtoValidationError(f"{where}: extends decorates a plain class, not {cls!r}")
@@ -397,21 +456,42 @@ class ModuleHandle:
                 f"{where}: the class {cls.__qualname__!r} may not have a base class (its Python MRO "
                 f"is not used; declare registry-name parents with parents=)")
         api = _api_names()
-        definitions = {}
+        definitions, semantic = {}, {}
         for name, value in vars(cls).items():
             if name in _CLASS_MACHINERY:
                 continue
-            here = f"{where}: definition {name!r}"
-            if name.startswith("_"):
-                raise ProtoValidationError(f"{here}: a name starting with '_' is not a definition")
-            if name in api:
-                raise ProtoValidationError(f"{here}: the name is part of the DBObject API")
+            if name in SEMANTIC_DUNDERS:
+                semantic[name] = value
+                continue
+            here = _check_definition_name(where, name, api)
             definitions[name] = _definition(here, value)
-        return types.MappingProxyType(definitions)
+        if semantic or any(kind == DESCRIPTOR or (kind == METHOD and _is_intent(value))
+                           for kind, value in definitions.values()):
+            from .semantic.classes import _check_decorated
+            semantic = _check_decorated(where, registry_name, definitions, semantic)
+        return types.MappingProxyType(definitions), types.MappingProxyType(semantic)
+
+
+def _check_definition_name(where: str, name, api) -> str:
+    """``where`` extended with the definition ``name``; ``ProtoValidationError`` when ``name`` is not a
+    definition name (a name starting with ``_``, or a name of the ``DBObject`` API)."""
+    here = f"{where}: definition {name!r}"
+    if name.startswith("_"):
+        raise ProtoValidationError(f"{here}: a name starting with '_' is not a definition")
+    if name in api:
+        raise ProtoValidationError(f"{here}: the name is part of the DBObject API")
+    return here
+
+
+def _is_intent(fn) -> bool:
+    """Whether the method ``fn`` is a semantic intent (``proto_db.semantic.intent``)."""
+    return getattr(fn, "__proto_intent__", None) is not None
 
 
 def _definition(here: str, value) -> tuple:
     """``(kind, value)`` for one definition; ``ProtoValidationError`` for a refused kind."""
+    if getattr(type(value), "__proto_descriptor__", False):
+        return DESCRIPTOR, value
     if type(value) is types.FunctionType:
         # A guard against the common mistake (``x = lambda self: ...``), not a security boundary: a
         # lambda renamed through ``__name__`` passes, and then behaves as any method.
@@ -474,18 +554,24 @@ class Extension:
 
     ``registry_name``, ``module`` (the registry module that declares it), ``position`` (its index
     in :meth:`Registry.chain` of its name, ``0`` for the newest), ``qualname`` (the container
-    class's) and ``definitions`` (a read-only mapping ``name -> (kind, value)``, where kind is
-    :data:`METHOD` for a plain function or :data:`DATA` for a canonical value)."""
+    class's), ``definitions`` (a read-only mapping ``name -> (kind, value)``, where kind is
+    :data:`METHOD` for a plain function, :data:`DESCRIPTOR` for a semantic descriptor or
+    :data:`DATA` for a canonical value) and ``semantic`` (a read-only mapping of the semantic
+    dunders the extension declares, :data:`~proto_db.core.dbobject.SEMANTIC_DUNDERS`, to their
+    values, plus ``"kind"`` when the semantic layer states the entity kind; empty for an extension
+    that makes no semantic declaration).  This is ``proto_db.registry.Extension``, the built
+    record; ``proto_db.semantic.Extension`` is the declaration base class (preflight F40)."""
 
-    __slots__ = ("registry_name", "module", "position", "definitions", "qualname")
+    __slots__ = ("registry_name", "module", "position", "definitions", "qualname", "semantic")
 
-    def __init__(self, registry_name, module_name, position, definitions, qualname):
+    def __init__(self, registry_name, module_name, position, definitions, qualname, semantic=None):
         osa = object.__setattr__
         osa(self, "registry_name", registry_name)
         osa(self, "module", module_name)
         osa(self, "position", position)
         osa(self, "definitions", definitions)
         osa(self, "qualname", qualname)
+        osa(self, "semantic", _NO_SEMANTIC if semantic is None else semantic)
 
     def __setattr__(self, name, value):
         raise AttributeError(f"Extension is immutable; cannot set {name!r}")
@@ -502,12 +588,15 @@ class Registry:
     """The registry of a module list, in memory: its definitions are immutable once built (see the
     module docstring); it carries only an internal, idempotent memo of checks already passed."""
 
-    __slots__ = ("key", "extensions", "_chains", "_parents", "_codes", "_checked", "_sources")
+    __slots__ = ("key", "extensions", "_chains", "_parents", "_codes", "_checked", "_sources", "_depends")
 
-    def __init__(self, key, extensions, chains, parents, codes, sources=None):
+    def __init__(self, key, extensions, chains, parents, codes, sources=None, depends=None):
         osa = object.__setattr__
         #: The Python module that declared each registry module, by name (``read_data_file``).
         osa(self, "_sources", types.MappingProxyType(dict(sources or {})))
+        #: The dependencies each registry module's code declares, by name (the semantic catalog's
+        #: ``Module.depends``).
+        osa(self, "_depends", types.MappingProxyType(dict(depends or {})))
         #: The module names in load order.
         osa(self, "key", key)
         #: Every extension, in load order (by module, then by declaration).
@@ -546,6 +635,11 @@ class Registry:
         """The name of the Python module that declared the registry module ``module_name``, or
         ``None`` when the registry does not contain it."""
         return self._sources.get(module_name)
+
+    def depends_of(self, module_name: str) -> tuple:
+        """The dependencies the code of the registry module ``module_name`` declares (``()`` when the
+        registry does not contain it)."""
+        return self._depends.get(module_name, ())
 
     def unknown_names(self, names) -> tuple:
         """The names among ``names`` (registry names, in the order given, each once) that no module
@@ -607,8 +701,9 @@ class Registry:
                 if dependency not in handles:
                     raise ProtoNotSupportedError(
                         f"Module {name!r} depends on {dependency!r}, which is not installed")
-        order = _load_order(names, {name: handles[name].depends for name in names})
-        return _assemble(order, declared, sources)
+        depends = {name: handles[name].depends for name in names}
+        order = _load_order(names, depends)
+        return _assemble(order, declared, sources, depends)
 
 
 def _check_list(module_names) -> tuple:
@@ -741,14 +836,16 @@ def _cycle(nodes, edges: dict) -> list | None:
     return None
 
 
-def _assemble(order: tuple, declared: dict, sources: Mapping | None = None) -> Registry:
+def _assemble(order: tuple, declared: dict, sources: Mapping | None = None,
+              depends: Mapping | None = None) -> Registry:
     by_name: dict[str, list] = {}
     for name in order:
         for item in declared.get(name, ()):
             by_name.setdefault(item.registry_name, []).append((name, item))
     chains, parents, codes, seen, placed = {}, {}, {}, {}, {}
     for registry_name, items in by_name.items():
-        chain = tuple(Extension(registry_name, module_name, position, item.definitions, item.qualname)
+        chain = tuple(Extension(registry_name, module_name, position, item.definitions, item.qualname,
+                                item.semantic)
                       for position, (module_name, item) in enumerate(reversed(items)))
         chains[registry_name] = chain
         for (_, item), extension in zip(reversed(items), chain):
@@ -781,7 +878,7 @@ def _assemble(order: tuple, declared: dict, sources: Mapping | None = None) -> R
                     seen[key] = here
                 codes[code] = extension
     _check_parent_cycles(parents)
-    return Registry(order, tuple(extensions), chains, parents, codes, sources)
+    return Registry(order, tuple(extensions), chains, parents, codes, sources, depends)
 
 
 def _check_parent_cycles(parents: dict) -> None:
