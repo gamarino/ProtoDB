@@ -91,7 +91,9 @@ The query engine (preflight F17, F18)
     attribute, a path, or over an end of handles runs as a residual on the members.  ``explain`` says which:
     ``{"from", "plan", "indexed", "residual"}``.  With ``members=True`` a query without an aggregate also
     answers ``"members"``: the version each row reads, row by row (the agent interface names each row's
-    entity and type with it, :mod:`proto_db.agent.operations`).
+    entity and type with it, :mod:`proto_db.agent.operations`).  With ``selection``, a callable from a member's
+    type name to the paths to select for it, a member's row evaluates only those paths (the agent interface
+    never evaluates a path it withholds), and a failure is reported by its kind and path only.
 """
 from __future__ import annotations
 
@@ -986,8 +988,30 @@ class Operations:
             return self.session.version()
         return {"number": self.source.version, "ref": base64.b64encode(self.source.ref).decode("ascii")}
 
+    def _selected(self, member, select, selection) -> dict:
+        """The row of ``member``: the paths ``select`` names, or, with ``selection``, the paths
+        ``selection(member's type name)`` gives -- the only paths evaluated -- each failure reported by its
+        kind and path, never by the value that failed (no value of the member reaches the message)."""
+        if selection is None:
+            names = select
+        else:
+            names = selection(getattr(type(member), "__type_name__", None))
+        row = {}
+        for name in names:
+            if selection is None:
+                value = evaluate(["attr", *name.split(".")], member, reader=self.reader)
+            else:
+                try:
+                    value = evaluate(["attr", *name.split(".")], member, reader=self.reader)
+                except Exception as error:      # reported without its message, which may hold a value
+                    raise _invalid(f"Evaluating the selected path {name!r} failed ({type(error).__name__})") \
+                        from None
+            if value is not MISSING:
+                row[name] = value
+        return row
+
     @_consistent
-    def query(self, tree: Mapping, *, with_members: bool = False) -> dict:
+    def query(self, tree: Mapping, *, with_members: bool = False, selection=None) -> dict:
         check_query(tree)
         version = self._version()
         if "as_of" in tree and tree["as_of"] != version["ref"]:
@@ -1013,14 +1037,7 @@ class Operations:
                         total = _arithmetic("+", total, value)
                 rows = [{"sum": total}]
             elif select is not None:
-                rows = []
-                for _, member in members:
-                    row = {}
-                    for name in select:
-                        value = evaluate(["attr", *name.split(".")], member, reader=self.reader)
-                        if value is not MISSING:
-                            row[name] = value
-                    rows.append(row)
+                rows = [self._selected(member, select, selection) for _, member in members]
             else:
                 rows = [self._row_version(raw, member) for raw, member in members]
         reads = [t for t in (where, aggregate[1] if aggregate and aggregate[0] == "sum" else None) if t is not None]
@@ -1118,9 +1135,12 @@ class Operations:
         planned, indexed, residual = [], [], []
         allowed = None
         if info is None:
-            first = next(iter(collection.elements()), None) if collection is not None else None
-            entries = first is not None and unwrap_entry(first) is not first
-            if first is not None and not entries and is_atom(first):
+            # No catalog says what the collection holds, and no stored metadata does: its elements do.  It
+            # plans only when every element is a record (a handle or an entry would be read by the planner
+            # as itself, where evaluation follows it to its member); entries are unwrapped either way.
+            entries = True
+            if collection is not None and collection.count and all(
+                    is_atom(element) and unwrap_entry(element) is element for element in collection.elements()):
                 allowed = _ANY_NAME
         elif info.entries:
             entries = True
@@ -1247,12 +1267,13 @@ def check_query(tree) -> None:
         raise _invalid(f"A query's 'of_type' is a type name, not {of_type!r}")
 
 
-def query_stored(snapshot, tree, *, with_members: bool = False) -> dict:
+def query_stored(snapshot, tree, *, with_members: bool = False, selection=None) -> dict:
     """Run the query ``tree`` with the session's engine over the stored structure of ``snapshot`` alone:
     no catalog (no defaults, ``of_type`` is the stored type, no terms), the stored collections' indexes
     where their structure allows (see :meth:`Operations._indexed`), and no reserved root.  The agent
     interface's raw mode (:mod:`proto_db.agent.operations`)."""
-    return Operations(None, snapshot, None, reader=StoredReader(snapshot)).query(tree, with_members=with_members)
+    return Operations(None, snapshot, None, reader=StoredReader(snapshot)).query(tree, with_members=with_members,
+                                                                                 selection=selection)
 
 
 def _reads_only(node, names) -> bool:

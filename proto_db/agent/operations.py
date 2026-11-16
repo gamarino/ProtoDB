@@ -46,10 +46,13 @@ Sensitivity (spec section 11; ``describe`` lists every attribute, ``query`` omit
       check is static and conservative: where the members' type is not known (a ``root`` origin), every type
       of the catalog is a candidate, and a step is withheld when it is withheld in any candidate type (a
       subtype included).
-    - A value a row would show is checked against that row's own type: a selected path that reads a withheld
-      attribute is omitted from that row (the default selection the same way), and ``terms`` lists the
-      withheld element with ``"sensitivity"`` and ``"withheld": True``, so the agent knows what it did not
-      get and why.
+    - A value a row would show is checked against that row's own type before anything is evaluated: a
+      selected path that reads a withheld attribute is left out of that row's selection (the default
+      selection the same way) and is never evaluated, so a withheld Python-only computed attribute never
+      runs and no failure over a withheld value can reach the agent.  ``terms`` lists the withheld element
+      with ``"sensitivity"`` and ``"withheld": True``, so the agent knows what it did not get and why.
+    - A selected path whose evaluation fails is reported by the kind of the failure and the path, never by
+      the message of the failure, which may hold a value.
 
 Raw mode (``raw=True``; the agent experiment's control group)
     The catalog is not reported.  :func:`list_entities` lists the names of the roots (reserved ``__`` roots
@@ -66,12 +69,12 @@ from __future__ import annotations
 
 import base64
 import binascii
-import bisect
 import datetime
 import json
 from collections.abc import Mapping
 from decimal import Decimal, InvalidOperation
 
+from ..collections import avl
 from ..collections.lists import List
 from ..collections.sets import Set
 from ..core.dbobject import DBObject
@@ -371,8 +374,9 @@ LIST_LIMIT, LIST_LIMIT_MAX = 100, 1000
 
 
 def _page_start(db, limit, after) -> tuple:
-    """``(snapshot, the cell name the page starts after)``: a continuation token pins the version its first
-    page read, so the pages of one listing read one version."""
+    """``(snapshot, where the page starts)``: ``None`` for the first page, else ``(kind, name)``, the last
+    name a page gave.  A continuation token pins the version its first page read, so the pages of one
+    listing read one version."""
     if type(limit) is not int or not 1 <= limit <= LIST_LIMIT_MAX:
         raise ProtoValidationError(f"limit is an int from 1 to {LIST_LIMIT_MAX}, not {limit!r}")
     if after is None:
@@ -381,21 +385,43 @@ def _page_start(db, limit, after) -> tuple:
         token = json.loads(base64.b64decode(after, validate=True)) if isinstance(after, str) else None
     except (binascii.Error, ValueError) as e:
         raise ProtoValidationError("after is the 'next' token a list_entities answer gave") from e
-    if not isinstance(token, dict) or not isinstance(token.get("ref"), str) or not isinstance(token.get("after"), str):
+    if not isinstance(token, dict) or not isinstance(token.get("ref"), str) or token.get("kind") not in _KINDS \
+            or not isinstance(token.get("after"), str):
         raise ProtoValidationError("after is the 'next' token a list_entities answer gave")
-    return _snapshot(db, token["ref"]), token["after"]
+    return _snapshot(db, token["ref"]), (token["kind"], token["after"])
 
 
-def _page(snapshot, start, keep, limit: int) -> tuple:
-    """``(the next cell names after start that keep accepts, at most limit, the continuation or None)``."""
-    names = snapshot.mutable_names
-    out, index = [], 0 if start is None else bisect.bisect_right(names, start)
-    for index in range(index, len(names)):
-        if keep(names[index]):
-            if len(out) == limit:
-                token = json.dumps({"ref": _version(snapshot)["ref"], "after": out[-1]})
+#: What a listing pages over, in this order: root names (raw mode only), then cell names.
+_KINDS = ("root", "cell")
+
+
+def _names(snapshot, kind: str, after):
+    """The names of the roots or of the cells of ``snapshot`` after ``after`` (``None``: from the first), in
+    the stored key order of the version's table: a cursor from the last name given, O(log n) to start and
+    O(1) per name, never a sort of every name."""
+    table = snapshot._root.objects if kind == "root" else snapshot._root.mutables
+    pairs = avl.key_iter(table.root) if after is None else avl.key_iter_range(table.root, lo=after, lo_inc=False)
+    return (name for name, _ in pairs)
+
+
+def _page(snapshot, kinds, start, keep, limit: int) -> tuple:
+    """``({kind: names}, continuation or None)``: the next names after ``start`` that ``keep(kind, name)``
+    accepts, at most ``limit`` in all, roots before cells."""
+    out, last, given = {kind: [] for kind in kinds}, None, 0
+    started = start is None
+    for kind in kinds:
+        if not started and kind != start[0]:
+            continue
+        after = None if started else start[1]
+        started = True
+        for name in _names(snapshot, kind, after):
+            if not keep(kind, name):
+                continue
+            if given == limit:
+                token = json.dumps({"ref": _version(snapshot)["ref"], "kind": last[0], "after": last[1]})
                 return out, base64.b64encode(token.encode("utf-8")).decode("ascii")
-            out.append(names[index])
+            out[kind].append(name)
+            last, given = (kind, name), given + 1
     return out, None
 
 
@@ -409,28 +435,29 @@ def list_entities(db, filter: str | None = None, *, limit: int = LIST_LIMIT, aft
     types are those the catalog describes, filtered as :meth:`SemanticSession.list_entities
     <proto_db.semantic.session.SemanticSession.list_entities>` does; ``cells`` are the names of the cells
     holding entities of exactly that type (R260: ``<type name>#<hex>``), at most ``limit`` names in all, in
-    name order.  ``next`` is ``None`` when the listing is complete, else the token to pass as ``after`` for
-    the next page, which reads the same version.
+    the version's stored order.  ``next`` is ``None`` when the listing is complete, else the token to pass as
+    ``after`` for the next page, which reads the same version.
 
     Raw mode lists the stored structure only (spec section 11): ``{"roots", "cells", "next"}``, the names of
-    the roots (reserved ``__`` roots excepted) and of the cells, paged the same way; ``filter`` keeps the
-    names that contain it."""
+    the roots (reserved ``__`` roots excepted), then of the cells, at most ``limit`` names in all per page,
+    paged the same way; ``filter`` keeps the names that contain it."""
     if filter is not None and not isinstance(filter, str):
         raise ProtoUserError(f"The filter of list_entities is a str or None, not {type(filter).__name__}")
     snapshot, start = _page_start(db, limit, after)
     if raw:
         needle = None if filter is None else filter.casefold()
 
-        def wanted(name: str) -> bool:
-            return needle is None or needle in name.casefold()
-        cells, token = _page(snapshot, start, wanted, limit)
-        roots = [name for name in snapshot.root_names if not name.startswith("__") and wanted(name)]
-        return {"roots": roots, "cells": cells, "next": token}
+        def wanted(kind: str, name: str) -> bool:
+            return not (kind == "root" and name.startswith("__")) and (needle is None or needle in name.casefold())
+        page, token = _page(snapshot, _KINDS, start, wanted, limit)
+        return {"roots": page["root"], "cells": page["cell"], "next": token}
+    if start is not None and start[0] != "cell":
+        raise ProtoValidationError("after is the 'next' token a list_entities answer gave")
     listed = semantic(snapshot).list_entities(filter)
     types = {entity["type_name"] for entity in listed}
-    cells, token = _page(snapshot, start, lambda name: _cell_type(name) in types, limit)
+    page, token = _page(snapshot, ("cell",), start, lambda kind, name: _cell_type(name) in types, limit)
     by_type: dict = {}
-    for name in cells:
+    for name in page["cell"]:
         by_type.setdefault(_cell_type(name), []).append(name)
     return {"entities": [{**to_json(entity), "cells": by_type.get(entity["type_name"], [])} for entity in listed],
             "next": token}
@@ -451,7 +478,7 @@ def describe(db, type_name: str, *, raw: bool = False) -> dict:
     def take(record):
         for name, value in record._own.items():
             attributes.setdefault(name, set()).add(_kind_of(value))
-    for name in snapshot.mutable_names:
+    for name in _names(snapshot, "cell", None):
         record = snapshot.get_mutable(name)
         if _stored_type(record) == type_name:
             cells += 1
@@ -518,7 +545,7 @@ def _vocabulary(snapshot, raw: bool) -> list:
     out = []
     if raw:
         types: dict = {}
-        for name in snapshot.mutable_names:
+        for name in _names(snapshot, "cell", None):
             record = snapshot.get_mutable(name)
             names = types.setdefault(_stored_type(record), set())
             if isinstance(record, DBObject) and is_atom(record):
@@ -601,9 +628,23 @@ def query(db, tree: Mapping, *, raw: bool = False) -> dict:
     types = _screen(policy, tree)
     aggregate, select = tree.get("aggregate"), tree.get("select")
     default = select is None and aggregate is None
+    chosen: dict = {}
+
+    def selection(type_name):
+        """The paths a row of ``type_name`` evaluates: the withheld ones are left out before evaluation."""
+        found = chosen.get(type_name)
+        if found is None:
+            if default:
+                found = policy.allowed(type_name)
+            else:
+                found = [path for path in select if not policy.withheld(type_name, path.split("."))]
+            chosen[type_name] = found
+        return found
     if default and not raw:
         run["select"] = sorted({name for type_name in policy.candidates(types) for name in policy.allowed(type_name)})
-    answer = query_stored(snapshot, run, with_members=True) if raw else session.query(run, members=True)
+    use = None if aggregate is not None or (default and raw) else selection
+    answer = query_stored(snapshot, run, with_members=True, selection=use) if raw else \
+        session.query(run, members=True, selection=use)
     if aggregate is not None:
         rows = to_json(answer["rows"])
     else:
@@ -611,11 +652,9 @@ def query(db, tree: Mapping, *, raw: bool = False) -> dict:
         for values, version in zip(answer["rows"], answer["members"]):
             record = version.record
             type_name = _stored_type(record)
-            if default and raw:
-                values = dict(record._own)
-            shown = frozenset(policy.allowed(type_name)) if default and not raw else None
-            values = {name: value for name, value in values.items()
-                      if (shown is None or name in shown) and not policy.withheld(type_name, name.split("."))}
+            if default and raw:             # the record's stored attributes: read, never evaluated
+                values = {name: value for name, value in record._own.items()
+                          if not policy.withheld(type_name, [name])}
             rows.append({"entity": None if version.entity is None else {"cell": version.entity.name},
                          "type_name": type_name,
                          "values": {name: _value(value, policy) for name, value in values.items()}})

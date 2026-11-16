@@ -388,3 +388,98 @@ def test_to_json():
     assert operations.from_json({"decimal": "10.50"}) == Decimal("10.50")
     assert operations.from_json({"date": "2026-06-01"}) == date(2026, 6, 1)
     assert operations.from_json({"cell": "c"}) == MutableObject("c")
+
+
+# -- fix round 2: withheld paths never evaluated; paging; raw planning -------------------------------------
+
+SECRET, PUBLIC = "Ann Secret", "Public Org Name"
+
+
+@pytest.fixture
+def leaky(space):
+    from tests.unit.semantic_modules import acme_leaky
+    database = space.new_database("leaky")
+    database.run(lambda tr: tr.install_module("acme_leaky"))
+
+    def build(tr):
+        s = semantic(tr)
+        org = s.create("leak.Org", name=PUBLIC)
+        s.create("leak.Person", name=SECRET, org=org)
+        return org
+    org = database.run(build)
+    acme_leaky.CALLS.clear()
+    return database, org, acme_leaky.CALLS
+
+
+@pytest.mark.parametrize("raw", [False, True])
+def test_a_withheld_path_is_never_evaluated(leaky, raw):
+    db, org, calls = leaky
+    people = ["via", ["cell", org.name], "people"]
+    for select in (["bad"], ["py"], ["name"], ["bad", "py", "name", "org"], None):
+        tree = {"from": people} if select is None else {"from": people, "select": select}
+        answer = query(db, tree, raw=raw)
+        assert len(answer["rows"]) == 1
+        assert not set(answer["rows"][0]["values"]) & {"bad", "py", "name"}, (select, answer["rows"])
+        assert SECRET not in json.dumps(answer)
+    assert calls == []                                   # the withheld Python-only computed never ran
+
+
+def test_a_failing_selected_path_is_reported_without_its_value(leaky):
+    db, org, _ = leaky
+    with pytest.raises(ProtoValidationError) as refused:      # Org.oops is "name + 1" over a public str
+        query(db, {"from": ["via", ["cell", org.name], "people"], "select": ["org.oops"]})
+    message = str(refused.value)
+    assert "'org.oops'" in message and PUBLIC not in message and SECRET not in message
+    assert refused.value.__cause__ is None
+
+
+def test_raw_roots_are_paged_like_cells(db):
+    world = _load(db)
+
+    def roots(tr):
+        for name in ("r1", "r2", "r3"):
+            tr.set_root_object(name, tr.new_list().append_last(world["bob"]))
+    db.run(roots)
+    seen_roots, seen_cells, after = [], [], None
+    while True:
+        page = list_entities(db, limit=2, after=after, raw=True)
+        assert len(page["roots"]) + len(page["cells"]) <= 2
+        seen_roots += page["roots"]
+        seen_cells += page["cells"]
+        after = page["next"]
+        if after is None:
+            break
+    assert seen_roots == ["r1", "r2", "r3"] and len(seen_cells) == 9
+
+
+def test_paging_does_not_sort_every_name_per_page(db, monkeypatch):
+    world = _load(db)
+    from proto_db.transactions import Snapshot
+
+    def no_sort(self):
+        raise AssertionError("a page re-sorted every cell name")
+    monkeypatch.setattr(Snapshot, "mutable_names", property(no_sort))
+    monkeypatch.setattr(Snapshot, "root_names", property(no_sort))
+    pages, after = 0, None
+    while True:
+        page = list_entities(db, limit=2, after=after)
+        pages += 1
+        after = page["next"]
+        if after is None:
+            break
+    assert pages == 5
+    assert list_entities(db, limit=50, raw=True)["cells"]
+
+
+def test_raw_planning_reads_the_kind_of_the_whole_collection(db):
+    from proto_db.core.dbobject import DBObject
+
+    def build(tr):
+        target = tr.new_mutable("target", DBObject(x=1))
+        items = tr.new_list().append_last(DBObject(x=1)).append_last(target)
+        tr.new_mutable("holder", DBObject(items=items))
+    db.run(build)
+    answer = query(db, {"from": ["via", ["cell", "holder"], "items"], "where": ["==", ["attr", "x"], ["const", 1]]},
+                   raw=True)
+    assert len(answer["rows"]) == 2                       # the handle is followed, as a residual follows it
+    assert answer["explain"]["indexed"] == []
