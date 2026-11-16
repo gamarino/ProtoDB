@@ -726,6 +726,111 @@ def test_a_raw_write_from_another_thread_waits_for_a_semantic_operation(db, monk
     tr.abort()
 
 
+class _Blocking:
+    """A transaction's lock, wrapped so that ``blocked`` is set when the thread named ``who`` finds it held
+    by another thread and has to wait for it."""
+
+    def __init__(self, lock, who: str, blocked: threading.Event):
+        self._lock, self._who, self._blocked = lock, who, blocked
+
+    def __enter__(self):
+        if not self._lock.acquire(blocking=False):
+            if threading.current_thread().name == self._who:
+                self._blocked.set()
+            self._lock.acquire()
+        return self
+
+    def __exit__(self, *exc):
+        self._lock.release()
+        return False
+
+    def __getattr__(self, name):
+        return getattr(self._lock, name)
+
+
+def test_a_session_read_holds_the_transaction_for_its_whole_call(db, monkeypatch):
+    """A navigate reads the source cell, then the target's: thread B is held between the two reads while
+    thread A moves the order to another customer (unlink, then link).  B's navigate happens entirely
+    before A's operations, so the customer it returns still lists the order; without the lock held for
+    the whole call, A runs in between and B returns the old customer as it is after the move, without the
+    order.  B is released once A has finished or is waiting for the lock: no sleep decides the order."""
+    from proto_db.semantic import entities
+
+    def build(tr):
+        s = semantic(tr)
+        company, customer, product = _world(s)
+        other = s.create("acme.sales.Customer", name="Ann", credit_limit=Decimal("1000"), company=company)
+        return _order(s, company, customer, 1), customer, other
+    order, customer, other = db.run(build)
+    tr = db.new_transaction()
+    between, a_waits_or_done = threading.Event(), threading.Event()
+    tr._lock = _Blocking(tr._lock, "A", a_waits_or_done)
+    original = entities.Operations.version_of
+
+    def version_of(self, raw):
+        if threading.current_thread().name == "B" and not between.is_set():
+            between.set()
+            assert a_waits_or_done.wait(60), "thread A neither waited for the lock nor finished"
+        return original(self, raw)
+    monkeypatch.setattr(entities.Operations, "version_of", version_of)
+    out = {}
+
+    def a():
+        try:
+            assert between.wait(60)
+            s = semantic(tr)
+            s.unlink(order, "customer", customer)
+            s.link(order, "customer", other)
+            out["A"] = "moved"
+        except BaseException as error:              # reported to the test
+            out["A"] = error
+        finally:
+            a_waits_or_done.set()
+
+    def b():
+        try:
+            found = semantic(tr).navigate(order, "customer")
+            out["B"] = (found.entity, [m.entity for m in semantic(tr).navigate(found, "orders")])
+        except BaseException as error:              # reported to the test
+            out["B"] = error
+    threads = [threading.Thread(target=a, name="A"), threading.Thread(target=b, name="B")]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(60)
+    assert not any(thread.is_alive() for thread in threads)
+    monkeypatch.setattr(entities.Operations, "version_of", original)
+    assert out["A"] == "moved"
+    assert out["B"] == (customer, [order])
+    s = semantic(tr)
+    assert s.navigate(order, "customer").entity == other
+    tr.abort()
+
+
+def test_install_module_inside_a_semantic_operation_is_refused(db, monkeypatch):
+    """Its imports would run holding the transaction's lock, which an import-time thread using the
+    transaction would then wait for (review M-5)."""
+    from proto_db.semantic import entities
+    order, product = _order_and_product(db)
+    tr = db.new_transaction()
+    original, outcome = entities.Operations._write, []
+
+    def write(self, handle, old, new):
+        original(self, handle, old, new)
+        if not outcome:
+            try:
+                tr.install_module("acme_sales")
+                outcome.append(None)
+            except ProtoUserError as error:
+                outcome.append(error)
+    monkeypatch.setattr(entities.Operations, "_write", write)
+    _line(semantic(tr), order, product)
+    monkeypatch.setattr(entities.Operations, "_write", original)
+    assert isinstance(outcome[0], ProtoUserError) and "semantic operation" in str(outcome[0])
+    tr.install_module("acme_sales")             # outside an operation it is accepted (idempotent here)
+    tr.commit()
+
+
 def test_the_raw_path_takes_one_lock_once(db):
     """A transaction has one lock, and a raw ``get_mutable`` or ``set_mutable`` takes it once."""
     db.run(lambda tr: tr.new_mutable("c", 1))
