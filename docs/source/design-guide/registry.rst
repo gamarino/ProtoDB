@@ -179,6 +179,16 @@ A mismatch is an error (Q2)
     ``reload_registry`` (R202): Python does not cache a failed import, and every commit would retry it. A
     failed reload is not itself remembered: the next lookup tries the import once more.
 
+    A list the space committed itself, or bound the database to, is never a mismatch, whatever the order of
+    the steps: a transaction reads its snapshot and then binds, while an install commit publishes and then
+    rebinds, and no clock decides which comes first (R82). So the space records each list it committed
+    (under the root lock, before the publish; a publish of unknown outcome keeps its record) and each list
+    the database was bound to, with its version. A transaction on such a list at a version at or below its
+    snapshot's binds the database to it when it is newer than the bound one, and otherwise gets a binding
+    of its own, leaving the database's binding unchanged. The records are never pruned: there is one per
+    install commit and per binding event, bounded by the space's installs and reloads, and pruning would
+    need the snapshot versions of the transactions still between their snapshot read and their bind.
+
 **The invariant behind the caches: what a cache entry is keyed by never changes.** The linearization of a
 tuple of saved parents is cached by the parents' pointers and the registry. A record at a pointer never
 changes (P1), its own parents are fixed, and a built registry is immutable, so an entry is never stale and

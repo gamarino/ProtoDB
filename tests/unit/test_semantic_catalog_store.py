@@ -660,3 +660,113 @@ def test_a_transaction_that_read_its_snapshot_before_a_rebind_keeps_its_list():
         assert registries.started("db", older + ("semc_01",), 2) is None
     finally:
         space.close()
+
+
+# -- fix round 3 ----------------------------------------------------------------------------------------------
+
+def _read_then_bind_after_an_install(tmp_path, mode: str) -> dict:
+    """Re-review 2 (R82), ``probe_bound_list.py``: transaction A reads its snapshot on the list the space is
+    bound to without having committed it (bound at the first start after reopening, or by
+    ``reload_registry`` after another space installed), then an install commit of this space publishes and
+    rebinds, then A binds.  Events decide the order; the waits only bound a hang."""
+    path = tmp_path / "s"
+    space = _space(path)
+    db = space.new_database("db")
+    _install(db, "acme_sales")
+    if mode == "reopen":
+        space.close()
+        space = _space(path)
+        db = space.open_database("db")
+        db.run(lambda tr: tr.installed_modules())           # binds at the first start
+        install = "acme_delivery"
+    else:
+        db.run(lambda tr: tr.installed_modules())
+        other = _space(path)
+        try:
+            _install(other.open_database("db"), "acme_delivery")
+        finally:
+            other.close()
+        space.reload_registry("db")
+        install = "semc_01"
+    try:
+        registries = space._registries
+        started = registries.started
+        read, go = threading.Event(), threading.Event()
+
+        def gated(database, names, version=None):
+            if threading.current_thread().name == "A":
+                read.set()
+                assert go.wait(60)
+            return started(database, names, version)
+
+        registries.started = gated
+        out = {}
+
+        def a():
+            tr = db.new_transaction()
+            try:
+                out["listed"] = tr.installed_modules()
+                out["attributes"] = _attributes(Order.describe(tr))
+            except Exception as e:      # recorded: the assertion names it
+                out["error"] = e
+            finally:
+                tr.abort()
+
+        thread = threading.Thread(target=a, name="A")
+        thread.start()
+        try:
+            assert read.wait(60)                             # A read its snapshot, has not bound
+            _install(db, install)                            # publish and rebind meanwhile
+        finally:
+            go.set()
+            thread.join(60)
+        assert not thread.is_alive()
+        out["bound"] = registries._bound["db"].names
+        return out
+    finally:
+        space.close()
+
+
+@pytest.mark.parametrize("mode", ["reopen", "other"])
+def test_a_transaction_on_a_bound_list_that_binds_after_an_install_keeps_its_list(tmp_path, mode):
+    out = _read_then_bind_after_an_install(tmp_path, mode)
+    assert "error" not in out, out.get("error")
+    if mode == "reopen":
+        assert out["listed"] == ("base", "acme_sales") and "delivery_date" not in out["attributes"]
+        assert out["bound"] == ("base", "acme_sales", "acme_delivery")
+    else:
+        assert out["listed"] == ("base", "acme_sales", "acme_delivery") and "delivery_date" in out["attributes"]
+        assert out["bound"][-1] == "semc_01"
+
+
+def test_an_install_publish_of_unknown_outcome_that_landed_binds_the_next_transaction(monkeypatch):
+    # Re-review 2 (b): the publish landed but reported an unknown outcome, so no rebind ran.  The build's
+    # record is kept: the next transaction on the landed list binds to it (the missing rebind).
+    import proto_db.transactions as transactions
+    from proto_db.errors import ProtoOutcomeUnknownError
+    space = _space()
+    try:
+        db = space.new_database("db")
+        _install(db, "acme_sales")
+        original = transactions._commit_root
+
+        def landed_but_unknown(*args, **kwargs):
+            original(*args, **kwargs)
+            raise ProtoOutcomeUnknownError("injected: the publish landed, its outcome is reported unknown")
+
+        monkeypatch.setattr(transactions, "_commit_root", landed_but_unknown)
+        tr = db.new_transaction()
+        tr.install_module("acme_delivery")
+        with pytest.raises(ProtoOutcomeUnknownError):
+            tr.commit()
+        monkeypatch.setattr(transactions, "_commit_root", original)
+        assert space._registries._bound["db"].names == ("base", "acme_sales")          # no rebind ran
+        tr = db.new_transaction()
+        try:
+            assert tr.installed_modules()[-1] == "acme_delivery"
+            assert "delivery_date" in _attributes(Order.describe(tr))
+        finally:
+            tr.abort()
+        assert space._registries._bound["db"].names[-1] == "acme_delivery"
+    finally:
+        space.close()

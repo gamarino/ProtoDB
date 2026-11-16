@@ -845,6 +845,14 @@ class _SpaceRegistries:
         # modules publish, recorded under the root lock before the publish (the rebind runs after it);
         # a commit's records of builds it did not publish are dropped when it ends (see started).
         self._committed_lists: dict = {}
+        # database name -> {(version, names)}: every list the database was bound to with its version
+        # (first start, a commit's rebind, reload_registry, a transaction on a committed list).
+        # These records, like the published ones above, are never pruned: there is one per install
+        # commit and per binding event of the space, so they are bounded by its installs and reloads
+        # (a first start binds once), never by its transactions.  Pruning would have to know the
+        # snapshot versions of the transactions between their snapshot read and their bind, a window
+        # no clock bounds (R82): more state in the most delicate path, to save a few bytes per install.
+        self._bound_lists: dict = {}
 
     def build(self, database: str, names: tuple):
         """The registry of ``names`` for ``database``, outside every lock: from the process cache,
@@ -914,7 +922,10 @@ class _SpaceRegistries:
             raise ProtoNotSupportedError(f"Database {database!r} lists modules this process cannot load: {e}") from e
 
     def _new_binding(self, database: str, names: tuple, registry, version: Optional[int] = None) -> _Binding:
-        """Under ``_lock``: bind ``database``."""
+        """Under ``_lock``: bind ``database`` (to the list of its version ``version``, which is
+        recorded as a list of this space: see :meth:`started`)."""
+        if version is not None:
+            self._bound_lists.setdefault(database, set()).add((version, names))
         self._seq += 1
         binding = self._bound[database] = _Binding(names, registry, self._seq, version)
         self._generation += 1
@@ -925,25 +936,26 @@ class _SpaceRegistries:
         ``version``: binds the database when it is not bound yet; returns the binding when it is
         for ``names`` (the transaction keeps it), else ``None`` (a mismatch, recorded).
 
-        A list that a commit of this space publishes (:meth:`committing`) is this space's own,
-        whatever the order of that commit's publish, its rebind and this call (review I1, R82: a
-        transaction reads its snapshot and then binds, while a commit publishes and then rebinds).
-        A transaction on such a list, recorded at a version at or below its snapshot's, is never a
-        mismatch: a newer list than the bound one binds the database to it, as that commit's rebind
-        will; an older one (the database was rebound meanwhile) gives the transaction a binding of
-        its own for its list, and the database's binding is unchanged.  Never imports."""
+        A list that a commit of this space publishes (:meth:`committing`), or that the database was
+        bound to (at its first start, by a rebind or a reload), is this space's own, whatever the
+        order of a commit's publish, its rebind and this call (review I1, R82: a transaction reads
+        its snapshot and then binds, while a commit publishes and then rebinds).  A transaction on
+        such a list, recorded at a version at or below its snapshot's, is never a mismatch: a newer
+        list than the bound one binds the database to it, as that commit's rebind will; an older one
+        (the database was rebound meanwhile) gives the transaction a binding of its own for its list,
+        and the database's binding is unchanged.  Never imports."""
         binding = self._bound.get(database)
         if binding is not None and binding.names == names:
             return binding
         with self._lock:
             binding = self._bound.get(database)
             if binding is None:
-                return self._new_binding(database, names, None)
+                return self._new_binding(database, names, None, version)
             if binding.names == names:
                 return binding
+            records = list(self._committed_lists.get(database, {})) + list(self._bound_lists.get(database, ()))
             own = None if version is None else max(
-                (v for v, n in self._committed_lists.get(database, {}) if n == names and v <= version),
-                default=None)
+                (v for v, n in records if n == names and v <= version), default=None)
             if own is not None:
                 if binding.version is None or binding.version <= own:
                     binding = self._new_binding(database, names, None, own)
@@ -993,7 +1005,10 @@ class _SpaceRegistries:
 
     def committed(self, database: str, recorded: list, published: Optional[tuple]) -> None:
         """A commit ended: of the ``(version, names)`` builds it ``recorded``, the one it
-        ``published`` (or ``None``) stays a list of this space; the others go, each only once."""
+        ``published`` (or ``None``) stays a list of this space; the others go, each only once.  A
+        publish of unknown outcome passes its build as ``published``: if it landed, the next
+        transaction on its list binds to it (the rebind that did not run); if it did not, the
+        record matches only a snapshot listing exactly those names, a list someone published."""
         with self._lock:
             records = self._committed_lists.get(database, {})
             kept = False
@@ -3258,13 +3273,17 @@ class Transaction:
         # one local sync (D50); no flush per transaction.
         with _released(self._lock):
             self._prebuild_registries()
-        published = False
+        published = unknown = False
         try:
             for _ in range(_IMPORT_ROUNDS):
                 self._import_needed = None
                 with _registry.no_builds():
-                    published = _commit_root(self.storage, space.lock_timeout, self._scoped_build_root,
-                                             space.coordinator)
+                    try:
+                        published = _commit_root(self.storage, space.lock_timeout, self._scoped_build_root,
+                                                 space.coordinator)
+                    except ProtoOutcomeUnknownError:
+                        unknown = True
+                        raise
                 if self._import_needed is None:
                     break
                 # The build published nothing: it needs modules this process has not fully imported,
@@ -3293,7 +3312,7 @@ class Transaction:
                 # Published and rebound, or failed: only the published build's list stays recorded.
                 space._registries.committed(
                     self._database.name, self._recorded,
-                    (self._committed_version, self._committed_modules) if published else None)
+                    (self._committed_version, self._committed_modules) if published or unknown else None)
 
     def _scoped_build_root(self, current, stamp: Optional[_ClusterStamp] = None) -> AtomPointer:
         """:meth:`_build_root` with this transaction as the reader (review I1, ruling R201): what
