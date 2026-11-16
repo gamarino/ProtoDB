@@ -1070,3 +1070,55 @@ def test_a_query_from_another_thread_sees_a_semantic_operation_entirely_before_o
     assert out["B"] == [order]
     assert semantic(tr).navigate(order, "customer").entity == other
     tr.abort()
+
+
+# -- final review I1: a maintained aggregate added to a populated type ---------------------------------------
+
+@pytest.mark.parametrize("intents", [False, True])
+def test_a_maintained_aggregate_added_to_existing_entities_is_computed_then_maintained(db, intents):
+    """A module that adds maintained aggregates to types with entities (a natural evolution of a perennial
+    base): an existing entity, whose record does not store them, reads them computed from the relation's
+    current members, and the first write that maintains one stores it, seeded by that computation; every
+    later write moves it by deltas.  Never a permanent refusal."""
+    def build(tr):
+        s = semantic(tr)
+        company, bob, product = _world(s)
+        first = _order(s, company, bob, 1)
+        _line(s, first, product)
+        _line(s, first, product, "2")
+        second = _order(s, company, bob, 2)
+        s.update(second, state="cancelled")
+        ann = s.create("acme.sales.Customer", name="Ann", credit_limit=Decimal("1000"), company=company)
+        return company, bob, ann, product, first, second
+    company, bob, ann, product, first, second = db.run(build)
+    db.run(lambda tr: tr.install_module("acme_late_count"))
+
+    def run(work):
+        tr = db.new_transaction(intents=intents)
+        try:
+            result = work(semantic(tr))
+            tr.commit()
+            return result
+        except BaseException:
+            if tr.is_active:
+                tr.abort()
+            raise
+
+    def counts(s):
+        orders = s.query({"from": ["via", ["cell", company.name], "orders"], "of_type": ORDER,
+                          "select": ["number", "line_count"]})["rows"]
+        return (s.get(first).line_count, s.get(bob).open_orders, sorted((r["number"], r["line_count"]) for r in orders))
+
+    assert run(counts) == (2, 1, [(1, 2), (2, 0)])
+    assert "line_count" not in db.new_transaction().get_mutable(first.name)._own        # not stored yet
+    run(lambda s: _line(s, first, product, "3"))                                        # relate: seeds, then +1
+    assert run(counts)[0] == 3
+    assert db.new_transaction().get_mutable(first.name)._own["line_count"] == 3
+    run(lambda s: s.update(second, state="open"))                                       # a member changes
+    assert run(counts)[1] == 2
+    third = run(lambda s: _order(s, company, bob, 3))                                   # link
+    assert run(counts)[1] == 3
+    run(lambda s: (s.unlink(third, "customer", bob), s.link(third, "customer", ann)))  # unlink, link
+    assert run(counts)[1] == 2 and run(lambda s: s.get(ann).open_orders) == 1
+    assert db.new_transaction().get_mutable(bob.name)._own["open_orders"] == 2
+    assert db.new_transaction().get_mutable(ann.name)._own["open_orders"] == 1

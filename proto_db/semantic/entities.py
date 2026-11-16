@@ -49,7 +49,10 @@ Storage (spec section 6)
     - A maintained aggregate (``computed_stored``, R272) is stored in its owner's version, created as the int
       0, and moved by deltas (spec section 10): when a member joins or leaves its ``over`` end, by the
       member's contribution; when a member changes, by the contribution after minus the one before (its
-      ``term`` where its ``where`` is true).  It is never recomputed over its collection.  A change of an
+      ``term`` where its ``where`` is true).  It is never recomputed over its collection, with one exception:
+      an aggregate a later module added to a type whose entities existed before is absent from their records;
+      it reads as computed from the relation's current members, and the first write that moves it stores it,
+      seeded by that one computation (spec section 5: attributes are addable).  A change of an
       aggregate is a change of its owner, so it moves the aggregates the owner contributes to, along the
       inverses.  A maintained aggregate over a ``one`` end, or on a relationship (whose atoms never change),
       is ``ProtoNotSupportedError``.
@@ -890,21 +893,26 @@ class Operations:
         value = _number(op, self._evaluate(tree[2], member))
         return 0 if value is MISSING else value
 
-    @staticmethod
-    def _stored_aggregate(record, name: str, owner: str):
-        value = _stored_step(record, name)
-        if value is MISSING:
-            raise _invalid(f"The maintained aggregate {name!r} of {owner!r} is not stored in this record; an entity "
-                           f"with maintained aggregates is created through a semantic session")
-        return value
+    def _moved(self, record, type_name: str, end: str, delta_of, *, settled: bool = False) -> dict:
+        """The changes of ``record``'s maintained aggregates over ``end`` by ``delta_of(tree)``.
 
-    def _moved(self, record, type_name: str, end: str, delta_of) -> dict:
-        """The changes of ``record``'s maintained aggregates over ``end`` by ``delta_of(tree)``."""
+        An aggregate ``record`` does not store was added by a later module to an entity that existed before
+        it (spec section 5: attributes are addable).  The first write that moves it stores it, seeded by one
+        full computation over the relation's current members (read in this operation, so its reads are
+        validated as any other): the seed plus the delta, or, when ``settled`` (the members already show the
+        change, as for a member that changed), the computation alone."""
         changes = {}
         for name, tree in self.schema.aggregates_over(type_name, end):
             delta = delta_of(tree)
-            if delta != 0:
-                changes[name] = _arithmetic("+", self._stored_aggregate(record, name, type_name), delta)
+            if delta == 0:
+                continue
+            stored = _stored_step(record, name)
+            if stored is MISSING:
+                seed = _number(tree[0], self._evaluate(tree, record))
+                seed = 0 if seed is MISSING else seed
+                changes[name] = seed if settled else _arithmetic("+", seed, delta)
+            else:
+                changes[name] = _arithmetic("+", stored, delta)
         return changes
 
     def _propagate(self, old, new) -> None:
@@ -918,7 +926,7 @@ class Operations:
             owner, owner_type = self.record(owner_handle, f"{type_name!r}.{element['name']}")
             changes = self._moved(owner, owner_type, element["inverse"],
                                   lambda tree: _arithmetic("-", self._contribution(tree, new),
-                                                           self._contribution(tree, old)))
+                                                           self._contribution(tree, old)), settled=True)
             if changes:
                 self._write(owner_handle, owner, owner.with_(**changes))
 
