@@ -244,8 +244,11 @@ def evaluate(ast, element, *, reader: Reader | None = None):
     Returns a canonical value, ``MISSING``, or a tuple of members (for ``via``).  ``reader`` reads
     cells (dereferencing identity handles), roots and catalogued defaults; without one, reaching a
     handle or a root raises ``ProtoUserError`` and no field has a default.  An invalid tree raises
-    as :func:`check_ast` does, at the node evaluation reaches; ``root`` and ``cell`` origins are
-    evaluated (whether a tree may use them is :func:`check_ast`'s decision).
+    as :func:`check_ast` does, at the node evaluation reaches: nodes it does not reach (after an
+    ``or`` that is already true) are not checked, so a reader checks a whole tree with
+    :func:`check_ast` before evaluating it (as the catalog verification and ``check_query`` do).
+    ``root`` and ``cell`` origins are evaluated (whether a tree may use them is :func:`check_ast`'s
+    decision).
     """
     reader = _NO_READER if reader is None else reader
     return _eval(ast, reader.follow(element), reader, 1)

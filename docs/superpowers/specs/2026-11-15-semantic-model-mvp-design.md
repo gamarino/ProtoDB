@@ -312,7 +312,9 @@ existed gets its contributions at its next `install_module`. Until then the sema
 
 An expression is a nested list `[operator, argument...]`, stored as data and evaluated the same way in every
 language. Its depth (the outermost list at 1, an operand one deeper than its operator) is at most
-`MAX_EXPRESSION_DEPTH` = 128; a deeper tree is `ProtoValidationError`.
+`MAX_EXPRESSION_DEPTH` = 128; a deeper tree is `ProtoValidationError`, refused before any of it is evaluated (a
+stored catalog's trees when it is verified, a query's when it is checked: evaluation alone stops at the nodes
+it reaches).
 - `["const", v]`: a canonical value.
 - `["attr", name, ...]`: a path from the current element. Each step but the last is a `one` role or relation. An
   absent step gives MISSING.
@@ -320,7 +322,8 @@ language. Its depth (the outermost list at 1, an operand one deeper than its ope
   `default` when there is one, else MISSING. It never yields the registry's `None` (R150).
 - Arithmetic `["+"|"-"|"*", a, b]` *(R264)*:
   - int with int gives int; any decimal gives decimal, exact, by the General Decimal Arithmetic: an int is a
-    decimal of exponent 0, the result's exponent is the smaller one for `+` and `-` and the sum for `*`;
+    decimal of exponent 0, the result's exponent is the smaller one for `+` and `-` and the sum for `*`; a zero
+    result has the sign that arithmetic gives with round-half-even (`0.10 - 0.10` is `0.00`);
   - both operands are checked first: bool, float, strings, nil, a non-finite decimal and other kinds raise
     `ProtoValidationError`, even beside MISSING;
   - then MISSING in gives MISSING;
@@ -338,7 +341,8 @@ language. Its depth (the outermost list at 1, an operand one deeper than its ope
     int 0 over none). A member whose `term` is MISSING contributes nothing.
 - Traversal `["via", origin, role, role...]` (one role or more): the set reached through each end's own
   collection. Origins *(R265)*: `["self"]`; in queries only, `["root", name]` and `["cell", name]`; in a query
-  `["root", name]` is also a bare root, the members of that root.
+  `["root", name]` is also a bare root, the members of that root. An absent root, like an absent cell, has no
+  members.
   - Members come in first-reached order (each member of the previous hop in its order, then its end's collection
     in its iteration order); a member reached twice counts once, identified by its handle's cell name, a
     version-bound reference by (entity cell name, version oid), a record by its oid; any other value in a role

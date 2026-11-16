@@ -386,6 +386,19 @@ def test_expression_depth_limit(op):
             call(past)
 
 
+def test_a_query_refuses_an_over_deep_tree_before_evaluating_any_of_it():
+    """Deferred minor 40: evaluation stops at the node it reaches (``["or", true, ...]`` never reaches what
+    follows), so a reader checks a whole tree before evaluating it: a query's trees when the query is checked
+    (and a stored catalog's when it is verified)."""
+    from proto_db.semantic.entities import check_query
+    hidden = ["or", const(True), _nested("not", MAX_EXPRESSION_DEPTH)]
+    assert evaluate(hidden, ELEMENT) is True                     # evaluation alone never reaches it
+    for tree in ({"from": ["root", "r"], "where": hidden},
+                 {"from": ["root", "r"], "aggregate": ["sum", ["+", const(1), _nested("not", MAX_EXPRESSION_DEPTH)]]}):
+        with pytest.raises(ProtoValidationError, match="deeper"):
+            check_query(tree)
+
+
 def test_sum_of_terms_depth_limit():
     terms = ["sum", "lines", _nested("not", MAX_EXPRESSION_DEPTH - 1)]
     check_ast(terms)

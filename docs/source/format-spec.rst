@@ -1836,7 +1836,10 @@ record's ``ast`` and evaluated the same way in every language. Its **depth** is 
 operator lists: the outermost list is at depth 1, an operand one deeper than its operator (the
 origin of a ``via`` is part of its ``via``; the value of a ``const`` does not count). A tree deeper
 than ``MAX_EXPRESSION_DEPTH`` = 128 is invalid: a reader **MUST** refuse it with
-``ProtoValidationError`` before evaluating it, and a writer **MUST NOT** store one. Its operators:
+``ProtoValidationError`` before evaluating any of it, checking the whole tree (evaluation stops at the
+nodes it reaches, so ``["or", ["const", true], <a deeper tree>]`` would evaluate): a stored catalog's trees
+when the catalog is verified, a query's when the query is checked. A writer **MUST NOT** store one. Its
+operators:
 
 ``["const", v]``
     A canonical value.
@@ -1882,7 +1885,7 @@ Traversal ``["via", origin, role, role...]``
     The set reached through each end's own collection; a ``via`` names one role or more. The origin
     ``["self"]`` is the current element; ``["cell", name]`` is the record of that cell (nothing when
     the cell is absent); ``["root", name]`` is the members of that root (its elements when it is a
-    List or a Set, else the root's value itself). ``root`` and ``cell`` are valid in queries only,
+    List or a Set, else the root's value itself; nothing when the root is absent). ``root`` and ``cell`` are valid in queries only,
     and ``["root", name]`` is also, in a query, an expression of its own: a bare root, the members of
     that root as a ``via`` origin gives them.
 
