@@ -24,7 +24,11 @@ model and the commit.
 - **The agent** is the operator's: any headless agent that takes an MCP configuration. It should be restricted
   to the server's four tools (no files, shell or web). Each run starts in a fresh empty directory outside the
   results and the work directory (`--agent-dir`), and nothing on its command line names the arm (the
-  configuration's path is `server-<n>/mcp.json`). Only synthetic demo data reaches it.
+  configuration's path is `server-<n>/mcp.json`). Only synthetic demo data reaches it. The harness refuses an
+  agent directory that lies inside the results or the work directory, but not the reverse: with the default
+  (the system's temporary directory) and `--out` also under it, a run's parent directory holds the results as
+  siblings. Pass an `--agent-dir` of its own, outside `--out` and the work directory; isolation rests on the
+  agent's tool restrictions above.
 - **Ground truth.** Each answerable question names a query of `docs/kit/semantic/queries.py` (`QUESTIONS`), run
   in catalog mode, and possibly a declared client-side post-step (`POST`) over its rows, for what the MVP's query
   tree cannot say (it has no ordering, minimum or maximum). An argmin or argmax over a tie is refused, so every
@@ -43,7 +47,9 @@ model and the commit.
   echoes the ground truth is scored all correct in both modes; one whose answers are near misses (one unit off in
   the last digit, a date a day later, a cell name one character off) and one that answers a number to the
   questions the database cannot answer are scored incorrect exactly there; one that prints the right answer and
-  then exits with an error is never correct.
+  then exits with an error is never correct. The near-miss checks rely on the questions' truths being distinct
+  from each other (a near miss of one is no other's answer); the two date truths are distinct today, and no test
+  enforces it.
 
 ## The questions
 

@@ -89,3 +89,15 @@ another repository; the demo says so and points at `docs/kit/semantic/protoBaseS
   `credit_limit`), not their meaning, labels, synonyms, units or computed attributes.
 - Personal and secret attributes are listed by `describe` and never returned by `query`, in either mode.
 - Agents never write: intent execution through the agent interface is outside the MVP.
+- The MCP server keeps the operator's log (`proto_db.agent`: the original messages an agent is not told) off its
+  stderr, which the MCP client collects: pass `--log FILE` to keep it. The log can be noisy: a failure that
+  looks like a programming error (`KeyError`, `AttributeError`) during evaluation is logged at WARNING, and a
+  closed space or a storage failure at ERROR on every call that meets it.
+- Limits of the MVP: field values are not type-checked against their declared kind (spec section 14);
+  the history verifier compares decimals by value (`2.00` equals `2`); a semantic object builds one
+  operations object per attribute access, and an ordered end is scanned linearly when a member is linked or
+  unlinked (quadratic when a load links many members one by one). These costs are listed, not yet measured, in
+  `docs/source/performance.rst`.
+- A later module may add attributes and constraints to types that already have entities. A maintained aggregate
+  it adds is computed for existing entities until their first write stores it; a `required` field or an enforced
+  invariant it adds is not checked against existing entities (format spec, "Constraints").

@@ -27,6 +27,20 @@ code that uses no semantic layer keeps today's API, bytes and behaviour.
   `query` and atomic operations. A query term naming an attribute the members' type does not declare is refused
   before anything is read, never read as missing; a row the catalog does not type, and every row over stored
   structure alone, is read by what it stores (an absent attribute is refused).
+- **Reserved class attributes**: a `DBObject` subclass whose own body defines `__meaning__`, `__label__`,
+  `__help__`, `__synonyms__`, `__key__`, `__certification__`, `__constraints__` or `__validity__` is a semantic
+  class and needs a registry module; rc4 accepted such a class as a plain one, and now its creation is refused
+  ("declares no registry module"). Python reserves `__*__` names; no other name changes meaning.
+- **Direct-mode semantic writes read the catalog**: a transaction's first semantic write enters
+  `__currentModules`, `__catalog` and `__semanticCatalog` in its read set, so a concurrent install makes its
+  commit conflict and `Database.run` retries it against the new catalog (its writes were checked against the
+  catalog of its snapshot). A transaction that only reads through the session is unaffected.
+- **Catalog evolution over existing entities**: a maintained aggregate a later module adds to a type with
+  entities reads as computed from the relation's current members, and the first write that moves it stores it,
+  seeded by that computation. A `required` field or an enforced invariant a later module adds is **not**
+  checked against the entities that exist at install: it binds the operations after the install as everywhere
+  (a `required` field at creation, an invariant when an operation changes its operands). Migrations are
+  designed, not built.
 - **Intent transactions behind a flag**: `new_transaction(intents=True)` and `run(fn, intents=True)` log the
   semantic operations and replay them at commit on the cells current then, so independent concurrent operations
   do not conflict. One node only: a space with a cluster coordinator refuses the flag (`ProtoNotSupportedError`).
@@ -40,9 +54,14 @@ code that uses no semantic layer keeps today's API, bytes and behaviour.
 - **`proto_db.agent`**: the agent interface, operations `list_entities`, `describe`, `check_answerable` and
   `query` over one version, JSON-ready. Personal and secret attributes are listed by `describe` and never
   returned by `query`, nor disclosed through an error. A raw mode exposes the stored structure only (the agent
-  experiment's control group: it sees the stored type and attribute names, not their meaning). Agents never
-  write. `python -m proto_db.agent --path P --database D [--raw]` serves the operations as MCP tools over stdio;
-  `python -m proto_db.agent.step6` writes the expected output of the protoBaseST step.
+  experiment's control group: it sees the stored type and attribute names, not their meaning); it withholds
+  what the stored catalog marks personal or secret without needing the modules' code, and a catalog it cannot
+  decode or check makes it refuse, never serve everything. Sensitivity is today's policy: a query with `as_of`
+  withholds what the version read or the current version withholds. Agents never write.
+  `python -m proto_db.agent --path P --database D [--raw] [--log FILE]` serves the operations as MCP tools
+  over stdio; the operator's log (the original messages the agent is not told) goes to `--log FILE` or
+  nowhere, never to the server's stderr, which the MCP client collects. `python -m proto_db.agent.step6`
+  writes the expected output of the protoBaseST step.
 - **New optional extra `agent`**: `pip install proto_db[agent]` installs the MCP SDK, pinned
   `mcp>=1.30.0,<2` (the tested 1.x line). It is imported only when the server starts; `import proto_db.agent`
   needs nothing beyond the core.
@@ -52,6 +71,16 @@ code that uses no semantic layer keeps today's API, bytes and behaviour.
   experiment (`benchmarks/semantic/credit_experiment.py`, in `docs/source/performance.rst`) and the agent
   experiment's harness and questions (`benchmarks/semantic/agent_experiment.py`; results pending,
   `docs/kit/semantic/agent-experiment.md`).
+
+### Fixed (defects of 2.0.0rc4; candidates for a backport)
+
+- **Concurrent installs in one space**: an older registry rebind landing after a newer one left the database
+  bound to an older module list, so the next transaction failed with a registry mismatch. The database's binding
+  now moves only forward in the order of its versions, so concurrent installs never move it back.
+- **Publish-then-rebind window**: a transaction that started between an install's publish and its rebind got a
+  registry mismatch, depending on timing. The space adopts the list being committed under the root lock before
+  the publish, and a transaction whose snapshot lists an adopted list binds to it (design guide, "The runtime
+  registry").
 
 ## [2.0.0rc4] - 2026-11-15
 

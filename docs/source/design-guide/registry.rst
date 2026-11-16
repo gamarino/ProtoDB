@@ -197,8 +197,10 @@ A mismatch is an error (Q2)
     from (``force_rejoin()`` on a survivor forgot that root), the binding belongs to a lineage the node no longer
     follows: the database binds to the transaction's list if its snapshot is that committed root, and is
     otherwise marked stale, so a loaded object resolved outside any block raises the mismatch until
-    ``reload_registry``. The adopted lists are never pruned; they are bounded by the space's installs and
-    reloads.
+    ``reload_registry``, or until a later transaction whose snapshot is the committed root binds the database
+    again. The check runs when a transaction starts: beyond the failure model, between a ``force_rejoin()`` and
+    the next transaction, a loaded object resolved outside any block still uses the forgotten lineage's list.
+    The adopted lists are never pruned; they are bounded by the space's installs and reloads.
 
 **The invariant behind the caches: what a cache entry is keyed by never changes.** The linearization of a
 tuple of saved parents is cached by the parents' pointers and the registry. A record at a pointer never

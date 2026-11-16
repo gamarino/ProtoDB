@@ -189,7 +189,8 @@ Symbol references
     and tokens) was measured and deferred: with segment compression, references plus compression
     were larger than compression alone on the measured data set (the measurement and the verdict
     are in ``docs/superpowers/2026-11-14-symbol-measurement.md``). No feature named ``symbols``
-    exists: ``FEATURE_VERSIONS`` lists only ``parents`` and ``registry``. The root
+    exists: ``FEATURE_VERSIONS`` lists ``parents`` and ``registry`` (format 5) and ``catalog``
+    (format 6, `Semantic catalog (format 6)`_), and no ``symbols``. The root
     ``__currentSymbols`` is not defined; a writer MUST NOT write it, and ``proto_db`` refuses to
     (the ``__`` rule above). Should the feature be adopted later it will be an additive change
     marked by a new format-5 feature, with its own entry in this page.
@@ -1605,10 +1606,10 @@ Semantic catalog (format 6)
 ---------------------------
 
 **Written by the development branch; no release yet.** This chapter is normative and specifies the
-semantic model of decisions D63 to D72. The repository's development branch is the first writer,
-and no tagged release has written format 6. A reader
-that implements it **MUST** read what this chapter specifies, and a writer **MUST** write it
-exactly. Data that uses none of it stays version 4 or 5, byte for byte (S5).
+semantic model of decisions D63 to D72. The repository's development branch is the first writer
+(``proto_db``'s semantic layer writes it), and no tagged release has written format 6. A reader that
+implements it **MUST** read what this chapter specifies, and a writer **MUST** write it exactly. Data
+that uses none of it stays version 4 or 5, byte for byte (S5).
 
 What is normative is what lives in the database: the catalog and its canonical form, the
 expression language and the intent log. The declaration syntax a language offers (Python's
@@ -1703,7 +1704,8 @@ Field rules:
   only carries ``languages``, a ``@tup`` of language names. Invoking or evaluating it from another
   language **MUST** raise ``ProtoNotSupportedError``; describing it is allowed.
 - **Roots by name and type.** ``__semanticCatalog`` and ``__intentLog`` are reserved root names
-  (`Space and database roots`_). ``__semanticCatalog`` is identified by name and by type: a value
+  (the ``__`` rule of `Format stability`_, "The per-database class registry"). ``__semanticCatalog`` is
+  identified by name and by type: a value
   that is not a SemanticCatalog is ``ProtoCorruptionError``.
 
 **Field encodings** (the same in the design spec, section 8). A field is **required** where listed under "Required fields" below;
@@ -2038,6 +2040,22 @@ MISSING operand renders as ``<missing name>``, ``name`` being the attribute path
 in plain notation (``10.00``), a boolean as ``true`` or ``false``, nil as ``nil``, a date or a time in ISO 8601.
 The demo's ``"The order exceeds the credit limit of {customer} by {excess}"`` renders as ``The order exceeds
 the credit limit of Fabrikam by 10.00``.
+
+**Evolution over existing entities.** A module installed later **MAY** add attributes and constraints to a
+type that has entities (`Composition and the canonical form`_). Their records then lack what it adds:
+
+- a maintained aggregate the record does not store reads as its computation over the relation's current
+  members, and the first write that moves it **MUST** store that computation plus the move (or, when a member
+  changed and the members already show it, the computation alone), never fail for its absence;
+- a ``required`` field or an enforced invariant the module adds is not checked against the entities that exist
+  at install: it binds the semantic operations from then on, as everywhere (a ``required`` field when an entity
+  is created; an enforced invariant when an operation changes its operands, so an existing entity that violates
+  it is refused at the first operation that changes one of them). Migrations that would check or repair
+  existing entities are not specified by this revision.
+
+**Conformance.** The rules of this section have no conformance vectors yet: a vector needs a writer that
+applies them, and the vectors that pin the checks across languages come with the second writer. Until then
+the reference implementation's tests are the evidence.
 
 The intent log
 ~~~~~~~~~~~~~~

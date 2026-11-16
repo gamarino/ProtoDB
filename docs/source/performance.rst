@@ -1061,6 +1061,24 @@ A run takes about 25 seconds, most of it the history verifier's walk of about 30
 integration re-measurement adds ``--reads credit-limit`` runs of both modes, and reports the stage timings
 (``timings`` in each JSON file) of both variants.
 
+**Not measured yet.** These costs of the semantic model have no numbers on this page; each is for the final
+integration runs, and none is quoted until it is measured:
+
+- The raw path against 2.0.0rc4 (``2d78c2b``): code that uses no semantic layer now pays the implicit-parent
+  probe when an attribute is absent and when parents are listed, the intent check of every registry method
+  call, the root order of every transaction and the ``__intentLog`` probe of every commit. The comparisons so
+  far were against mid-branch commits only.
+- The catalog paths: every install commit of a catalogued database decodes, recomposes and re-encodes the whole
+  stored catalog under the root lock, also when nothing changes (an idempotent reinstall); a pending catalog is
+  verified again by every new session of the transaction that installed it; a process verifies each stored
+  catalog once (memoized per catalog record).
+- Per-access costs of the session: one operations object per attribute access of a semantic object; the
+  linear scans of an ordered (``List``) end that membership checks and unlinks make, quadratic in the members
+  when a load links them one by one; and the first write of a maintained aggregate that a later module added to
+  existing entities, which computes it over the relation's members once.
+- The experiment's own instruments: the overhead of the probes that record the stage timings, and the history
+  verifier, whose walk is proportional to the versions times the cells it checks.
+
 Reproducing
 -----------
 
