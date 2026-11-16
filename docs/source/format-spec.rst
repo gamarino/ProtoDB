@@ -141,7 +141,7 @@ record needs 5; this is conservative (nothing is lost or misread) and accepted.
 **The pinned vectors.** ``tests/conformance/vectors.sha256`` lists the SHA-256 of every file
 under ``tests/conformance/vectors/`` (``<hex digest>  <path>``, one line per file, sorted by path
 in code point order, ``/`` as the separator), then the digest of ``manifest.json``. The SHA-256
-of that list file is ``215d3921821cc6d477952d76ea3007266942eb15c17bab73c990c3465f324ae9``. ``test_conformance.py`` checks that the committed files
+of that list file is ``0db72d5a9810df502ceefd2133f7b9a0a454d066f6371efa718b3e9393f5dbb0``. ``test_conformance.py`` checks that the committed files
 match the list and that this page states the list's digest. Each vector file is governed by
 the number that covers what it holds: ``vectors/cluster/*.log`` by ``LOG_FORMAT_VERSION``,
 ``vectors/cluster/messages/`` by ``PROTOCOL_VERSION``, every other file by ``FORMAT_VERSION``.
@@ -1824,7 +1824,11 @@ The expression language
 ~~~~~~~~~~~~~~~~~~~~~~~
 
 An expression is a nested list ``[operator, argument...]``, stored as data in an Expression
-record's ``ast`` and evaluated the same way in every language. Its operators:
+record's ``ast`` and evaluated the same way in every language. Its **depth** is the nesting of its
+operator lists: the outermost list is at depth 1, an operand one deeper than its operator (the
+origin of a ``via`` is part of its ``via``; the value of a ``const`` does not count). A tree deeper
+than ``MAX_EXPRESSION_DEPTH`` = 128 is invalid: a reader **MUST** refuse it with
+``ProtoValidationError`` before evaluating it, and a writer **MUST NOT** store one. Its operators:
 
 ``["const", v]``
     A canonical value.
@@ -1837,27 +1841,53 @@ record's ``ast`` and evaluated the same way in every language. Its operators:
 
 Arithmetic ``["+", a, b]``, ``["-", a, b]``, ``["*", a, b]``
     ``int`` with ``int`` gives ``int``; when either operand is a ``decimal`` the result is a
-    ``decimal`` (exact). MISSING in gives MISSING. A ``bool``, a ``float``, a string or any other
-    kind raises ``ProtoValidationError``. Division is not specified.
+    ``decimal``, computed exactly (never rounded) by the operation of the General Decimal
+    Arithmetic: an ``int`` operand is the decimal of that value with exponent 0; the exponent of the
+    result is the smaller of the operands' exponents for ``+`` and ``-`` and their sum for ``*``; a
+    zero result has the sign that arithmetic gives with round-half-even (``0.10 - 0.10`` is
+    ``0.00``, ``1E+1 + 2`` is ``12``, ``1E+1 * 1E+1`` is ``1E+2``). Both operands are checked first:
+    a ``bool``, a ``float``, a string, nil, a non-finite decimal (NaN, an infinity) or any other kind
+    raises ``ProtoValidationError``, even when the other operand is MISSING. Then MISSING in gives
+    MISSING. Division is not specified.
 
 Comparison ``["==", a, b]`` and ``"!="``, ``"<"``, ``"<="``, ``">"``, ``">="``
     The semantics of `Order, equality and hashing`_ (equality, type ranks, order keys). A
     comparison that involves MISSING is false.
 
-Logic ``["and", ...]``, ``["or", ...]``, ``["not", a]``
-    Operands are booleans, evaluated left to right, ``and`` stopping at the first false and ``or`` at the first
+Logic ``["and", a, ...]``, ``["or", a, ...]``, ``["not", a]``
+    ``and`` and ``or`` take one operand or more, ``not`` exactly one. Operands are booleans, evaluated left to right, ``and`` stopping at the first false and ``or`` at the first
     true. A MISSING operand counts as false (as in a comparison), so ``not`` of MISSING is true. Any other
     non-boolean operand that is reached raises ``ProtoValidationError``.
 
 Aggregates ``["sum", over, term, where?]`` and ``["count", over, where?]``
-    ``over`` is a role name of the current element or a ``via`` expression. ``term`` and
-    ``where`` are evaluated with each member as the current element. ``sum`` of no members is the int 0 (and ``count`` of none the int 0); otherwise the terms are added as ``+`` does.
-    A member whose ``term`` is MISSING contributes nothing, and a member for which ``where`` is not true is not a
-    member of the aggregate.
+    ``over`` is a role name of the current element (the members of ``["via", ["self"], over]``), a
+    ``via`` expression or, in a query, a bare root. ``term`` and ``where`` are evaluated with each
+    member as the current element, in the members' order. A member for which ``where`` is not true
+    (false or MISSING) is not a member of the aggregate; a ``where`` of any other kind raises
+    ``ProtoValidationError``. ``count`` is the int number of members. ``sum`` is the left fold of
+    ``+`` from the int 0 over the members' terms: a member whose ``term`` is MISSING contributes
+    nothing, a term of any other kind than int or decimal raises as ``+`` does, so a ``sum`` of no
+    members is the int 0, and decimal terms give the exponent ``+`` gives from 0 (``1E+1`` and
+    ``2E+1`` sum to ``30``).
 
 Traversal ``["via", origin, role, role...]``
-    The set reached through each end's own collection. The origin ``["self"]`` is the current
-    element; ``["root", name]`` and ``["cell", name]`` are valid in queries only.
+    The set reached through each end's own collection; a ``via`` names one role or more. The origin
+    ``["self"]`` is the current element; ``["cell", name]`` is the record of that cell (nothing when
+    the cell is absent); ``["root", name]`` is the members of that root (its elements when it is a
+    List or a Set, else the root's value itself). ``root`` and ``cell`` are valid in queries only,
+    and ``["root", name]`` is also, in a query, an expression of its own: a bare root, the members of
+    that root as a ``via`` origin gives them.
+
+    Each hop takes, for each member of the previous hop in its order, the value of the role (a
+    ``one`` end holds one member, a ``many`` end a List or a Set whose members come in the
+    collection's iteration order; an absent or nil value holds none). The result is in
+    first-reached order, and a member reached twice counts once, at its first position, by its
+    identity: an identity handle by its cell name, a version-bound reference
+    ``{"entity": handle, "version": record}`` by the pair of the entity's cell name and the version's
+    oid, a record by its oid. A role holds nothing else: any other value reached as a member raises
+    ``ProtoValidationError``. A member is then followed: a handle to its cell's record (a handle whose
+    cell is absent contributes nothing), a version-bound reference to its version. The same rules
+    give the members of a root origin.
 
 Reserved, not specified by this revision: ``in``, ``is_missing``, ``min``, ``max``, ``exists``,
 ``all``, ``reach`` and ``valid_at``. A reader that meets an operator it does not implement
@@ -2415,10 +2445,14 @@ JSON description of what every file means, in a language-neutral notation), the 
   (``catalog/canonical.msgpack``); its root record is version 6;
 - the evaluation of the expression language (`The expression language`_; manifest key
   ``expressions``): each operator, int and decimal arithmetic (exact), MISSING through arithmetic,
-  comparison and logic, absent values and catalogued defaults, ``sum`` and ``count`` (of no members,
-  with a ``where``), ``via`` over several hops and through identity handles, and the refusals (a
-  float, a bool, a string or nil in arithmetic, division, ``root`` and ``cell`` outside a query, an
-  unknown operator, a reserved one). These vectors are manifest entries only, with no file.
+  comparison and logic, the exponents of decimal results, absent values and catalogued defaults,
+  ``sum`` (a left fold from 0) and ``count`` (of no members, with a ``where``, a MISSING ``where``),
+  ``via`` over several hops, through identity handles (repeated, absent) and version-bound
+  references, a tree at ``MAX_EXPRESSION_DEPTH``, and the refusals (a float, a bool, a string, nil
+  or a non-finite decimal in arithmetic, also beside MISSING, a sum term or a ``where`` of the wrong
+  kind, a non-role value as a member, division, a tree past the depth limit, ``root`` and ``cell``
+  outside a query, an unknown operator, a reserved one). These vectors are manifest entries only,
+  with no file.
 
 ``tests/conformance/vectors.sha256`` pins the vector files (`Format stability`_).
 

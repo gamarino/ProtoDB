@@ -161,7 +161,9 @@ A reader passes when, for every entry of `manifest.json`:
     `proto_db.core.dbobject.DBObject`, `collection` Lists, values) and `expected`. It may have `cells`,
     `[cell name, record]` pairs: what the identity handles (`mutable`) it holds designate, read through
     the reader; and `defaults`, `[attribute, value]` pairs: the catalogued defaults of the element's
-    own type (the other records of the entry have none). Check the tree as outside a query, then
+    own type (the other records of the entry have none). A record built from a description is a new
+    record with its own oid, so the vectors repeat members as handles (identified by their cell name),
+    never as records. Check the tree as outside a query, then
     evaluate it on the element: the result must be `expected` exactly (a value description, a decimal
     with its exponent; a `via` gives a `tuple` of the members reached, in first-reached order), or the
     refusal `{"error": "validation"}` (ProtoValidationError) or `{"error": "not_supported"}`

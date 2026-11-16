@@ -33,10 +33,10 @@ from ..errors import ProtoNotSupportedError, ProtoUserError, ProtoValidationErro
 from ..indexing.keyspec import _step as _stored_step
 from ..query.expressions import And, Expression, Not, Or
 from ..query.terms import MIRRORED, Term, compare
-from ..values import MISSING, MutableObject, canonical, is_atom, is_orderable, order_key
+from ..values import MISSING, MutableObject, canonical, is_atom
 
 __all__ = ["Reader", "check_ast", "evaluate", "to_planner", "dependencies", "parse",
-           "ARITHMETIC", "COMPARISONS", "RESERVED"]
+           "ARITHMETIC", "COMPARISONS", "RESERVED", "MAX_EXPRESSION_DEPTH"]
 
 #: The arithmetic operators (R264); division is not specified.
 ARITHMETIC = frozenset({"+", "-", "*"})
@@ -45,6 +45,9 @@ COMPARISONS = frozenset({"==", "!=", "<", "<=", ">", ">="})
 #: Operators the format reserves and this revision does not specify: a reader that meets one raises
 #: ``ProtoNotSupportedError``.
 RESERVED = frozenset({"in", "is_missing", "min", "max", "exists", "all", "reach", "valid_at"})
+#: The deepest nesting of operator lists an expression may have (the root node is at depth 1).
+MAX_EXPRESSION_DEPTH = 128
+
 #: The origins of a ``via``; ``root`` and ``cell`` are valid in queries only (R265).
 _QUERY_ORIGINS = frozenset({"root", "cell"})
 
@@ -91,7 +94,9 @@ class Reader:
 
     def members(self, value):
         """The members a role's stored value holds, not yet followed: the elements of a ``many`` end
-        (a List or a Set), the single target of a ``one`` end, none for an absent or nil value."""
+        (a List or a Set, in its iteration order), the single target of a ``one`` end, none for an absent
+        or nil value.  Each member is a record, an identity handle or a version-bound reference; anything
+        else is refused when it is reached (:func:`_identity`)."""
         if value is MISSING or value is None:
             return ()
         if isinstance(value, (List, Set)):
@@ -128,12 +133,22 @@ def _check_origin(origin, in_query: bool) -> None:
     if op == "self":
         _arity(op, origin[1:], 0, 0)
     elif op in _QUERY_ORIGINS:
-        _arity(op, origin[1:], 1, 1)
-        _name(origin[1], "a name", op)
-        if not in_query:
-            raise ProtoValidationError(f"The origin {op!r} is valid in queries only (R265)")
+        _check_query_origin(origin, in_query)
     else:
         raise ProtoValidationError(f"A 'via' origin is ['self'], ['root', name] or ['cell', name], not {op!r}")
+
+
+def _check_query_origin(node, in_query: bool) -> None:
+    op = node[0]
+    _arity(op, node[1:], 1, 1)
+    _name(node[1], "a name", op)
+    if not in_query:
+        raise ProtoValidationError(f"The origin {op!r} is valid in queries only (R265)")
+
+
+def _too_deep() -> ProtoValidationError:
+    return ProtoValidationError(f"The expression nests deeper than MAX_EXPRESSION_DEPTH ({MAX_EXPRESSION_DEPTH}) "
+                                f"operator lists")
 
 
 def _children(node, in_query: bool) -> list:
@@ -168,18 +183,22 @@ def _children(node, in_query: bool) -> list:
             _arity(op, args, 1, 2)
         over = args[0]
         if isinstance(over, str):
-            _name(over, "a role name or a via expression as 'over'", op)
+            _name(over, "a role name, a via expression or a root as 'over'", op)
             return list(args[1:])
-        if _is_node(over) and over[0] == "via":
+        if _is_node(over) and over[0] in ("via", "root"):
             return list(args)
-        raise ProtoValidationError(f"Operator {op!r} needs a role name or a via expression as 'over', not {over!r}")
+        raise ProtoValidationError(f"Operator {op!r} needs a role name, a via expression or a root as 'over', "
+                                   f"not {over!r}")
     if op == "via":
         _arity(op, args, 2, None)
         _check_origin(args[0], in_query)
         for role in args[1:]:
             _name(role, "every role", op)
         return []
-    if op == "self" or op in _QUERY_ORIGINS:
+    if op == "root":
+        _check_query_origin(node, in_query)
+        return []
+    if op in ("self", "cell"):
         raise ProtoValidationError(f"{op!r} is valid only as the origin of a 'via'")
     if op in RESERVED:
         raise ProtoNotSupportedError(f"Operator {op!r} is reserved by the format and not specified by this revision")
@@ -190,14 +209,19 @@ def check_ast(ast, *, in_query: bool = False) -> None:
     """Check that ``ast`` is a tree of the expression language (spec section 7).
 
     Every node is checked for its operator and arity; a ``const`` must hold a canonical value, names
-    must be non-empty strings.  ``root`` and ``cell`` origins are refused unless ``in_query``.
+    must be non-empty strings, and no node is deeper than :data:`MAX_EXPRESSION_DEPTH` (the root node
+    is at depth 1, an operand one deeper than its operator; a ``via`` origin is part of its ``via``).
+    ``root`` (an origin, or a bare root) and ``cell`` (an origin) are refused unless ``in_query``.
     ``ProtoValidationError`` names the offending operator; a reserved operator (``in``, ``min``,
     ...) raises ``ProtoNotSupportedError``.  Kinds of values (a float in arithmetic, a non-boolean
     in logic) are checked by :func:`evaluate`, where the values are known.
     """
-    stack = [ast]
+    stack = [(ast, 1)]
     while stack:
-        stack.extend(_children(stack.pop(), in_query))
+        node, depth = stack.pop()
+        if depth > MAX_EXPRESSION_DEPTH:
+            raise _too_deep()
+        stack.extend((child, depth + 1) for child in _children(node, in_query))
 
 
 # -- evaluation -------------------------------------------------------------------------------------
@@ -212,29 +236,34 @@ def evaluate(ast, element, *, reader: Reader | None = None):
     evaluated (whether a tree may use them is :func:`check_ast`'s decision).
     """
     reader = _NO_READER if reader is None else reader
-    return _eval(ast, reader.follow(element), reader)
+    return _eval(ast, reader.follow(element), reader, 1)
 
 
-def _eval(node, element, reader: Reader):
+def _eval(node, element, reader: Reader, depth: int):
+    """Evaluate ``node`` at ``depth``.  The recursion takes at most two Python frames per level (this
+    function, and the generator of ``and``/``or``), so a tree within :data:`MAX_EXPRESSION_DEPTH`
+    needs at most ``2 * MAX_EXPRESSION_DEPTH`` frames, well within Python's default limit of 1000."""
+    if depth > MAX_EXPRESSION_DEPTH:
+        raise _too_deep()
     operands = _children(node, True)
-    op = node[0]
+    op, below = node[0], depth + 1
     if op == "const":
         return canonical(node[1])
     if op == "attr":
         return _read_path(element, node[1:], reader)
     if op in ARITHMETIC:
-        return _arithmetic(op, _eval(operands[0], element, reader), _eval(operands[1], element, reader))
+        return _arithmetic(op, _eval(operands[0], element, reader, below), _eval(operands[1], element, reader, below))
     if op in COMPARISONS:
-        return compare(_eval(operands[0], element, reader), op, _eval(operands[1], element, reader))
+        return compare(_eval(operands[0], element, reader, below), op, _eval(operands[1], element, reader, below))
     if op == "and":
-        return all(_truth(op, _eval(operand, element, reader)) for operand in operands)
+        return all(_truth(op, _eval(operand, element, reader, below)) for operand in operands)
     if op == "or":
-        return any(_truth(op, _eval(operand, element, reader)) for operand in operands)
+        return any(_truth(op, _eval(operand, element, reader, below)) for operand in operands)
     if op == "not":
-        return not _truth(op, _eval(operands[0], element, reader))
-    if op == "via":
-        return _via(node[1], node[2:], element, reader)
-    return _aggregate(op, node[1:], element, reader)
+        return not _truth(op, _eval(operands[0], element, reader, below))
+    if op in ("via", "root"):
+        return _members_of(node, element, reader)
+    return _aggregate(op, node[1:], element, reader, depth)
 
 
 def _read_path(element, steps, reader: Reader):
@@ -284,57 +313,78 @@ def _truth(op: str, value, what: str = "an operand") -> bool:
 
 
 def _identity(member):
-    """What makes two reached members one member of a set: the value's order key (an atom's oid, a
-    handle's cell name), or the object itself for a value that has none."""
-    return order_key(member) if is_orderable(member) else ("object", id(member))
+    """What makes two reached members one member of a set (I2): an identity handle by its cell name, a
+    version-bound reference by its entity's cell name and its version's oid, a record by its oid.  A
+    role holds nothing else: any other value is refused."""
+    if isinstance(member, MutableObject):
+        return "handle", member.name
+    if isinstance(member, dict) and member.keys() == {"entity", "version"} \
+            and isinstance(member["entity"], MutableObject) and is_atom(member["version"]):
+        return "version", member["entity"].name, member["version"].oid
+    if is_atom(member):
+        return "record", member.oid
+    raise ProtoValidationError(f"A role holds records, identity handles or version-bound references, "
+                               f"not {member!r}")
 
 
-def _via(origin, roles, element, reader: Reader) -> tuple:
-    """The set reached from ``origin`` through each role in turn, in first-reached order."""
-    kind = origin[0]
+def _reach(raws, reached: list, seen: set, reader: Reader) -> None:
+    """Append to ``reached`` each member of ``raws`` not yet ``seen``, followed; a handle whose cell is
+    absent contributes nothing."""
+    for raw in raws:
+        key = _identity(raw)
+        if key in seen:
+            continue
+        seen.add(key)
+        followed = reader.follow(raw)
+        if followed is not MISSING:
+            reached.append(followed)
+
+
+def _members_of(node, element, reader: Reader) -> tuple:
+    """The members a ``via`` or a bare ``root`` gives: from the origin, through each role in turn, the set
+    reached, in first-reached order (each member of the previous hop in its order, then its end's
+    collection in that collection's order), each member once."""
+    origin, roles = (node, ()) if node[0] == "root" else (node[1], node[2:])
+    kind, current = origin[0], []
     if kind == "self":
         current = [element]
     elif kind == "cell":
         found = reader.cell(origin[1])
         current = [] if found is None else [found]
     else:
-        current = [m for m in map(reader.follow, reader.members(reader.root(origin[1]))) if m is not MISSING]
+        _reach(reader.members(reader.root(origin[1])), current, set(), reader)
     for role in roles:
         reached, seen = [], set()
         for member in current:
-            for raw in reader.members(_stored_step(member, role)):
-                key = _identity(raw)
-                if key in seen:
-                    continue
-                seen.add(key)
-                followed = reader.follow(raw)
-                if followed is not MISSING:
-                    reached.append(followed)
+            _reach(reader.members(_stored_step(member, role)), reached, seen, reader)
         current = reached
     return tuple(current)
 
 
-def _aggregate(op: str, args, element, reader: Reader):
-    """``["sum", over, term, where?]`` and ``["count", over, where?]``: the int 0 over no members; a
-    member whose term is MISSING contributes nothing to a sum; a member for which ``where`` is not
-    true is not a member."""
-    over = args[0]
-    members = _via(["self"], [over], element, reader) if isinstance(over, str) else \
-        _via(over[1], over[2:], element, reader)
+def _aggregate(op: str, args, element, reader: Reader, depth: int):
+    """``["sum", over, term, where?]`` and ``["count", over, where?]``: a sum is a left fold of ``+`` from
+    the int 0 over the contributing terms (so the int 0 over none); a member whose term is MISSING
+    contributes nothing; a member for which ``where`` is not true is not a member."""
+    over, below = args[0], depth + 1
+    if isinstance(over, str):
+        members = _members_of(["via", ["self"], over], element, reader)
+    else:
+        if below > MAX_EXPRESSION_DEPTH:
+            raise _too_deep()
+        _children(over, True)
+        members = _members_of(over, element, reader)
     term, where = (args[1], args[2] if len(args) > 2 else None) if op == "sum" else \
         (None, args[1] if len(args) > 1 else None)
-    total, count = None, 0
+    total, count = 0, 0
     for member in members:
-        if where is not None and not _truth(op, _eval(where, member, reader), "its where"):
+        if where is not None and not _truth(op, _eval(where, member, reader, below), "its where"):
             continue
         count += 1
         if term is not None:
-            value = _number(op, _eval(term, member, reader))
+            value = _number(op, _eval(term, member, reader, below))
             if value is not MISSING:
-                total = value if total is None else _arithmetic("+", total, value)
-    if op == "count":
-        return count
-    return 0 if total is None else total
+                total = _arithmetic("+", total, value)
+    return count if op == "count" else total
 
 
 # -- translation to the planner ---------------------------------------------------------------------
@@ -413,7 +463,7 @@ def dependencies(ast) -> frozenset:
         elif op == "via":
             if node[1][0] == "self":
                 names.add(node[2])
-        elif op != "const":
+        elif op not in ("const", "root"):
             stack.extend(node[1:])
     return frozenset(names)
 
@@ -423,6 +473,11 @@ def dependencies(ast) -> frozenset:
 _COMPARISON_TOKENS = ("==", "!=", "<=", ">=", "<", ">")
 _WORD_OPERATORS = frozenset({"and", "or", "not"})
 _ESCAPES = {"\\": "\\", "'": "'", '"': '"'}
+
+
+def _is_digit(ch: str) -> bool:
+    """An ASCII digit: the text form's numbers are written with ``0`` to ``9`` only."""
+    return "0" <= ch <= "9"
 
 
 def _refuse(column: int, message: str):
@@ -446,14 +501,14 @@ def _tokens(text: str):
                 _refuse(column, f"{word!r} is not a name")
             yield "name", word, column
             i = j
-        elif ch.isdigit():
+        elif _is_digit(ch):
             j = i
-            while j < n and text[j].isdigit():
+            while j < n and _is_digit(text[j]):
                 j += 1
             kind = "int"
-            if j + 1 < n and text[j] == "." and text[j + 1].isdigit():
+            if j + 1 < n and text[j] == "." and _is_digit(text[j + 1]):
                 j += 1
-                while j < n and text[j].isdigit():
+                while j < n and _is_digit(text[j]):
                     j += 1
                 kind = "decimal"
             if j < n and (text[j].isalnum() or text[j] in "_."):
@@ -493,8 +548,27 @@ def _tokens(text: str):
     yield "end", None, n + 1
 
 
+#: Binding power of the operators, lowest first; the prefix ``not`` binds between ``and`` and the comparisons.
+_PRECEDENCE = {"or": 1, "and": 2, "not": 3, **{op: 4 for op in _COMPARISON_TOKENS}, "+": 5, "-": 5, "*": 6}
+_OPEN = "("
+
+
+class _Group:
+    """A parenthesized operand on the parser's stack: kept apart so that ``(a and b) and c`` is not
+    flattened into one ``and``."""
+
+    __slots__ = ("tree",)
+
+    def __init__(self, tree):
+        self.tree = tree
+
+
+def _tree(operand):
+    return operand.tree if isinstance(operand, _Group) else operand
+
+
 class _Parser:
-    """Recursive descent over the subset's grammar (lowest precedence first)::
+    """An operator-precedence (shunting-yard) parser of the subset's grammar, lowest precedence first::
 
         or_expr    := and_expr ("or" and_expr)*
         and_expr   := not_expr ("and" not_expr)*
@@ -503,10 +577,17 @@ class _Parser:
         sum        := product (("+" | "-") product)*
         product    := operand ("*" operand)*
         operand    := "(" or_expr ")" | literal | "-" number | name ("." name)*
+
+    It is iterative (an operand stack and an operator stack), so no text can exhaust Python's
+    recursion; parentheses and ``not`` nest at most :data:`MAX_EXPRESSION_DEPTH` deep, and the tree is
+    then checked like any other (:func:`check_ast`).
     """
 
     def __init__(self, text: str):
         self._tokens = _tokens(text)
+        self._operands: list = []
+        self._operators: list = []      # (operator, column); "(" for an open parenthesis
+        self._nesting = 0               # open parentheses and pending 'not's on the operator stack
         self._advance()
 
     def _advance(self) -> None:
@@ -521,79 +602,93 @@ class _Parser:
         found = "the end of the text" if self.kind == "end" else repr(self.value)
         _refuse(self.column, f"expected {expected}, found {found}")
 
+    def _binary(self):
+        """The binary operator at the current token, or ``None``."""
+        if self.kind == "name":
+            if self.value in ("or", "and"):
+                return self.value
+            if self.value in ("in", "is"):
+                self._refuse_here("an operator")
+        elif self.kind == "op" and self.value in _PRECEDENCE:
+            return self.value
+        return None
+
+    def _push(self, op: str) -> None:
+        if op in (_OPEN, "not"):
+            if self._nesting >= MAX_EXPRESSION_DEPTH:
+                _refuse(self.column, f"the text nests deeper than MAX_EXPRESSION_DEPTH ({MAX_EXPRESSION_DEPTH}) "
+                                     f"parentheses and 'not's")
+            self._nesting += 1
+        self._operators.append(op)
+
+    def _reduce(self) -> str:
+        """Apply the operator on top of the stack to its operands; return it."""
+        op = self._operators.pop()
+        if op == "not":
+            self._nesting -= 1
+            self._operands.append(["not", _tree(self._operands.pop())])
+            return op
+        right, left = _tree(self._operands.pop()), self._operands.pop()
+        if op in ("and", "or") and not isinstance(left, _Group) and left[0] == op:
+            left.append(right)              # a and b and c: one node (the chain built at this level)
+        else:
+            self._operands.append([op, _tree(left), right])
+            return op
+        self._operands.append(left)
+        return op
+
     def parse(self) -> list:
-        tree = self._or()
+        while True:
+            self._operand()                 # also takes the prefix 'not's and '('s before it
+            while self._is("op", ")") and _OPEN in self._operators:
+                while self._operators[-1] != _OPEN:
+                    self._reduce()
+                self._operators.pop()
+                self._nesting -= 1
+                self._operands.append(_Group(_tree(self._operands.pop())))
+                self._advance()
+            op = self._binary()
+            if op is None:
+                break
+            precedence, chained = _PRECEDENCE[op], False
+            while self._operators and self._operators[-1] != _OPEN \
+                    and _PRECEDENCE[self._operators[-1]] >= precedence:
+                chained |= self._reduce() in _COMPARISON_TOKENS and op in _COMPARISON_TOKENS
+            if chained:
+                _refuse(self.column, "chained comparisons are not in the expression subset")
+            self._push(op)
+            self._advance()
         if not self._is("end"):
-            self._refuse_here("an operator or the end of the text")
-        return tree
+            self._refuse_here("')'" if _OPEN in self._operators else "an operator or the end of the text")
+        if _OPEN in self._operators:
+            self._refuse_here("')'")
+        while self._operators:
+            self._reduce()
+        return _tree(self._operands.pop())
 
-    def _chain(self, word: str, operand) -> list:
-        items = [operand()]
-        while self._is("name", word):
-            self._advance()
-            items.append(operand())
-        return items[0] if len(items) == 1 else [word, *items]
-
-    def _or(self) -> list:
-        return self._chain("or", self._and)
-
-    def _and(self) -> list:
-        return self._chain("and", self._not)
-
-    def _not(self) -> list:
-        if self._is("name", "not"):
-            self._advance()
-            return ["not", self._not()]
-        return self._comparison()
-
-    def _comparison(self) -> list:
-        left = self._sum()
-        if not (self.kind == "op" and self.value in _COMPARISON_TOKENS):
-            if self.kind == "name" and self.value in ("in", "is"):
-                self._refuse_here("a comparison")
-            return left
-        op = self.value
-        self._advance()
-        right = self._sum()
-        if self.kind == "op" and self.value in _COMPARISON_TOKENS:
-            _refuse(self.column, "chained comparisons are not in the expression subset")
-        return [op, left, right]
-
-    def _sum(self) -> list:
-        left = self._product()
-        while self.kind == "op" and self.value in ("+", "-"):
-            op = self.value
-            self._advance()
-            left = [op, left, self._product()]
-        return left
-
-    def _product(self) -> list:
-        left = self._operand()
-        while self._is("op", "*"):
-            self._advance()
-            left = ["*", left, self._operand()]
-        return left
-
-    def _operand(self) -> list:
+    def _operand(self) -> None:
+        """Read the prefix 'not's and '('s, then one operand, onto the stacks."""
+        while True:
+            if self._is("op", _OPEN):
+                self._push(_OPEN)
+                self._advance()
+            elif self._is("name", "not") and not (self._operators and self._operators[-1] != _OPEN
+                                                  and _PRECEDENCE[self._operators[-1]] > _PRECEDENCE["not"]):
+                self._push("not")
+                self._advance()
+            else:
+                break
         kind, value, column = self.kind, self.value, self.column
-        if self._is("op", "("):
-            self._advance()
-            inner = self._or()
-            if not self._is("op", ")"):
-                self._refuse_here("')'")
-            self._advance()
-            return inner
         if kind in ("int", "decimal", "str"):
             self._advance()
-            return ["const", value]
-        if self._is("op", "-"):
+            self._operands.append(["const", value])
+        elif self._is("op", "-"):
             self._advance()
             if self.kind not in ("int", "decimal"):
                 _refuse(column, "a unary '-' applies only to a number")
-            literal = -self.value
+            self._operands.append(["const", -self.value])
             self._advance()
-            return ["const", literal]
-        if kind == "name" and not keyword.iskeyword(value):
+        elif kind == "name" and not keyword.iskeyword(value):
             steps = [value]
             self._advance()
             while self._is("op", "."):
@@ -603,10 +698,11 @@ class _Parser:
                     _refuse(dot, "a dotted path needs a name after '.'")
                 steps.append(self.value)
                 self._advance()
-            if self._is("op", "("):
+            if self._is("op", _OPEN):
                 _refuse(self.column, "function calls are not in the expression subset")
-            return ["attr", *steps]
-        self._refuse_here("an operand")
+            self._operands.append(["attr", *steps])
+        else:
+            self._refuse_here("an operand")
 
 
 def parse(text: str) -> list:
@@ -621,4 +717,9 @@ def parse(text: str) -> list:
     """
     if not isinstance(text, str):
         raise ProtoValidationError(f"An expression text is a str, not {type(text).__name__}")
-    return _Parser(text).parse()
+    tree = _Parser(text).parse()
+    try:
+        check_ast(tree)
+    except ProtoValidationError as e:
+        raise ProtoValidationError(f"Expression text: {e}") from e
+    return tree

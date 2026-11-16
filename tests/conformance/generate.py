@@ -1030,6 +1030,23 @@ def _expression_cases() -> list:
     handled_customer = DBObject(name="ACME", orders=List.from_iterable([MutableObject(order_cell)]))
     with_handles = {"cells": {product_cell: product, order_cell: handled_order}}
     big = Decimal("12345678901234567890.123456789012345678901")
+    tens = DBObject(lines=List.from_iterable([DBObject(v=Decimal("1E+1")), DBObject(v=Decimal("2E+1"))]))
+    # A record's identity is its oid, which a description does not carry: the vectors repeat handles
+    # (identified by their cell name), and the unit tests repeat records.
+    repeated = DBObject(lines=List.from_iterable([DBObject(quantity=4), MutableObject(product_cell),
+                                                  MutableObject("conformance.sales.Product#" + "0" * 32),
+                                                  MutableObject(product_cell)]))
+    entity = MutableObject(product_cell)
+    bound = DBObject(lines=List.from_iterable([{"entity": entity, "version": DBObject(sku="p1", price=Decimal("10.00"))},
+                                               {"entity": entity, "version": DBObject(sku="p1", price=Decimal("10.50"))}]))
+    from proto_db.semantic.expressions import MAX_EXPRESSION_DEPTH
+
+    def nested_not(depth):
+        tree = attr("flag")
+        for _ in range(depth - 1):
+            tree = ["not", tree]
+        return tree
+
     amount = ["*", attr("quantity"), attr("price")]
     via_lines = ["via", ["self"], "orders", "lines"]
     return [
@@ -1048,6 +1065,12 @@ def _expression_cases() -> list:
         ("times-decimal-int", ["*", attr("d"), attr("i")], record, {}),
         ("minus-decimal-decimal", ["-", const(Decimal("0.3")), const(Decimal("0.10"))], record, {}),
         ("decimal-arithmetic-is-exact", ["*", const(big), const(big)], record, {}),
+        ("plus-exponent-is-the-smaller", ["+", const(Decimal("1E+1")), const(Decimal("1E+2"))], record, {}),
+        ("plus-int-has-exponent-0", ["+", const(Decimal("1E+1")), const(2)], record, {}),
+        ("times-exponent-is-the-sum", ["*", const(Decimal("1E+1")), const(Decimal("1E+1"))], record, {}),
+        ("minus-to-zero-keeps-the-exponent", ["-", const(Decimal("0.10")), const(Decimal("0.10"))], record, {}),
+        ("missing-and-wrong-kind-refused", ["+", attr("absent"), const("x")], record, {}),
+        ("non-finite-decimal-refused", ["+", const(Decimal("Infinity")), const(1)], record, {}),
         ("plus-missing", ["+", attr("absent"), attr("i")], record, {}),
         ("times-decimal-missing", ["*", attr("d"), attr("absent")], record, {}),
         ("eq", ["==", attr("s"), const("open")], record, {}),
@@ -1080,6 +1103,13 @@ def _expression_cases() -> list:
         ("count", ["count", "lines"], order, {}),
         ("count-where", ["count", "lines", ["!=", attr("state"), const("cancelled")]], order, {}),
         ("count-of-nothing-is-int-0", ["count", "lines"], record, {}),
+        ("sum-folds-from-int-0", ["sum", "lines", attr("v")], tens, {}),
+        ("where-missing-is-not-a-member", ["count", "lines", attr("absent")], order, {}),
+        ("sum-term-wrong-kind-refused", ["sum", "lines", attr("state")], order, {}),
+        ("where-non-boolean-refused", ["count", "lines", attr("quantity")], order, {}),
+        ("via-a-member-reached-twice-counts-once", ["via", ["self"], "lines"], repeated, with_handles),
+        ("via-version-bound-members", ["via", ["self"], "lines"], bound, {}),
+        ("via-over-a-non-role-refused", ["count", "name"], customer, {}),
         ("via-two-hops", via_lines, customer, {}),
         ("sum-over-via-two-hops", ["sum", via_lines, amount], customer, {}),
         ("via-three-hops-through-handles", ["via", ["self"], "orders", "lines", "product"], handled_customer,
@@ -1092,6 +1122,8 @@ def _expression_cases() -> list:
         ("division-refused", ["/", attr("i"), const(2)], record, {}),
         ("root-outside-a-query-refused", ["count", ["via", ["root", "orders"], "lines"]], record, {}),
         ("cell-outside-a-query-refused", ["count", ["via", ["cell", order_cell], "lines"]], record, {}),
+        ("depth-at-the-limit", nested_not(MAX_EXPRESSION_DEPTH), record, {}),
+        ("depth-past-the-limit-refused", nested_not(MAX_EXPRESSION_DEPTH + 1), record, {}),
         ("unknown-operator-refused", ["concat", attr("s"), const("x")], record, {}),
         ("reserved-operator-not-supported", ["in", attr("s"), const(("open", "closed"))], record, {}),
     ]

@@ -21,7 +21,8 @@ from proto_db.core.dbobject import DBObject
 from proto_db.errors import ProtoNotSupportedError, ProtoUserError, ProtoValidationError
 from proto_db.query.expressions import And, Not, Or
 from proto_db.query.terms import Term
-from proto_db.semantic.expressions import Reader, check_ast, dependencies, evaluate, parse, to_planner
+from proto_db.semantic.expressions import MAX_EXPRESSION_DEPTH, Reader, check_ast, dependencies, evaluate, parse, \
+    to_planner
 from proto_db.values import MISSING, MutableObject
 
 
@@ -275,4 +276,112 @@ def test_parse_refuses_in_and_calls():
              "lambda: 1": 1, "a[0]": 2, "": 1, ".5": 1, "-a": 1}
     for text, column in cases.items():
         with pytest.raises(ProtoValidationError, match=f"column {column}\\b"):
+            parse(text)
+
+
+# -- fix round 1 (review I1, I2, M1-M7) -------------------------------------------------------------
+
+def _str(ast, element=ELEMENT, reader=None):
+    return str(evaluate(ast, element, reader=reader))
+
+
+def test_decimal_exponents_follow_the_general_decimal_arithmetic():
+    """+ and - take the smaller exponent (an int has exponent 0), * the sum of the exponents; a sum is a
+    left fold from the int 0 (I1)."""
+    assert _str(["+", const(1), const(Decimal("1.50"))]) == "2.50"
+    assert _str(["*", const(Decimal("1.50")), const(7)]) == "10.50"
+    assert _str(["+", const(Decimal("1E+1")), const(2)]) == "12"
+    assert _str(["+", const(Decimal("1E+1")), const(Decimal("1E+2"))]) == "1.1E+2"
+    assert _str(["*", const(Decimal("1E+1")), const(Decimal("1E+1"))]) == "1E+2"
+    assert _str(["-", const(Decimal("0.10")), const(Decimal("0.10"))]) == "0.00"
+    tens = DBObject(lines=List.from_iterable([DBObject(v=Decimal("1E+1")), DBObject(v=Decimal("2E+1"))]))
+    assert _str(["sum", "lines", attr("v")], tens) == "30"                   # 0 + 1E+1 + 2E+1
+    one = DBObject(lines=List.from_iterable([DBObject(v=Decimal("1E+1"))]))
+    assert _str(["sum", "lines", attr("v")], one) == "10"
+
+
+def test_wrong_kind_raises_before_missing_propagates():
+    for ast in (["+", attr("nope"), const("x")], ["*", const(1.5), attr("nope")], ["-", attr("nope"), attr("flag")]):
+        with pytest.raises(ProtoValidationError):
+            evaluate(ast, ELEMENT)
+
+
+def test_non_finite_decimals_are_refused_in_arithmetic():
+    for value in (Decimal("NaN"), Decimal("Infinity"), Decimal("-Infinity")):
+        with pytest.raises(ProtoValidationError, match="finite"):
+            evaluate(["+", const(value), const(1)], ELEMENT)
+
+
+def test_via_identity_order_and_absent_cells():
+    record = DBObject(n=1)
+    other = DBObject(n=2)
+    h1, h2, gone = MutableObject("acme.P#1"), MutableObject("acme.P#2"), MutableObject("acme.P#gone")
+    reader = _Cells({"acme.P#1": record, "acme.P#2": other})
+    # a record and a handle reached twice count once; first-reached order; an absent cell contributes nothing
+    element = DBObject(items=List.from_iterable([other, h1, gone, other, h1, h2]))
+    reached = evaluate(["via", ["self"], "items"], element, reader=reader)
+    assert [m["n"] for m in reached] == [2, 1, 2]                      # `other` once by oid, h2's record once
+    # version-bound references are identified by (entity, version)
+    v1, v2 = DBObject(n=10), DBObject(n=11)
+    bound = DBObject(items=List.from_iterable([{"entity": h1, "version": v1}, {"entity": h1, "version": v1},
+                                              {"entity": h1, "version": v2}]))
+    assert [m["n"] for m in evaluate(["via", ["self"], "items"], bound, reader=reader)] == [10, 11]
+    # anything else in a role is not a member
+    with pytest.raises(ProtoValidationError, match="role"):
+        evaluate(["via", ["self"], "items"], DBObject(items=List.from_iterable([1, 2])))
+    with pytest.raises(ProtoValidationError, match="role"):
+        evaluate(["count", "name"], DBObject(name="ACME"))
+
+
+def test_root_origin_is_deduplicated_and_a_bare_root_is_an_expression():
+    record = DBObject(n=1)
+    h = MutableObject("acme.P#1")
+    reader = _Cells({"orders": List.from_iterable([h, record, h, record]), "acme.P#1": DBObject(n=2)})
+    assert [m["n"] for m in evaluate(["root", "orders"], ELEMENT, reader=reader)] == [2, 1]
+    assert evaluate(["count", ["root", "orders"]], ELEMENT, reader=reader) == 2
+    check_ast(["count", ["root", "orders"]], in_query=True)
+    with pytest.raises(ProtoValidationError, match="'root'"):
+        check_ast(["count", ["root", "orders"]])
+    with pytest.raises(ProtoValidationError, match="'cell'"):
+        check_ast(["cell", "x"], in_query=True)                         # a cell is an origin only
+
+
+def test_parse_takes_ascii_digits_only():
+    for text, column in (("x == ٣", 6), ("²", 1), ("1٣", 1)):
+        with pytest.raises(ProtoValidationError, match=f"column {column}\\b"):
+            parse(text)
+
+
+def _nested(op: str, depth: int) -> list:
+    tree = attr("flag")
+    for _ in range(depth - 1):
+        tree = [op, tree] if op == "not" else [op, tree, const(True)]
+    return tree
+
+
+@pytest.mark.parametrize("op", ["not", "and", "or"])
+def test_expression_depth_limit(op):
+    """check_ast enforces MAX_EXPRESSION_DEPTH; evaluate handles a tree at the limit and refuses one past it."""
+    at_limit, past = _nested(op, MAX_EXPRESSION_DEPTH), _nested(op, MAX_EXPRESSION_DEPTH + 1)
+    check_ast(at_limit)
+    assert evaluate(at_limit, ELEMENT) in (True, False)
+    for call in (check_ast, lambda tree: evaluate(tree, ELEMENT)):
+        with pytest.raises(ProtoValidationError, match="deeper"):
+            call(past)
+
+
+def test_sum_of_terms_depth_limit():
+    terms = ["sum", "lines", _nested("not", MAX_EXPRESSION_DEPTH - 1)]
+    check_ast(terms)
+    with pytest.raises(ProtoValidationError, match="deeper"):
+        check_ast(["sum", "lines", _nested("not", MAX_EXPRESSION_DEPTH)])
+
+
+def test_parse_depth_limit():
+    n = MAX_EXPRESSION_DEPTH
+    assert parse("(" * n + "a" + ")" * n) == ["attr", "a"]
+    assert check_ast(parse("not " * (n - 1) + "a")) is None
+    assert evaluate(parse(" + ".join(["i"] * n)), ELEMENT) == 7 * n              # depth n - 1
+    for text in ("(" * (n + 1) + "a" + ")" * (n + 1), "not " * n + "a", " + ".join(["i"] * (n + 2))):
+        with pytest.raises(ProtoValidationError, match="deeper"):
             parse(text)

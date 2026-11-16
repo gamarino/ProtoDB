@@ -34872,6 +34872,448 @@
    }
   },
   {
+   "id": "plus-exponent-is-the-smaller",
+   "ast": [
+    "+",
+    [
+     "const",
+     {
+      "decimal": "1E+1"
+     }
+    ],
+    [
+     "const",
+     {
+      "decimal": "1E+2"
+     }
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "d",
+      {
+       "decimal": "1.50"
+      }
+     ],
+     [
+      "f",
+      {
+       "float": "0x1.8000000000000p+0"
+      }
+     ],
+     [
+      "flag",
+      {
+       "bool": true
+      }
+     ],
+     [
+      "i",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "j",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "nil",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "off",
+      {
+       "bool": false
+      }
+     ],
+     [
+      "s",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "decimal": "1.1E+2"
+   }
+  },
+  {
+   "id": "plus-int-has-exponent-0",
+   "ast": [
+    "+",
+    [
+     "const",
+     {
+      "decimal": "1E+1"
+     }
+    ],
+    [
+     "const",
+     {
+      "int": "2"
+     }
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "d",
+      {
+       "decimal": "1.50"
+      }
+     ],
+     [
+      "f",
+      {
+       "float": "0x1.8000000000000p+0"
+      }
+     ],
+     [
+      "flag",
+      {
+       "bool": true
+      }
+     ],
+     [
+      "i",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "j",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "nil",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "off",
+      {
+       "bool": false
+      }
+     ],
+     [
+      "s",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "decimal": "12"
+   }
+  },
+  {
+   "id": "times-exponent-is-the-sum",
+   "ast": [
+    "*",
+    [
+     "const",
+     {
+      "decimal": "1E+1"
+     }
+    ],
+    [
+     "const",
+     {
+      "decimal": "1E+1"
+     }
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "d",
+      {
+       "decimal": "1.50"
+      }
+     ],
+     [
+      "f",
+      {
+       "float": "0x1.8000000000000p+0"
+      }
+     ],
+     [
+      "flag",
+      {
+       "bool": true
+      }
+     ],
+     [
+      "i",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "j",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "nil",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "off",
+      {
+       "bool": false
+      }
+     ],
+     [
+      "s",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "decimal": "1E+2"
+   }
+  },
+  {
+   "id": "minus-to-zero-keeps-the-exponent",
+   "ast": [
+    "-",
+    [
+     "const",
+     {
+      "decimal": "0.10"
+     }
+    ],
+    [
+     "const",
+     {
+      "decimal": "0.10"
+     }
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "d",
+      {
+       "decimal": "1.50"
+      }
+     ],
+     [
+      "f",
+      {
+       "float": "0x1.8000000000000p+0"
+      }
+     ],
+     [
+      "flag",
+      {
+       "bool": true
+      }
+     ],
+     [
+      "i",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "j",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "nil",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "off",
+      {
+       "bool": false
+      }
+     ],
+     [
+      "s",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "decimal": "0.00"
+   }
+  },
+  {
+   "id": "missing-and-wrong-kind-refused",
+   "ast": [
+    "+",
+    [
+     "attr",
+     "absent"
+    ],
+    [
+     "const",
+     {
+      "str": "x"
+     }
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "d",
+      {
+       "decimal": "1.50"
+      }
+     ],
+     [
+      "f",
+      {
+       "float": "0x1.8000000000000p+0"
+      }
+     ],
+     [
+      "flag",
+      {
+       "bool": true
+      }
+     ],
+     [
+      "i",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "j",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "nil",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "off",
+      {
+       "bool": false
+      }
+     ],
+     [
+      "s",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "error": "validation"
+   }
+  },
+  {
+   "id": "non-finite-decimal-refused",
+   "ast": [
+    "+",
+    [
+     "const",
+     {
+      "decimal": "Infinity"
+     }
+    ],
+    [
+     "const",
+     {
+      "int": "1"
+     }
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "d",
+      {
+       "decimal": "1.50"
+      }
+     ],
+     [
+      "f",
+      {
+       "float": "0x1.8000000000000p+0"
+      }
+     ],
+     [
+      "flag",
+      {
+       "bool": true
+      }
+     ],
+     [
+      "i",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "j",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "nil",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "off",
+      {
+       "bool": false
+      }
+     ],
+     [
+      "s",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "error": "validation"
+   }
+  },
+  {
    "id": "plus-missing",
    "ast": [
     "+",
@@ -37394,6 +37836,766 @@
    }
   },
   {
+   "id": "sum-folds-from-int-0",
+   "ast": [
+    "sum",
+    "lines",
+    [
+     "attr",
+     "v"
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "lines",
+      {
+       "collection": "proto_db.collections.List",
+       "elements": [
+        {
+         "object": "proto_db.core.dbobject.DBObject",
+         "attrs": [
+          [
+           "v",
+           {
+            "decimal": "1E+1"
+           }
+          ]
+         ]
+        },
+        {
+         "object": "proto_db.core.dbobject.DBObject",
+         "attrs": [
+          [
+           "v",
+           {
+            "decimal": "2E+1"
+           }
+          ]
+         ]
+        }
+       ]
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "decimal": "30"
+   }
+  },
+  {
+   "id": "where-missing-is-not-a-member",
+   "ast": [
+    "count",
+    "lines",
+    [
+     "attr",
+     "absent"
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "lines",
+      {
+       "collection": "proto_db.collections.List",
+       "elements": [
+        {
+         "object": "proto_db.core.dbobject.DBObject",
+         "attrs": [
+          [
+           "price",
+           {
+            "decimal": "2.50"
+           }
+          ],
+          [
+           "quantity",
+           {
+            "int": "2"
+           }
+          ],
+          [
+           "state",
+           {
+            "str": "open"
+           }
+          ]
+         ]
+        },
+        {
+         "object": "proto_db.core.dbobject.DBObject",
+         "attrs": [
+          [
+           "price",
+           {
+            "decimal": "4"
+           }
+          ],
+          [
+           "quantity",
+           {
+            "int": "1"
+           }
+          ],
+          [
+           "state",
+           {
+            "str": "cancelled"
+           }
+          ]
+         ]
+        },
+        {
+         "object": "proto_db.core.dbobject.DBObject",
+         "attrs": [
+          [
+           "price",
+           {
+            "decimal": "1.25"
+           }
+          ],
+          [
+           "state",
+           {
+            "str": "open"
+           }
+          ]
+         ]
+        }
+       ]
+      }
+     ],
+     [
+      "state",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "int": "0"
+   }
+  },
+  {
+   "id": "sum-term-wrong-kind-refused",
+   "ast": [
+    "sum",
+    "lines",
+    [
+     "attr",
+     "state"
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "lines",
+      {
+       "collection": "proto_db.collections.List",
+       "elements": [
+        {
+         "object": "proto_db.core.dbobject.DBObject",
+         "attrs": [
+          [
+           "price",
+           {
+            "decimal": "2.50"
+           }
+          ],
+          [
+           "quantity",
+           {
+            "int": "2"
+           }
+          ],
+          [
+           "state",
+           {
+            "str": "open"
+           }
+          ]
+         ]
+        },
+        {
+         "object": "proto_db.core.dbobject.DBObject",
+         "attrs": [
+          [
+           "price",
+           {
+            "decimal": "4"
+           }
+          ],
+          [
+           "quantity",
+           {
+            "int": "1"
+           }
+          ],
+          [
+           "state",
+           {
+            "str": "cancelled"
+           }
+          ]
+         ]
+        },
+        {
+         "object": "proto_db.core.dbobject.DBObject",
+         "attrs": [
+          [
+           "price",
+           {
+            "decimal": "1.25"
+           }
+          ],
+          [
+           "state",
+           {
+            "str": "open"
+           }
+          ]
+         ]
+        }
+       ]
+      }
+     ],
+     [
+      "state",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "error": "validation"
+   }
+  },
+  {
+   "id": "where-non-boolean-refused",
+   "ast": [
+    "count",
+    "lines",
+    [
+     "attr",
+     "quantity"
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "lines",
+      {
+       "collection": "proto_db.collections.List",
+       "elements": [
+        {
+         "object": "proto_db.core.dbobject.DBObject",
+         "attrs": [
+          [
+           "price",
+           {
+            "decimal": "2.50"
+           }
+          ],
+          [
+           "quantity",
+           {
+            "int": "2"
+           }
+          ],
+          [
+           "state",
+           {
+            "str": "open"
+           }
+          ]
+         ]
+        },
+        {
+         "object": "proto_db.core.dbobject.DBObject",
+         "attrs": [
+          [
+           "price",
+           {
+            "decimal": "4"
+           }
+          ],
+          [
+           "quantity",
+           {
+            "int": "1"
+           }
+          ],
+          [
+           "state",
+           {
+            "str": "cancelled"
+           }
+          ]
+         ]
+        },
+        {
+         "object": "proto_db.core.dbobject.DBObject",
+         "attrs": [
+          [
+           "price",
+           {
+            "decimal": "1.25"
+           }
+          ],
+          [
+           "state",
+           {
+            "str": "open"
+           }
+          ]
+         ]
+        }
+       ]
+      }
+     ],
+     [
+      "state",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "error": "validation"
+   }
+  },
+  {
+   "id": "via-a-member-reached-twice-counts-once",
+   "ast": [
+    "via",
+    [
+     "self"
+    ],
+    "lines"
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "lines",
+      {
+       "collection": "proto_db.collections.List",
+       "elements": [
+        {
+         "object": "proto_db.core.dbobject.DBObject",
+         "attrs": [
+          [
+           "quantity",
+           {
+            "int": "4"
+           }
+          ]
+         ]
+        },
+        {
+         "mutable": "conformance.sales.Product#fedcba9876543210fedcba9876543210"
+        },
+        {
+         "mutable": "conformance.sales.Product#00000000000000000000000000000000"
+        },
+        {
+         "mutable": "conformance.sales.Product#fedcba9876543210fedcba9876543210"
+        }
+       ]
+      }
+     ]
+    ]
+   },
+   "cells": [
+    [
+     "conformance.sales.Order#0123456789abcdef0123456789abcdef",
+     {
+      "object": "proto_db.core.dbobject.DBObject",
+      "attrs": [
+       [
+        "lines",
+        {
+         "collection": "proto_db.collections.List",
+         "elements": [
+          {
+           "object": "proto_db.core.dbobject.DBObject",
+           "attrs": [
+            [
+             "product",
+             {
+              "mutable": "conformance.sales.Product#fedcba9876543210fedcba9876543210"
+             }
+            ],
+            [
+             "quantity",
+             {
+              "int": "2"
+             }
+            ]
+           ]
+          }
+         ]
+        }
+       ],
+       [
+        "state",
+        {
+         "str": "open"
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     "conformance.sales.Product#fedcba9876543210fedcba9876543210",
+     {
+      "object": "proto_db.core.dbobject.DBObject",
+      "attrs": [
+       [
+        "price",
+        {
+         "decimal": "10.50"
+        }
+       ],
+       [
+        "sku",
+        {
+         "str": "p1"
+        }
+       ]
+      ]
+     }
+    ]
+   ],
+   "expected": {
+    "tuple": [
+     {
+      "object": "proto_db.core.dbobject.DBObject",
+      "attrs": [
+       [
+        "quantity",
+        {
+         "int": "4"
+        }
+       ]
+      ]
+     },
+     {
+      "object": "proto_db.core.dbobject.DBObject",
+      "attrs": [
+       [
+        "price",
+        {
+         "decimal": "10.50"
+        }
+       ],
+       [
+        "sku",
+        {
+         "str": "p1"
+        }
+       ]
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "id": "via-version-bound-members",
+   "ast": [
+    "via",
+    [
+     "self"
+    ],
+    "lines"
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "lines",
+      {
+       "collection": "proto_db.collections.List",
+       "elements": [
+        {
+         "map": [
+          [
+           {
+            "str": "entity"
+           },
+           {
+            "mutable": "conformance.sales.Product#fedcba9876543210fedcba9876543210"
+           }
+          ],
+          [
+           {
+            "str": "version"
+           },
+           {
+            "object": "proto_db.core.dbobject.DBObject",
+            "attrs": [
+             [
+              "price",
+              {
+               "decimal": "10.00"
+              }
+             ],
+             [
+              "sku",
+              {
+               "str": "p1"
+              }
+             ]
+            ]
+           }
+          ]
+         ]
+        },
+        {
+         "map": [
+          [
+           {
+            "str": "entity"
+           },
+           {
+            "mutable": "conformance.sales.Product#fedcba9876543210fedcba9876543210"
+           }
+          ],
+          [
+           {
+            "str": "version"
+           },
+           {
+            "object": "proto_db.core.dbobject.DBObject",
+            "attrs": [
+             [
+              "price",
+              {
+               "decimal": "10.50"
+              }
+             ],
+             [
+              "sku",
+              {
+               "str": "p1"
+              }
+             ]
+            ]
+           }
+          ]
+         ]
+        }
+       ]
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "tuple": [
+     {
+      "object": "proto_db.core.dbobject.DBObject",
+      "attrs": [
+       [
+        "price",
+        {
+         "decimal": "10.00"
+        }
+       ],
+       [
+        "sku",
+        {
+         "str": "p1"
+        }
+       ]
+      ]
+     },
+     {
+      "object": "proto_db.core.dbobject.DBObject",
+      "attrs": [
+       [
+        "price",
+        {
+         "decimal": "10.50"
+        }
+       ],
+       [
+        "sku",
+        {
+         "str": "p1"
+        }
+       ]
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "id": "via-over-a-non-role-refused",
+   "ast": [
+    "count",
+    "name"
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "name",
+      {
+       "str": "ACME"
+      }
+     ],
+     [
+      "orders",
+      {
+       "collection": "proto_db.collections.List",
+       "elements": [
+        {
+         "object": "proto_db.core.dbobject.DBObject",
+         "attrs": [
+          [
+           "lines",
+           {
+            "collection": "proto_db.collections.List",
+            "elements": [
+             {
+              "object": "proto_db.core.dbobject.DBObject",
+              "attrs": [
+               [
+                "price",
+                {
+                 "decimal": "2.50"
+                }
+               ],
+               [
+                "quantity",
+                {
+                 "int": "2"
+                }
+               ],
+               [
+                "state",
+                {
+                 "str": "open"
+                }
+               ]
+              ]
+             },
+             {
+              "object": "proto_db.core.dbobject.DBObject",
+              "attrs": [
+               [
+                "price",
+                {
+                 "decimal": "4"
+                }
+               ],
+               [
+                "quantity",
+                {
+                 "int": "1"
+                }
+               ],
+               [
+                "state",
+                {
+                 "str": "cancelled"
+                }
+               ]
+              ]
+             },
+             {
+              "object": "proto_db.core.dbobject.DBObject",
+              "attrs": [
+               [
+                "price",
+                {
+                 "decimal": "1.25"
+                }
+               ],
+               [
+                "state",
+                {
+                 "str": "open"
+                }
+               ]
+              ]
+             }
+            ]
+           }
+          ],
+          [
+           "state",
+           {
+            "str": "open"
+           }
+          ]
+         ]
+        },
+        {
+         "object": "proto_db.core.dbobject.DBObject",
+         "attrs": [
+          [
+           "lines",
+           {
+            "collection": "proto_db.collections.List",
+            "elements": [
+             {
+              "object": "proto_db.core.dbobject.DBObject",
+              "attrs": [
+               [
+                "price",
+                {
+                 "decimal": "1"
+                }
+               ],
+               [
+                "quantity",
+                {
+                 "int": "5"
+                }
+               ]
+              ]
+             }
+            ]
+           }
+          ],
+          [
+           "state",
+           {
+            "str": "open"
+           }
+          ]
+         ]
+        },
+        {
+         "object": "proto_db.core.dbobject.DBObject",
+         "attrs": [
+          [
+           "state",
+           {
+            "str": "open"
+           }
+          ]
+         ]
+        }
+       ]
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "error": "validation"
+   }
+  },
+  {
    "id": "via-two-hops",
    "ast": [
     "via",
@@ -38441,6 +39643,897 @@
       "conformance.sales.Order#0123456789abcdef0123456789abcdef"
      ],
      "lines"
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "d",
+      {
+       "decimal": "1.50"
+      }
+     ],
+     [
+      "f",
+      {
+       "float": "0x1.8000000000000p+0"
+      }
+     ],
+     [
+      "flag",
+      {
+       "bool": true
+      }
+     ],
+     [
+      "i",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "j",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "nil",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "off",
+      {
+       "bool": false
+      }
+     ],
+     [
+      "s",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "error": "validation"
+   }
+  },
+  {
+   "id": "depth-at-the-limit",
+   "ast": [
+    "not",
+    [
+     "not",
+     [
+      "not",
+      [
+       "not",
+       [
+        "not",
+        [
+         "not",
+         [
+          "not",
+          [
+           "not",
+           [
+            "not",
+            [
+             "not",
+             [
+              "not",
+              [
+               "not",
+               [
+                "not",
+                [
+                 "not",
+                 [
+                  "not",
+                  [
+                   "not",
+                   [
+                    "not",
+                    [
+                     "not",
+                     [
+                      "not",
+                      [
+                       "not",
+                       [
+                        "not",
+                        [
+                         "not",
+                         [
+                          "not",
+                          [
+                           "not",
+                           [
+                            "not",
+                            [
+                             "not",
+                             [
+                              "not",
+                              [
+                               "not",
+                               [
+                                "not",
+                                [
+                                 "not",
+                                 [
+                                  "not",
+                                  [
+                                   "not",
+                                   [
+                                    "not",
+                                    [
+                                     "not",
+                                     [
+                                      "not",
+                                      [
+                                       "not",
+                                       [
+                                        "not",
+                                        [
+                                         "not",
+                                         [
+                                          "not",
+                                          [
+                                           "not",
+                                           [
+                                            "not",
+                                            [
+                                             "not",
+                                             [
+                                              "not",
+                                              [
+                                               "not",
+                                               [
+                                                "not",
+                                                [
+                                                 "not",
+                                                 [
+                                                  "not",
+                                                  [
+                                                   "not",
+                                                   [
+                                                    "not",
+                                                    [
+                                                     "not",
+                                                     [
+                                                      "not",
+                                                      [
+                                                       "not",
+                                                       [
+                                                        "not",
+                                                        [
+                                                         "not",
+                                                         [
+                                                          "not",
+                                                          [
+                                                           "not",
+                                                           [
+                                                            "not",
+                                                            [
+                                                             "not",
+                                                             [
+                                                              "not",
+                                                              [
+                                                               "not",
+                                                               [
+                                                                "not",
+                                                                [
+                                                                 "not",
+                                                                 [
+                                                                  "not",
+                                                                  [
+                                                                   "not",
+                                                                   [
+                                                                    "not",
+                                                                    [
+                                                                     "not",
+                                                                     [
+                                                                      "not",
+                                                                      [
+                                                                       "not",
+                                                                       [
+                                                                        "not",
+                                                                        [
+                                                                         "not",
+                                                                         [
+                                                                          "not",
+                                                                          [
+                                                                           "not",
+                                                                           [
+                                                                            "not",
+                                                                            [
+                                                                             "not",
+                                                                             [
+                                                                              "not",
+                                                                              [
+                                                                               "not",
+                                                                               [
+                                                                                "not",
+                                                                                [
+                                                                                 "not",
+                                                                                 [
+                                                                                  "not",
+                                                                                  [
+                                                                                   "not",
+                                                                                   [
+                                                                                    "not",
+                                                                                    [
+                                                                                     "not",
+                                                                                     [
+                                                                                      "not",
+                                                                                      [
+                                                                                       "not",
+                                                                                       [
+                                                                                        "not",
+                                                                                        [
+                                                                                         "not",
+                                                                                         [
+                                                                                          "not",
+                                                                                          [
+                                                                                           "not",
+                                                                                           [
+                                                                                            "not",
+                                                                                            [
+                                                                                             "not",
+                                                                                             [
+                                                                                              "not",
+                                                                                              [
+                                                                                               "not",
+                                                                                               [
+                                                                                                "not",
+                                                                                                [
+                                                                                                 "not",
+                                                                                                 [
+                                                                                                  "not",
+                                                                                                  [
+                                                                                                   "not",
+                                                                                                   [
+                                                                                                    "not",
+                                                                                                    [
+                                                                                                     "not",
+                                                                                                     [
+                                                                                                      "not",
+                                                                                                      [
+                                                                                                       "not",
+                                                                                                       [
+                                                                                                        "not",
+                                                                                                        [
+                                                                                                         "not",
+                                                                                                         [
+                                                                                                          "not",
+                                                                                                          [
+                                                                                                           "not",
+                                                                                                           [
+                                                                                                            "not",
+                                                                                                            [
+                                                                                                             "not",
+                                                                                                             [
+                                                                                                              "not",
+                                                                                                              [
+                                                                                                               "not",
+                                                                                                               [
+                                                                                                                "not",
+                                                                                                                [
+                                                                                                                 "not",
+                                                                                                                 [
+                                                                                                                  "not",
+                                                                                                                  [
+                                                                                                                   "not",
+                                                                                                                   [
+                                                                                                                    "not",
+                                                                                                                    [
+                                                                                                                     "not",
+                                                                                                                     [
+                                                                                                                      "not",
+                                                                                                                      [
+                                                                                                                       "not",
+                                                                                                                       [
+                                                                                                                        "not",
+                                                                                                                        [
+                                                                                                                         "not",
+                                                                                                                         [
+                                                                                                                          "not",
+                                                                                                                          [
+                                                                                                                           "not",
+                                                                                                                           [
+                                                                                                                            "not",
+                                                                                                                            [
+                                                                                                                             "not",
+                                                                                                                             [
+                                                                                                                              "not",
+                                                                                                                              [
+                                                                                                                               "not",
+                                                                                                                               [
+                                                                                                                                "not",
+                                                                                                                                [
+                                                                                                                                 "not",
+                                                                                                                                 [
+                                                                                                                                  "not",
+                                                                                                                                  [
+                                                                                                                                   "attr",
+                                                                                                                                   "flag"
+                                                                                                                                  ]
+                                                                                                                                 ]
+                                                                                                                                ]
+                                                                                                                               ]
+                                                                                                                              ]
+                                                                                                                             ]
+                                                                                                                            ]
+                                                                                                                           ]
+                                                                                                                          ]
+                                                                                                                         ]
+                                                                                                                        ]
+                                                                                                                       ]
+                                                                                                                      ]
+                                                                                                                     ]
+                                                                                                                    ]
+                                                                                                                   ]
+                                                                                                                  ]
+                                                                                                                 ]
+                                                                                                                ]
+                                                                                                               ]
+                                                                                                              ]
+                                                                                                             ]
+                                                                                                            ]
+                                                                                                           ]
+                                                                                                          ]
+                                                                                                         ]
+                                                                                                        ]
+                                                                                                       ]
+                                                                                                      ]
+                                                                                                     ]
+                                                                                                    ]
+                                                                                                   ]
+                                                                                                  ]
+                                                                                                 ]
+                                                                                                ]
+                                                                                               ]
+                                                                                              ]
+                                                                                             ]
+                                                                                            ]
+                                                                                           ]
+                                                                                          ]
+                                                                                         ]
+                                                                                        ]
+                                                                                       ]
+                                                                                      ]
+                                                                                     ]
+                                                                                    ]
+                                                                                   ]
+                                                                                  ]
+                                                                                 ]
+                                                                                ]
+                                                                               ]
+                                                                              ]
+                                                                             ]
+                                                                            ]
+                                                                           ]
+                                                                          ]
+                                                                         ]
+                                                                        ]
+                                                                       ]
+                                                                      ]
+                                                                     ]
+                                                                    ]
+                                                                   ]
+                                                                  ]
+                                                                 ]
+                                                                ]
+                                                               ]
+                                                              ]
+                                                             ]
+                                                            ]
+                                                           ]
+                                                          ]
+                                                         ]
+                                                        ]
+                                                       ]
+                                                      ]
+                                                     ]
+                                                    ]
+                                                   ]
+                                                  ]
+                                                 ]
+                                                ]
+                                               ]
+                                              ]
+                                             ]
+                                            ]
+                                           ]
+                                          ]
+                                         ]
+                                        ]
+                                       ]
+                                      ]
+                                     ]
+                                    ]
+                                   ]
+                                  ]
+                                 ]
+                                ]
+                               ]
+                              ]
+                             ]
+                            ]
+                           ]
+                          ]
+                         ]
+                        ]
+                       ]
+                      ]
+                     ]
+                    ]
+                   ]
+                  ]
+                 ]
+                ]
+               ]
+              ]
+             ]
+            ]
+           ]
+          ]
+         ]
+        ]
+       ]
+      ]
+     ]
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "d",
+      {
+       "decimal": "1.50"
+      }
+     ],
+     [
+      "f",
+      {
+       "float": "0x1.8000000000000p+0"
+      }
+     ],
+     [
+      "flag",
+      {
+       "bool": true
+      }
+     ],
+     [
+      "i",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "j",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "nil",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "off",
+      {
+       "bool": false
+      }
+     ],
+     [
+      "s",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "bool": false
+   }
+  },
+  {
+   "id": "depth-past-the-limit-refused",
+   "ast": [
+    "not",
+    [
+     "not",
+     [
+      "not",
+      [
+       "not",
+       [
+        "not",
+        [
+         "not",
+         [
+          "not",
+          [
+           "not",
+           [
+            "not",
+            [
+             "not",
+             [
+              "not",
+              [
+               "not",
+               [
+                "not",
+                [
+                 "not",
+                 [
+                  "not",
+                  [
+                   "not",
+                   [
+                    "not",
+                    [
+                     "not",
+                     [
+                      "not",
+                      [
+                       "not",
+                       [
+                        "not",
+                        [
+                         "not",
+                         [
+                          "not",
+                          [
+                           "not",
+                           [
+                            "not",
+                            [
+                             "not",
+                             [
+                              "not",
+                              [
+                               "not",
+                               [
+                                "not",
+                                [
+                                 "not",
+                                 [
+                                  "not",
+                                  [
+                                   "not",
+                                   [
+                                    "not",
+                                    [
+                                     "not",
+                                     [
+                                      "not",
+                                      [
+                                       "not",
+                                       [
+                                        "not",
+                                        [
+                                         "not",
+                                         [
+                                          "not",
+                                          [
+                                           "not",
+                                           [
+                                            "not",
+                                            [
+                                             "not",
+                                             [
+                                              "not",
+                                              [
+                                               "not",
+                                               [
+                                                "not",
+                                                [
+                                                 "not",
+                                                 [
+                                                  "not",
+                                                  [
+                                                   "not",
+                                                   [
+                                                    "not",
+                                                    [
+                                                     "not",
+                                                     [
+                                                      "not",
+                                                      [
+                                                       "not",
+                                                       [
+                                                        "not",
+                                                        [
+                                                         "not",
+                                                         [
+                                                          "not",
+                                                          [
+                                                           "not",
+                                                           [
+                                                            "not",
+                                                            [
+                                                             "not",
+                                                             [
+                                                              "not",
+                                                              [
+                                                               "not",
+                                                               [
+                                                                "not",
+                                                                [
+                                                                 "not",
+                                                                 [
+                                                                  "not",
+                                                                  [
+                                                                   "not",
+                                                                   [
+                                                                    "not",
+                                                                    [
+                                                                     "not",
+                                                                     [
+                                                                      "not",
+                                                                      [
+                                                                       "not",
+                                                                       [
+                                                                        "not",
+                                                                        [
+                                                                         "not",
+                                                                         [
+                                                                          "not",
+                                                                          [
+                                                                           "not",
+                                                                           [
+                                                                            "not",
+                                                                            [
+                                                                             "not",
+                                                                             [
+                                                                              "not",
+                                                                              [
+                                                                               "not",
+                                                                               [
+                                                                                "not",
+                                                                                [
+                                                                                 "not",
+                                                                                 [
+                                                                                  "not",
+                                                                                  [
+                                                                                   "not",
+                                                                                   [
+                                                                                    "not",
+                                                                                    [
+                                                                                     "not",
+                                                                                     [
+                                                                                      "not",
+                                                                                      [
+                                                                                       "not",
+                                                                                       [
+                                                                                        "not",
+                                                                                        [
+                                                                                         "not",
+                                                                                         [
+                                                                                          "not",
+                                                                                          [
+                                                                                           "not",
+                                                                                           [
+                                                                                            "not",
+                                                                                            [
+                                                                                             "not",
+                                                                                             [
+                                                                                              "not",
+                                                                                              [
+                                                                                               "not",
+                                                                                               [
+                                                                                                "not",
+                                                                                                [
+                                                                                                 "not",
+                                                                                                 [
+                                                                                                  "not",
+                                                                                                  [
+                                                                                                   "not",
+                                                                                                   [
+                                                                                                    "not",
+                                                                                                    [
+                                                                                                     "not",
+                                                                                                     [
+                                                                                                      "not",
+                                                                                                      [
+                                                                                                       "not",
+                                                                                                       [
+                                                                                                        "not",
+                                                                                                        [
+                                                                                                         "not",
+                                                                                                         [
+                                                                                                          "not",
+                                                                                                          [
+                                                                                                           "not",
+                                                                                                           [
+                                                                                                            "not",
+                                                                                                            [
+                                                                                                             "not",
+                                                                                                             [
+                                                                                                              "not",
+                                                                                                              [
+                                                                                                               "not",
+                                                                                                               [
+                                                                                                                "not",
+                                                                                                                [
+                                                                                                                 "not",
+                                                                                                                 [
+                                                                                                                  "not",
+                                                                                                                  [
+                                                                                                                   "not",
+                                                                                                                   [
+                                                                                                                    "not",
+                                                                                                                    [
+                                                                                                                     "not",
+                                                                                                                     [
+                                                                                                                      "not",
+                                                                                                                      [
+                                                                                                                       "not",
+                                                                                                                       [
+                                                                                                                        "not",
+                                                                                                                        [
+                                                                                                                         "not",
+                                                                                                                         [
+                                                                                                                          "not",
+                                                                                                                          [
+                                                                                                                           "not",
+                                                                                                                           [
+                                                                                                                            "not",
+                                                                                                                            [
+                                                                                                                             "not",
+                                                                                                                             [
+                                                                                                                              "not",
+                                                                                                                              [
+                                                                                                                               "not",
+                                                                                                                               [
+                                                                                                                                "not",
+                                                                                                                                [
+                                                                                                                                 "not",
+                                                                                                                                 [
+                                                                                                                                  "not",
+                                                                                                                                  [
+                                                                                                                                   "not",
+                                                                                                                                   [
+                                                                                                                                    "attr",
+                                                                                                                                    "flag"
+                                                                                                                                   ]
+                                                                                                                                  ]
+                                                                                                                                 ]
+                                                                                                                                ]
+                                                                                                                               ]
+                                                                                                                              ]
+                                                                                                                             ]
+                                                                                                                            ]
+                                                                                                                           ]
+                                                                                                                          ]
+                                                                                                                         ]
+                                                                                                                        ]
+                                                                                                                       ]
+                                                                                                                      ]
+                                                                                                                     ]
+                                                                                                                    ]
+                                                                                                                   ]
+                                                                                                                  ]
+                                                                                                                 ]
+                                                                                                                ]
+                                                                                                               ]
+                                                                                                              ]
+                                                                                                             ]
+                                                                                                            ]
+                                                                                                           ]
+                                                                                                          ]
+                                                                                                         ]
+                                                                                                        ]
+                                                                                                       ]
+                                                                                                      ]
+                                                                                                     ]
+                                                                                                    ]
+                                                                                                   ]
+                                                                                                  ]
+                                                                                                 ]
+                                                                                                ]
+                                                                                               ]
+                                                                                              ]
+                                                                                             ]
+                                                                                            ]
+                                                                                           ]
+                                                                                          ]
+                                                                                         ]
+                                                                                        ]
+                                                                                       ]
+                                                                                      ]
+                                                                                     ]
+                                                                                    ]
+                                                                                   ]
+                                                                                  ]
+                                                                                 ]
+                                                                                ]
+                                                                               ]
+                                                                              ]
+                                                                             ]
+                                                                            ]
+                                                                           ]
+                                                                          ]
+                                                                         ]
+                                                                        ]
+                                                                       ]
+                                                                      ]
+                                                                     ]
+                                                                    ]
+                                                                   ]
+                                                                  ]
+                                                                 ]
+                                                                ]
+                                                               ]
+                                                              ]
+                                                             ]
+                                                            ]
+                                                           ]
+                                                          ]
+                                                         ]
+                                                        ]
+                                                       ]
+                                                      ]
+                                                     ]
+                                                    ]
+                                                   ]
+                                                  ]
+                                                 ]
+                                                ]
+                                               ]
+                                              ]
+                                             ]
+                                            ]
+                                           ]
+                                          ]
+                                         ]
+                                        ]
+                                       ]
+                                      ]
+                                     ]
+                                    ]
+                                   ]
+                                  ]
+                                 ]
+                                ]
+                               ]
+                              ]
+                             ]
+                            ]
+                           ]
+                          ]
+                         ]
+                        ]
+                       ]
+                      ]
+                     ]
+                    ]
+                   ]
+                  ]
+                 ]
+                ]
+               ]
+              ]
+             ]
+            ]
+           ]
+          ]
+         ]
+        ]
+       ]
+      ]
+     ]
     ]
    ],
    "element": {

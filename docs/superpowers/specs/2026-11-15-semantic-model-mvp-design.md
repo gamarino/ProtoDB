@@ -302,30 +302,40 @@ existed gets its contributions at its next `install_module`. Until then the sema
 ## 7. Expression language (MVP subset; normative)
 
 An expression is a nested list `[operator, argument...]`, stored as data and evaluated the same way in every
-language.
+language. Its depth (the outermost list at 1, an operand one deeper than its operator) is at most
+`MAX_EXPRESSION_DEPTH` = 128; a deeper tree is `ProtoValidationError`.
 - `["const", v]`: a canonical value.
 - `["attr", name, ...]`: a path from the current element. Each step but the last is a `one` role or relation. An
   absent step gives MISSING.
 - **Absent values**: `["attr", name]` reads the element's stored own attribute, then the field's catalogued
   `default` when there is one, else MISSING. It never yields the registry's `None` (R150).
 - Arithmetic `["+"|"-"|"*", a, b]` *(R264)*:
-  - int with int gives int; any decimal gives decimal (exact);
-  - MISSING in gives MISSING;
-  - bool, float, strings and other kinds raise `ProtoValidationError`;
+  - int with int gives int; any decimal gives decimal, exact, by the General Decimal Arithmetic: an int is a
+    decimal of exponent 0, the result's exponent is the smaller one for `+` and `-` and the sum for `*`;
+  - both operands are checked first: bool, float, strings, nil, a non-finite decimal and other kinds raise
+    `ProtoValidationError`, even beside MISSING;
+  - then MISSING in gives MISSING;
   - division is deferred.
 - Comparison `["==", "!=", "<", "<=", ">", ">=", a, b]`: D28's semantics (`values_equal`, type ranks,
   `order_key`). A comparison involving MISSING is false.
-- Logic `["and", ...]`, `["or", ...]`, `["not", a]`. Logic operands are booleans, evaluated left to right, `and` stopping at the first false and `or` at the first
+- Logic `["and", a, ...]`, `["or", a, ...]` (one operand or more), `["not", a]`. Logic operands are booleans, evaluated left to right, `and` stopping at the first false and `or` at the first
   true. A MISSING operand counts as false (as in a comparison), so `not` of MISSING is true. Any other
   non-boolean operand that is reached raises `ProtoValidationError`.
 - Aggregates `["sum", over, term, where?]` and `["count", over, where?]`:
-  - `over` is a role name of the current element, or a `via` expression;
-  - `term` and `where` are evaluated with each member as the current element;
-  - `sum` of no members is the int 0 (and `count` of none the int 0); otherwise the terms are added as `+` does.
-  A member whose `term` is MISSING contributes nothing, and a member for which `where` is not true is not a
-  member of the aggregate.
-- Traversal `["via", origin, role, role...]`: the set reached through each end's own collection. Origins
-  *(R265)*: `["self"]`; in queries only, `["root", name]` and `["cell", name]`.
+  - `over` is a role name of the current element, a `via` expression, or (in a query) a bare root;
+  - `term` and `where` are evaluated with each member as the current element, in the members' order;
+  - a member for which `where` is not true (false or MISSING) is not a member; another kind raises;
+  - `count` is the int number of members; `sum` is the left fold of `+` from the int 0 over the terms (so the
+    int 0 over none). A member whose `term` is MISSING contributes nothing.
+- Traversal `["via", origin, role, role...]` (one role or more): the set reached through each end's own
+  collection. Origins *(R265)*: `["self"]`; in queries only, `["root", name]` and `["cell", name]`; in a query
+  `["root", name]` is also a bare root, the members of that root.
+  - Members come in first-reached order (each member of the previous hop in its order, then its end's collection
+    in its iteration order); a member reached twice counts once, identified by its handle's cell name, a
+    version-bound reference by (entity cell name, version oid), a record by its oid; any other value in a role
+    raises `ProtoValidationError`.
+  - A handle is followed to its cell's record (an absent cell contributes nothing), a version-bound reference to
+    its version.
 - **Text form** *(R277)*: a Python convenience, parsed into the tree. It covers identifiers and dotted paths
   (`attr`), literals (`'text'`, integers, decimals), `+ - *`, the six comparisons, `and`/`or`/`not` and
   parentheses. Anything else is `ProtoValidationError` at declaration. The stored tree is the normative form; the
