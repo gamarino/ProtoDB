@@ -718,6 +718,26 @@ def test_a_replay_failure_is_a_conflict_only_when_this_database_changed():
     assert _changed_state(ProtoConstraintError("rule"), SimpleNamespace(version=8), tr) is False
 
 
+def test_the_first_registry_build_of_an_intent_transaction_holds_no_transaction_lock(db, monkeypatch):
+    # Final review M5: building the registry may import, and imports never run holding the transaction's
+    # lock (review M-5); the first operation of an intent transaction builds it before taking the lock.
+    company, customer, _ = _world(db)
+    original = Transaction._resolution_registry
+    held = []
+
+    def watched(self):
+        if self._registry_memo is None:
+            held.append(self._lock._is_owned())
+        return original(self)
+    monkeypatch.setattr(Transaction, "_resolution_registry", watched)
+    tr = db.new_transaction(intents=True)
+    try:
+        semantic(tr).update(customer, credit_limit=Decimal("10"))
+    finally:
+        tr.abort()
+    assert held and not any(held)
+
+
 def test_a_catalog_root_change_during_an_intent_transaction_conflicts(db):
     # The replay composes with the catalog and registry the log was recorded with: a concurrent install
     # changes them, and the commit is a conflict naming the root.

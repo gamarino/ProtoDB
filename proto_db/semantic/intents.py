@@ -413,6 +413,11 @@ class IntentLog:
         """Record one top-level operation: ``run(operations)`` on the record view, all or nothing, then
         ``intent_of(operations, result)`` gives its ``(intent pair, target)``."""
         tr = self._tr
+        if _RUNNING.get() is None:
+            # The session's catalog and registry, built before the lock: building the registry may import,
+            # and imports never run holding the transaction's lock.  Under the lock the session finds them
+            # memoized (or, if this transaction installed a module meanwhile, builds them again).
+            session._operations(track=False)
         with tr.semantic_operation():
             if _RUNNING.get() is not None:
                 raise _inside_an_intent()
