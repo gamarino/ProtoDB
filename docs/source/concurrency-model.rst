@@ -101,7 +101,9 @@ Collections, indexes and records are immutable and need no locks. Shared mutable
 the storage write buffer and segment writer, the atom and record caches, the publication of a lazy load, the
 transaction's own bookkeeping, and the space's root reference. ``ObjectSpace`` and ``Database`` are shared
 freely between threads. A ``Transaction`` is meant for one thread at a time; an internal lock serialises
-its methods, so a misuse from several threads sees each call happen entirely before or after the others. The
+its methods, and a per-transaction lock serialises its semantic operations (create, update, link,
+unlink and relate of :mod:`proto_db.semantic`), so a misuse from several threads sees each call happen
+entirely before or after the others. The
 test suite runs on free-threaded CPython 3.14t and with the GIL.
 
 Interrupts and signal handlers on Python 3.14

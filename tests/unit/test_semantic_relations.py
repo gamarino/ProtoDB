@@ -347,6 +347,52 @@ def test_a_raw_write_of_fields_binds_the_record_seen_at_the_first_binding(db):
     tr.abort()
 
 
+def test_fields_back_to_a_kept_state_rebind_the_kept_record(db):
+    """The written rule (format spec, Entity data): the committed record while the fields equal it, else
+    the kept record while the fields equal it, else the record in view, which becomes the kept record.
+    15 -> bind, 10 (committed) -> bind, 15 -> bind: the third binding reuses the first 15 record."""
+    def build(tr):
+        s = semantic(tr)
+        company, customer, product = _world(s)
+        return _order(s, company, customer, 1), product
+    order, product = db.run(build)
+    tr = db.new_transaction()
+    committed = semantic(tr).get(product).oid
+    tr.abort()
+    def sell(tr):
+        s = semantic(tr)
+        for price, quantity in (("15", "1"), ("10", "2"), ("15", "3")):
+            s.update(product, list_price=Decimal(price))
+            _line(s, order, product, quantity)
+    db.run(sell)
+    tr = db.new_transaction()
+    s = semantic(tr)
+    bound = [line.product for line in s.navigate(order, "lines")]
+    assert [v.list_price for v in bound] == [Decimal("15"), Decimal("10"), Decimal("15")]
+    assert bound[1].oid == committed and bound[0].oid == bound[2].oid != committed
+    assert len(bound[2].order_lines) == 0                   # the first 15 record, not the one in view
+    tr.abort()
+
+
+def test_writer_forms_of_ends(db):
+    """Format spec, Entity data: a many end is absent until its first link, then the kept collection
+    (empty after the last unlink), never nil; a one end is absent until first linked, nil after an
+    unlink."""
+    tr = db.new_transaction()
+    s = semantic(tr)
+    company = s.create("acme.core.Company", name="ACME")
+    customer = s.create("acme.sales.Customer", name="Bob", credit_limit=Decimal("1000"))
+    fresh = tr.get_mutable(customer.name)._own
+    assert "company" not in fresh and "orders" not in fresh
+    assert "customers" not in tr.get_mutable(company.name)._own
+    s.link(customer, "company", company)
+    s.unlink(company, "customers", customer)
+    assert tr.get_mutable(customer.name)._own["company"] is None
+    emptied = tr.get_mutable(company.name)._own["customers"]
+    assert emptied is not None and len(emptied) == 0
+    tr.abort()
+
+
 def test_sales_by_order_date_use_the_index(db):
     def build(tr):
         s = semantic(tr)
@@ -513,6 +559,43 @@ def test_concurrent_link_and_unlink_from_both_ends_of_an_inverse(db):
     assert s.navigate(order, "customer").entity == b
     assert [v.entity for v in s.navigate(b, "orders")] == [order]
     assert len(s.navigate(a, "orders")) == 0 and len(s.navigate(c, "orders")) == 0
+    tr.abort()
+
+
+def test_semantic_operations_are_atomic_on_a_shared_transaction(db):
+    """concurrency-model.rst: a misuse of one transaction from several threads sees each call happen
+    entirely before or after the others; semantic operations too.  Whatever the interleaving, every line
+    of every thread is linked at both ends."""
+    def build(tr):
+        s = semantic(tr)
+        company, customer, product = _world(s)
+        return _order(s, company, customer, 1), product
+    order, product = db.run(build)
+    tr = db.new_transaction()
+    threads_count, per_thread = 8, 25
+    start = threading.Barrier(threads_count)
+    errors = []
+
+    def work(n):
+        try:
+            start.wait(60)
+            s = semantic(tr)
+            for i in range(per_thread):
+                _line(s, order, product, str(n * per_thread + i + 1))
+        except BaseException as error:              # reported below
+            errors.append(error)
+
+    threads = [threading.Thread(target=work, args=(n,)) for n in range(threads_count)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(120)
+    assert not any(thread.is_alive() for thread in threads) and errors == []
+    s = semantic(tr)
+    expected = {Decimal(q) for q in range(1, threads_count * per_thread + 1)}
+    assert {v.quantity for v in s.navigate(order, "lines")} == expected
+    assert {v.quantity for v in s.navigate(product, "order_lines")} == expected
+    assert s.get(order).record.total == sum(expected) * 10
     tr.abort()
 
 

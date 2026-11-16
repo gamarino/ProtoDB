@@ -1922,13 +1922,16 @@ read it as specified.
   the target's handle, or, for ``binding="version"``, a **bound reference**: the canonical map
   ``{"@map": [["entity", {"@mut": name}], ["version", {"@ref": [segment, offset, tag]}]]}``, with
   the keys in that order, where ``entity`` is the target's handle and ``version`` a nested
-  reference to the bound record (see **Version-bound roles** below), or nil when nothing is linked. A writer **MUST NOT**
-  overwrite a linked ``one`` end: linking it again is refused (``ProtoValidationError``, "unlink it
+  reference to the bound record (see **Version-bound roles** below). A writer **MUST** leave a
+  ``one`` end absent until it is first linked, and **MUST** write nil when it is unlinked; a reader
+  **MUST** accept absent and nil as an end holding nothing. A writer **MUST NOT** overwrite a
+  linked ``one`` end: linking it again is refused (``ProtoValidationError``, "unlink it
   first"); an unlink then a link, in one transaction, moves it.
 * **``many`` ends.** A cardinality ``many`` or ``1..*`` is an attribute holding a ``List`` when the
-  end is ``ordered`` and a ``Set`` otherwise. It is absent or nil until its first link, and then a
-  collection, which is empty again once its last member is unlinked; a reader **MUST** accept all
-  three as an end holding nothing. Its members are the targets' handles, or, for an end of a
+  end is ``ordered`` and a ``Set`` otherwise. A writer **MUST** leave a ``many`` end absent until
+  its first link, and **MUST** keep its collection afterwards, empty once its last member is
+  unlinked; it never writes nil to a ``many`` end. A reader **MUST** accept absent, nil and an
+  empty collection as an end holding nothing. Its members are the targets' handles, or, for an end of a
   relationship, the atoms themselves. A link appends the member at the end of an ``ordered`` end;
   an unlink removes it and keeps the order of the others. Both ends of an
   inverse pair are kept by every link and unlink, in the same transaction.
@@ -1960,13 +1963,19 @@ read it as specified.
   target's **field version**, current when the operation is applied (in direct mode in the
   transaction's view, validated by its read set at commit; in intent mode at replay). The rule
   compares the target's fields only (attributes of kind ``field``, by value), never how they were
-  written:
+  written. The transaction keeps at most one record per target, the **kept record**, which no
+  binding has before the first one that needs it. A binding binds:
 
-  - while the target's fields equal those of the committed record the transaction read, that
-    committed record (so an update to the same value keeps it bound);
-  - otherwise the record in view at the first binding since the fields last changed (for an entity
-    created in the transaction, its record at its first binding), and every later binding of that
-    target in the transaction **MUST** reuse that record while the fields stay equal to it.
+  - the committed record the transaction read, while the target's current fields equal its fields
+    (so an update to the same value keeps it bound);
+  - otherwise the kept record, while the current fields equal its fields;
+  - otherwise the record in the transaction's view, which becomes the kept record (for an entity
+    created in the transaction there is no committed record, so its first binding keeps its record
+    in view).
+
+  Fields that return to a kept state therefore bind the kept record again: an update to 15, a
+  binding, an update back to the committed 10, a binding, and an update to 15 again bind the first
+  15 record, then the committed record, then that same first 15 record.
 
   Writes to the target's own ends and to its maintained aggregates never start a new bound version,
   and a later change of the target's fields does not move an earlier binding. The record committed

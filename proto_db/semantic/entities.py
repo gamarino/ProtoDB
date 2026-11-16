@@ -12,14 +12,15 @@ Storage (spec section 6)
       of its semantic class; the cell's :class:`~proto_db.values.MutableObject` handle is its identity.
     - A ``one`` end (cardinality ``one`` or ``0..1``) is an attribute of the version holding the target's
       handle, or ``{"entity": handle, "version": record}`` for ``binding="version"`` (the product as sold).
-      An unlinked end holds nil.  A ``one`` end that is linked is never overwritten: linking it again is
+      It is absent until first linked and holds nil after an unlink.  A ``one`` end that is linked is never overwritten: linking it again is
       refused ("unlink it first"); an unlink and a link in one transaction move it.
     - ``binding="version"`` binds the target's **field version**, current when the operation is applied (in
       direct mode the transaction's view, validated by its read set at commit; in intent mode at replay):
-      the committed record the transaction read while the target's fields equal it; otherwise the record
-      in view at the first binding since the fields last changed, which every later binding in the
-      transaction reuses while the fields stay equal.  The rule reads the fields only, never how they
-      were written (an update to the same value keeps the committed record bound).  Writes to the target's own ends and maintained aggregates
+      the committed record the transaction read while the target's fields equal it; otherwise the
+      transaction's kept record for the target while the fields equal it; otherwise the record in view,
+      which becomes the kept record.  The rule reads the fields only, never how they were written (an
+      update to the same value keeps the committed record bound; fields back to a kept state bind the
+      kept record again).  Writes to the target's own ends and maintained aggregates
       never start a new bound version (each line joining ``Product.order_lines`` would otherwise bind a
       record no commit ever holds), and a later field change does not move an earlier binding.  The
       committed record of a target that holds the inverse end can never be bound: it holds the binder, and
@@ -27,7 +28,8 @@ Storage (spec section 6)
     - A relationship atom is created by ``relate`` with every one of its roles: an atom never changes, so a
       participant it lacks could never be added.
     - A ``many`` end (``many`` or ``1..*``) is an attribute holding a ``List`` (``ordered``) or a ``Set`` of
-      its members: the handles of the entities, or the relationship atoms themselves.  A relationship atom
+      its members: the handles of the entities, or the relationship atoms themselves.  It is absent until
+      its first link, then keeps its collection (empty after the last unlink); it never holds nil.  A relationship atom
       lives once: every end that holds it references the same atom (one oid).
     - ``index_by`` (R262) is declared on the end that holds the collection or on its inverse ``one`` end (a
       relationship's ``Role``): a path of one member attribute is ``RangeIndex(f"by_{path}", path)`` on the
@@ -46,6 +48,12 @@ Storage (spec section 6)
       aggregate is a change of its owner, so it moves the aggregates the owner contributes to, along the
       inverses.  A maintained aggregate over a ``one`` end, or on a relationship (whose atoms never change),
       is ``ProtoNotSupportedError``.
+
+Atomicity
+    Every write operation (create, update, link, unlink, relate, with the version bindings inside them)
+    holds its transaction's semantic-operation lock (``Transaction.semantic_operation``) throughout, so a
+    misuse of one transaction from several threads sees each operation happen entirely before or after
+    the others.
 
 Versions and navigation
     The session gives :class:`Version`\\ s: views over a stored record that navigate.  ``version.record`` is
@@ -74,6 +82,7 @@ from __future__ import annotations
 
 import contextlib
 import copy
+import functools
 import uuid
 from collections.abc import Mapping
 from typing import NamedTuple
@@ -125,6 +134,16 @@ def _handle_of(value):
     if isinstance(value, dict) and isinstance(value.get("entity"), MutableObject):
         return value["entity"]
     return None
+
+
+def _atomic(method):
+    """Run the write operation ``method`` under its transaction's semantic-operation lock, so it happens
+    entirely before or after the other semantic operations of that transaction (concurrency model)."""
+    @functools.wraps(method)
+    def run(self, *args, **kwargs):
+        with self.session._transaction().semantic_operation():
+            return method(self, *args, **kwargs)
+    return run
 
 
 # -- the catalog, read for operations ------------------------------------------------------------------------
@@ -740,6 +759,7 @@ class Operations:
             out[element["name"]] = 0
         return out
 
+    @_atomic
     def create(self, type_name: str, given: Mapping) -> MutableObject:
         tr = self.session._transaction()
         where = f"create({type_name!r})"
@@ -766,6 +786,7 @@ class Operations:
             self._apply_link(handle, element, target)
         return handle
 
+    @_atomic
     def update(self, handle, changes: Mapping) -> None:
         self.session._transaction()
         handle = self.handle(handle, "update")
@@ -856,6 +877,7 @@ class Operations:
             _, target_type = self.record(target, "link")
             self._set_end(target, self.schema.element(target_type, inverse), source, add)
 
+    @_atomic
     def link(self, source, role: str, target, add: bool = True) -> None:
         self.session._transaction()
         verb = "link" if add else "unlink"
@@ -870,6 +892,7 @@ class Operations:
             self._check_end(other_record, other_type, self.schema.element(other_type, inverse), handle, add, where)
         self._apply_link(handle, element, other, add)
 
+    @_atomic
     def relate(self, type_name: str, given: Mapping) -> Version:
         self.session._transaction()
         where = f"relate({type_name!r})"

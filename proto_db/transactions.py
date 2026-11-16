@@ -2667,6 +2667,10 @@ class Transaction:
         # The field version of each entity a version-bound role binds (proto_db.semantic.entities):
         # cell name -> record; read and written under the lock (semantic_field_version).
         self._semantic_versions: dict = {}
+        # Each semantic operation (create, update, link, unlink, relate) holds it throughout, so a misuse of
+        # this transaction from several threads sees each operation happen entirely before or after the
+        # others (semantic_operation).
+        self._semantic_lock = threading.RLock()
         self._committed_version: Optional[int] = None    # the version the last build produced
         self._committed_key: Optional[tuple] = None      # its (label, version), for the rebind
         self._committed_origin: Optional[tuple] = None   # its root's (label, cluster epoch), cluster mode
@@ -2891,6 +2895,12 @@ class Transaction:
             self._check_active()
             value = self._mutables.get_at(name, _ABSENT)
         return None if value is _ABSENT else value
+
+    def semantic_operation(self):
+        """The reentrant lock a semantic write operation holds throughout (:mod:`proto_db.semantic.entities`),
+        used as ``with tr.semantic_operation(): ...``: one transaction's semantic operations never
+        interleave."""
+        return self._semantic_lock
 
     def semantic_field_version(self, name: str):
         """The field version the semantic layer bound for the entity in cell ``name`` in this transaction
