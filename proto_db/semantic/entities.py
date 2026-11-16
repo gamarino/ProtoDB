@@ -11,8 +11,20 @@ Storage (spec section 6)
     - An entity lives in a mutable cell named ``<type name>#<32 hex digits>`` (R260) whose value is a record
       of its semantic class; the cell's :class:`~proto_db.values.MutableObject` handle is its identity.
     - A ``one`` end (cardinality ``one`` or ``0..1``) is an attribute of the version holding the target's
-      handle, or ``{"entity": handle, "version": record}`` for ``binding="version"`` (the version current in
-      the transaction's view when the link is applied: the product as sold).  An unlinked end holds nil.
+      handle, or ``{"entity": handle, "version": record}`` for ``binding="version"`` (the product as sold).
+      An unlinked end holds nil.  A ``one`` end that is linked is never overwritten: linking it again is
+      refused ("unlink it first"); an unlink and a link in one transaction move it.
+    - ``binding="version"`` binds the target's **field version**, current when the operation is applied (in
+      direct mode the transaction's view, validated by its read set at commit; in intent mode at replay):
+      while the transaction has not changed the target's fields, the committed record it read; once it has
+      (the target was created or updated in it), the first record carrying the current fields, which every
+      later binding in the transaction reuses.  Writes to the target's own ends and maintained aggregates
+      never start a new bound version (each line joining ``Product.order_lines`` would otherwise bind a
+      record no commit ever holds), and a later field change does not move an earlier binding.  The
+      committed record of a target that holds the inverse end can never be bound: it holds the binder, and
+      immutable records hold no cycle.
+    - A relationship atom is created by ``relate`` with every one of its roles: an atom never changes, so a
+      participant it lacks could never be added.
     - A ``many`` end (``many`` or ``1..*``) is an attribute holding a ``List`` (``ordered``) or a ``Set`` of
       its members: the handles of the entities, or the relationship atoms themselves.  A relationship atom
       lives once: every end that holds it references the same atom (one oid).
@@ -61,7 +73,9 @@ from __future__ import annotations
 
 import contextlib
 import copy
+import threading
 import uuid
+import weakref
 from collections.abc import Mapping
 from typing import NamedTuple
 
@@ -84,6 +98,10 @@ __all__ = ["Version", "Members", "Operations", "Schema"]
 
 #: The end cardinalities that hold one target; the others hold a collection.
 _SINGLE = frozenset({"one", "0..1"})
+#: Per transaction, the field version of each entity a version-bound role has bound or a semantic create or
+#: update has written: ``{transaction: {cell name: record}}`` (see "Storage", ``binding="version"``).
+_FIELD_VERSIONS: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
+_FIELD_VERSIONS_LOCK = threading.Lock()
 #: The keys of a query tree (spec section 11).
 _QUERY_KEYS = frozenset({"from", "of_type", "where", "select", "aggregate", "as_of"})
 
@@ -469,6 +487,46 @@ class Operations:
         self.session._transaction().set_mutable(handle.name, new)
         self._propagate(old, new)
 
+    def _same_fields(self, type_name: str, one, other) -> bool:
+        """Whether the records ``one`` and ``other`` of ``type_name`` hold equal fields (roles, ends and
+        maintained aggregates are not fields)."""
+        return all(values_equal(_stored_step(one, name), _stored_step(other, name))
+                   for name, element in self.schema.elements(type_name).items() if _kind(element) == "field")
+
+    def _field_versions(self) -> dict:
+        tr = self.session._transaction()
+        with _FIELD_VERSIONS_LOCK:
+            memo = _FIELD_VERSIONS.get(tr)
+            if memo is None:
+                memo = _FIELD_VERSIONS[tr] = {}
+            return memo
+
+    def _fields_written(self, handle: MutableObject) -> None:
+        """A create or an update wrote ``handle``'s fields: its record now is its field version."""
+        record = self.source.get_mutable(handle.name)
+        memo = self._field_versions()
+        with _FIELD_VERSIONS_LOCK:
+            memo[handle.name] = record
+
+    def _bound(self, handle: MutableObject, record, type_name: str) -> dict:
+        """The value a version-bound role stores for ``handle``, whose record in the transaction's view is
+        ``record`` (read, so it is in the read set): ``{"entity", "version"}`` with its field version (see
+        "Storage")."""
+        tr = self.session._transaction()
+        memo = self._field_versions()
+        with _FIELD_VERSIONS_LOCK:
+            known = memo.get(handle.name)
+        if known is None or not self._same_fields(type_name, known, record):
+            with tr._lock:
+                read = tr._mutables.get_at(handle.name, None)         # the committed record it read
+            if read is not None and self._same_fields(type_name, read, record):
+                known = read
+            else:
+                known = record              # fields written outside create and update: the first record seen
+            with _FIELD_VERSIONS_LOCK:
+                memo[handle.name] = known
+        return {"entity": handle, "version": known}
+
     # -- reading ----------------------------------------------------------------------------------------
 
     def get(self, handle) -> Version:
@@ -728,6 +786,7 @@ class Operations:
         handle = tr.new_mutable(f"{type_name}#{uuid.uuid4().hex}", record)
         for element, (target, _, _) in links:
             self._apply_link(handle, element, target)
+        self._fields_written(handle)                # its field version: the record as created and linked
         return handle
 
     def update(self, handle, changes: Mapping) -> None:
@@ -762,6 +821,7 @@ class Operations:
                     if owner is not None:
                         rekeys.append((owner, info, raw, old_key, new_key))
         self._write(handle, old, new)
+        self._fields_written(handle)
         for owner, info, raw, old_key, new_key in rekeys:
             self._rekey(owner, info, raw, old_key, new_key)
 
@@ -798,7 +858,7 @@ class Operations:
             self._write(handle, record, self._with_member(record, type_name, name, other, member, add))
             return
         if add and element.get("binding", "identity") == "version":
-            value = {"entity": other, "version": self.record(other, "link")[0]}
+            value = self._bound(other, *self.record(other, "link"))
         else:
             value = other if add else None
         new = record.with_(**{name: value})
@@ -855,7 +915,8 @@ class Operations:
         for name in roles:
             element = self.schema.element(type_name, name)
             handle, record, target_type = self._target(element, linked[name][1], f"{where}, {name}")
-            values[name] = {"entity": handle, "version": record} if element.get("binding") == "version" else handle
+            values[name] = (self._bound(handle, record, target_type) if element.get("binding") == "version"
+                            else handle)
             inverse = element.get("inverse")
             if inverse is not None:
                 self.schema.end_index(target_type, inverse).check()

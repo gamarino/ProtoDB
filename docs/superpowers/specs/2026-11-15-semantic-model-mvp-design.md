@@ -291,7 +291,13 @@ existed gets its contributions at its next `install_module`. Until then the sema
   a `Set`. A relationship's atom lives once; both ends reference the same atom.
 - **`binding="version"`** *(R260)*: the role stores `{"entity": <handle>, "version": <ref>}`. Navigation gives
   the version (block 4: the product as sold), and `.entity` reaches the identity. The bound version is the one
-  current at commit.
+  current when the operation is applied (direct mode: the transaction's view, validated at commit; intent mode:
+  at replay): the target's version as of its last *field* change. While the transaction has not changed the
+  target's fields, that is the committed record it read; otherwise the first record carrying the current
+  fields, reused for every later binding in the transaction. Writes to the target's own ends and maintained
+  aggregates never start a new bound version, and a later field change does not move an earlier binding.
+  ("Current at commit" is unsatisfiable: the product's committed record holds the line, and immutable records
+  hold no cycle.) The data layout is the format spec's "Entity data" section.
 - **`index_by`** keeps the brief's paths *(R262)*:
   - A path of the member's own attributes is a `RangeIndex` named `by_<path>` on that end's collection.
   - A path through an identity role (block 4: `index_by=["order.date"]` on `product`) is a **maintained key**,

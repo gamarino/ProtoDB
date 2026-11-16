@@ -15,6 +15,7 @@ Every entity the tests create is complete (every ``one`` role set, preflight F28
 from __future__ import annotations
 
 import re
+import threading
 from datetime import date
 from decimal import Decimal
 
@@ -244,6 +245,63 @@ def test_version_binding_keeps_the_product_as_sold(db):
     tr.abort()
 
 
+def test_bindings_of_one_product_in_one_transaction_share_one_version(db):
+    """Spec 6 / I1: writes to the product's own ends (each line joins ``order_lines``) never start a new
+    bound version; a product created in the transaction binds its record as created."""
+    def build(tr):
+        s = semantic(tr)
+        company, customer, product = _world(s)
+        order = _order(s, company, customer, 1)
+        for quantity in ("1", "2", "3"):
+            _line(s, order, product, quantity)
+        return customer, order, product
+    customer, order, product = db.run(build)
+    tr = db.new_transaction()
+    s = semantic(tr)
+    bound = [line.product for line in s.navigate(order, "lines")]
+    assert len({v.oid for v in bound}) == 1 and len(bound[0].order_lines) == 0
+    count = s.query({"from": ["via", ["cell", order.name], "lines", "product"], "aggregate": ["count"]})
+    assert count["rows"] == [{"count": 1}]
+    committed = s.get(product)
+    tr.abort()
+    # A product the transaction reads but whose fields it does not change: the committed record it read.
+    def more(tr):
+        s = semantic(tr)
+        second = _order(s, s.get(order).company.entity, customer, 2)
+        _line(s, second, product, "4")
+        _line(s, second, product, "5")
+        return second
+    second = db.run(more)
+    tr = db.new_transaction()
+    s = semantic(tr)
+    assert {line.product.oid for line in s.navigate(second, "lines")} == {committed.oid}
+    tr.abort()
+
+
+def test_relate_then_update_keeps_the_old_price(db):
+    """I1: a later field change in the same transaction does not move an earlier binding; the bindings after
+    it share the first record carrying the new fields."""
+    def build(tr):
+        s = semantic(tr)
+        company, customer, product = _world(s)
+        return _order(s, company, customer, 1), product
+    order, product = db.run(build)
+    def sell(tr):
+        s = semantic(tr)
+        _line(s, order, product, "1")
+        s.update(product, list_price=Decimal("12"))
+        _line(s, order, product, "2")
+        _line(s, order, product, "3")
+    db.run(sell)
+    tr = db.new_transaction()
+    s = semantic(tr)
+    bound = [line.product for line in s.navigate(order, "lines")]
+    assert [v.list_price for v in bound] == [Decimal("10"), Decimal("12"), Decimal("12")]
+    assert bound[1].oid == bound[2].oid != bound[0].oid
+    assert s.get(product).list_price == Decimal("12")
+    tr.abort()
+
+
 def test_sales_by_order_date_use_the_index(db):
     def build(tr):
         s = semantic(tr)
@@ -357,6 +415,59 @@ def test_direct_mode_concurrent_lines_on_one_order_conflict(db):
         second.commit()
     tr = db.new_transaction()
     assert len(semantic(tr).navigate(order, "lines")) == 1
+    tr.abort()
+
+
+def test_concurrent_link_and_unlink_from_both_ends_of_an_inverse(db):
+    """Two transactions move one order from customer A: the first through the customers' ``orders`` ends,
+    the second through the order's ``customer`` end.  Events, never sleeps, order the commits; the second
+    conflicts and both ends agree afterwards."""
+    def build(tr):
+        s = semantic(tr)
+        company, a, product = _world(s)
+        b = s.create("acme.sales.Customer", name="B", credit_limit=Decimal("1000"), company=company)
+        c = s.create("acme.sales.Customer", name="C", credit_limit=Decimal("1000"), company=company)
+        return _order(s, company, a, 1), a, b, c
+    order, a, b, c = db.run(build)
+    staged = [threading.Event(), threading.Event()]
+    first_committed = threading.Event()
+    outcome = {}
+
+    def from_customers():
+        tr = db.new_transaction()
+        s = semantic(tr)
+        s.unlink(a, "orders", order)
+        s.link(b, "orders", order)
+        staged[0].set()
+        assert staged[1].wait(60)
+        tr.commit()
+        first_committed.set()
+
+    def from_order():
+        tr = db.new_transaction()
+        s = semantic(tr)
+        s.unlink(order, "customer", a)
+        s.link(order, "customer", c)
+        staged[1].set()
+        assert first_committed.wait(60)
+        try:
+            tr.commit()
+            outcome["second"] = "committed"
+        except ProtoConflictError:
+            outcome["second"] = "conflict"
+
+    threads = [threading.Thread(target=from_customers), threading.Thread(target=from_order)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(90)
+    assert not any(thread.is_alive() for thread in threads)
+    assert first_committed.is_set() and outcome == {"second": "conflict"}
+    tr = db.new_transaction()
+    s = semantic(tr)
+    assert s.navigate(order, "customer").entity == b
+    assert [v.entity for v in s.navigate(b, "orders")] == [order]
+    assert len(s.navigate(a, "orders")) == 0 and len(s.navigate(c, "orders")) == 0
     tr.abort()
 
 

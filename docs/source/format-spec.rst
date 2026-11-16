@@ -1901,6 +1901,71 @@ Reserved, not specified by this revision: ``in``, ``is_missing``, ``min``, ``max
 **MUST** raise ``ProtoNotSupportedError``. A text form (``"committed <= credit_limit"``) is a
 convenience of one language that is parsed into this tree; it is never stored.
 
+Entity data
+~~~~~~~~~~~
+
+This section specifies how the entities and relationships of a catalogued type are stored, so that
+any language reads and writes the same data. A writer **MUST** write it exactly; a reader **MUST**
+read it as specified.
+
+* **Cells.** An entity lives in a mutable cell (`Space and database roots`_) named
+  ``<type name>#<32 hex digits>``: the catalogued type name, ``#``, and the 32 lowercase hex digits of
+  a random UUID drawn when the creation is recorded (a replay never draws it). The cell's value is
+  a record whose type tag is the type name, holding the entity's current version. The cell's
+  ``MutableObject`` handle is the entity's identity. A relationship atom has no cell: it is an
+  immutable record of the relationship's type, stored once, and every end that holds it
+  references that one record (one oid).
+* **Fields.** A field is an attribute of the record under its name. A field with a catalogued
+  default may be absent; a reader then reads the default.
+* **``one`` ends.** A role or relation of cardinality ``one`` or ``0..1`` is an attribute holding
+  the target's handle, or, for ``binding="version"``, the plain dictionary
+  ``{"entity": handle, "version": record}``, or nil when nothing is linked. A writer **MUST NOT**
+  overwrite a linked ``one`` end: linking it again is refused (``ProtoValidationError``, "unlink it
+  first"); an unlink then a link, in one transaction, moves it.
+* **``many`` ends.** A cardinality ``many`` or ``1..*`` is an attribute holding a ``List`` when the
+  end is ``ordered`` and a ``Set`` otherwise, absent or nil while it holds nothing. Its members are
+  the targets' handles, or, for an end of a relationship, the atoms themselves. Both ends of an
+  inverse pair are kept by every link and unlink, in the same transaction.
+* **Indexes of a ``many`` end** (``index_by``, declared on the end or on its inverse ``one`` end).
+  A path naming one attribute of the member is a ``RangeIndex`` named ``by_<path>`` with key
+  ``<path>`` on the collection; its members are then records (atoms), since an index reads stored
+  attributes, never through a handle. A path ``role.attribute`` through an identity role of the
+  member, with a field as attribute, is a **maintained key**: the collection holds **entry
+  records**, records of the plain record type ``proto_db.core.dbobject.DBObject`` without parents
+  whose fields are ``member`` (the member) and ``key`` (the value of ``attribute`` on the entity the
+  member's ``role`` designates; absent when that value is MISSING). The collection has the
+  ``RangeIndex`` named ``by_<role>_<attribute>`` with key ``key``. A writer **MUST** replace the
+  entries in the same transaction whenever the keyed field, or the member's role, changes. A hop
+  through the end yields the members (`The expression language`_, Traversal). Other paths are not
+  specified by this revision; a writer refuses them with ``ProtoNotSupportedError``.
+* **Maintained aggregates** (``computed_stored``). A maintained aggregate is an attribute of its
+  owner's record under its name, written as the integer 0 when the owner is created and moved only by
+  deltas: when a member joins or leaves its ``over`` end, by the member's contribution (its ``term``
+  where its ``where`` holds); when a member changes, by its contribution after minus before. A change
+  of an aggregate is a change of its owner, so it moves the aggregates the owner contributes to,
+  along the inverses, in the same transaction. A value is never recomputed over its collection, so
+  its representation may differ from a fold of the same members (``Decimal("2.00")`` against
+  ``2``): a reader or verifier **MUST** compare maintained values by value (``values_equal``),
+  never by their canonical bytes. Over a ``one`` end, or on a relationship, a maintained aggregate
+  is not specified by this revision.
+* **Relationships.** A relationship atom is created with every one of its roles and its required
+  fields; an atom never changes, so a role it lacks could never be added later.
+* **Version-bound roles** (``binding="version"``). The ``version`` of ``{"entity", "version"}`` is
+  the target's **field version**, current when the operation is applied (in direct mode in the
+  transaction's view, validated by its read set at commit; in intent mode at replay):
+
+  - while the transaction has not changed the target's fields, the committed record the
+    transaction read;
+  - once it has (the target was created, or a field updated, in that transaction), the first
+    record carrying the current fields (for a creation, the record once the creation has linked its
+    ends), and every later binding of that target in the transaction **MUST** reuse that record.
+
+  Writes to the target's own ends and to its maintained aggregates never start a new bound version,
+  and a later change of the target's fields does not move an earlier binding. The record committed
+  for a target that holds the inverse end can never be the bound one: it holds the binder, and
+  immutable records hold no cycle. Several bindings of one target in one transaction therefore
+  share one stored version, and a traversal counts it once.
+
 The intent log
 ~~~~~~~~~~~~~~
 
