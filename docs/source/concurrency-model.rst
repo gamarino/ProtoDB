@@ -112,6 +112,20 @@ root lock, possibly by a group-commit leader in another thread while the owner's
 transaction's lock and waits; the replay takes no transaction's lock, so it adds no wait to that order. The
 test suite runs on free-threaded CPython 3.14t and with the GIL.
 
+Intent transactions
+-------------------
+
+With ``intents=True`` (one node; a clustered space refuses it) the semantic session logs its operations,
+applies them to a record view the transaction's own calls read, and the commit replays the log on the cells
+current at the serialized point. What the commit validates is what the caller read through the session: an
+attribute read is ``(cell, attribute) -> exact token``; a query, a computed attribute or a version's stored
+record is the whole token of every cell it read (coarse, never wrong; R261's finer forms are after the MVP).
+An operation that succeeded when recorded and fails at the replay, on a state a concurrent commit changed, is
+``ProtoConflictError`` and is retried by ``Database.run``; a false ``requires`` keeps its own class. The raw
+view never holds the log's effects, so a raw read (``get_mutable``, ``snapshot_mutable``) of a cell the log
+wrote, and a raw write of a cell the log touched, are refused (``ProtoUserError``); ``mutable_names`` lists
+the cells the log created.
+
 Interrupts and signal handlers on Python 3.14
 ---------------------------------------------
 

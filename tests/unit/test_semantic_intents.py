@@ -537,3 +537,197 @@ def test_taking_the_stored_record_is_a_read_of_the_whole_cell(db):
     version = semantic(tr).get(product)
     tr.abort()
     assert version.record.name == "widget 2"                                  # after the end: no read recorded
+
+
+# -- fix round 1 of the review --------------------------------------------------------------------------------
+
+def test_a_raw_read_of_a_cell_the_log_wrote_is_refused(db):
+    # Review I1 (ruling): the raw view never shows the log's effects (they exist from the commit on, recomputed
+    # by the replay), so a raw read of a cell the log wrote is refused rather than served stale -- and no raw
+    # write derived from such a read can commit.  A cell the log did not write reads as today.
+    company, customer, product = _world(db)
+    spare = db.run(lambda tr: tr.new_mutable("spare", 7))
+    tr = db.new_transaction(intents=True)
+    s = semantic(tr)
+    order = _order(s, company, customer, 1)
+    s.get(order).add_line(product, Decimal("2"), Decimal("10"))
+    assert s.get(customer).committed == Decimal("20")
+    for name in (order.name, customer.name, company.name, product.name):
+        with pytest.raises(ProtoUserError, match="intent log"):
+            tr.get_mutable(name)
+        with pytest.raises(ProtoUserError, match="intent log"):
+            tr.snapshot_mutable(name)
+    with pytest.raises(ProtoUserError, match="intent log"):
+        customer.get(tr)                                    # handle resolution goes through get_mutable
+    assert tr.get_mutable(spare.name) == 7                  # a cell the log did not write
+    # The cell listing is consistent: the log's cells are listed under the names the commit gives them (R260).
+    assert order.name in tr.mutable_names() and spare.name in tr.mutable_names()
+    tr.new_mutable("audit", 0)
+    tr.commit()
+    assert _read(db, lambda s, t: (t.get_mutable("audit"), s.get(customer).committed)) == (0, Decimal("20"))
+
+
+class _Watched:
+    """The transaction's lock, reporting when a thread finds it held by another (``contended``)."""
+
+    def __init__(self, lock):
+        self._lock = lock
+        self.contended = threading.Event()
+
+    def acquire(self, blocking=True, timeout=-1):
+        if self._lock.acquire(blocking=False):
+            return True
+        self.contended.set()
+        return self._lock.acquire(blocking, timeout)
+
+    def release(self):
+        self._lock.release()
+
+    def __enter__(self):
+        return self.acquire()
+
+    def __exit__(self, *exc):
+        self.release()
+
+    def __getattr__(self, name):
+        return getattr(self._lock, name)
+
+
+def test_member_iteration_waits_for_an_operation_in_progress(db, monkeypatch):
+    # Review I2 (Task 6 atomicity): each member read of an iteration happens entirely before or after another
+    # thread's operation on the transaction -- never inside it, where it would see writes the failing operation
+    # then drops.  Ordered by events: A's operation, holding the lock after its writes, waits until B either
+    # met the lock (fixed) or finished reading without it (the defect), then fails.
+    from proto_db.semantic import intents as intents_module
+    company, customer, _ = _world(db)
+    orders = db.run(lambda tr: [_order(semantic(tr), company, customer, n, date(2026, 6, 1)) for n in (1, 2, 3)])
+    tr = db.new_transaction(intents=True)
+    s = semantic(tr)
+    it = iter(s.get(customer).orders)
+    first = next(it)
+    watched = _Watched(tr._lock)
+    tr._lock = watched
+    inside, progress, seen = threading.Event(), threading.Event(), []
+
+    def hold(ops, handle, verb):
+        inside.set()
+        progress.wait(60)
+        raise RuntimeError("the operation fails after its writes")
+    monkeypatch.setattr(intents_module, "_type_of", hold)
+
+    def a():
+        with pytest.raises(RuntimeError):
+            s.update(next(o for o in orders if o != first.entity), date=date(2030, 1, 1))
+
+    def b():
+        try:
+            seen.extend(version._record.date for version in it)
+        finally:
+            watched.contended.set()
+            progress.set()
+    watched.contended.clear()
+    thread_a = threading.Thread(target=a)
+    thread_a.start()
+    assert inside.wait(60)
+    watched.contended.clear()
+    original_set = watched.contended.set
+
+    def contended():
+        original_set()
+        progress.set()
+    watched.contended.set = contended
+    thread_b = threading.Thread(target=b)
+    thread_b.start()
+    thread_a.join(60)
+    thread_b.join(60)
+    tr._lock = watched._lock
+    assert seen == [date(2026, 6, 1)] * 2, seen
+    monkeypatch.undo()
+    assert [v.date for v in s.get(customer).orders] == [date(2026, 6, 1)] * 3
+    tr.abort()
+
+
+def test_a_replay_failing_on_a_concurrent_unlink_conflicts(db):
+    # Ruling: a replay failure caused by a concurrent commit is ProtoConflictError (retryable), whatever the
+    # operation reports on the state it meets; the class does not depend on timing (R82).
+    company, customer, _ = _world(db)
+    other = db.run(lambda tr: semantic(tr).create("acme.core.Company", name="Other"))
+    a, b = db.new_transaction(intents=True), db.new_transaction(intents=True)
+    for tr in (a, b):
+        semantic(tr).unlink(customer, "company", company)
+        semantic(tr).link(customer, "company", other)
+    a.commit()
+    with pytest.raises(ProtoConflictError, match="concurrent commit") as raised:
+        b.commit()
+    assert "is not linked" in str(raised.value)             # what the replay met, kept in the message
+    assert _read(db, lambda s, t: s.navigate(customer, "company").entity) == other
+    # The retry decides on the new state: the unlink is refused when it is recorded.
+    attempts = []
+
+    def move(tr):
+        attempts.append(1)
+        semantic(tr).unlink(customer, "company", company)
+    with pytest.raises(ProtoValidationError, match="is not linked"):
+        db.run(move, intents=True)
+    assert len(attempts) == 1
+
+
+def test_a_replay_touching_a_raw_written_cell_conflicts(db):
+    # A replay reaches a cell the transaction wrote raw only because a concurrent commit changed the state the
+    # log was recorded on (at record time the access was refused, and a raw write of a logged cell is too):
+    # ProtoConflictError, not ProtoUserError.
+    company, first, product = _world(db)
+    second = db.run(lambda tr: semantic(tr).create("acme.sales.Customer", name="Ann", credit_limit=Decimal("1000"),
+                                                   company=company))
+    order = db.run(lambda tr: _order(semantic(tr), company, first, 1))
+    stored_second = _read(db, lambda s, t: t.get_mutable(second.name))
+    tr = db.new_transaction(intents=True)
+    semantic(tr).invoke(order, "add_line", product=product, quantity=Decimal("2"), price=Decimal("10"))
+    tr.set_mutable(second.name, stored_second)              # blind: the cell the record never touched
+
+    def move(other):
+        semantic(other).unlink(order, "customer", first)
+        semantic(other).link(order, "customer", second)
+    db.run(move)                                            # the order's total now moves Ann's aggregate
+    with pytest.raises(ProtoConflictError, match="wrote raw"):
+        tr.commit()
+
+
+def test_a_catalog_root_change_during_an_intent_transaction_conflicts(db):
+    # The replay composes with the catalog and registry the log was recorded with: a concurrent install
+    # changes them, and the commit is a conflict naming the root.
+    company, customer, _ = _world(db)
+    tr = db.new_transaction(intents=True)
+    _order(semantic(tr), company, customer, 1)
+    db.run(lambda other: other.install_module("acme_audit"))
+    with pytest.raises(ProtoConflictError, match="__currentModules"):
+        tr.commit()
+
+
+_RESERVED_PROBE = """
+from proto_db.registry import module
+from proto_db.semantic import Extension, intent
+from proto_db.errors import ProtoValidationError
+module("t8_reserved_names", depends=("acme_sales",))
+refused = {}
+for name in ("create", "update", "link", "unlink", "relate", "follow_up"):
+    def body(self):
+        return self
+    try:
+        type("Probe", (Extension,), {"__extends__": "acme.sales.Order", "__module__": __name__,
+                                     name: intent(meaning="x")(body)})
+    except ProtoValidationError as error:
+        refused[name] = str(error)
+"""
+
+
+def test_an_intent_named_like_a_primitive_is_refused():
+    # A record of the intent log names its operation by (type, name): an intent named like a primitive
+    # (classes.PRIMITIVES) would read as that primitive, so the declaration is refused.  The probe declares
+    # its own registry module in a namespace of its own (one declaration per process).
+    namespace = {"__name__": "tests.unit.semantic_modules.t8_reserved_names"}
+    exec(compile(_RESERVED_PROBE, "<t8_reserved_names>", "exec"), namespace)
+    refused = namespace["refused"]
+    assert sorted(refused) == sorted(["create", "update", "link", "unlink", "relate"])
+    for name, message in refused.items():
+        assert f"may not be named {name!r}" in message

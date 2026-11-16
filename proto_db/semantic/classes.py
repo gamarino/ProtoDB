@@ -53,6 +53,7 @@ from collections.abc import Mapping
 
 from .. import registry as _registry
 from .. import resolution
+from ..catalog.atoms import RESERVED_INTENT_NAMES
 from ..core.dbobject import _DEFERRED_DUNDERS, SEMANTIC_DUNDERS, DBObject, deferred_dunder_refusal
 from ..errors import ProtoUserError, ProtoValidationError
 from ..values import values_equal
@@ -65,7 +66,7 @@ __all__ = ["Extension", "Relationship", "IntentContext", "IntentInvoker", "inten
 _CONFIG = frozenset({"__type_name__", "__type_aliases__", "__registry_module__"})
 _EXTENSION_CONFIG = frozenset({"__extends__", "__parents__", "__registry_module__"})
 #: The session operations an intent log records by name beside the intents (spec section 9).
-PRIMITIVES = frozenset({"create", "update", "link", "unlink", "relate"})
+PRIMITIVES = RESERVED_INTENT_NAMES
 
 
 class Relationship(DBObject):

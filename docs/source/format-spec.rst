@@ -1762,6 +1762,9 @@ refs):
   (``<type name>#<32 hex digits>``); ``arguments`` is a ``@map`` from parameter name to canonical value (an entity
   argument is carried as its cell name); ``transaction`` is an ``int``.
 
+- An ``Intent``'s ``name`` is never ``create``, ``update``, ``link``, ``unlink`` or ``relate``: those name the
+  primitive operations of `The intent log`_. A catalog that holds one is malformed.
+
 - **Required fields.** ``SemanticCatalog``: ``modules``, ``module_set``, ``entities``. ``Module``: ``name``, ``version``.
   ``Extension``: ``module``, ``extends``. ``Entity`` and ``Relationship``: ``type_name`` (and ``roles`` for a
   Relationship). ``Attribute``: ``name``, ``kind``. ``Role``: ``name``, ``target``, ``cardinality``. ``Intent``: ``name``.
@@ -1995,8 +1998,10 @@ produced. A database that never used intents has no ``__intentLog``; a commit th
 operation writes none, and so removes the one the version before held.
 
 Each record is one top-level operation of an intent transaction: an intent invocation or one of the
-five primitives ``create``, ``update``, ``link``, ``unlink`` and ``relate`` (an intent **MUST NOT**
-be named like a primitive, so the two never read alike).
+five primitives ``create``, ``update``, ``link``, ``unlink`` and ``relate``. An ``Intent`` record
+**MUST NOT** be named like a primitive, so the two never read alike: a writer refuses the declaration
+(``ProtoValidationError``), and a reader refuses a stored catalog that holds one
+(``ProtoCorruptionError``, `Semantic catalog (format 6)`_).
 
 - ``intent`` is the pair of a type name and the intent's or the primitive's name. The type is the
   target's (the created entity's for ``create``), and the relationship's for ``relate``.

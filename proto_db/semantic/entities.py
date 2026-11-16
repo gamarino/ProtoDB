@@ -688,9 +688,12 @@ class Operations:
                            f"({type(record).__name__})")
         return record, type_name
 
+    @_consistent
     def version_of(self, raw):
         """The version a stored role value designates: a handle's current version, a bound version, an
-        atom; ``None`` for nothing linked or an absent cell."""
+        atom; ``None`` for nothing linked or an absent cell.  It holds the transaction's lock (see
+        "Atomicity"): a member read of an iteration (:class:`Members`) happens entirely before or after
+        another thread's operation, also in intent mode, whose record view takes no lock of its own."""
         if _unset(raw):
             return None
         if isinstance(raw, MutableObject):
@@ -1195,8 +1198,10 @@ class Operations:
             return
         constraint = f"{type_name}.{element['name']}.requires"
         meaning = element.get("meaning")
-        raise _invalid(f"The intent {element['name']!r} does not apply to {handle.name!r}: {constraint} is false on "
-                       f"its current version" + (f" ({meaning})" if meaning else ""))
+        error = _invalid(f"The intent {element['name']!r} does not apply to {handle.name!r}: {constraint} is false "
+                         f"on its current version" + (f" ({meaning})" if meaning else ""))
+        error.constraint = constraint        # the replay keeps this class (proto_db.semantic.intents)
+        raise error
 
     # -- the query engine (preflight F17, F18) ---------------------------------------------------------
 

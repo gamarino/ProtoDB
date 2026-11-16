@@ -2726,7 +2726,8 @@ class Transaction:
 
     With ``intents=True`` (spec section 9) the transaction is in intent mode: see
     :mod:`proto_db.semantic.intents`.  A raw write (:meth:`set_mutable`, :meth:`new_mutable`,
-    :meth:`remove_mutable`) of a cell its intent log touches is refused (``ProtoUserError``).
+    :meth:`remove_mutable`) of a cell its intent log touches is refused (``ProtoUserError``), and so is a
+    raw read (:meth:`get_mutable`, :meth:`snapshot_mutable`) of a cell the log wrote.
     """
 
     def __init__(self, database: Database, *, intents: bool = False):
@@ -2857,6 +2858,16 @@ class Transaction:
             raise ProtoUserError(
                 f"The cell {name!r} is read or written by this transaction's intent log; a raw write of it is "
                 f"refused (spec section 9): change it through the semantic session")
+
+    def _check_not_written_by_log(self, name: str) -> None:
+        """Under the lock: refuse a raw read of a cell the intent log wrote (spec section 9).  The raw view
+        never holds the log's effects: they exist from the commit on, recomputed by the replay on the cells
+        current then, so the record view's value is not what commits either."""
+        if self._intent_log is not None and self._intent_log.cells.wrote(name):
+            raise ProtoUserError(
+                f"The cell {name!r} is written by this transaction's intent log; a raw read of it is refused "
+                f"(spec section 9): its value is decided when the commit replays the log -- read it through "
+                f"the semantic session")
 
     def _check_active(self) -> None:
         if self._state != _ACTIVE:
@@ -3016,6 +3027,7 @@ class Transaction:
         with self._lock:
             if self._state != _ACTIVE:
                 self._check_active()
+            self._check_not_written_by_log(name)
             value = self._mutable_view(name, record=True)
             return None if value is _ABSENT else value
 
@@ -3032,6 +3044,7 @@ class Transaction:
         with self._lock:
             if self._state != _ACTIVE:
                 self._check_active()
+            self._check_not_written_by_log(name)
             value = self._mutables.get_at(name, _ABSENT)
         return None if value is _ABSENT else value
 
@@ -3129,7 +3142,9 @@ class Transaction:
             self._mwrites[name] = _REMOVED
 
     def mutable_names(self) -> list:
-        """Sorted names of the mutable cells as this transaction sees them (not recorded in the read set)."""
+        """Sorted names of the mutable cells as this transaction sees them (not recorded in the read set).
+        In intent mode the cells the log created are listed too, under the names the commit gives them (R260;
+        a replay that would create others is a conflict)."""
         if self._state != _ACTIVE:      # fails before the lock (see "Locks" in the class docstring)
             self._check_active()
         with self._lock:
@@ -3141,6 +3156,8 @@ class Transaction:
                     names.discard(name)
                 else:
                     names.add(name)
+            if self._intent_log is not None:
+                names.update(self._intent_log.cells.written())
             return sorted(names)
 
     # -- the runtime registry ----------------------------------------------------------------
@@ -3698,7 +3715,7 @@ class Transaction:
             merge_started = clock()
             objects, mutables = self._intent_log.replay(self, db_root, objects, mutables)
             replay += clock() - merge_started
-        elif current_objects.has(INTENT_LOG_ROOT):
+        elif INTENT_LOG_ROOT not in self._writes and current_objects.has(INTENT_LOG_ROOT):
             objects = objects.remove_at(INTENT_LOG_ROOT)    # an older commit's log is not this version's (R271)
         for name, value in self._mwrites.items():
             if value is not _REMOVED:

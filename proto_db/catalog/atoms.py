@@ -30,12 +30,15 @@ from ..errors import ProtoCorruptionError, ProtoValidationError
 __all__ = ["SEMANTIC_CATALOG_ROOT", "INTENT_LOG_ROOT", "SemanticCatalog", "Module", "Extension", "Entity",
            "Relationship", "Attribute", "Role", "Intent", "Constraint", "Expression", "IntentRecord",
            "CATALOG_RECORD_TYPES", "semantic_catalog_root", "semantic_catalog_value", "intent_log_root",
-           "intent_records"]
+           "intent_records", "RESERVED_INTENT_NAMES"]
 
 #: The root holding the semantic catalog (a :class:`SemanticCatalog`).
 SEMANTIC_CATALOG_ROOT = "__semanticCatalog"
 #: The root holding the intent log of the commit that wrote the version (a ``List`` of :class:`IntentRecord`).
 INTENT_LOG_ROOT = "__intentLog"
+#: The operations an :class:`IntentRecord` names beside the intents: no intent is named like one (an
+#: ``IntentRecord.intent`` pair would read alike).
+RESERVED_INTENT_NAMES = frozenset({"create", "update", "link", "unlink", "relate"})
 _CATALOG_FEATURE = frozenset({"catalog"})
 
 # -- value kinds of the fields (format-spec, "Field encodings") ------------------------------------

@@ -31,7 +31,8 @@ Fine reads and condition reads (R270, R261)
     - an attribute whose value may depend on any attribute of the record (a computed attribute, a Python
       member), and taking ``version.record`` (the stored record itself), are recorded as
       ``(cell, None) -> exact token`` of the whole record; so is every cell a query or a computed attribute
-      reads (the query's scanned collections and its members): coarse, never wrong;
+      reads (the owners of the scanned collections and their members): coarse, never wrong.  This is how
+      the MVP states R261 (spec section 9); the finer ``(owner, role)`` form is after the MVP;
     - the version a role binds (``binding="version"``) and a relationship atom never change, so reading them
       records nothing; the navigation that reached them did.
 
@@ -63,12 +64,22 @@ The commit (spec section 9; :meth:`IntentLog.replay`)
     the root lock.  The order stays ``_lock``, then the root lock, then the leaf locks (atom cache, registry
     cache); the replay adds no edge to it.
 
-Mixed raw writes (spec section 9)
+Mixed raw access (spec section 9)
     A raw ``set_mutable``, ``new_mutable`` or ``remove_mutable`` of a cell the log's operations touched (read
-    or wrote) is refused (``ProtoUserError``); so is a session access to a cell the transaction wrote raw
-    (the session's view would not show the raw write), at record time and at replay.  Raw reads see the
-    snapshot and the raw writes, never the log's effects, which exist from the commit on.  Other raw reads
-    and writes keep today's rules.
+    or wrote) is refused (``ProtoUserError``), and so is a raw read (``get_mutable``, ``snapshot_mutable``,
+    a handle's ``get``) of a cell the log wrote: the raw view never holds the log's effects, which exist
+    from the commit on, recomputed by the replay (the record view's value is not what commits either).
+    ``mutable_names`` lists the cells the log created, under the names the commit gives them.  A session
+    access to a cell the transaction wrote raw is refused at record time (``ProtoUserError``).  Other raw
+    reads and writes keep today's rules.
+
+Replay failures
+    Each operation succeeded on the record view when it was recorded, so one that fails at the replay,
+    on a version other than the snapshot, fails because a concurrent commit changed the state it was
+    recorded on: ``ProtoConflictError`` (``Database.run`` retries it), whatever the operation reports (an
+    entity no longer linked, a raw-written cell the replay reaches, a creation that diverges from the
+    recorded one).  A false ``requires`` keeps its class (``ProtoValidationError`` naming its constraint;
+    F26, Task 9), as does a closed space.
 
 Determinism
     An intent reads nothing external during the replay: external values travel as arguments.  This is
@@ -87,7 +98,7 @@ from ..catalog.atoms import INTENT_LOG_ROOT, SEMANTIC_CATALOG_ROOT, IntentRecord
 from ..collections.lists import List
 from ..collections.sets import Set
 from ..core.dbobject import DBObject
-from ..errors import ProtoConflictError, ProtoUserError, ProtoValidationError
+from ..errors import ProtoClosedError, ProtoConflictError, ProtoUserError, ProtoValidationError
 from ..indexing.keyspec import _step as _stored_step
 from ..transactions import _ABSENT, _same_token, _token
 from ..values import MISSING, MutableObject, canonical_for, is_atom
@@ -124,7 +135,7 @@ class Cells:
     thread building the commit.
 
     :meth:`begin`, :meth:`keep` and :meth:`drop` make an operation all-or-nothing on the record view.  A cell
-    the transaction wrote raw is refused (see the module docstring, "Mixed raw writes")."""
+    the transaction wrote raw is refused (see the module docstring, "Mixed raw access")."""
 
     __slots__ = ("_tr", "_base", "_objects", "_layers", "_replay")
 
@@ -179,10 +190,19 @@ class Cells:
         """The cells the operations wrote, by name (outside an operation)."""
         return self._layers[0].writes
 
+    def wrote(self, name: str) -> bool:
+        """Whether an operation wrote (or created) the cell ``name``."""
+        return any(name in layer.writes for layer in self._layers)
+
     # -- cells --------------------------------------------------------------------------------------------
 
     def _touch(self, name: str) -> None:
         if name in self._tr._mwrites:
+            if self._replay:
+                raise ProtoConflictError(
+                    f"The replay reaches the cell {name!r}, which this transaction wrote raw: the operations "
+                    f"recorded did not, so a concurrent commit changed the state they were recorded on; retry "
+                    f"the transaction")
             raise ProtoUserError(
                 f"The cell {name!r} was written raw in this transaction (set_mutable, new_mutable or remove_mutable); "
                 f"the intent log does not read or write a raw-written cell (spec section 9): change it through "
@@ -481,7 +501,14 @@ class IntentLog:
         try:
             for entry in self.entries:
                 session = ReplaySession(entry, cells)
-                entry.run(session._operations())
+                try:
+                    entry.run(session._operations())
+                except (ProtoValidationError, ProtoUserError) as error:
+                    if not _changed_state(error, db_root, tr):
+                        raise
+                    raise ProtoConflictError(
+                        f"The replay of {entry.intent[1]!r} on {entry.target!r} failed on the state a concurrent "
+                        f"commit left, where it was recorded: {error}; retry the transaction") from error
                 session.check_created()
         finally:
             resolution.reset_reader(token)
@@ -490,6 +517,15 @@ class IntentLog:
         records = [IntentRecord(intent=entry.intent, target=entry.target, arguments=entry.record_arguments(),
                                 transaction=version, context=tr) for entry in self.entries]
         return objects.set_at(INTENT_LOG_ROOT, List.from_iterable(records, context=tr)), mutables
+
+
+def _changed_state(error, db_root, tr) -> bool:
+    """Whether ``error``, raised by a replayed operation that succeeded when it was recorded, comes from the
+    state a concurrent commit changed (the replay runs on another version than the snapshot): a conflict.
+    An intent's false ``requires`` keeps its class (F26; it names its ``constraint``), and so does a closed
+    space."""
+    return (db_root is not tr._db_root and getattr(error, "constraint", None) is None
+            and not isinstance(error, ProtoClosedError))
 
 
 def without_intent_log(objects):

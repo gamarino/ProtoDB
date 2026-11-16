@@ -467,8 +467,11 @@ What an intent transaction records:
   (ABSENT included). Reading a collection attribute is one read of that attribute. Reading a product's price
   therefore does not collide with a line added to its `order_lines`.
 - **Condition reads** *(R261)*: a traversal or query whose result is used to decide is recorded as the tokens of
-  every collection it scanned, and validated as such. This is coarse, never wrong. Predicate-precise validation
-  is deferred.
+  the whole cells it read (the owner of every collection it scanned, and every member it reached), and
+  validated as such. So is a computed attribute (whose value may depend on any attribute of its record), and
+  taking a version's stored record. This is coarse, never wrong: a change of any attribute of such a cell is a
+  conflict. Finer reads (the scanned collection alone, `(owner, role)`) and predicate-precise validation are
+  after the MVP.
 - **Intent log**: each top-level operation in order, either an intent invocation or a primitive (`create`,
   `update`, `link`, `unlink`, `relate`).
 
@@ -486,8 +489,16 @@ Requirements:
   Datomic transaction functions. This is documented, not policed (P2).
 - **`requires`** is evaluated at replay, on the target.
 - **`commutes_with`** is catalogued only: the MVP always revalidates (in doubt, nothing commutes).
-- **Mixed raw writes.** A raw `set_mutable` of a cell the log also touches is refused (`ProtoUserError`). Other
-  raw reads and writes keep today's rules.
+- **Mixed raw access.** A raw `set_mutable`, `new_mutable` or `remove_mutable` of a cell the log touches (reads
+  or writes) is refused (`ProtoUserError`), and so is a raw read (`get_mutable`, `snapshot_mutable`, a handle's
+  `get`) of a cell the log wrote: the raw view never holds the log's effects, which exist from the commit on,
+  recomputed by the replay. `mutable_names` lists the cells the log created under the names the commit gives
+  them. A session access to a cell the transaction wrote raw is refused too. Other raw reads and writes keep
+  today's rules.
+- **Replay failures.** An operation that succeeded when it was recorded and fails at replay, on a state a
+  concurrent commit changed, is `ProtoConflictError` (retryable), whatever the operation reports: an entity no
+  longer linked, a raw-written cell the replay reaches, a creation that diverges. A false `requires` keeps its
+  own class (section 10).
 
 ## 10. Constraints and invariants
 

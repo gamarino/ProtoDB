@@ -361,6 +361,11 @@ def test_a_malformed_stored_catalog_is_corrupt():
         name="c", scope="entity", expression=catalog_atoms.Expression(ast=["const", True])),))
     with pytest.raises(ProtoCorruptionError, match="intents"):
         from_atoms(catalog)
+    # An intent named like a logged primitive (format-spec "The intent log"): refused on read too.
+    catalog = to_atoms(_fixture(), None)
+    object.__setattr__(catalog.entities.get_at("conformance.sales.Order").intents[0], "name", "relate")
+    with pytest.raises(ProtoCorruptionError, match="reserved"):
+        from_atoms(catalog)
 
 
 def test_applications_cannot_write_semantic_roots():
@@ -418,6 +423,8 @@ def _broken(edit):
      "module_set"),
     (lambda m: m["modules"].pop("base"), "modules"),
     (lambda m: m.update(extra=1), "the model"),
+    (lambda m: m["entities"]["conformance.sales.Order"]["intents"][0].update(name="update"),
+     "entities['conformance.sales.Order'].intents[0].name"),
 ])
 def test_an_invalid_model_is_refused_naming_where(edit, where):
     with pytest.raises(ProtoValidationError) as info:

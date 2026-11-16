@@ -276,6 +276,9 @@ def _check_field(cls, name: str, kind: str, value, path: str) -> None:
                 raise _invalid(item_path, f"not one of {[_short(c) for c in allowed]} (an Attribute has kind, "
                                           f"a Role target, a Constraint scope)")
             _check_record(element, item, item_path)
+            if element is _a.Intent and item["name"] in _a.RESERVED_INTENT_NAMES:
+                raise _invalid(f"{item_path}.name", f"{item['name']!r} is reserved: the intent log names the "
+                                                    f"primitive operation {item['name']!r} so")
             if element is _a.Role:
                 participant = item.get("participant", False)
                 if name == "roles" and participant is not True:
