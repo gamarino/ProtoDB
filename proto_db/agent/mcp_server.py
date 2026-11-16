@@ -3,7 +3,8 @@
 :func:`serve` exposes the four operations of :mod:`proto_db.agent.operations` as MCP tools of the same
 names, over stdio, on one database of a :class:`~proto_db.storage.file.FileStorage` space.  Each tool
 answers the operation's JSON as text; an error answers the tool error with the operation's message.  With
-``raw=True`` every tool runs in raw mode (the agent experiment's control group: the stored structure only).
+``raw=True`` every tool runs in raw mode (the agent experiment's control group: the stored structure only); the
+server's name, instructions and tool descriptions are the same in both modes.
 
 The MCP SDK is the optional extra ``agent`` (``pip install proto_db[agent]``); it is imported when the
 server is built, never when :mod:`proto_db.agent` is imported.
@@ -47,7 +48,9 @@ def build_server(db, *, raw: bool = False):
     """The MCP server (a ``FastMCP``) whose four tools run the operations on ``db``."""
     from mcp.server.fastmcp import FastMCP
 
-    server = FastMCP("proto_db" + (" (raw)" if raw else ""), instructions=_INSTRUCTIONS, log_level="WARNING")
+    # The same name, instructions and tool descriptions in both modes: the agent experiment's control arm is
+    # told nothing about its arm (Task 12A ruling).
+    server = FastMCP("proto_db", instructions=_INSTRUCTIONS, log_level="WARNING")
 
     @server.tool(name="list_entities", description="Where to start: the entity types of the database, with label "
                  "and meaning, and per type the names of the cells holding its entities (a query starts at "

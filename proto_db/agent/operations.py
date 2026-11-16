@@ -75,7 +75,8 @@ Raw mode (``raw=True``; the agent experiment's control group)
     matches stored type and attribute names; :func:`query` runs the same engine over the stored values alone:
     no catalogued defaults, no subtypes (``of_type`` is the stored type), no ``terms``, and index planning
     where the stored structure allows it (a collection of records; never the entries of a maintained key,
-    whose key only the catalog explains).  Reserved roots are not available.  Sensitivity still holds: when
+    whose key only the catalog explains); an attribute a row does not store is refused, never read as missing.
+    Reserved roots are not available.  Sensitivity still holds: when
     the database has a catalog, its personal and secret attributes are withheld as above, and a refusal says
     only that an attribute is not available (it names no catalog type and no sensitivity).
 """

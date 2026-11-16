@@ -19,10 +19,12 @@ model and the commit.
   - *raw* (`--raw`, the control group): the stored structure only. The control agent still sees the stored type
     names and attribute names (`acme.sales.Customer`, `credit_limit`, `price`), but not what they mean: it is
     not told that a line's `price` is the price agreed at the sale, it has no `amount` (a computed attribute,
-    never stored), and its `check_answerable` matches stored names only.
+    never stored: a term naming it is refused, never summed as 0), and its `check_answerable` matches stored
+    names only. Both arms meet the same server: its name, instructions and tool descriptions do not change.
 - **The agent** is the operator's: any headless agent that takes an MCP configuration. It should be restricted
-  to the server's four tools (no files, shell or web); the harness runs it in an empty directory. Only synthetic
-  demo data reaches it.
+  to the server's four tools (no files, shell or web). Each run starts in a fresh empty directory outside the
+  results and the work directory (`--agent-dir`), and nothing on its command line names the arm (the
+  configuration's path is `server-<n>/mcp.json`). Only synthetic demo data reaches it.
 - **Ground truth.** Each answerable question names a query of `docs/kit/semantic/queries.py` (`QUESTIONS`), run
   in catalog mode, and possibly a declared client-side post-step (`POST`) over its rows, for what the MVP's query
   tree cannot say (it has no ordering, minimum or maximum). An argmin or argmax over a tie is refused, so every
@@ -31,8 +33,10 @@ model and the commit.
   plain decimal equal to the ground truth after `Decimal` parsing (`1980` equals `1980.00`; `$1980`, `1,980.00`
   and `1980 units` are unparsable, hence incorrect); a date must be `YYYY-MM-DD` and equal; a cell name must be
   equal character for character. A question the database cannot answer is correct only when the agent declares
-  `NOT ANSWERABLE`, and that declaration is incorrect for any other question. A run whose agent exits with an
-  error or times out is never correct.
+  `NOT ANSWERABLE`, and that declaration is incorrect for any other question; one not written exactly
+  (`NOT ANSWERABLE.`) is a malformed declaration, incorrect everywhere. A run whose agent exits with an error or
+  times out is never correct. The summary counts the runs per verdict (correct, wrong, unparsable, no answer
+  line, malformed declaration, agent failed, timed out...).
 - **Self-check.** Every run's transcript is kept; the harness re-scores every run from its transcript and
   recounts the summary before it writes the results, and `--verify FILE` repeats it. The harness is validated
   by planted agents (`tests/support/planted_agent.py`, `tests/unit/test_semantic_agent_experiment.py`): one that
@@ -47,7 +51,7 @@ model and the commit.
 |---|---|---|---|
 | q01 | How many units of the widget did we sell in June 2026? | number | `widget_units_in_june` |
 | q02 | Which customer is closest to its credit limit? | cell | `customer_limits`, `argmin(credit_limit - committed)` |
-| q03 | How much credit does the customer closest to its credit limit still have available? | number | `customer_limits`, `min(credit_limit - committed)` |
+| q03 | What is the largest amount of credit that any customer still has available? | number | `customer_limits`, `max(credit_limit - committed)` |
 | q04 | How many orders has the company received? | number | `order_count` |
 | q05 | What is the total amount of all the company's orders? | number | `orders_total` |
 | q06 | How many customers does the company have? | number | `customer_count` |
@@ -58,12 +62,12 @@ model and the commit.
 | q11 | What is the value of the gadget sold in the first quarter of 2026, at the prices agreed on the orders? | number | `gadget_value_first_quarter` |
 | q12 | How much have the widget's sales amounted to, at the prices agreed on the orders? | number | `widget_value` |
 | q13 | How many order lines include the gizmo? | number | `gizmo_line_count` |
-| q14 | How many orders were placed in July 2026? | number | `orders_in_july` |
+| q14 | How many orders were placed from July to December 2026? | number | `orders_second_half_count` |
 | q15 | What is the total of order number 7? | number | `order_7_total`, `only(total)` |
 | q16 | On what date was order number 15 placed? | date | `order_15_date`, `only(date)` |
-| q17 | How many lines does order number 12 have? | number | `order_12_line_count` |
+| q17 | How many order lines are there in all the company's orders? | number | `order_line_count` |
 | q18 | How many customers have committed more than half of their credit limit? | number | `customers_over_half_their_limit` |
-| q19 | What is the number of the most recently dated order? | number | `order_dates`, `number of argmax(date)` |
+| q19 | What is the date of the most recently dated order? | date | `order_dates`, `max(date)` |
 | q20 | What is the total amount of the orders placed from July to December 2026? | number | `orders_total_second_half` |
 | q21 | How much did we spend on advertising in 2026? | — | not answerable |
 | q22 | How many units of the gizmo are in stock in the warehouse? | — | not answerable |

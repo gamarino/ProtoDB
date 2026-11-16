@@ -116,6 +116,10 @@ The query engine (preflight F17, F18)
     ``where``, the aggregate or a selected path); :func:`scrubbed` reports it by that part, its kind and its
     operand's type only (the agent interface).  Raw planning (no catalog) reads the kind of every element of
     the collection once, and only when some conjunct could plan (see :meth:`Operations._indexed`).
+    A term never reads an attribute that is not there as missing (a sum over it would answer 0): with a
+    catalog, a path step the members' type does not declare is refused before anything is read
+    (:meth:`Operations._check_declared`); over stored structure alone, a step a row does not store is refused
+    when it is read (:class:`StoredReader`).  A declared attribute a member does not hold is MISSING, as before.
 """
 from __future__ import annotations
 
@@ -167,6 +171,9 @@ _EVALUATION_FAILURES = (ProtoValidationError, ProtoNotSupportedError, ProtoUserE
 
 #: The parts of a query an evaluation failure is tagged with (a selected path names itself).
 _FROM, _WHERE, _AGGREGATE = "the query's 'from'", "the query's 'where'", "the query's aggregate"
+#: The operators whose operands a term's declared-attribute check follows (their ``attr`` reads the member);
+#: the others (``via``, ``root``, aggregates, constants) read other elements, or nothing.
+_CHECKED_OPERATORS = frozenset({"+", "-", "*", "==", "!=", "<", "<=", ">", ">=", "and", "or", "not"})
 
 
 def _tag(error: BaseException, part: str) -> None:
@@ -182,6 +189,18 @@ def _tagged(part: str, run, *args):
     except _EVALUATION_FAILURES as error:
         _tag(error, part)
         raise
+
+
+def _plain(error: ProtoValidationError) -> ProtoValidationError:
+    """Mark ``error`` as one whose message holds no stored value (it names only what the query names and a
+    type), so :func:`scrubbed` reports it as it is."""
+    error.semantic_plain = True
+    return error
+
+
+def _not_stored(element, name: str) -> ProtoValidationError:
+    """The refusal of a path step ``name`` that the record ``element`` does not store (raw mode)."""
+    return _plain(_invalid(f"The attribute {name!r} is not stored in {describe_operand(element)}"))
 
 
 def is_evaluation_failure(error: BaseException) -> bool:
@@ -210,6 +229,9 @@ def scrubbed(operation: str, run, *args, log=None):
         part = getattr(error, "semantic_part", None)
         operand = getattr(error, "semantic_operand", None)
         kind = type(error).__name__
+        plain = str(error) if getattr(error, "semantic_plain", False) else None
+    if plain is not None:                   # names only what the query names and a type (see _plain)
+        raise _invalid(f"{part}: {plain}" if isinstance(part, str) else plain)
     on = f", on {operand}" if isinstance(operand, str) else ""
     raise _invalid(f"Evaluating {part if isinstance(part, str) else operation} failed ({kind}{on}); the failure's "
                    f"message is not reported, since it may hold a stored value")
@@ -633,11 +655,19 @@ class _SessionReader(RegistryReader):
 
 class StoredReader(Reader):
     """The evaluation reader of a query over stored structure alone (``schema=None``; the agent interface's
-    raw mode): cells and roots of the source, no catalogued default (a value not stored is MISSING), and no
-    reserved root (``__`` names hold the database's own structures, catalog included)."""
+    raw mode): cells and roots of the source, no catalogued default, and no reserved root (``__`` names hold
+    the database's own structures, catalog included).  A path step naming an attribute the record does not
+    store is refused (:func:`_not_stored`), never read as missing: with no catalog, nothing says the attribute
+    exists, and a sum over it would answer 0.  A stored ``None`` is a value."""
 
     def __init__(self, source):
         self._source = source
+
+    def default(self, element, name: str):
+        raise _not_stored(element, name)
+
+    def absent(self, element, name: str):
+        raise _not_stored(element, name)
 
     def cell(self, name: str):
         return self._source.get_mutable(name)
@@ -1286,6 +1316,8 @@ class Operations:
         of_type = tree.get("of_type")
         if of_type is not None and self.schema is not None:
             self.schema.entity(of_type)
+        if self.schema is not None:
+            self._check_declared(origin, of_type, where, aggregate, select)
         with self.reading():
             members, explain, member_type, used = self._members(origin, where)
             if of_type is not None:
@@ -1310,6 +1342,41 @@ class Operations:
         if with_members and aggregate is None:
             answer["members"] = [self._row_version(raw, member) for raw, member in members]
         return answer
+
+    def _check_declared(self, origin, of_type, where, aggregate, select) -> None:
+        """Refuse, before anything is read, a term whose path names an attribute or a role that the members'
+        type does not declare (catalog mode): read as missing, it would make a sum answer 0.  The members' type
+        is ``of_type`` or the type the ``from`` reaches, subtypes included; when the ``from`` says nothing
+        about it (a root origin), a step must be declared by some type of the catalog.  A step after an
+        attribute that is not a role, or one starting with ``@``, is not checked."""
+        base = of_type if of_type is not None else self._static_types(origin)[1]
+        terms = [(_WHERE, where), (_AGGREGATE, aggregate[1] if aggregate and aggregate[0] == "sum" else None)]
+        terms += [(f"the selected path {name!r}", ["attr", *name.split(".")]) for name in select or ()]
+        for part, term in terms:
+            stack = [] if term is None else [term]
+            while stack:
+                node = stack.pop()
+                if not (isinstance(node, list) and node and isinstance(node[0], str)):
+                    continue
+                if node[0] == "attr":
+                    self._check_path(part, node[1:], base)
+                elif node[0] in _CHECKED_OPERATORS:
+                    stack.extend(node[1:])
+
+    def _check_path(self, part: str, steps, base: str | None) -> None:
+        """Check the steps of one ``attr`` from members of ``base`` (``None``: any type of the catalog)."""
+        for step in steps:
+            if not isinstance(step, str) or step.startswith("@"):
+                return
+            types = self.schema.model["entities"] if base is None else self.schema.subtypes(base)
+            found = [e for e in (self.schema.element(t, step) for t in types) if e is not None]
+            if not found:
+                owner = "no type of the semantic catalog" if base is None else f"the type {base!r}"
+                raise _plain(_invalid(f"{part}: {owner} declares no attribute or role {step!r}"))
+            targets = {e["target"] for e in found if "target" in e}
+            if len(targets) != 1 or len(targets) != len(found):
+                return                      # an attribute (or roles to different types): not followed further
+            [base] = targets
 
     def _traverse(self, origin, roles) -> list:
         """The members ``(stored value, record)`` reached from ``origin`` (a ``cell`` or ``root`` origin, or

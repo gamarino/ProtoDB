@@ -732,6 +732,14 @@ def test_a_scrubbed_failure_names_the_part_the_kind_and_the_operand_type(sentine
               "the query's aggregate", "a str"),
              ({"from": ["via", ["cell", "holder"], "items"], "where": ["attr", "x"]}, "the query's 'where'", "a str"),
              ({"from": ["via", ["cell", "holder"], "note"]}, "the query's 'from'", "a str")]
+    if not raw:
+        # The catalog declares no ``x`` (the holder's items are uncatalogued records): catalog mode refuses that
+        # term at planning (Task 12A review I2), so a declared attribute holding a str fails the evaluation here.
+        orgs = ["via", ["cell", person], "org"]
+        cases = [({"from": orgs, "where": ["==", ["+", ["attr", "name"], ["const", 1]], ["const", 1]]},
+                  "the query's 'where'", "a str"),
+                 ({"from": orgs, "aggregate": ["sum", ["attr", "name"]]}, "the query's aggregate", "a str"),
+                 ({"from": orgs, "where": ["attr", "name"]}, "the query's 'where'", "a str"), cases[-1]]
     for tree, part, operand in cases:
         with pytest.raises(ProtoValidationError) as refused:
             query(db, tree, raw=raw)
@@ -899,3 +907,72 @@ def test_a_version_bound_reference_to_a_collection_is_a_row_value(db):
         [row] = query(db, tree, raw=True)["rows"]
         assert row["values"]["ref"]["entity"] == {"cell": "target"}, row
         assert row["values"]["ref"]["version"]["values"] == {} and MARK not in json.dumps(row), row
+
+
+# -- a term naming an attribute that is not there (Task 12A review I2) ----------------------------------------------
+
+def _lines_of(world) -> list:
+    return ["via", ["cell", world["widget"].name], "order_lines"]
+
+
+@pytest.mark.parametrize("part, tree", [
+    ("aggregate", {"aggregate": ["sum", ["attr", "no_such"]]}),
+    ("aggregate", {"aggregate": ["sum", ["*", ["attr", "quantity"], ["attr", "no_such"]]]}),
+    ("where", {"where": [">", ["attr", "no_such"], ["const", 1]]}),
+    ("select", {"select": ["quantity", "no_such"]}),
+    ("select", {"select": ["order.no_such"]}),
+])
+def test_catalog_mode_refuses_a_term_the_entity_does_not_declare(db, part, tree):
+    """An undeclared attribute is refused at planning, never read as missing (a sum would answer 0): the
+    message names the attribute and the type that does not declare it, for the agent and for the session."""
+    world = _load(db)
+    full = {"from": _lines_of(world), **tree}
+    with pytest.raises(ProtoValidationError) as refused:
+        query(db, full)
+    message = str(refused.value)
+    assert "no_such" in message and ("acme.sales.OrderLine" in message or "acme.sales.Order" in message), message
+    tr = db.new_transaction()
+    try:
+        with pytest.raises(ProtoValidationError, match="no_such"):
+            semantic(tr).query(full)
+    finally:
+        tr.abort()
+
+
+def test_raw_mode_refuses_a_term_a_row_does_not_hold(db):
+    """In raw mode an attribute absent from a row is refused, never read as missing: ``amount`` is a computed
+    attribute, never stored, so its sum over the lines would otherwise answer 0."""
+    world = _load(db)
+    for tree in ({"aggregate": ["sum", ["attr", "amount"]]},
+                 {"where": [">", ["attr", "amount"], ["const", 1]]},
+                 {"select": ["quantity", "amount"]},
+                 {"select": ["order.no_such"]},
+                 {"aggregate": ["sum", ["attr", "no_such", "x"]]}):
+        with pytest.raises(ProtoValidationError) as refused:
+            query(db, {"from": _lines_of(world), **tree}, raw=True)
+        message = str(refused.value)
+        assert "amount" in message or "no_such" in message, message
+        assert "acme.sales." in message and "not stored" in message, message
+    answer = query(db, {"from": _lines_of(world), "aggregate": ["sum", ["*", ["attr", "quantity"],
+                                                                         ["attr", "price"]]]}, raw=True)
+    assert answer["rows"] == [{"sum": "135"}]        # what the stored attributes do answer: 2*10 + 5*9 + 7*10
+
+
+def test_a_declared_attribute_without_a_value_keeps_its_meaning(db):
+    """A declared attribute that a member does not hold is MISSING, as before (a sum skips it); a stored
+    ``None`` in raw mode is a value, not an absent attribute."""
+    world = _load(db)
+
+    def unset(tr):
+        semantic(tr).create("acme.catalog.Product", name="gizmo", company=world["company"])     # no list_price
+    db.run(unset)
+    products = ["via", ["cell", world["company"].name], "products"]
+    assert query(db, {"from": products, "aggregate": ["sum", ["attr", "list_price"]]})["rows"] == [{"sum": "35"}]
+
+    def stored_none(tr):
+        tr.set_mutable(world["bob"].name, tr.get_mutable(world["bob"].name).with_(credit_limit=None))
+    db.run(stored_none)
+    answer = query(db, {"from": ["via", ["cell", world["bob"].name], "orders"],
+                        "select": ["number", "customer.credit_limit"]}, raw=True)
+    assert sorted((row["values"]["number"], row["values"]["customer.credit_limit"]) for row in answer["rows"]) == \
+        [(1, None), (3, None)]

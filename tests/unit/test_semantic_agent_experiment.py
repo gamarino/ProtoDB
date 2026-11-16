@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shlex
 import sys
 from datetime import date
@@ -51,7 +52,8 @@ def world(tmp_path_factory):
     space = experiment.build_database(workdir)
     questions = experiment.load_questions()
     truth = experiment.ground_truth(space, questions)
-    return {"workdir": workdir, "space": space, "questions": questions, "truth": truth, "refused": _refused(space)}
+    return {"workdir": workdir, "space": space, "questions": questions, "truth": truth, "refused": _refused(space),
+            "agents": str(tmp_path_factory.mktemp("agents"))}
 
 
 def _refused(space_path: str) -> set:
@@ -102,7 +104,8 @@ def test_the_published_page_lists_every_question_with_its_ground_truth():
 
 
 def test_load_questions_refuses_a_ground_truth_it_cannot_compute(tmp_path):
-    good = json.loads(open(experiment.QUESTIONS_FILE, encoding="utf-8").read())
+    with open(experiment.QUESTIONS_FILE, encoding="utf-8") as f:
+        good = json.load(f)
     cases = {
         "unknown query": lambda d: d["questions"][0]["ground_truth"].update(query="no_such_query"),
         "unknown post-step": lambda d: d["questions"][0]["ground_truth"].update(post="median(price)"),
@@ -144,7 +147,7 @@ def _independent_answers(refused: set) -> tuple:
     return {
         "q01": sum(q for q, _ in of("widget", date(2026, 6, 1), date(2026, 6, 30))),
         "q02": ("customer", min(left, key=left.get)),
-        "q03": min(left.values()),
+        "q03": max(left.values()),
         "q04": Decimal(len(totals)),
         "q05": sum(total for _, total in totals.values()),
         "q06": Decimal(len(limits)),
@@ -155,12 +158,12 @@ def _independent_answers(refused: set) -> tuple:
         "q11": sum(q * p for q, p in of("gadget", date(2026, 1, 1), date(2026, 3, 31))),
         "q12": sum(q * p for q, p in of("widget")),
         "q13": Decimal(len(of("gizmo"))),
-        "q14": Decimal(sum(1 for day, _ in totals.values() if (day.year, day.month) == (2026, 7))),
+        "q14": Decimal(sum(1 for day, _ in totals.values() if date(2026, 7, 1) <= day <= date(2026, 12, 31))),
         "q15": totals[7][1],
         "q16": next(day for number, _, day, _ in demo.ORDERS if number == 15),
-        "q17": Decimal(next(len(order_lines) for number, _, _, order_lines in demo.ORDERS if number == 12)),
+        "q17": Decimal(len(lines)),
         "q18": Decimal(sum(1 for name in limits if committed[name] * 2 > limits[name])),
-        "q19": Decimal(max(totals, key=lambda number: totals[number][0])),
+        "q19": max(day for day, _ in totals.values()),
         "q20": sum(total for day, total in totals.values() if date(2026, 7, 1) <= day <= date(2026, 12, 31)),
     }, committed
 
@@ -190,6 +193,20 @@ def test_every_ground_truth_answers_its_question(world):
         if q["ground_truth"] == "not_answerable":
             assert truth[q["id"]] == {"answer": None, "expected": experiment.NOT_ANSWERABLE, "query": None,
                                       "post": None}
+
+
+@pytest.mark.parametrize("refused", [{101}, {102}])
+def test_no_ground_truth_is_zero_or_shared_with_another_question(refused):
+    """Review M7: a degenerate or confused answer must not score.  Whichever of Fabrikam's orders the demo
+    refuses, every answerable question's truth is distinct from every other's, and no number is zero."""
+    expected, _ = _independent_answers(refused)
+    numbers = [value for value in expected.values() if isinstance(value, Decimal)]
+    assert len(set(numbers)) == len(numbers) and 0 not in numbers, sorted(numbers)
+
+
+def test_the_built_database_s_truths_are_distinct_and_non_zero(world):
+    numbers = [Decimal(t["expected"]) for t in world["truth"].values() if t["answer"] == "number"]
+    assert len(numbers) == 17 and len(set(numbers)) == len(numbers) and 0 not in numbers, sorted(numbers)
 
 
 def test_the_customer_closest_to_its_limit_is_named_by_its_cell(world):
@@ -244,6 +261,10 @@ def test_the_answer_is_the_last_answer_line():
     (None, "not_answerable", "not answerable", True, "correct"),
     (None, "not_answerable", "0", False, "answered a question the database cannot answer"),
     ("number", "8", None, False, "no answer line"),
+    (None, "not_answerable", "NOT ANSWERABLE.", False, "malformed declaration"),
+    (None, "not_answerable", "**Not answerable**", False, "malformed declaration"),
+    ("number", "8", "Not answerable: no stock data", False, "malformed declaration"),
+    (None, "not_answerable", "N/A", False, "answered a question the database cannot answer"),
 ])
 def test_score_never_judges_by_similarity(kind, expected, answer, correct, verdict):
     assert experiment.score(kind, expected, answer, exit_code=0, timed_out=False) == (correct, verdict)
@@ -268,7 +289,9 @@ def test_the_agent_command_keeps_the_question_one_argument():
 def test_the_mcp_configuration_serves_the_database_in_its_mode(tmp_path):
     for mode in experiment.MODES:
         path = experiment.write_mcp_config(str(tmp_path), "/data/space", mode)
-        config = json.loads(open(path, encoding="utf-8").read())
+        with open(path, encoding="utf-8") as f:
+            config = json.load(f)
+        assert "raw" not in path and "catalog" not in path      # the path names no arm (review M3)
         [(name, server)] = config["mcpServers"].items()
         assert name == "proto_db" and server["command"] == sys.executable
         args = server["args"]
@@ -290,7 +313,7 @@ def _run(world, tmp_path, behaviour, *, touch=False, modes=experiment.MODES, ids
     out = str(tmp_path / f"{behaviour}.json")
     report = experiment.run_experiment(_template(behaviour, truth, touch=touch), out, model=f"planted-{behaviour}",
                                        workdir=world["workdir"], modes=modes, ids=ids, timeout=120,
-                                       truth_out=truth)
+                                       truth_out=truth, agent_dir=world["agents"])
     assert experiment.verify(out) == []
     with open(out, encoding="utf-8") as f:
         assert json.load(f) == report
@@ -307,8 +330,18 @@ def test_the_echo_agent_is_scored_all_correct(world, tmp_path):
     assert len(report["runs"]) == 48 and _incorrect(report) == set()
     for mode in experiment.MODES:
         assert report["summary"][mode] == {"runs": 24, "correct": 24, "failed_runs": 0, "not_answerable": 4,
-                                           "not_answerable_detected": 4}
+                                           "not_answerable_detected": 4, "verdicts": {"correct": 24}}
     assert report["verified"] is True
+    seen = set()
+    for run in report["runs"]:
+        with open(os.path.join(str(tmp_path), run["transcript"]), encoding="utf-8") as f:
+            recorded = json.load(f)
+        # Review M2: every run starts in its own fresh, empty directory, outside the work and the results trees.
+        cwd, entries = re.search(r"^cwd: (.*) holds (\d+)$", recorded["stdout"], re.M).groups()
+        assert entries == "0" and cwd not in seen and os.path.dirname(cwd) == world["agents"], cwd
+        seen.add(cwd)
+        # Review M3: nothing on the agent's command line names the arm; only the configuration's content does.
+        assert not re.search(r"\braw\b|catalog", " ".join(recorded["argv"])), recorded["argv"]
 
 
 def test_a_planted_near_miss_is_scored_incorrect(world, tmp_path):
@@ -332,6 +365,55 @@ def test_a_crashed_agent_never_counts_as_correct(world, tmp_path):
     report = _run(world, tmp_path, "crash", modes=("catalog",))
     assert len(_incorrect(report)) == 24
     assert report["summary"]["catalog"]["failed_runs"] == 24 and report["summary"]["catalog"]["correct"] == 0
+
+
+def test_a_malformed_declaration_has_its_own_verdict(world, tmp_path):
+    report = _run(world, tmp_path, "malformed", modes=("raw",))
+    unanswerable = {(q["id"], "raw") for q in world["questions"] if q["ground_truth"] == "not_answerable"}
+    assert _incorrect(report) == unanswerable
+    assert report["summary"]["raw"]["verdicts"] == {"correct": 20, "malformed declaration": 4}
+
+
+def test_the_agents_directory_must_lie_outside_what_the_harness_writes(world, tmp_path):
+    truth = str(tmp_path / "truth.json")
+    for inside in (os.path.join(world["workdir"], "agents"), str(tmp_path / "agents")):
+        with pytest.raises(experiment.ExperimentError, match="lies inside"):
+            experiment.run_experiment(_template("echo", truth), str(tmp_path / "out.json"), model="m",
+                                      workdir=world["workdir"], modes=("catalog",), ids=["q01"], agent_dir=inside)
+
+
+def test_a_timed_out_agent_is_killed_and_its_output_awaited_for_a_bounded_time(tmp_path):
+    """The hang agent waits forever, and its child, in a session of its own, holds the agent's stdout open
+    until the test releases it: only the harness's timeout and its bounded wait after the kill end the run."""
+    if not hasattr(os, "mkfifo"):
+        pytest.skip("the hang agent's release is a FIFO")
+    release = str(tmp_path / "release")
+    os.mkfifo(release)
+    argv = [sys.executable, PLANTED, "--truth", "-", "--behaviour", "hang", "--release", release,
+            "--mcp-config", "-", "-"]
+    try:
+        done = experiment.run_agent(argv, str(tmp_path), timeout=1, grace=1)
+    finally:
+        with open(release, "w", encoding="utf-8") as f:       # the child reads it and exits
+            f.write("go")
+    assert done["timed_out"] and done["exit_code"] is None and "not collected" in done["stderr"]
+    assert experiment.score("number", "8", experiment.parse_answer(done["stdout"]), exit_code=done["exit_code"],
+                            timed_out=done["timed_out"]) == (False, "timed out")
+
+
+def test_verify_reports_a_malformed_transcript_as_a_problem(world, tmp_path):
+    _run(world, tmp_path, "echo", modes=("catalog",), ids=["q01", "q02"])
+    out = str(tmp_path / "echo.json")
+    with open(out, encoding="utf-8") as f:
+        report = json.load(f)
+    first, second = (os.path.join(str(tmp_path), run["transcript"]) for run in report["runs"])
+    with open(first, "w", encoding="utf-8") as f:
+        json.dump({"id": "q01", "mode": "catalog"}, f)          # no stdout, no exit code
+    with open(second, "w", encoding="utf-8") as f:
+        json.dump(["not", "an", "object"], f)
+    problems = experiment.verify(out)
+    assert len(problems) == 2 and "malformed" in problems[0] and "cannot be read" in problems[1], problems
+    assert experiment.main(["--verify", out]) == 1
 
 
 def test_verify_finds_a_report_its_transcripts_contradict(world, tmp_path):
@@ -377,7 +459,7 @@ def test_the_command_line_runs_and_names_the_model_and_commit(world, tmp_path):
     truth, out = str(tmp_path / "truth.json"), str(tmp_path / "cli.json")
     code = experiment.main(["--agent-cmd", _template("echo", truth), "--out", out, "--model", "planted-echo",
                             "--workdir", world["workdir"], "--modes", "catalog", "--questions", "q01,q02,q21",
-                            "--truth-out", truth])
+                            "--truth-out", truth, "--agent-dir", world["agents"]])
     assert code == 0
     with open(out, encoding="utf-8") as f:
         report = json.load(f)

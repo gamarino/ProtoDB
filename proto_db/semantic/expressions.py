@@ -87,6 +87,11 @@ class Reader:
         """The catalogued ``default`` of the field ``name`` of ``element``'s type, or ``MISSING``."""
         return MISSING
 
+    def absent(self, element, name: str):
+        """What a path step ``name`` that is not the last reads when the record ``element`` does not hold it:
+        ``MISSING`` (the path is missing).  A reader that refuses absent attributes raises instead."""
+        return MISSING
+
     def follow(self, value):
         """The element a role's stored value designates: an identity handle is dereferenced (``MISSING``
         when its cell is absent), a version-bound reference ``{"entity": handle, "version": record}``
@@ -278,7 +283,10 @@ def _read_path(element, steps, reader: Reader):
     own attribute, then the catalogued default, else MISSING (preflight F15)."""
     value = element
     for step in steps[:-1]:
-        value = reader.follow(_stored_step(value, step))
+        stored = _stored_step(value, step)
+        if stored is MISSING and is_atom(value):
+            stored = reader.absent(value, step)
+        value = reader.follow(stored)
         if value is MISSING:
             return MISSING
     found = _stored_step(value, steps[-1])

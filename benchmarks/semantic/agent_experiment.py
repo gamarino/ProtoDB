@@ -25,7 +25,8 @@ The agent command is the operator's choice: a template with ``{mcp_config}`` (th
 configuration, the ``mcpServers`` form, that starts the server in the run's mode) and ``{question}`` (the
 prompt: the question and the answer format).  The template is split as a shell would split it (``shlex``), then
 each placeholder is replaced inside its word, so the question is always one argument and never reaches a shell.
-The agent runs in an empty directory under the workdir, with a timeout; it should be restricted to the server's
+Each agent run starts in a fresh empty directory outside the results and the work directory (``--agent-dir``),
+with a timeout; the configuration's path names no arm.  The agent should be restricted to the server's
 four tools.  The harness never sees the model: ``--model`` names it in the results.
 
 Scoring never judges by similarity.  The answer is the last stdout line that starts with ``ANSWER:``:
@@ -36,15 +37,18 @@ Scoring never judges by similarity.  The answer is the last stdout line that sta
 - a date must be ``YYYY-MM-DD`` and equal; a cell name must be equal, character for character;
 - a question the database cannot answer is correct only when the agent declares ``NOT ANSWERABLE``; any other
   answer to it is incorrect, and the declaration is incorrect for a question that can be answered;
+- a declaration not written exactly (``NOT ANSWERABLE.``, ``**Not answerable**``) is a malformed declaration,
+  incorrect for every question;
 - a run whose agent exited with an error or timed out is never correct, whatever it printed.
 
 The run is self-reporting.  Every run's transcript (the command, the prompt, stdout, stderr, the exit code, the
 time) is written to ``FILE`` without its extension, plus ``.transcripts/``, as it ends; the results (``FILE``)
 name the model, the commit (and whether the tree was dirty), the database version read, every run's verdict and
-a per-mode summary.  Before the results are written, every run is re-scored from its transcript on disk and the
-summary recounted; a run the transcript contradicts, a missing or duplicated run, or a summary that does not add
-up is written with the results (``"verified": false`` and ``"problems"``) and the command exits 1.  ``--verify
-FILE`` (:func:`verify`) repeats that check on a written report.
+a per-mode summary (with the number of runs per verdict).  Before the results are written, every run is
+re-scored from its transcript on disk and the summary recounted; a run the transcript contradicts, a malformed
+transcript, a missing or duplicated run, or a summary that does not add up is written with the results
+(``"verified": false`` and ``"problems"``) and the command exits 1.  ``--verify FILE`` (:func:`verify`) repeats
+that check on a written report.
 """
 from __future__ import annotations
 
@@ -59,6 +63,7 @@ import signal
 import subprocess
 import sys
 import sysconfig
+import tempfile
 import time
 from decimal import Decimal, InvalidOperation
 
@@ -73,9 +78,13 @@ NOT_ANSWERABLE = "not_answerable"
 #: What the agent answers when the database does not hold what a question needs (case does not matter).
 DECLARATION = "NOT ANSWERABLE"
 SERVER = "proto_db"
+#: Seconds the harness waits for the output of an agent it killed on a timeout.
+KILL_GRACE = 10
 
 _NUMBER = re.compile(r"[+-]?\d+(\.\d+)?")
 _DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
+#: The letters of a declaration that is not written exactly (``NOT ANSWERABLE.``, ``**Not answerable**``).
+_MALFORMED_DECLARATION = "notanswerable"
 
 
 class ExperimentError(Exception):
@@ -242,7 +251,8 @@ def _server_command() -> list:
 def write_mcp_config(directory: str, space_path: str, mode: str) -> str:
     """Write the MCP client configuration of ``mode`` in ``directory`` and return its path: one server,
     ``proto_db``, which is ``python -m proto_db.agent`` over the demo's database (``--raw`` in raw mode), with
-    this repository first on its ``PYTHONPATH``."""
+    this repository first on its ``PYTHONPATH``.  The path names no mode (``<directory>/server-<n>/mcp.json``,
+    ``n`` the mode's position in :data:`MODES`): only the configuration's content says which arm it serves."""
     if mode not in MODES:
         raise ExperimentError(f"mode {mode!r} is not one of {MODES}")
     queries = _queries()
@@ -254,15 +264,18 @@ def write_mcp_config(directory: str, space_path: str, mode: str) -> str:
     paths = [REPO, *filter(None, os.environ.get("PYTHONPATH", "").split(os.pathsep))]
     config = {"mcpServers": {SERVER: {"type": "stdio", "command": command, "args": args,
                                       "env": {"PYTHONPATH": os.pathsep.join(paths)}}}}
-    os.makedirs(directory, exist_ok=True)
-    path = os.path.join(directory, f"mcp-{mode}.json")
+    folder = os.path.join(directory, f"server-{MODES.index(mode) + 1}")
+    os.makedirs(folder, exist_ok=True)
+    path = os.path.join(folder, "mcp.json")
     with open(path, "w", encoding="utf-8") as f:
         json.dump(config, f, indent=2)
     return path
 
 
-def run_agent(argv: list, cwd: str, timeout: float) -> dict:
-    """Run the agent; on a timeout its whole process group is killed (an agent starts the server as a child)."""
+def run_agent(argv: list, cwd: str, timeout: float, grace: float = KILL_GRACE) -> dict:
+    """Run the agent; on a timeout its whole process group is killed (an agent starts the server as a child),
+    and its output is awaited at most ``grace`` seconds more (a descendant that left the group may hold the
+    pipes)."""
     started = time.monotonic()
     group = {"start_new_session": True} if hasattr(os, "killpg") else {}
     try:
@@ -280,7 +293,14 @@ def run_agent(argv: list, cwd: str, timeout: float) -> dict:
                 os.killpg(process.pid, signal.SIGKILL)
         else:
             process.kill()
-        stdout, stderr = process.communicate()
+        try:
+            stdout, stderr = process.communicate(timeout=grace)
+        except subprocess.TimeoutExpired:     # a descendant outside the group keeps the pipes open
+            process.kill()
+            process.wait(timeout=grace)
+            for pipe in (process.stdout, process.stderr):
+                pipe.close()                    # the harness stops reading; the descendant's writes now fail
+            stdout, stderr = "", f"(the output was not collected: the pipes stayed open {grace} s after the kill)"
         timed_out = True
     return {"stdout": stdout, "stderr": stderr, "exit_code": None if timed_out else process.returncode,
             "timed_out": timed_out, "seconds": round(time.monotonic() - started, 3)}
@@ -308,10 +328,14 @@ def score(kind, expected: str, answer, *, exit_code, timed_out: bool) -> tuple:
     if answer is None:
         return False, "no answer line"
     declared = answer.upper() == DECLARATION
-    if expected == NOT_ANSWERABLE:
-        return (True, "correct") if declared else (False, "answered a question the database cannot answer")
+    if expected == NOT_ANSWERABLE and declared:
+        return True, "correct"
     if declared:
         return False, "declared not answerable"
+    if _MALFORMED_DECLARATION in re.sub(r"[^a-z]", "", answer.lower()):
+        return False, "malformed declaration"
+    if expected == NOT_ANSWERABLE:
+        return False, "answered a question the database cannot answer"
     if kind == "number":
         if not _NUMBER.fullmatch(answer):
             return False, "unparsable"
@@ -332,16 +356,20 @@ def score(kind, expected: str, answer, *, exit_code, timed_out: bool) -> tuple:
 
 
 def summarize(runs: list, modes) -> dict:
-    """Per mode: runs, correct answers, failed runs (an error exit or a timeout), and the questions the database
-    cannot answer with how many of them the agent declared so."""
+    """Per mode: runs, correct answers, failed runs (an error exit or a timeout), the questions the database
+    cannot answer with how many of them the agent declared so, and the number of runs per verdict."""
     out = {}
     for mode in modes:
         mine = [run for run in runs if run["mode"] == mode]
         unanswerable = [run for run in mine if run["expected"] == NOT_ANSWERABLE]
+        verdicts: dict = {}
+        for run in mine:
+            verdicts[run["verdict"]] = verdicts.get(run["verdict"], 0) + 1
         out[mode] = {"runs": len(mine), "correct": sum(run["correct"] for run in mine),
                      "failed_runs": sum(run["timed_out"] or run["exit_code"] != 0 for run in mine),
                      "not_answerable": len(unanswerable),
-                     "not_answerable_detected": sum(run["correct"] for run in unanswerable)}
+                     "not_answerable_detected": sum(run["correct"] for run in unanswerable),
+                     "verdicts": dict(sorted(verdicts.items()))}
     return out
 
 
@@ -368,11 +396,15 @@ def _base(out: str) -> str:
 
 
 def run_experiment(template: str, out: str, *, model: str, workdir: str | None = None, modes=MODES,
-                   ids=None, timeout: float = 600, truth_out: str | None = None) -> dict:
+                   ids=None, timeout: float = 600, truth_out: str | None = None,
+                   agent_dir: str | None = None) -> dict:
     """Run every question (or those of ``ids``) in every mode of ``modes``, check the results against the
     transcripts, write them to ``out`` (``"verified"`` says whether they passed) and return them; a run that does
     not verify raises :class:`ExperimentError` after it is written.  ``truth_out`` writes the ground truth, by
-    question text, before any agent runs: only for the harness's own planted agents, never for a real one."""
+    question text, before any agent runs: only for the harness's own planted agents, never for a real one.
+    Each agent run starts in a fresh empty directory created under ``agent_dir`` (default: the system's
+    temporary directory), which must lie outside the results and the work directory, so nothing the harness
+    writes is nearby."""
     questions = load_questions()
     if ids is not None:
         unknown = set(ids) - {q["id"] for q in questions}
@@ -389,16 +421,20 @@ def run_experiment(template: str, out: str, *, model: str, workdir: str | None =
         with open(truth_out, "w", encoding="utf-8") as f:
             json.dump({q["question"]: {"id": q["id"], **truth[q["id"]]} for q in questions}, f, indent=2)
     transcripts = _base(out) + ".transcripts"
-    cwd = os.path.join(workdir, "agent-cwd")
+    agent_dir = os.path.abspath(agent_dir or tempfile.gettempdir())
+    for tree in (workdir, os.path.dirname(os.path.abspath(out))):
+        if os.path.commonpath([agent_dir, tree]) == tree:
+            raise ExperimentError(f"the agents' directory {agent_dir} lies inside {tree}: the agent could read "
+                                  f"what the harness writes there")
+    os.makedirs(agent_dir, exist_ok=True)
     os.makedirs(transcripts, exist_ok=True)
-    os.makedirs(cwd, exist_ok=True)
     runs = []
     for mode in modes:
         config = write_mcp_config(workdir, space, mode)
         for q in questions:
             text = prompt(q["question"])
             argv = agent_argv(template, config, text)
-            done = run_agent(argv, cwd, timeout)
+            done = run_agent(argv, tempfile.mkdtemp(prefix="agent-", dir=agent_dir), timeout)
             name = os.path.join(os.path.basename(transcripts), f"{mode}-{q['id']}.json")
             with open(os.path.join(os.path.dirname(transcripts), name), "w", encoding="utf-8") as f:
                 json.dump({"id": q["id"], "mode": mode, "argv": argv, "prompt": text, **done}, f, indent=2)
@@ -442,13 +478,20 @@ def _check(report: dict, base: str) -> list:
         try:
             with open(os.path.join(base, run["transcript"]), encoding="utf-8") as f:
                 recorded = json.load(f)
+            if not isinstance(recorded, dict):
+                raise ValueError(f"a {type(recorded).__name__}, not an object")
         except (OSError, ValueError) as error:
             problems.append(f"{where}: its transcript cannot be read ({error})")
             continue
-        answer = parse_answer(recorded["stdout"])
-        verdict = score(run["answer_kind"], run["expected"], answer, exit_code=recorded["exit_code"],
-                        timed_out=recorded["timed_out"])
-        if (recorded["id"], recorded["mode"]) != (run["id"], run["mode"]) or answer != run["answer"] \
+        try:
+            answer = parse_answer(recorded["stdout"])
+            verdict = score(run["answer_kind"], run["expected"], answer, exit_code=recorded["exit_code"],
+                            timed_out=recorded["timed_out"])
+            names = (recorded["id"], recorded["mode"])
+        except (KeyError, TypeError, AttributeError) as error:
+            problems.append(f"{where}: its transcript is malformed ({type(error).__name__}: {error})")
+            continue
+        if names != (run["id"], run["mode"]) or answer != run["answer"] \
                 or verdict != (run["correct"], run["verdict"]):
             problems.append(f"{where}: the transcript gives answer {answer!r}, {verdict}; the report says "
                             f"{run['answer']!r}, {(run['correct'], run['verdict'])}")
@@ -477,6 +520,8 @@ def main(argv=None) -> int:
     parser.add_argument("--questions", help="comma-separated question ids (default: all)")
     parser.add_argument("--timeout", type=float, default=600, help="seconds per agent run (default 600)")
     parser.add_argument("--truth-out", help="write the ground truth here first: for the planted agents only")
+    parser.add_argument("--agent-dir", help="where each agent run gets a fresh empty directory (default: the system's "
+                                            "temporary directory; outside the results and the work directory)")
     parser.add_argument("--verify", metavar="FILE", help="only verify a written report against its transcripts")
     args = parser.parse_args(argv)
     if args.verify:
@@ -497,7 +542,7 @@ def main(argv=None) -> int:
     ids = [i.strip() for i in args.questions.split(",")] if args.questions else None
     try:
         report = run_experiment(args.agent_cmd, args.out, model=args.model, workdir=args.workdir, modes=modes,
-                                ids=ids, timeout=args.timeout, truth_out=args.truth_out)
+                                ids=ids, timeout=args.timeout, truth_out=args.truth_out, agent_dir=args.agent_dir)
     except ExperimentError as error:
         print(f"[FAILED] {error}")
         return 1
@@ -506,7 +551,8 @@ def main(argv=None) -> int:
           + f", database version {report['database']['version']}")
     for mode, counts in report["summary"].items():
         print(f"{mode}: {counts['correct']} of {counts['runs']} correct; {counts['failed_runs']} failed runs; "
-              f"not answerable detected {counts['not_answerable_detected']} of {counts['not_answerable']}")
+              f"not answerable detected {counts['not_answerable_detected']} of {counts['not_answerable']}; "
+              f"verdicts {counts['verdicts']}")
     print(f"verified against the transcripts; results in {args.out}")
     return 0
 

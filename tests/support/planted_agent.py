@@ -11,7 +11,14 @@ the prompt's ``Question:`` line.  Behaviours:
   the questions that cannot be answered so (only the answerable ones are incorrect);
 - ``answerable``: answers ``0`` to each question that cannot be answered, and the ground truth to the rest (only
   the unanswerable ones are incorrect);
-- ``crash``: prints the right answer, then exits 3 (never correct).
+- ``crash``: prints the right answer, then exits 3 (never correct);
+- ``malformed``: declares the questions that cannot be answered as ``NOT ANSWERABLE.`` (a malformed declaration),
+  and answers the ground truth to the rest;
+- ``hang``: starts a child in a new session that holds the agent's stdout until something is written to the FIFO
+  ``--release`` names, then waits forever itself (no sleep): the harness's timeout and its bounded wait for the
+  output after the kill are what end the run.
+
+Every behaviour first prints its working directory and how many entries it holds (``cwd: PATH holds N``).
 
 With ``--touch-mcp`` the agent first starts the server of the configuration (the MCP SDK's stdio client), calls
 ``list_entities`` and prints ``mode seen: catalog`` or ``mode seen: raw`` from what it answered, which shows that
@@ -22,7 +29,9 @@ import asyncio
 import datetime
 import json
 import os
+import subprocess
 import sys
+import threading
 from decimal import Decimal
 
 NOT_ANSWERABLE = "not_answerable"
@@ -69,11 +78,18 @@ def _touch(config_path: str) -> str:
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--truth", required=True)
-    parser.add_argument("--behaviour", required=True, choices=("echo", "wrong", "answerable", "crash"))
+    parser.add_argument("--behaviour", required=True,
+                        choices=("echo", "wrong", "answerable", "crash", "malformed", "hang"))
+    parser.add_argument("--release", help="the FIFO that ends the hang behaviour's child")
     parser.add_argument("--mcp-config", required=True)
     parser.add_argument("--touch-mcp", action="store_true")
     parser.add_argument("prompt")
     args = parser.parse_args(argv)
+    print(f"cwd: {os.getcwd()} holds {len(os.listdir())}", flush=True)
+    if args.behaviour == "hang":
+        subprocess.Popen([sys.executable, "-c", "import sys; open(sys.argv[1]).read()", args.release],
+                         start_new_session=True)
+        threading.Event().wait()
     if args.touch_mcp:
         print(f"mode seen: {_touch(args.mcp_config)}")
     with open(args.truth, encoding="utf-8") as f:
@@ -83,6 +99,8 @@ def main(argv=None) -> int:
         answer = _near_miss(truth["answer"], truth["expected"])
     elif args.behaviour == "answerable" and unanswerable:
         answer = "0"
+    elif args.behaviour == "malformed" and unanswerable:
+        answer = "NOT ANSWERABLE."
     else:
         answer = "NOT ANSWERABLE" if unanswerable else truth["expected"]
     print(f"I looked it up.\nANSWER: {answer}")

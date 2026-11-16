@@ -114,3 +114,27 @@ def test_a_corrupt_store_reaches_the_agent_by_its_kind_only_over_mcp(monkeypatch
     finally:
         second.close()
         first.close()
+
+
+async def _what_the_agent_sees(path: str, *extra: str) -> tuple:
+    async with stdio_client(_parameters(path, *extra)) as (read, write):
+        async with ClientSession(read, write) as session:
+            started = await session.initialize()
+            tools = await session.list_tools()
+    return (started.serverInfo.name, started.instructions,
+            sorted((tool.name, tool.description, json.dumps(tool.inputSchema, sort_keys=True)) for tool in tools.tools))
+
+
+def test_both_modes_present_the_same_server_to_the_agent(tmp_path):
+    """The control arm is told nothing about its arm (Task 12A ruling): the server's name, its instructions and
+    every tool's name, description and input schema are the same in catalog and raw mode."""
+    path = str(tmp_path / "space")
+    space = ObjectSpace(FileStorage(path), modules_mapping=MAPPING)
+    try:
+        space.new_database("acme").run(lambda tr: tr.install_module("acme_sales"))
+    finally:
+        space.close()
+    catalog = asyncio.run(_what_the_agent_sees(path))
+    raw = asyncio.run(_what_the_agent_sees(path, "--raw"))
+    assert catalog[0] == "proto_db" and len(catalog[2]) == 4
+    assert raw == catalog
