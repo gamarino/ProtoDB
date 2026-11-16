@@ -733,13 +733,13 @@ def test_a_scrubbed_failure_names_the_part_the_kind_and_the_operand_type(sentine
              ({"from": ["via", ["cell", "holder"], "items"], "where": ["attr", "x"]}, "the query's 'where'", "a str"),
              ({"from": ["via", ["cell", "holder"], "note"]}, "the query's 'from'", "a str")]
     if not raw:
-        # The catalog declares no ``x`` (the holder's items are uncatalogued records): catalog mode refuses that
-        # term at planning (Task 12A review I2), so a declared attribute holding a str fails the evaluation here.
+        # The holder's items are uncatalogued records, read as stored (their ``x`` is present); a declared
+        # attribute of a catalogued type holding a str fails the evaluation the same way.
         orgs = ["via", ["cell", person], "org"]
-        cases = [({"from": orgs, "where": ["==", ["+", ["attr", "name"], ["const", 1]], ["const", 1]]},
-                  "the query's 'where'", "a str"),
-                 ({"from": orgs, "aggregate": ["sum", ["attr", "name"]]}, "the query's aggregate", "a str"),
-                 ({"from": orgs, "where": ["attr", "name"]}, "the query's 'where'", "a str"), cases[-1]]
+        cases += [({"from": orgs, "where": ["==", ["+", ["attr", "name"], ["const", 1]], ["const", 1]]},
+                   "the query's 'where'", "a str"),
+                  ({"from": orgs, "aggregate": ["sum", ["attr", "name"]]}, "the query's aggregate", "a str"),
+                  ({"from": orgs, "where": ["attr", "name"]}, "the query's 'where'", "a str")]
     for tree, part, operand in cases:
         with pytest.raises(ProtoValidationError) as refused:
             query(db, tree, raw=raw)
@@ -976,3 +976,21 @@ def test_a_declared_attribute_without_a_value_keeps_its_meaning(db):
                         "select": ["number", "customer.credit_limit"]}, raw=True)
     assert sorted((row["values"]["number"], row["values"]["customer.credit_limit"]) for row in answer["rows"]) == \
         [(1, None), (3, None)]
+
+
+def test_catalog_mode_reads_an_uncatalogued_record_by_the_raw_rule(sentinel_db):
+    """A row whose type the catalog does not describe is read as stored, in catalog mode too (Task 12A fix round
+    2): a present field is read, an absent one is refused (never read as missing), naming only the path and the
+    record's type."""
+    db, _, _ = sentinel_db
+    items = ["via", ["cell", "holder"], "items"]
+    rows = query(db, {"from": items, "select": ["x"]})["rows"]
+    assert len(rows) == 1 and set(rows[0]["values"]) == {"x"}
+    assert query(db, {"from": items, "where": ["!=", ["attr", "x"], ["const", ""]], "aggregate": ["count"]})["rows"] \
+        == [{"count": 1}]
+    for tree in ({"from": items, "select": ["nope"]}, {"from": items, "aggregate": ["sum", ["attr", "nope"]]},
+                 {"from": items, "where": ["==", ["attr", "nope", "x"], ["const", 1]]}):
+        with pytest.raises(ProtoValidationError) as refused:
+            query(db, tree)
+        message = str(refused.value)
+        assert "'nope'" in message and "not stored" in message and MARK not in message, message

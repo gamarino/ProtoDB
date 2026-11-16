@@ -118,8 +118,10 @@ The query engine (preflight F17, F18)
     the collection once, and only when some conjunct could plan (see :meth:`Operations._indexed`).
     A term never reads an attribute that is not there as missing (a sum over it would answer 0): with a
     catalog, a path step the members' type does not declare is refused before anything is read
-    (:meth:`Operations._check_declared`); over stored structure alone, a step a row does not store is refused
-    when it is read (:class:`StoredReader`).  A declared attribute a member does not hold is MISSING, as before.
+    (:meth:`Operations._check_declared`), and a row whose type the ``from`` does not tell is checked as it is
+    read: by the catalog if its type is catalogued, by what it stores otherwise (:class:`_QueryReader`); over
+    stored structure alone, a step a row does not store is refused when it is read (:class:`StoredReader`).  A
+    declared attribute a member does not hold is its default or MISSING, as before.
 """
 from __future__ import annotations
 
@@ -651,6 +653,40 @@ class _SessionReader(RegistryReader):
 
     def root(self, name: str):
         return self._source.get_root_object(name)
+
+
+class _QueryReader(_SessionReader):
+    """The session's reader while a catalog-mode query evaluates its terms: a path step a row does not hold is
+    never read as missing unless the row's type declares it.  A row of a catalogued type follows the catalog
+    (an attribute its type or one of its subtypes declares is its default or MISSING when the row does not hold
+    it, as everywhere; an undeclared one is refused); a row of a type the catalog does not describe follows the
+    raw rule (what it stores, or inherits, is read; anything else is refused).  The planning check (:meth:`Operations._check_declared`) refuses what
+    it can before anything is read; this covers rows whose type the ``from`` does not tell."""
+
+    def __init__(self, source, schema: "Schema"):
+        super().__init__(source)
+        self._schema = schema
+
+    def _declared(self, element, name: str) -> bool:
+        type_name = getattr(type(element), "__type_name__", None)
+        if not self._schema.has(type_name):
+            return False
+        if all(self._schema.element(t, name) is None for t in self._schema.subtypes(type_name)):
+            raise _plain(_invalid(f"The type {type_name!r} declares no attribute or role {name!r}"))
+        return True             # declared by the type or one of its subtypes, as the planning check reads it
+
+    def default(self, element, name: str):
+        if self._declared(element, name):
+            return super().default(element, name)
+        found = super().default(element, name)
+        if found is MISSING:
+            raise _not_stored(element, name)
+        return found
+
+    def absent(self, element, name: str):
+        if self._declared(element, name):
+            return MISSING
+        raise _not_stored(element, name)
 
 
 class StoredReader(Reader):
@@ -1318,6 +1354,15 @@ class Operations:
             self.schema.entity(of_type)
         if self.schema is not None:
             self._check_declared(origin, of_type, where, aggregate, select)
+        session_reader = self.reader
+        if self.schema is not None and type(session_reader) is _SessionReader:
+            self.reader = _QueryReader(self._resolver, self.schema)
+        try:
+            return self._query(tree, version, origin, where, select, aggregate, of_type, with_members, selection)
+        finally:
+            self.reader = session_reader
+
+    def _query(self, tree, version, origin, where, select, aggregate, of_type, with_members, selection) -> dict:
         with self.reading():
             members, explain, member_type, used = self._members(origin, where)
             if of_type is not None:
@@ -1347,9 +1392,12 @@ class Operations:
         """Refuse, before anything is read, a term whose path names an attribute or a role that the members'
         type does not declare (catalog mode): read as missing, it would make a sum answer 0.  The members' type
         is ``of_type`` or the type the ``from`` reaches, subtypes included; when the ``from`` says nothing
-        about it (a root origin), a step must be declared by some type of the catalog.  A step after an
-        attribute that is not a role, or one starting with ``@``, is not checked."""
+        about it (a root origin, or a cell the catalog does not type), nothing is refused here: each row is
+        checked as it is read (:class:`_QueryReader`).  A step after an attribute that is not a role, or one
+        starting with ``@``, is not checked."""
         base = of_type if of_type is not None else self._static_types(origin)[1]
+        if base is None:
+            return
         terms = [(_WHERE, where), (_AGGREGATE, aggregate[1] if aggregate and aggregate[0] == "sum" else None)]
         terms += [(f"the selected path {name!r}", ["attr", *name.split(".")]) for name in select or ()]
         for part, term in terms:
@@ -1363,16 +1411,14 @@ class Operations:
                 elif node[0] in _CHECKED_OPERATORS:
                     stack.extend(node[1:])
 
-    def _check_path(self, part: str, steps, base: str | None) -> None:
-        """Check the steps of one ``attr`` from members of ``base`` (``None``: any type of the catalog)."""
+    def _check_path(self, part: str, steps, base: str) -> None:
+        """Check the steps of one ``attr`` from members of the catalogued type ``base``."""
         for step in steps:
             if not isinstance(step, str) or step.startswith("@"):
                 return
-            types = self.schema.model["entities"] if base is None else self.schema.subtypes(base)
-            found = [e for e in (self.schema.element(t, step) for t in types) if e is not None]
+            found = [e for e in (self.schema.element(t, step) for t in self.schema.subtypes(base)) if e is not None]
             if not found:
-                owner = "no type of the semantic catalog" if base is None else f"the type {base!r}"
-                raise _plain(_invalid(f"{part}: {owner} declares no attribute or role {step!r}"))
+                raise _plain(_invalid(f"{part}: the type {base!r} declares no attribute or role {step!r}"))
             targets = {e["target"] for e in found if "target" in e}
             if len(targets) != 1 or len(targets) != len(found):
                 return                      # an attribute (or roles to different types): not followed further

@@ -25,7 +25,8 @@ code that uses no semantic layer keeps today's API, bytes and behaviour.
   relations with inverses navigable from both ends, relationships with data, roles bound by version, maintained
   keys and aggregates, `index_by`; the semantic session `semantic(transaction or snapshot)` with `describe`,
   `query` and atomic operations. A query term naming an attribute the members' type does not declare is refused
-  before anything is read (over stored structure alone, an attribute a row does not store), never read as missing.
+  before anything is read, never read as missing; a row the catalog does not type, and every row over stored
+  structure alone, is read by what it stores (an absent attribute is refused).
 - **Intent transactions behind a flag**: `new_transaction(intents=True)` and `run(fn, intents=True)` log the
   semantic operations and replay them at commit on the cells current then, so independent concurrent operations
   do not conflict. One node only: a space with a cluster coordinator refuses the flag (`ProtoNotSupportedError`).
