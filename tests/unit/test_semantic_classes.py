@@ -530,3 +530,16 @@ def test_a_refused_declaration_does_not_name_its_intents():
         exec(compile("class Ok(Extension):\n    __extends__ = 'acme.refused.M4b'\n    close = close\n",
                      "<m4b>", "exec"), namespace)
         assert namespace["close"].__proto_intent__.name == "close"
+
+
+def test_one_intent_function_under_two_names_is_refused():
+    # Re-review finding 2: an intent's name is its identity in the intent log; one function cannot be two.
+    spellings = ("class D(DBObject):\n    __type_name__ = 'acme.refused.Dup'\n    finish = close\n    end = close\n",
+                 "class E(Extension):\n    __extends__ = 'acme.refused.Dup'\n    finish = close\n    end = close\n",
+                 "@m.extends('acme.refused.Dup')\nclass F:\n    finish = close\n    end = close\n")
+    for index, refused in enumerate(spellings):
+        namespace = {"__name__": f"tests_semantic_dup{index}"}
+        exec(compile(_HEADER + _SHARED_INTENT + f"m = module('sem_dup{index}')\n", "<dup>", "exec"), namespace)
+        with pytest.raises(ProtoValidationError, match="'finish' and as 'end'"):
+            exec(compile(refused, "<dup>", "exec"), namespace)
+        assert namespace["close"].__proto_intent__.name is None and not namespace["m"]._declared

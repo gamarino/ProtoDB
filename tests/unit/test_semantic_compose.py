@@ -256,6 +256,18 @@ def test_the_composed_model_round_trips_through_the_records():
     assert compose_modules(model["modules"]) == model
 
 
+def test_composition_is_independent_of_install_order():
+    # Registry.build derives the load order from the names and the depends alone: every order of the
+    # names gives the same registry key and the same catalog bytes.
+    names = ("acme_delivery", "acme_rush", "acme_express", "acme_zlate")
+    keys, forms = set(), set()
+    for order in itertools.permutations(names):
+        registry = Registry.build(("base", "acme_sales") + order, mapping=MAPPING)
+        keys.add(tuple(registry.key))
+        forms.add(canonical_form(compose(registry)))
+    assert len(keys) == 1 and len(forms) == 1
+
+
 def test_composition_is_independent_of_the_order_of_the_contributions():
     # compose_modules receives the Module items as a mapping: every insertion order composes alike, as
     # the load order is derived from the names and the depends alone.
@@ -270,6 +282,7 @@ def test_composition_is_independent_of_the_order_of_the_contributions():
 def test_provenance_follows_the_load_order_not_the_fold_order():
     # A subtype's redefinition folds after the supertype's extensions (C3) but lists its module where it
     # loads (format spec, "Composition"): acme_express (subtype) loads before acme_zlate (supertype).
+    # The definer comes first, then the modifiers in load order.
     registry = build("acme_express", "acme_zlate")
     model = compose(registry)
     order = list(registry.key)
@@ -277,7 +290,23 @@ def test_provenance_follows_the_load_order_not_the_fold_order():
     for entity in model["entities"].values():
         for item in entity.get("attributes", []) + entity.get("roles", []) + entity.get("intents", []) + \
                 entity.get("constraints", []):
-            assert item["provenance"] == sorted(item["provenance"], key=order.index), (entity["type_name"], item)
+            rest = item["provenance"][1:]
+            assert rest == sorted(rest, key=order.index), (entity["type_name"], item)
+
+
+def test_provenance_lists_the_definer_first():
+    # acme_a_sub (loads first) declares FooOrder.foo; acme_x_foo (loads later) adds foo to Order itself.
+    # On FooOrder's chain the element is introduced by acme_x_foo (inherited_from Order): it comes first,
+    # then the modifier acme_a_sub (format spec, "Composition and the canonical form").
+    registry = build("acme_a_sub", "acme_x_foo")
+    order = list(registry.key)
+    assert order.index("acme_a_sub") < order.index("acme_x_foo")
+    entities = compose(registry)["entities"]
+    foo = element(entities["acme.sales.FooOrder"], "foo")
+    assert foo["inherited_from"] == "acme.sales.Order"
+    assert foo["provenance"] == ["acme_x_foo", "acme_a_sub"]
+    assert foo["label"] == {"und": "Foo of the subtype"}
+    assert element(entities["acme.sales.Order"], "foo")["provenance"] == ["acme_x_foo"]
 
 
 def test_a_maintained_aggregate_over_a_transitively_python_only_computed_is_refused():
@@ -298,3 +327,11 @@ def test_on_delete_restrict_is_the_omitted_default():
     assert from_atoms(to_atoms(stated, None)) == model
     product["on_delete"] = "cascade"
     assert canonical_form(stated) != canonical_form(model)
+
+
+def test_a_maintained_aggregate_through_a_via_to_a_python_only_term_is_refused():
+    # Re-review finding 1: Thing.via_parts sums Part.py, a Python-only computed, through ["via", ["self"], ...].
+    with pytest.raises(ProtoValidationError, match="neutral all the way down") as raised:
+        compose(Registry.build(("base", "acme_via_python"), mapping=MAPPING))
+    message = str(raised.value)
+    assert "'acme.via.Thing'.via_parts" in message and "'acme.via.Part'.py" in message

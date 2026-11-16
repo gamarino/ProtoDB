@@ -103,6 +103,7 @@ def _check_elements(where: str, definitions: Mapping) -> bool:
     whether a participant role is among them.  It changes nothing: :func:`_name_intents` records the
     intents' names once the declaration is accepted."""
     participant = False
+    seen: dict = {}                         # intent function -> the first name it is declared under
     for name, (kind, value) in definitions.items():
         if kind == _registry.DESCRIPTOR:
             if value.name != name:
@@ -112,7 +113,9 @@ def _check_elements(where: str, definitions: Mapping) -> bool:
         elif kind == _registry.METHOD and _registry._is_intent(value):
             spec = value.__proto_intent__
             named = getattr(spec, "name", None)
-            if named is not None and named != name:
+            if named is None:
+                named = seen.setdefault(id(spec), name)     # an intent's name is its identity in the log
+            if named != name:
                 raise ProtoValidationError(f"{where}: the intent function {value.__qualname__!r} is declared as "
                                            f"{named!r} and as {name!r}")
     return participant

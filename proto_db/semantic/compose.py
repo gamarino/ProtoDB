@@ -20,8 +20,9 @@ The fold (normative)
     take the newer value; every other field it states is structural and must equal the composed one,
     else ``ProtoValidationError`` naming the module, the type, the element and the field.  A field it
     omits is unchanged; a redefined intent's parameter whose type it does not declare keeps the
-    composed type.  ``provenance`` lists the module that defined the element, then each module that
-    modified it, once, in fold order.  Entity-level fields fold alike (``kind``, ``key`` and
+    composed type.  ``provenance`` lists the module that defined the element (on a subtype, the module
+    whose contribution introduced it on the type chain, which ``inherited_from`` names), then each
+    module that modified it, once, in load order (ties by module name), whatever the fold order.  Entity-level fields fold alike (``kind``, ``key`` and
     ``supertypes`` are structural).
 
 Inverses
@@ -407,7 +408,8 @@ def _compose_type(type_name: str, owns: Mapping, lins: Mapping, rank: Mapping) -
                     _merge(found, item, module=item["provenance"][-1], type_name=node, subtype=True,
                            contributors=item["provenance"])
     for item in list(elements.values()) + list(constraints.values()):
-        item["provenance"].sort(key=lambda module: (rank[module], module))
+        definer, *modifiers = item["provenance"]
+        item["provenance"] = [definer] + sorted(modifiers, key=lambda module: (rank[module], module))
     entity = {"type_name": type_name}
     if own.entity.get("supertypes"):
         entity["supertypes"] = list(own.entity["supertypes"])
@@ -513,15 +515,29 @@ def _python_only_read(entities: Mapping, type_name: str, tree, seen: set):
                 return found
         elif op in ("sum", "count"):
             over = node[1]
-            if isinstance(over, str):
-                role = _declared(entities.get(owner, {}), over)
-                member = role.get("target") if role is not None else None
-                if member is not None:
-                    stack.extend((operand, member) for operand in node[2:])
-            # A via from a root or a cell reads stored values only.
+            member = _member_type(entities, owner, [over] if isinstance(over, str) else over)
+            if member is not None:
+                stack.extend((operand, member) for operand in node[2:])
         elif op not in ("const", "root", "via", "cell", "self"):
             stack.extend((child, owner) for child in node[1:] if isinstance(child, list))
     return None
+
+
+def _member_type(entities: Mapping, owner: str, over):
+    """The type of the members an aggregate of an element of ``owner`` runs over: a role name of
+    ``owner`` (``[name]``) or a ``via`` from ``self`` through roles, followed to the last role's
+    target; ``None`` when the members' type is not declared here (a ``via`` from a root or a cell:
+    no static type, its members' declarations are not known)."""
+    if over and over[0] == "via":
+        if over[1] != ["self"]:
+            return None
+        over = over[2:]
+    for role_name in over:
+        role = _declared(entities.get(owner, {}), role_name)
+        if role is None or "target" not in role:
+            return None
+        owner = role["target"]
+    return owner
 
 
 def _python_only_path(entities: Mapping, owner: str, path: list, seen: set):

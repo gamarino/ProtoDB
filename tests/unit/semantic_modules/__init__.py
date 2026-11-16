@@ -21,6 +21,9 @@ MAPPING = {
     "acme_lambda_total": f"{_PACKAGE}.acme_lambda_total",
     "acme_reads": f"{_PACKAGE}.acme_reads",
     "acme_deep_python": f"{_PACKAGE}.acme_deep_python",
+    "acme_via_python": f"{_PACKAGE}.acme_via_python",
+    "acme_a_sub": f"{_PACKAGE}.acme_a_sub",
+    "acme_x_foo": f"{_PACKAGE}.acme_x_foo",
     **{f"r282_{field}": f"{_PACKAGE}.acme_r282" for field in ("value_type", "cardinality", "target", "binding",
                                                                "kind")},
 }
