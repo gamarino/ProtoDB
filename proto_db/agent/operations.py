@@ -59,8 +59,14 @@ Sensitivity (spec section 11; ``describe`` lists every attribute, ``query`` omit
       everything that reads the version runs inside one scrub (:func:`~proto_db.semantic.entities.scrubbed`):
       a failure of that evaluation (the ``from`` traversal, the ``where``, the aggregate, a selected path, a
       ``describe`` or a listing; a ``via`` or a ``root`` reaches values whatever the query names) is reported
-      by the part it arose in, its kind and its operand's type ("a str", "a record of type T"), never by its
-      message or a value.  A storage failure, a corruption or a closed space propagates unchanged.
+      as ``ProtoValidationError`` by the part it arose in, its kind and its operand's type ("a str", "a record
+      of type T"), never by its message or a value.  One caused by a ``LookupError`` or an ``AttributeError``
+      (likely a programming error) is also logged, with the original exception, at WARNING.
+    - Any other failure of an operation, opening included (a corruption, a storage or I/O error, a closed
+      space: anything that is not an evaluation failure), keeps its type, so a client knows the store is
+      damaged or unavailable, but its message is replaced by one that names only the operation and the kind
+      (a corruption's message may preview the stored bytes), raised ``from None``; the original exception is
+      logged at ERROR.  Both logs go to ``logging.getLogger("proto_db.agent")``, the operator's side.
 
 Raw mode (``raw=True``; the agent experiment's control group)
     The catalog is not reported.  :func:`list_entities` lists the names of the roots (reserved ``__`` roots
@@ -78,7 +84,9 @@ from __future__ import annotations
 import base64
 import binascii
 import datetime
+import functools
 import json
+import logging
 from collections.abc import Mapping
 from decimal import Decimal, InvalidOperation
 
@@ -88,9 +96,9 @@ from ..core.dbobject import DBObject
 from ..errors import ProtoNotSupportedError, ProtoUserError, ProtoValidationError
 from ..semantic import semantic
 from ..semantic import compose as _compose
-from ..semantic.entities import check_query, query_stored, scrubbed
+from ..semantic.entities import check_query, is_evaluation_failure, query_stored, scrubbed
 from ..semantic.expressions import unwrap_entry
-from ..values import MutableObject, is_atom
+from ..values import MutableObject, check_text, is_atom
 
 __all__ = ["list_entities", "describe", "check_answerable", "query", "to_json", "from_json"]
 
@@ -98,6 +106,42 @@ __all__ = ["list_entities", "describe", "check_answerable", "query", "to_json", 
 WITHHELD = frozenset({"personal", "secret"})
 #: The one-key objects :func:`from_json` reads as typed values.
 _TYPED = ("decimal", "date", "time", "datetime", "bytes", "cell")
+#: The operator's log: what the agent is not told (see "Sensitivity").
+_LOG = logging.getLogger("proto_db.agent")
+
+
+def _boundary(operation: str):
+    """The agent boundary of an operation: a failure that is not an evaluation failure (a corruption, a storage
+    or I/O error, a closed space) keeps its type, but its message names only ``operation`` and the kind; it is
+    raised from None, and the original is logged at ERROR (see "Sensitivity")."""
+    def wrap(function):
+        @functools.wraps(function)
+        def run(*args, **kwargs):
+            try:
+                return function(*args, **kwargs)
+            except Exception as error:      # noqa: BLE001 -- every kind is re-raised, with its type
+                if is_evaluation_failure(error):
+                    raise
+                _LOG.error("The agent operation %s failed with %s; the agent was told the kind only", operation,
+                           type(error).__name__, exc_info=error)
+                withheld = _content_free(error, operation)
+            raise withheld from None
+        return run
+    return wrap
+
+
+def _content_free(error: Exception, operation: str) -> Exception:
+    """An exception of ``error``'s type whose message names only ``operation`` and that type."""
+    kind = type(error).__name__
+    message = (f"{operation} failed: {kind}; the message is withheld from agents, since it may hold stored data "
+               f"(the operator's log 'proto_db.agent' has it)")
+    try:
+        withheld = type(error)(message)
+    except Exception:                       # noqa: BLE001 -- a type that takes no message: the nearest that does
+        withheld = (OSError if isinstance(error, OSError) else RuntimeError)(message)
+    if hasattr(error, "code"):
+        withheld.code = error.code
+    return withheld
 
 
 # -- JSON ----------------------------------------------------------------------------------------------------
@@ -183,6 +227,11 @@ def _flat(value):
     return to_json(value)
 
 
+def _own(record) -> Mapping:
+    """The stored attributes of ``record``: a record's own fields; a stored collection (an atom too) has none."""
+    return record._own if isinstance(record, DBObject) else {}
+
+
 def _value(value, policy: "_Withholding"):
     """A row's value: :func:`_flat`, except that a version-bound role shows the version it binds (the
     product as sold): ``{"entity": {"cell"}, "version": {"type_name", "values"}}``, its values withheld as a
@@ -193,7 +242,7 @@ def _value(value, policy: "_Withholding"):
     type_name = _stored_type(record)
     return {"entity": {"cell": value["entity"].name},
             "version": {"type_name": type_name,
-                        "values": {name: _flat(item) for name, item in record._own.items()
+                        "values": {name: _flat(item) for name, item in _own(record).items()
                                    if not policy.withheld(type_name, [name])}}}
 
 
@@ -404,8 +453,12 @@ def _page_start(db, limit, after) -> tuple:
     except (binascii.Error, ValueError) as e:
         raise ProtoValidationError("after is the 'next' token a list_entities answer gave") from e
     if not isinstance(token, dict) or not isinstance(token.get("ref"), str) or token.get("kind") not in _KINDS \
-            or not isinstance(token.get("after"), str):
+            or not isinstance(token.get("after"), str) or not token["after"]:
         raise ProtoValidationError("after is the 'next' token a list_entities answer gave")
+    try:
+        check_text(token["after"])
+    except ProtoValidationError:
+        raise ProtoValidationError("after is the 'next' token a list_entities answer gave") from None
     return _snapshot(db, token["ref"]), (token["kind"], token["after"])
 
 
@@ -445,6 +498,7 @@ def _cell_type(name: str):
     return name.rsplit("#", 1)[0] if "#" in name else None
 
 
+@_boundary("list_entities")
 def list_entities(db, filter: str | None = None, *, limit: int = LIST_LIMIT, after: str | None = None,
                   raw: bool = False) -> dict:
     """Where an agent starts: ``{"entities": [{"type_name", "label", "meaning", "cells"}], "next"}``.  The
@@ -469,7 +523,7 @@ def list_entities(db, filter: str | None = None, *, limit: int = LIST_LIMIT, aft
         def listing() -> dict:
             page, token = _page(snapshot, _KINDS, start, wanted, limit)
             return {"roots": page["root"], "cells": page["cell"], "next": token}
-        return scrubbed("list_entities", listing)
+        return scrubbed("list_entities", listing, log=_LOG)
     if start is not None and start[0] != "cell":
         raise ProtoValidationError("after is the 'next' token a list_entities answer gave")
     listed = semantic(snapshot).list_entities(filter)
@@ -482,9 +536,10 @@ def list_entities(db, filter: str | None = None, *, limit: int = LIST_LIMIT, aft
             by_type.setdefault(_cell_type(name), []).append(name)
         return {"entities": [{**to_json(entity), "cells": by_type.get(entity["type_name"], [])} for entity in listed],
                 "next": token}
-    return scrubbed("list_entities", cells)
+    return scrubbed("list_entities", cells, log=_LOG)
 
 
+@_boundary("describe")
 def describe(db, type_name: str, *, raw: bool = False) -> dict:
     """The composed entity ``type_name``: attributes, roles, intents, constraints, provenance and
     certification (personal and secret attributes are listed, with their sensitivity).  Raw mode: what the
@@ -498,8 +553,8 @@ def describe(db, type_name: str, *, raw: bool = False) -> dict:
         if type_name not in model["entities"]:
             raise ProtoValidationError(f"The semantic catalog describes no type {type_name!r}; list_entities gives "
                                        f"the types it describes")
-        return scrubbed("describe", lambda: to_json(_compose.describe(model, type_name)))
-    answer = scrubbed("describe", _stored_description, snapshot, type_name)
+        return scrubbed("describe", lambda: to_json(_compose.describe(model, type_name)), log=_LOG)
+    answer = scrubbed("describe", _stored_description, snapshot, type_name, log=_LOG)
     if not answer["cells"] and not answer["records"]:
         raise ProtoValidationError(f"No stored record has the type {type_name!r}")
     return answer
@@ -510,7 +565,7 @@ def _stored_description(snapshot, type_name: str) -> dict:
     cells, nested, attributes = 0, 0, {}
 
     def take(record):
-        for name, value in record._own.items():
+        for name, value in _own(record).items():
             attributes.setdefault(name, set()).add(_kind_of(value))
     for name in _names(snapshot, "cell", None):
         record = snapshot.get_mutable(name)
@@ -600,6 +655,7 @@ def _vocabulary(snapshot, model: Mapping | None) -> list:
     return out
 
 
+@_boundary("check_answerable")
 def check_answerable(db, terms: list, *, raw: bool = False) -> dict:
     """``{"answerable", "matches", "unmatched", "suggestions"}`` for the terms of a question (see the module
     docstring).  ``matches`` maps every term to its candidates (empty when unmatched), ``suggestions`` every
@@ -610,7 +666,8 @@ def check_answerable(db, terms: list, *, raw: bool = False) -> dict:
             or not all(isinstance(term, str) and term.strip() for term in terms):
         raise ProtoValidationError(f"check_answerable takes a list of non-empty terms (str), not {terms!r}")
     snapshot = _snapshot(db)
-    return scrubbed("check_answerable", _answerable, snapshot, None if raw else semantic(snapshot).catalog(), terms)
+    return scrubbed("check_answerable", _answerable, snapshot, None if raw else semantic(snapshot).catalog(), terms,
+                    log=_LOG)
 
 
 def _answerable(snapshot, model: Mapping | None, terms) -> dict:
@@ -664,6 +721,7 @@ def _screen(policy: _Withholding, tree) -> frozenset | None:
     return types
 
 
+@_boundary("query")
 def query(db, tree: Mapping, *, raw: bool = False) -> dict:
     """Run the query ``tree`` (spec section 11) and answer ``{"rows", "explain", "version", "query",
     "terms"}`` as JSON-ready data (see the module docstring: rows, sensitivity, raw mode).  ``tree["as_of"]``
@@ -704,7 +762,7 @@ def query(db, tree: Mapping, *, raw: bool = False) -> dict:
         answer = query_stored(snapshot, run, with_members=True, selection=use) if raw else \
             session.query(run, members=True, selection=use)
         return _answer(answer, tree, policy, raw)
-    return scrubbed("the query", answered)
+    return scrubbed("the query", answered, log=_LOG)
 
 
 def _answer(answer: dict, tree: Mapping, policy: _Withholding, raw: bool) -> dict:
@@ -719,8 +777,8 @@ def _answer(answer: dict, tree: Mapping, policy: _Withholding, raw: bool) -> dic
             record = version.record
             type_name = _stored_type(record)
             if default and raw:             # the record's stored attributes: read, never evaluated
-                stored = record._own if isinstance(record, DBObject) else {}      # a collection has none
-                values = {name: value for name, value in stored.items() if not policy.withheld(type_name, [name])}
+                values = {name: value for name, value in _own(record).items()
+                          if not policy.withheld(type_name, [name])}
             rows.append({"entity": None if version.entity is None else {"cell": version.entity.name},
                          "type_name": type_name,
                          "values": {name: _value(value, policy) for name, value in values.items()}})

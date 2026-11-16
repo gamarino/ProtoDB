@@ -577,8 +577,10 @@ def test_a_storage_failure_during_evaluation_propagates_unchanged(leaky, monkeyp
     monkeypatch.setattr(entities, "evaluate", broken)
     for tree in ({"from": people, "select": ["org"]}, {"from": people, "where": ["==", ["attr", "org"], ["const", 1]]},
                  {"from": people, "aggregate": ["sum", ["const", 1]]}):
-        with pytest.raises(OSError, match="unreachable"):
+        with pytest.raises(OSError) as failed:              # the kind is kept, the message is the agent's own
             query(db, tree, raw=raw)
+        assert type(failed.value) is OSError and "unreachable" not in str(failed.value)
+        assert "OSError" in str(failed.value)
 
 
 # -- fix round 4: no stored value through any error of any agent operation -------------------------------------
@@ -784,3 +786,116 @@ def test_a_member_that_is_a_stored_collection_is_a_row_without_values(sentinel_d
     from proto_db.collections.lists import List
     from proto_db.semantic.expressions import describe_operand
     assert describe_operand(List()) == "a collection (List)"
+
+
+# -- fix round 5: storage failures keep their kind, never their message; the operator's log keeps it --------
+
+def _corrupt_store(monkeypatch, marker: str):
+    """A database whose cell ``holder`` holds a tuple field that the store answers malformed (its preview is
+    ``marker``), reopened over the same storage so that every read decodes it again."""
+    from proto_db.core.dbobject import DBObject
+    storage = MemoryStorage()
+    first = ObjectSpace(storage, modules_mapping=MAPPING)
+    database = first.new_database("d")
+    database.run(lambda tr: tr.install_module("acme_leaky"))
+    database.run(lambda tr: tr.new_mutable("holder", DBObject(t=(marker,), n=1)))
+    original = MemoryStorage.get_atom
+
+    def get_atom(self, pointer):
+        def damaged(value):
+            if isinstance(value, dict):
+                if set(value) == {"@tup"} and isinstance(value["@tup"], list) and marker in value["@tup"]:
+                    return {"@tup": marker}
+                return {key: damaged(item) for key, item in value.items()}
+            if isinstance(value, list):
+                return [damaged(item) for item in value]
+            return value
+        return damaged(original(self, pointer))
+    monkeypatch.setattr(MemoryStorage, "get_atom", get_atom)
+    second = ObjectSpace(storage, modules_mapping=MAPPING)
+    return first, second, second.open_database("d")
+
+
+def _logged(caplog, level: str, kind):
+    """The ``proto_db.agent`` records at ``level`` that carry an original failure of ``kind``."""
+    return [r for r in caplog.records if r.name == "proto_db.agent" and r.levelname == level
+            and r.exc_info and isinstance(r.exc_info[1], kind)]
+
+
+@pytest.mark.parametrize("raw", [False, True])
+def test_a_corrupt_store_reaches_the_agent_by_its_kind_only(monkeypatch, caplog, raw):
+    import logging
+    from proto_db.errors import ProtoCorruptionError
+    marker = f"{MARK}-corrupt-123-45-6789"
+    first, second, db = _corrupt_store(monkeypatch, marker)
+    try:
+        calls = [lambda: query(db, {"from": ["via", ["cell", "holder"], "t"]}, raw=raw)]
+        if raw:
+            calls += [lambda: describe(db, "DBObject", raw=True), lambda: check_answerable(db, ["t"], raw=True)]
+        for call in calls:
+            caplog.clear()
+            with caplog.at_level(logging.WARNING, logger="proto_db.agent"):
+                with pytest.raises(ProtoCorruptionError) as failed:
+                    call()
+            message = str(failed.value)
+            assert MARK not in message and "ProtoCorruptionError" in message, message
+            assert failed.value.__cause__ is None and failed.value.__context__ is None
+            [record] = _logged(caplog, "ERROR", ProtoCorruptionError)
+            assert marker in str(record.exc_info[1])           # the operator keeps the diagnosis
+    finally:
+        second.close()
+        first.close()
+
+
+@pytest.mark.parametrize("raw", [False, True])
+def test_a_lookup_failure_is_scrubbed_for_the_agent_and_logged_for_the_operator(leaky, monkeypatch, caplog, raw):
+    import logging
+    from proto_db.semantic import entities
+    db, org, _ = leaky
+
+    def buggy(*args, **kwargs):
+        raise KeyError(MARK)
+    monkeypatch.setattr(entities, "evaluate", buggy)
+    with caplog.at_level(logging.WARNING, logger="proto_db.agent"):
+        with pytest.raises(ProtoValidationError) as failed:
+            query(db, {"from": ["via", ["cell", org.name], "people"], "select": ["org"]}, raw=raw)
+    assert MARK not in str(failed.value) and "KeyError" in str(failed.value)
+    [record] = _logged(caplog, "WARNING", KeyError)
+    assert MARK in str(record.exc_info[1])
+
+
+def test_raw_describe_of_cells_holding_non_records(sentinel_db):
+    db, _, _ = sentinel_db
+
+    def build(tr):
+        tr.new_mutable("text", f"{MARK}-text")
+        tr.new_mutable("items", tr.new_list().append_last(f"{MARK}-item"))
+    db.run(build)
+    for type_name in ("str", "proto_db.collections.List"):
+        answer = describe(db, type_name, raw=True)
+        assert answer["cells"] == 1 and answer["attributes"] == {} and MARK not in json.dumps(answer), answer
+
+
+@pytest.mark.parametrize("raw", [False, True])
+def test_a_malformed_after_token_is_explained(sentinel_db, raw):
+    db, _, _ = sentinel_db
+    ref = list_entities(db, limit=1, raw=raw)["next"]
+    snapshot_ref = json.loads(base64.b64decode(ref))["ref"]
+    for name in ("", "\ud800"):
+        token = base64.b64encode(json.dumps({"ref": snapshot_ref, "kind": "cell", "after": name}).encode()).decode()
+        with pytest.raises(ProtoValidationError, match="'next' token"):
+            list_entities(db, raw=raw, after=token)
+
+
+def test_a_version_bound_reference_to_a_collection_is_a_row_value(db):
+    from proto_db.core.dbobject import DBObject
+
+    def build(tr):
+        target = tr.new_mutable("target", DBObject(x=1))
+        bound = {"entity": target, "version": tr.new_list().append_last(f"{MARK}-bound")}
+        tr.set_root_object("h", tr.new_list().append_last(DBObject(ref=bound)))
+    db.run(build)
+    for tree in ({"from": ["root", "h"]}, {"from": ["root", "h"], "select": ["ref"]}):
+        [row] = query(db, tree, raw=True)["rows"]
+        assert row["values"]["ref"]["entity"] == {"cell": "target"}, row
+        assert row["values"]["ref"]["version"]["values"] == {} and MARK not in json.dumps(row), row

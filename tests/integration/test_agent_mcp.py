@@ -97,3 +97,20 @@ def test_a_root_of_strings_reaches_the_agent_as_a_type_only(raw):
             assert secret not in message and "the query's 'from'" in message and "a str" in message, message
     finally:
         space.close()
+
+
+def test_a_corrupt_store_reaches_the_agent_by_its_kind_only_over_mcp(monkeypatch):
+    from proto_db.agent.mcp_server import build_server
+    from tests.unit.test_agent_operations import _corrupt_store
+    marker = "SNTNL-corrupt-123-45-6789"
+    first, second, db = _corrupt_store(monkeypatch, marker)
+    try:
+        for raw in (False, True):
+            with pytest.raises(Exception) as refused:
+                asyncio.run(build_server(db, raw=raw).call_tool("query", {"tree": {"from": ["via", ["cell", "holder"],
+                                                                                            "t"]}}))
+            message = str(refused.value)
+            assert marker not in message and "SNTNL" not in message and "ProtoCorruptionError" in message, message
+    finally:
+        second.close()
+        first.close()

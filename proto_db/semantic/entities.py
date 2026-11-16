@@ -127,7 +127,8 @@ from .descriptors import RegistryReader
 from .expressions import (Reader, _arithmetic, _identity, _number, _operand_error, _truth, check_ast, describe_operand,
                           evaluate, to_planner, unwrap_entry)
 
-__all__ = ["Version", "Members", "Operations", "Schema", "StoredReader", "check_query", "query_stored", "scrubbed"]
+__all__ = ["Version", "Members", "Operations", "Schema", "StoredReader", "check_query", "query_stored", "scrubbed",
+           "is_evaluation_failure"]
 
 #: The end cardinalities that hold one target; the others hold a collection.
 _SINGLE = frozenset({"one", "0..1"})
@@ -164,18 +165,29 @@ def _tagged(part: str, run, *args):
         raise
 
 
-def scrubbed(operation: str, run, *args):
-    """``run(*args)``, reporting an evaluation failure without any value it may hold (the agent interface,
-    :mod:`proto_db.agent.operations`): it becomes a ``ProtoValidationError`` that names the part it arose in
-    (the query part the engine tagged, else ``operation``), the failure's kind and, when the evaluator named
-    one, the operand's type (:func:`~proto_db.semantic.expressions.describe_operand`), never the failure's
-    message.  It is raised outside the handler, so no exception that holds a value is chained to it.  Any
-    other failure (a storage or a corruption error, a closed space) propagates unchanged."""
+def is_evaluation_failure(error: BaseException) -> bool:
+    """Whether ``error`` is what evaluating over unexpected values raises (:data:`_EVALUATION_FAILURES`), not a
+    storage, corruption or closed-space failure."""
+    return isinstance(error, _EVALUATION_FAILURES) and not isinstance(error, ProtoClosedError)
+
+
+def scrubbed(operation: str, run, *args, log=None):
+    """``run(*args)``, reporting an evaluation failure (:func:`is_evaluation_failure`) without any value it may
+    hold (the agent interface, :mod:`proto_db.agent.operations`): it becomes a ``ProtoValidationError`` that
+    names the part it arose in (the query part the engine tagged, else ``operation``), the failure's kind and,
+    when the evaluator named one, the operand's type (:func:`~proto_db.semantic.expressions.describe_operand`),
+    never the failure's message.  It is raised outside the handler, so no exception that holds a value is
+    chained to it.  A ``LookupError`` or an ``AttributeError`` (likely a programming error) is also logged, with
+    the original exception, to ``log`` at WARNING.  Any other failure (a storage or a corruption error, a closed
+    space) propagates unchanged."""
     try:
         return run(*args)
     except _EVALUATION_FAILURES as error:
-        if isinstance(error, ProtoClosedError):
+        if not is_evaluation_failure(error):
             raise
+        if log is not None and isinstance(error, (LookupError, AttributeError)):
+            log.warning("Evaluating %s failed with %s; the agent was told the kind only", operation,
+                        type(error).__name__, exc_info=error)
         part = getattr(error, "semantic_part", None)
         operand = getattr(error, "semantic_operand", None)
         kind = type(error).__name__
