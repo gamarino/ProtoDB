@@ -3040,7 +3040,7 @@ class Transaction:
             self._check_not_logged(name)
             if self._mutable_view(name, record=True) is not _ABSENT:
                 raise ProtoValidationError(f"Mutable {name!r} already exists")
-            if self._semantic_undo is not None:
+            if self._semantic_depth:
                 self._note_undo(name)
             self._mwrites[name] = value
         return MutableObject(name)
@@ -3091,7 +3091,13 @@ class Transaction:
         The outermost operation is all or nothing in the transaction: when its block raises, every cell
         write and field-version binding it made is undone (its reads stay in the read set), and when it
         returns, the cells it wrote join those whose constraints the commit checks
-        (:meth:`semantic_changes`, :mod:`proto_db.semantic.constraints`)."""
+        (:meth:`semantic_changes`, :mod:`proto_db.semantic.constraints`).  The undo log is made by the
+        operation's first write, so an operation that only reads allocates nothing.
+
+        Only the outermost operation is undone: a nested operation that fails inside it is not undone by
+        itself, so an intent that catches a nested operation's failure and goes on keeps that operation's
+        partial writes.  No rule is bypassed by it: the outermost operation's invariants are checked on
+        everything it wrote, partial writes included, before it returns."""
         if self._state != _ACTIVE:      # fails before the lock (see "Locks" in the class docstring)
             self._check_active()
         with self._lock:
@@ -3101,13 +3107,11 @@ class Transaction:
             top = depth == 0
             try:
                 self._semantic_depth = depth + 1
-                if top:
-                    self._semantic_undo = _SemanticUndo()
                 yield top
-                if top:
+                if top and self._semantic_undo is not None:
                     self._semantic_touched.update(dict.fromkeys(self._semantic_undo.cells))
             except BaseException:
-                if top:
+                if top and self._semantic_undo is not None:
                     self._undo_semantic_operation()
                 raise
             finally:
@@ -3117,7 +3121,9 @@ class Transaction:
 
     def _note_undo(self, name: str) -> None:
         """Under the lock, inside a top-level semantic operation: remember the cell ``name`` as it was
-        before the operation's first write of it."""
+        before the operation's first write of it (the first write makes the undo log)."""
+        if self._semantic_undo is None:
+            self._semantic_undo = _SemanticUndo()
         cells = self._semantic_undo.cells
         if name not in cells:
             had = name in self._mwrites
@@ -3148,8 +3154,10 @@ class Transaction:
         ``ProtoUserError`` outside one."""
         with self._lock:
             undo = self._semantic_undo
-            if undo is None or not self._semantic_depth:
+            if not self._semantic_depth:
                 raise ProtoUserError("semantic_changes() is read inside a semantic operation")
+            if undo is None:
+                return {}                       # nothing written yet
             out = {}
             for name, (had, previous, _) in undo.cells.items():
                 if not had:
@@ -3212,8 +3220,11 @@ class Transaction:
                 self._check_active()
             current = self._semantic_versions.get(name)
             if current is expected:
-                if self._semantic_undo is not None and name not in self._semantic_undo.versions:
-                    self._semantic_undo.versions[name] = self._semantic_versions.get(name, _ABSENT)
+                if self._semantic_depth:
+                    if self._semantic_undo is None:
+                        self._semantic_undo = _SemanticUndo()
+                    if name not in self._semantic_undo.versions:
+                        self._semantic_undo.versions[name] = self._semantic_versions.get(name, _ABSENT)
                 self._semantic_versions[name] = current = record
             return current
 
@@ -3235,7 +3246,7 @@ class Transaction:
             self._check_not_logged(name)
             if self._mutable_view(name, record=False) is _ABSENT:
                 raise ProtoValidationError(f"Mutable {name!r} does not exist; create it with new_mutable")
-            if self._semantic_undo is not None:
+            if self._semantic_depth:
                 self._note_undo(name)
             if name not in self._mwrites:
                 self._mexpected.add(name)
@@ -3256,7 +3267,7 @@ class Transaction:
             self._check_not_logged(name)
             if self._mutable_view(name, record=False) is _ABSENT:
                 raise ProtoValidationError(f"Mutable {name!r} does not exist")
-            if self._semantic_undo is not None:
+            if self._semantic_depth:
                 self._note_undo(name)
             self._mwrites[name] = _REMOVED
 

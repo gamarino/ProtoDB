@@ -55,7 +55,7 @@ from ..catalog.atoms import FIELD_DEFAULTS
 from ..catalog.model import check_model
 from ..errors import ProtoValidationError
 from ..registry import DESCRIPTOR, METHOD, Registry, _is_intent, _load_order
-from .constraints import check_enforceable
+from .constraints import check_enforceable, unenforced_reason
 from .descriptors import Aggregate
 
 __all__ = ["module_contributions", "compose", "compose_modules", "describe", "subtypes", "is_a", "index_paths",
@@ -183,8 +183,11 @@ def module_contributions(registry: Registry, module_name: str) -> dict:
 
 def compose(registry: Registry) -> dict:
     """The catalog model of ``registry`` (the neutral model of :mod:`proto_db.catalog.model`): every
-    module's contributions and the entities composed from them."""
-    return compose_modules({name: module_contributions(registry, name) for name in registry.key})
+    module's contributions and the entities composed from them.  The writer's composition: an enforced
+    invariant this revision cannot enforce is refused (:func:`~proto_db.semantic.constraints.check_enforceable`)."""
+    model = compose_modules({name: module_contributions(registry, name) for name in registry.key})
+    check_enforceable(model["entities"])
+    return model
 
 
 # -- the fold ----------------------------------------------------------------------------------------
@@ -580,7 +583,6 @@ def compose_modules(modules: Mapping) -> dict:
     entities = {name: _compose_type(name, owns, lins, rank) for name in sorted(owns, key=lambda n: owns[n].first)}
     _check_agreement(entities, owns)
     _check_aggregates(entities)
-    check_enforceable(entities)
     model = {"module_set": list(names), "modules": {name: copy.deepcopy(dict(modules[name])) for name in names},
              "entities": entities}
     check_model(model)
@@ -608,9 +610,16 @@ def _neutral(value):
 def describe(model: Mapping, type_name: str) -> dict:
     """The composed entity ``type_name`` of ``model`` as neutral data (dicts, lists, strings and canonical
     values): its fields, attributes, roles, intents, constraints, provenance and certification, plus
-    ``kind`` (``entity`` or ``relationship``)."""
-    entity = _neutral(_entity(model, type_name))
+    ``kind`` (``entity`` or ``relationship``).  An invariant declared enforced that this revision does not
+    enforce (a stored catalog written by another writer may hold one) carries ``not_enforced``, the reason
+    (:func:`~proto_db.semantic.constraints.unenforced_reason`)."""
+    composed = _entity(model, type_name)
+    entity = _neutral(composed)
     entity["kind"] = "relationship" if "roles" in entity else "entity"
+    for described, constraint in zip(entity.get("constraints", ()), composed.get("constraints", ())):
+        reason = unenforced_reason(composed, constraint)
+        if reason is not None:
+            described["not_enforced"] = reason
     return entity
 
 

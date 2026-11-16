@@ -494,7 +494,11 @@ class IntentLog:
         """Step 3 of the commit (spec section 10): the cardinality of every entity the replay wrote, and the
         enforced invariants whose operands it changed against ``mutables`` (the current version's cells), on
         the combined result, with the catalog of the log's last operation.  A violation is
-        ``ProtoConstraintError``: never a conflict, whatever the state it was replayed on."""
+        ``ProtoConstraintError``: never a conflict, whatever the state it was replayed on.
+
+        The catalog is the one the last entry was recorded (and replayed) with: a module the transaction
+        installed after its last logged operation adds no constraint to this check, as it adds nothing to
+        the replay.  Its constraints bind the operations logged after its install."""
         written = cells.written()
         if not written:
             return

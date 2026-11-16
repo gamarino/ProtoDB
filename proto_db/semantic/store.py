@@ -33,6 +33,7 @@ from ..catalog.model import canonical_form, from_atoms, to_atoms
 from ..errors import ProtoCorruptionError, ProtoNotSupportedError, ProtoValidationError
 from ..registry import Registry
 from .compose import _semantic_extension, compose_modules, module_contributions
+from .constraints import check_enforceable
 from .expressions import check_ast
 
 __all__ = ["has_contributions", "read_stored", "read_catalog",
@@ -66,7 +67,10 @@ def merged_model(stored: dict | None, registry: Registry) -> dict | None:
     ``None``): the stored Module items, kept as stored, plus the contributions of the modules they lack,
     with the entities composed from the merged items; ``None`` when nothing changes, and when there is no
     stored catalog and no module contributes anything.  A composition that fails raises as
-    :func:`~proto_db.semantic.compose.compose_modules` does (``ProtoValidationError``)."""
+    :func:`~proto_db.semantic.compose.compose_modules` does (``ProtoValidationError``).  This is the writer's
+    composition, so an enforced invariant this revision cannot enforce is refused
+    (:func:`~proto_db.semantic.constraints.check_enforceable`, ``ProtoNotSupportedError``); verifying a stored
+    catalog for use never refuses it (the invariant is published, not enforced)."""
     names = registry.key
     if stored is None:
         if not has_contributions(registry):
@@ -80,6 +84,7 @@ def merged_model(stored: dict | None, registry: Registry) -> dict | None:
         if name not in items:
             items[name] = module_contributions(registry, name)
     model = compose_modules(items)
+    check_enforceable(model["entities"])
     if stored is not None and "ext" in stored:
         model["ext"] = copy.deepcopy(stored["ext"])        # kept as written, never interpreted
     return model

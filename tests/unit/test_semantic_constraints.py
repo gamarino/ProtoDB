@@ -397,3 +397,59 @@ def test_an_enforced_invariant_over_another_entity_is_refused():
             db.run(lambda tr: tr.install_module("acme_far_invariant"))
     finally:
         space.close()
+
+
+def test_a_stored_cross_entity_invariant_opens_for_reading_and_is_not_enforced(monkeypatch):
+    """The refusal is the writer's (composition at install).  A catalog that another writer stored with a
+    cross-entity enforced invariant still opens: the invariant is published, describe says it is not enforced
+    and why, and no write is refused by it."""
+    from proto_db.semantic import store as _store
+    space = ObjectSpace(MemoryStorage(), modules_mapping=MAPPING)
+    try:
+        db = space.new_database("db")
+        db.run(lambda tr: tr.install_module("acme_sales"))
+        with monkeypatch.context() as patched:          # another writer, without this refusal
+            patched.setattr(_store, "check_enforceable", lambda entities: None)
+            db.run(lambda tr: tr.install_module("acme_far_invariant"))
+        described = _read(db, lambda s, tr: s.describe(ORDER))
+        rule = next(c for c in described["constraints"] if c["name"] == "order_within_limit")
+        assert rule.get("enforced", True) is True
+        assert rule["not_enforced"].startswith("an enforced invariant reads only its entity's own attributes")
+        assert "customer.credit_limit" in rule["not_enforced"]
+        credit = next(c for c in _read(db, lambda s, tr: s.describe(CUSTOMER))["constraints"])
+        assert "not_enforced" not in credit
+        world = _world(db, limit="100", committed="20")     # an order of 20 within Bob's 100
+        # A cancelled order leaves Bob's aggregate, so a line of 500 keeps Bob's own invariant; the order's
+        # total (520) then exceeds its customer's limit, and the published invariant does not refuse it.
+        db.run(lambda tr: semantic(tr).update(world["first"], state="cancelled"))
+        db.run(lambda tr: semantic(tr).get(world["first"]).add_line(world["product"], Decimal("1"),
+                                                                     Decimal("500")))
+        assert _read(db, lambda s, tr: s.get(world["first"]).total) == Decimal("520")
+        db.run(lambda tr: semantic(tr).get(world["first"]).add_line(world["product"], Decimal("1"),
+                                                                     Decimal("1")), intents=True)
+        assert _read(db, lambda s, tr: s.get(world["first"]).total) == Decimal("521")
+    finally:
+        space.close()
+
+
+def test_a_session_read_allocates_no_undo_log(db, monkeypatch):
+    from proto_db import transactions as T
+    world = _world(db)
+    made = []
+    original = T._SemanticUndo
+
+    class Counting(original):
+        __slots__ = ()
+
+        def __init__(self):
+            made.append(1)
+            super().__init__()
+    monkeypatch.setattr(T, "_SemanticUndo", Counting)
+    tr = db.new_transaction()
+    s = semantic(tr)
+    assert s.get(world["bob"]).committed == Decimal("20") and len(s.get(world["bob"]).orders) == 1
+    s.query({"from": ["via", ["cell", world["company"].name], "customers"]})
+    assert made == []                                       # reads hold the lock, and write nothing
+    s.update(world["bob"], credit_limit=Decimal("200"))
+    assert made == [1]                                      # the first write of an operation makes it
+    tr.abort()

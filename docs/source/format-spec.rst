@@ -2008,7 +2008,9 @@ published. Raw cell writes are not checked: these rules bind the semantic operat
   ``attr`` of one step (a field, a maintained aggregate, a role's stored value, or a computed attribute
   whose expression obeys the same rule), ``count`` of a role of the entity without ``where``, constants,
   arithmetic, comparisons and logic. Its operands then change only when the entity's record does. A
-  composition that holds another enforced invariant is refused (``ProtoNotSupportedError``).
+  writer's composition (declaring or installing modules) that holds another enforced invariant is
+  refused (``ProtoNotSupportedError``). A reader of a stored catalog that holds one **MUST NOT** refuse
+  the catalog for it: the invariant is published but not enforced, and a description of its type says so.
 * **An intent's** ``requires`` false or MISSING on its target is the rule ``<type name>.<intent>.requires``,
   carrying the intent's ``meaning``.
 

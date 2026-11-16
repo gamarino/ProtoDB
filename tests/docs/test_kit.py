@@ -90,3 +90,50 @@ def test_make_exercise_refuses_a_destination_inside_the_repository():
     out = _run([os.path.join(EXERCISE, "make_exercise.py"), os.path.join(REPO, "exercise-scratch")], REPO, 60)
     assert out.returncode != 0 and "inside the repository" in out.stderr, out.stdout + out.stderr
     assert not os.path.exists(os.path.join(REPO, "exercise-scratch"))
+
+
+def test_the_semantic_demo_history_verifier_reports_planted_failures():
+    """Step 4's done criterion rests on the demo's history walk (``_verify_history``): it must report an
+    over-limit state and a maintained aggregate that differs from the lines, both planted with raw writes
+    (preflight F36: a check is shown failing, not only passing).  No MCP needed."""
+    import importlib.util
+    from decimal import Decimal
+    from proto_db import ObjectSpace
+    from proto_db.semantic import semantic
+    from proto_db.storage.memory import MemoryStorage
+    spec = importlib.util.spec_from_file_location("semantic_demo_t9", os.path.join(KIT, "semantic",
+                                                                                     "semantic_demo.py"))
+    demo = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(demo)
+    space = ObjectSpace(MemoryStorage(), modules_mapping=demo.MAPPING)
+    try:
+        db = space.new_database("acme")
+        db.run(lambda tr: tr.install_module("acme_sales"))
+
+        def load(tr):
+            s = semantic(tr)
+            company = s.create("acme.core.Company", name="ACME")
+            customer = s.create("acme.sales.Customer", name="Bob", credit_limit=Decimal("100"), company=company)
+            product = s.create("acme.catalog.Product", name="widget", list_price=Decimal("10"), company=company)
+            order = s.create(demo.ORDER, number=1, company=company, customer=customer)
+            s.get(order).add_line(product, Decimal("1"), Decimal("50"))
+            return company, customer
+        company, customer = db.run(load)
+        assert demo._verify_history(db, company.name) == (1, [], [])
+
+        def raw(**changes):
+            def write(tr):
+                tr.set_mutable(customer.name, tr.get_mutable(customer.name).with_(**changes))
+            db.run(write)
+        raw(credit_limit=Decimal("10"))                     # over the limit: 50 > 10
+        over = db.new_transaction()
+        over_version = over._db_root.version
+        over.abort()
+        raw(credit_limit=Decimal("100"), committed=Decimal("999"))     # the aggregate differs from the lines
+        versions, violations, mismatches = demo._verify_history(db, company.name)
+        assert versions == 3
+        assert violations == [(over_version, customer.name, Decimal("50"), Decimal("10"))]
+        assert [(cell, recomputed, stored) for _, cell, recomputed, stored in mismatches] == \
+            [(customer.name, Decimal("50"), Decimal("999"))]
+    finally:
+        space.close()

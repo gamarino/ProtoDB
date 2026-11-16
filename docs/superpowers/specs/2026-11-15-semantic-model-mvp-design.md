@@ -529,7 +529,9 @@ Requirements:
 - **Enforceable invariants (MVP).** An enforced invariant reads only its entity's own attributes (fields,
   maintained aggregates, roles, the count of a role's members, computeds over them), so a change that touches
   its operands touches its entity. One that reads another entity would not be checked again when that entity
-  changes: composition refuses it (`ProtoNotSupportedError`), and `enforced=False` publishes it. Raw cell
+  changes: a writer's composition (declaration, install) refuses it (`ProtoNotSupportedError`), and
+  `enforced=False` publishes it. A stored catalog that holds one still opens for reading: the invariant is
+  published but not enforced, and `describe` says so (`not_enforced`). Raw cell
   writes keep today's rules. The rendering of messages, the key of an entity without `__key__` (its cell
   name) and the rest are normative in format-spec, "Constraints".
 

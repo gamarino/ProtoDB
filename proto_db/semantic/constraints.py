@@ -25,8 +25,11 @@ Which invariants this revision enforces
     expressions read the same.  Its operands then change only when its entity's record changes, so checking
     the entities a change touched is complete.  An enforced invariant that reads another entity (a path
     through a role, a ``via``, a ``sum`` or a filtered ``count`` over the members, a root or a cell) or a
-    Python-only computed attribute would not be re-checked when that other entity changes: composition
-    refuses it (``ProtoNotSupportedError``, :func:`check_enforceable`), and ``enforced=False`` publishes it.
+    Python-only computed attribute would not be re-checked when that other entity changes.  The refusal is
+    the writer's: composing the modules a writer declares or installs refuses it (``ProtoNotSupportedError``,
+    :func:`check_enforceable`), and ``enforced=False`` publishes it.  A stored catalog that holds one (written
+    by another writer) still opens: the invariant is published but never checked, and ``describe`` says so
+    (its ``not_enforced`` names the reason, :func:`unenforced_reason`).
 
 Evaluation and the error
     The invariant's tree is evaluated on the entity's record (spec section 7: the stored value, then the
@@ -59,9 +62,9 @@ from ..collections.sets import Set
 from ..errors import ProtoConstraintError, ProtoDBError, ProtoNotSupportedError, ProtoValidationError
 from ..indexing.keyspec import _step as _stored_step
 from ..values import MISSING, MutableObject, exact_token, is_atom
-from .expressions import _arithmetic, describe_operand, evaluate
+from .expressions import _arithmetic, dependencies, describe_operand, evaluate
 
-__all__ = ["check_constraints", "check_commit", "check_enforceable", "requires_error"]
+__all__ = ["check_constraints", "check_commit", "check_enforceable", "unenforced_reason", "requires_error"]
 
 #: The ordering comparisons, whose operands render as ``{left}``, ``{right}`` and ``{excess}``.
 _ORDERING = frozenset({"<", "<=", ">", ">="})
@@ -135,10 +138,10 @@ def _check_cardinality(model, type_name: str, entity: Mapping, handle, record, r
 def _check_invariants(model, type_name: str, entity: Mapping, handle, record, old, all_changed: bool,
                       reader) -> None:
     for constraint in entity.get("constraints", ()):
-        if constraint.get("enforced", True) is False:
+        if constraint.get("enforced", True) is False or unenforced_reason(entity, constraint) is not None:
             continue
         tree = constraint["expression"]["ast"]
-        if not all_changed and old is not None and not _changed(_operands(entity, tree, set()), old, record):
+        if not all_changed and old is not None and not _changed(_operands(entity, tree), old, record):
             continue
         result = evaluate(tree, record, reader=reader)
         if result is True:
@@ -170,25 +173,21 @@ def _declared(entity: Mapping, name: str):
                 None)
 
 
-def _operands(entity: Mapping, tree, seen: set) -> set:
-    """The stored attribute names of ``entity`` that ``tree`` reads (computed attributes expanded to what
-    their expressions read), for a tree :func:`check_enforceable` accepts."""
-    names, stack = set(), [tree]
-    while stack:
-        node = stack.pop()
-        op = node[0]
-        if op == "attr":
-            element = _declared(entity, node[1])
-            if element is not None and element.get("kind") == "computed" and "expression" in element:
-                if node[1] not in seen:
-                    seen.add(node[1])
-                    stack.append(element["expression"]["ast"])
-            else:
-                names.add(node[1])
-        elif op == "count":
-            names.add(node[1])
-        elif op != "const":
-            stack.extend(child for child in node[1:] if isinstance(child, list))
+def _operands(entity: Mapping, tree) -> set:
+    """The stored attribute names of ``entity`` that ``tree`` reads: its
+    :func:`~proto_db.semantic.expressions.dependencies`, a computed attribute among them replaced by the
+    dependencies of its expression, for a tree :func:`unenforced_reason` accepts."""
+    names, seen, pending = set(), set(), list(dependencies(tree))
+    while pending:
+        name = pending.pop()
+        if name in seen:
+            continue
+        seen.add(name)
+        element = _declared(entity, name)
+        if element is not None and element.get("kind") == "computed" and "expression" in element:
+            pending.extend(dependencies(element["expression"]["ast"]))
+        else:
+            names.add(name)
     return names
 
 
@@ -244,20 +243,31 @@ def _unsupported(entity: Mapping, tree, seen: set):
     return None
 
 
+def unenforced_reason(entity: Mapping, constraint: Mapping):
+    """Why the invariant ``constraint`` of ``entity``, declared enforced, is not enforced in this revision (it
+    reads beyond its entity's own attributes: see "Which invariants this revision enforces"), or ``None``
+    when it is enforced (or declared ``enforced=False``)."""
+    if constraint.get("enforced", True) is False:
+        return None
+    found = _unsupported(entity, constraint["expression"]["ast"], set())
+    if found is None:
+        return None
+    return (f"an enforced invariant reads only its entity's own attributes in this revision, and it reads "
+            f"{found}, whose change would not check it again")
+
+
 def check_enforceable(entities: Mapping) -> None:
     """Refuse an enforced invariant that reads beyond its entity's own attributes (see "Which invariants
     this revision enforces"): ``ProtoNotSupportedError`` naming the type, the constraint and what it
-    reads.  Called by composition."""
+    reads.  The writer's refusal: called when a writer composes the modules it declares or installs, never
+    when a stored catalog is verified for use."""
     for type_name, entity in entities.items():
         for constraint in entity.get("constraints", ()):
-            if constraint.get("enforced", True) is False:
-                continue
-            found = _unsupported(entity, constraint["expression"]["ast"], set())
-            if found is not None:
+            reason = unenforced_reason(entity, constraint)
+            if reason is not None:
                 raise ProtoNotSupportedError(
-                    f"type {type_name!r}, constraint {constraint['name']!r}: an enforced invariant reads only its "
-                    f"entity's own attributes in this revision, and it reads {found}, whose change would not "
-                    f"check it again; declare it enforced=False to publish it for agents only")
+                    f"type {type_name!r}, constraint {constraint['name']!r}: {reason}; declare it enforced=False "
+                    f"to publish it for agents only")
 
 
 # -- the error and its message --------------------------------------------------------------------------------
