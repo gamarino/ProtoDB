@@ -1,0 +1,10 @@
+== direct-gil1-r3 NOT MEASURED: not quiet after 60 min 2026-11-16T11:01:03-03:00
+ 11:01:03 up  2:07,  1 user,  load average: 3,81, 4,01, 4,10
+207512 /bin/bash -c source /home/gamarino/.claude/shell-snapshots/snapshot-bash-1794830165125-23rym2.sh 2>/dev/null || true && \builtin shopt -u extglob 2>/dev/null || true && { \builtin unalias -- 'which'; \builtin unset -f -- 'which'; } >/dev/null 2>&1 || true && { \builtin unalias -- 'unsetenv'; \builtin unset -f -- 'unsetenv'; } >/dev/null 2>&1 || true && eval 'T=$PWD/.superpowers/sdd/2026-11-13-cluster-mode/t30-tmp; source $T/env.sh; export PROTOST=$T/bin/protost T30_OUT=$T/audit-out; date > $T/audit.start; tests/run_tests.sh tests/audit > $T/audit.log 2>&1; echo exit=$? >> $T/audit.log; date >> $T/audit.log' < /dev/null && pwd -P >| /tmp/claude-ea66-cwd
+598525 timeout 900 /home/gamarino/Documentos/proyectos/worktrees/protoBaseST-cluster/.superpowers/sdd/2026-11-13-cluster-mode/t30-tmp/bin/protost --print-last sim_timer_audit_renewBackoff_skewed_part1.st
+598526 /home/gamarino/Documentos/proyectos/protoST/build_rel0100/protost --print-last sim_timer_audit_renewBackoff_skewed_part1.st
+== intents-gil1-r3 NOT MEASURED: not quiet after 60 min 2026-11-16T12:01:05-03:00
+ 12:01:05 up  3:07,  1 user,  load average: 4,45, 5,85, 5,25
+867231 timeout 900 /home/gamarino/Documentos/proyectos/worktrees/protoBaseST-cluster/.superpowers/sdd/2026-11-13-cluster-mode/t30-tmp/bin/protost --print-last sim_timer_audit_permissionDeadline_tenfold_part2.st
+867232 /home/gamarino/Documentos/proyectos/protoST/build_rel0100/protost --print-last sim_timer_audit_permissionDeadline_tenfold_part2.st
+== stopped by controller ruling 2026-11-16T12:11:55-03:00: machine shared (protoBaseST audit); no c-run measured

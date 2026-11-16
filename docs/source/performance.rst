@@ -929,6 +929,110 @@ Operations
   a Python application: no server to deploy, no client round trip, but every writer and reader
   is that application's process.
 
+Semantic model: intents against direct mode
+-------------------------------------------
+
+The concurrency experiment of the semantic model (``benchmarks/semantic/credit_experiment.py``, spec section 15,
+ruling R275). It is not part of the suite, and the figures elsewhere on this page do not apply to it.
+
+**Measured at commit** ``9a8ce75``, from a clean ``python -m benchmarks.export`` tree (every results file records
+``"commit": "9a8ce75"`` and ``"clean": true``), on 2026-11-16, on the machine of `Environment`_ (AMD Ryzen 5 5500U,
+6 cores / 12 threads, frequency policy as stated there), with CPython 3.14.6 free-threaded
+(``.venv314t/bin/python``), ``-X gil=0`` and ``-X gil=1``. Each run ran alone, under ``systemd-run --user --scope
+-p MemoryMax=12G -p MemorySwapMax=0``, in a new work directory on ZFS. Results:
+``benchmarks/results/2026-11-16-9a8ce75-credit/`` (one JSON file per run, the two summaries, and the driver logs
+``driver.log`` and ``rerun-c.log`` with the load average and the process check before every run).
+
+**The workload.** The demo's order-entry model (``docs/kit/semantic/acme_sales.py``): one company, 8 customers,
+4 products, 400 orders of 1-3 lines (quantity 1-3, price 5-50), placed by 8 threads, plan and limits from seed 1.
+Each customer's credit limit is 75 % of the demand the plan places on it (rounded down), so some orders must be
+refused by the credit rule ``committed <= credit_limit``. Each order is one ``Database.run`` (its default 10
+retries) that creates the order, adds its lines with the ``add_line`` intent and commits; ``FileStorage``,
+durability ``none``.
+
+- *direct*: today's transactions, the baseline of R275;
+- *intents*: the same calls with ``intents=True``; the operations are logged and replayed at commit.
+
+The workload decides on nothing it reads: it never reads a customer's committed amount, ``.record``, a query or a
+computed attribute of the company or a product. In intent mode those reads record whole cells (a sound
+coarsening; finer membership reads come after the MVP), so a workload that made them would measure that
+coarsening rather than the model.
+
+**Every run verifies itself** before it reports a figure. The outcome of every order (committed, refused by the
+credit rule, refused by conflict after the last retry) is reconciled with the final state, read raw: the committed
+orders are exactly the orders stored, with their planned totals; each customer's maintained aggregate equals the
+sum of its committed orders and is within its limit; each refusal by the rule is explained by the final state;
+each retry was a conflict; each commit published one version. Then the history verifier
+(``benchmarks/semantic/history_verifier.py``) walks every version and recomputes each customer's committed amount
+from the order lines, raw, starting from the order cells. It deliberately re-states the model's rules instead of
+reusing the code that maintains the aggregates, so that it cannot agree with an error of that code. All 20 runs
+were verified.
+
+Counts, all 20 runs (5 per cell), median [min-max]:
+
+==================  ===============  ===============  =================  ===================  ==========
+Cell                committed        conflicts        refused by         refused by the       verifier
+                                     (retries)        conflict           credit rule          violations
+==================  ===============  ===============  =================  ===================  ==========
+direct, GIL off     318 [310-323]    517 [479-579]    35 [34-40]         44 [42-55]           0
+direct, GIL on      305 [301-314]    672 [625-1173]   51 [46-78]         45 [16-53]           0
+intents, GIL off    295 [295-300]    0                0                  105 [100-105]        0
+intents, GIL on     296 [293-298]    0                0                  104 [102-107]        0
+==================  ===============  ===============  =================  ===================  ==========
+
+Of the 400 orders, intent mode refused none by conflict and conflicted on no attempt. The orders that it refused
+were refused by the credit rule, and no version of any history holds a customer above its limit or a maintained
+aggregate that differs from the lines. Direct mode also never let a customer exceed its limit (0 violations): **the
+write skew that the brief expects in direct mode did not occur**, as R275 anticipated, because today's read set
+validates every cell the credit check reads. What direct mode loses is the independent orders: every order writes
+the company's and the products' collections and its customer's aggregate, so concurrent orders conflict. 34-78
+orders per run were still conflicting after the 10 retries and were refused although they were valid, with
+479-1,173 conflicting attempts per run. Those refused orders never weighed on their customers, which is why direct
+mode refuses fewer orders by the credit rule. The verification counts (refusals by the rule explained, 0
+violations, 0 mismatches) do not depend on the load. The conflict counts do: they depend on how the threads
+interleave, and the largest (1,173 conflicts, 78 refusals) comes from a run on the loaded machine described below.
+
+Cost, from the runs started with a 1-minute load below 4 and no foreign test or benchmark process (median
+[min-max]):
+
+================  ====  ================  ===================  ===================  ================
+Cell              runs  commit p50 (ms)   commit p95 (ms)      orders/s             committed/s
+================  ====  ================  ===================  ===================  ================
+direct, GIL off   3     10.0 [10.0-10.3]  17.1 [16.7-18.0]     72.9 [72.9-73.3]     58.7 [57.8-59.2]
+intents, GIL off  3     79.2 [78.1-79.5]  110.5 [107.3-111.7]  109.2 [108.7-112.0]  80.5 [80.2-82.9]
+direct, GIL on    2     26.4, 39.8        75.4, 97.3           24.0, 33.4           18.8, 25.4
+intents, GIL on   2     99.0, 100.1       135.3, 145.5         74.2, 74.7           54.9, 55.1
+================  ====  ================  ===================  ===================  ================
+
+Start load (1-minute average) of these runs: direct GIL off 2.07, 3.40, 3.20; intents GIL off 3.13, 3.87, 2.46;
+direct GIL on 3.56, 3.81; intents GIL on 3.54, 3.66. With two runs, both values are given. The remaining cost
+cells (GIL off repetitions 4-5, GIL on repetitions 3-5) are **not measured (machine shared; re-measured in the
+final integration runs)**. The driver stopped when the machine rebooted during GIL-on repetition 3. The
+resumed runs started at loads of 4.9-15.2, just after the boot. Afterwards another session's test suite kept the
+load at 4-6, and a re-measurement that waited for a load below 3 found no quiet window in two hours. Their
+counts are in the table above; their times are in their files and not used.
+
+*Reading the cost.* A commit's latency is measured around ``Transaction.commit()`` in both modes, but the two
+commits do different work. In direct mode the credit rule is checked by the operation, before the commit, and the
+commit validates the read set and publishes. In intent mode the commit replays the logged operations on the cells
+current at commit, checks the rule on the result and publishes, under the root lock. With 8 threads, an intent
+commit therefore also waits for the replays queued ahead of it. The p50 of 79 ms (GIL off) includes that wait, and
+it is not a per-commit CPU cost: this experiment does not separate the two. In throughput, the per-commit cost
+pays off: intent mode completed the 400 orders 1.5x faster than direct mode with the GIL off (109 against 73
+orders/s, and 81 against 59 committed orders/s), because no work is retried. With the GIL on, both modes are
+slower, and direct mode loses more: its retries are serialised by the GIL.
+
+Reproducing::
+
+    .venv314t/bin/python -m benchmarks.export 9a8ce75 <dir>/export-9a8ce75
+    cd <dir>/export-9a8ce75
+    $PY -X gil=0 -m benchmarks.semantic.credit_experiment --mode direct --threads 8 --orders 400 \
+        --customers 8 --products 4 --seed 1 --workdir <new dir> --out <file>.json
+    $PY -m benchmarks.semantic.credit_experiment --summarize <files> --out summary.json
+
+The driver alternated mode and GIL mode run by run (``direct``, ``intents``; GIL off, then on; 5 repetitions).
+A run takes about 25 seconds, most of it the history verifier's walk of about 300 versions.
+
 Reproducing
 -----------
 
