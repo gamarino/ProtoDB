@@ -212,8 +212,11 @@ fundamental reason.
 - **Composition.** The composed subtype is the fold of its linearization from the last to the first: the
   supertypes' composed elements (each with its own modules' contributions), then the subtype's chain.
   - `supertypes` lists the direct supertypes.
-  - Every inherited element keeps its provenance, and carries `inherited_from` (the type that declared it)
-    *(R281)*.
+  - Every inherited element (attribute, role, intent and constraint) keeps its provenance, and carries
+    `inherited_from` (the type that declared it) *(R281)*.
+  - Of the entity-level fields a subtype inherits only `key`, which it may not redefine (instances are read
+    through the supertype's declaration); its `meaning`, `label`, `help`, `synonyms` and `certification` are its
+    own, absent unless it declares them.
   - A subclass may add any element, and may redefine what section 5 lets a module redefine (presentation,
     meaning, defaults, a computed's expression, `enforced`, an intent's implementation).
   - With several supertypes, C3 decides which definition comes first, exactly as resolution does. It is never an
@@ -343,13 +346,13 @@ them uses the feature `catalog` and is version 6; data that uses none stays vers
 |---|---|
 | `proto_db.catalog.SemanticCatalog` | value of `__semanticCatalog`: `modules` (ref, Dictionary name -> Module), `module_set` (tuple of names in code-point order), `entities` (ref, Dictionary type name -> Entity or Relationship, the composition for `module_set`) |
 | `proto_db.catalog.Module` | `name`, `version` (string; the MVP writes `"1"`), `depends` (tuple), `extensions` (tuple of refs, declaration order) |
-| `proto_db.catalog.Extension` | `module`, `extends` (type name), `entity` (map of the entity-level elements it contributes), `elements` (tuple of refs to the Attribute, Role, Intent and Constraint records it declares, with the fields it states) |
+| `proto_db.catalog.Extension` | `module`, `extends` (type name), `entity` (map of the entity-level elements it contributes, and `kind`: `entity` or `relationship`), `elements` (tuple of refs to the Attribute, Role, Intent and Constraint records it declares, with the fields it states) |
 | `proto_db.catalog.Entity` | `type_name`, `supertypes`, `meaning`, `label`, `help`, `synonyms`, `key`, `attributes` (refs to Attribute and Role), `intents`, `constraints`, `certification`, `provenance` |
-| `proto_db.catalog.Relationship` | the Entity fields plus `roles` (refs to its Role records, two or more) |
+| `proto_db.catalog.Relationship` | the Entity fields plus `roles` (refs to its Role records, two or more, each with `participant` true) |
 | `proto_db.catalog.Attribute` | `name`, `inherited_from` (composed subtype entities only, R281), `kind` (`field`, `computed`, `computed_stored`), `value_type`, `values` (enumeration, R268), `required`, `default`, `unit`, `indexed`, `expression` (ref), `languages` (R276), `meaning`, `label`, `help`, `group`, `order`, `synonyms`, `examples`, `caveats`, `sensitivity`, `certification`, `deprecated`, `provenance` |
-| `proto_db.catalog.Role` | the Attribute fields plus `target`, `inverse`, `cardinality`, `inverse_cardinality`, `ordered`, `index_by`, `binding`, `on_delete` |
-| `proto_db.catalog.Intent` | `name`, `meaning`, `parameters` (tuple of `(name, value_type)`), `requires` (ref), `commutes_with`, `effects`, `languages`, `provenance` |
-| `proto_db.catalog.Constraint` | `name`, `scope` (`attribute`, `entity`, `relation`, `aggregate`), `expression` (ref), `enforced`, `meaning`, `message`, `provenance` |
+| `proto_db.catalog.Role` | the Attribute fields plus `target`, `inverse`, `cardinality`, `inverse_cardinality`, `participant`, `ordered`, `index_by`, `binding`, `on_delete` |
+| `proto_db.catalog.Intent` | `name`, `inherited_from` (R281), `meaning`, `parameters` (tuple of `(name, value_type)`), `requires` (ref), `commutes_with`, `effects`, `languages`, `provenance` |
+| `proto_db.catalog.Constraint` | `name`, `inherited_from` (R281), `scope` (`attribute`, `entity`, `relation`, `aggregate`), `expression` (ref), `enforced`, `meaning`, `message`, `provenance` |
 | `proto_db.catalog.Expression` | `ast` (the tree of section 7) |
 | `proto_db.catalog.IntentRecord` | `intent` (`(type name, intent name)`), `target` (handle), `arguments` (map), `transaction` (the database version the commit produced) |
 
@@ -377,7 +380,9 @@ refs):
   of `(name, value_type)` pairs, each a `@tup` of a `str` and a `value_type`: a value kind, an entity type
   name (a parameter that takes an entity, carried as its cell name), or nil for a parameter whose type is not
   declared (an explicit "unknown", never guessed). The first writer writes no `effects`.
-- `required`, `indexed`, `ordered`, `enforced` and `deprecated` are `bool`.
+- `required`, `indexed`, `ordered`, `participant`, `enforced` and `deprecated` are `bool`. `participant` is
+  true for a role of a relationship and false for the end of a plain relation; a Relationship lists its
+  participant roles in `roles`, never in `attributes`.
 - `cardinality` and `inverse_cardinality` are the two ends of the relation as `str`, one of `one`, `many`,
   `0..1` and `1..*`: `cardinality` is the end at the role's own entity, `inverse_cardinality` the end at its
   `target`. A declaration written as a pair (`many-to-one`, `one-to-many`, `one-to-one`, `many-to-many`)
@@ -385,8 +390,10 @@ refs):
   `computed_stored`. `scope` is `attribute`, `entity`, `relation` or `aggregate`.
 - `expression` and `requires` are refs to an Expression record; `ast` is the tree of the expression
   language, nested `list` values whose operator and names are `str`.
-- `Extension.entity` is a `@map` whose keys are among `meaning`, `label`, `help`, `synonyms`, `key`,
-  `supertypes` and `certification`, each with the encoding of the Entity field of that name.
+- `Extension.entity` is a `@map` whose keys are among `kind`, `meaning`, `label`, `help`, `synonyms`, `key`,
+  `supertypes` and `certification`: `kind` is `entity` or `relationship` (default `entity`, structural), each
+  other key has the encoding of the Entity field of that name. An Extension that declares a participant role
+  states `kind` `relationship`, so composing from the contributions reproduces the stored record exactly.
 - `IntentRecord.intent` is a `@tup` of two `str`; `target` is the `str` name of the target's cell
   (`<type name>#<32 hex digits>`); `arguments` is a `@map` from parameter name to canonical value (an entity
   argument is carried as its cell name); `transaction` is an `int`.
@@ -398,7 +405,8 @@ refs):
   `expression`: a role is stored and holds entities, not a value of a kind.
 - **Omission.** Defaults are omitted, in the records and in the canonical form: absent text, an empty `@tup`
   or `@map`, `required` false, `indexed` false, `enforced` true, `sensitivity` `internal`, `binding`
-  `identity`, `ordered` false and `deprecated` false. A writer writes no field at its default; a reader
+  `identity`, `ordered` false, `participant` false, `deprecated` false and `Extension.entity`'s `kind`
+  `entity`; a map of such fields is at its default when they all are. A writer writes no field at its default; a reader
   that meets one accepts it and its canonical form omits it. Every other optional field is written when it is
   declared.
 

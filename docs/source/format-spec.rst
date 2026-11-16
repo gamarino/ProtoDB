@@ -44,7 +44,7 @@ The key words MUST, MUST NOT, SHOULD and MAY are used as in RFC 2119. A section 
      - the header of every framed log file; versions 2 and 3 are read, and 2 is written unless the
        log is an acceptor log holding a versioned entry (kind 7, `The acceptor log (kind ROOT)`_)
    * - Cluster protocol (``PROTOCOL_VERSION``)
-     - 14
+     - 15
      - the ``v`` field of every cluster message; no other version is accepted
 
 There are three levels of conformance:
@@ -141,7 +141,7 @@ record needs 5; this is conservative (nothing is lost or misread) and accepted.
 **The pinned vectors.** ``tests/conformance/vectors.sha256`` lists the SHA-256 of every file
 under ``tests/conformance/vectors/`` (``<hex digest>  <path>``, one line per file, sorted by path
 in code point order, ``/`` as the separator), then the digest of ``manifest.json``. The SHA-256
-of that list file is ``f90a335052c7a833c1bb6c5f7ebc9e14dcfcd4bcf04b4ea24b155e99bce667c9``. ``test_conformance.py`` checks that the committed files
+of that list file is ``be5e221c99cbb69138ce2970172a7a3b4605fc80fd03fed6089366a726766097``. ``test_conformance.py`` checks that the committed files
 match the list and that this page states the list's digest. Each vector file is governed by
 the number that covers what it holds: ``vectors/cluster/*.log`` by ``LOG_FORMAT_VERSION``,
 ``vectors/cluster/messages/`` by ``PROTOCOL_VERSION``, every other file by ``FORMAT_VERSION``.
@@ -1647,14 +1647,16 @@ parents (no ``p``).
        order.
    * - ``proto_db.catalog.Extension``
      - ``module``; ``extends``, a type name; ``entity``, a map of the entity-level elements it
-       contributes; ``elements``, a ``@tup`` of refs to the Attribute, Role, Intent and
-       Constraint records it declares, with the fields it states.
+       contributes and of ``kind``, the kind of the type (``entity`` or ``relationship``);
+       ``elements``, a ``@tup`` of refs to the Attribute, Role, Intent and Constraint records it
+       declares, with the fields it states.
    * - ``proto_db.catalog.Entity``
      - ``type_name``; ``supertypes``; ``meaning``; ``label``; ``help``; ``synonyms``; ``key``;
        ``attributes`` (refs to Attribute and Role records); ``intents``; ``constraints``;
        ``certification``; ``provenance``.
    * - ``proto_db.catalog.Relationship``
-     - The Entity fields plus ``roles``: refs to its Role records, two or more.
+     - The Entity fields plus ``roles``: refs to its Role records, two or more, each with
+       ``participant`` true. Its ``attributes`` hold its other elements.
    * - ``proto_db.catalog.Attribute``
      - ``name``; ``inherited_from``; ``kind`` (``field``, ``computed`` or ``computed_stored``);
        ``value_type``; ``values``; ``required``; ``default``; ``unit``; ``indexed``;
@@ -1663,13 +1665,14 @@ parents (no ``p``).
        ``certification``; ``deprecated``; ``provenance``.
    * - ``proto_db.catalog.Role``
      - The Attribute fields plus ``target``, ``inverse``, ``cardinality``,
-       ``inverse_cardinality``, ``ordered``, ``index_by``, ``binding`` and ``on_delete``.
+       ``inverse_cardinality``, ``participant``, ``ordered``, ``index_by``, ``binding`` and
+       ``on_delete``.
    * - ``proto_db.catalog.Intent``
-     - ``name``; ``meaning``; ``parameters``, a ``@tup`` of ``(name, value_type)`` pairs;
+     - ``name``; ``inherited_from``; ``meaning``; ``parameters``, a ``@tup`` of ``(name, value_type)`` pairs;
        ``requires`` (a ref to an Expression); ``commutes_with``; ``effects``; ``languages``;
        ``provenance``.
    * - ``proto_db.catalog.Constraint``
-     - ``name``; ``scope`` (``attribute``, ``entity``, ``relation`` or ``aggregate``);
+     - ``name``; ``inherited_from``; ``scope`` (``attribute``, ``entity``, ``relation`` or ``aggregate``);
        ``expression`` (a ref to an Expression); ``enforced``; ``meaning``; ``message``;
        ``provenance``.
    * - ``proto_db.catalog.Expression``
@@ -1682,8 +1685,8 @@ Field rules:
 
 - ``values`` (an enumeration of the permitted values of a ``str`` attribute), ``languages``,
   ``inverse_cardinality`` and ``inherited_from`` are part of the format. ``inherited_from``
-  appears only on the elements of a composed subtype entity and names the type that declared the
-  element. ``values`` is catalogued and not enforced by the first writer; the catalog is how a
+  appears only on the elements (attributes, roles, intents and constraints) of a composed subtype
+  entity and names the type that declared the element. ``values`` is catalogued and not enforced by the first writer; the catalog is how a
   reader learns that.
 - ``label`` and ``help`` are maps from a language tag to text. A declaration that gives a plain
   string is stored as ``{"und": text}`` (BCP 47 *undetermined*); a declaration that gives a map
@@ -1731,7 +1734,10 @@ refs):
   name (a parameter that takes an entity, carried as its cell name), or nil for a parameter whose type is not
   declared (an explicit "unknown", never guessed). The first writer writes no ``effects``.
 
-- ``required``, ``indexed``, ``ordered``, ``enforced`` and ``deprecated`` are ``bool``.
+- ``required``, ``indexed``, ``ordered``, ``participant``, ``enforced`` and ``deprecated`` are ``bool``.
+  ``participant`` is true for a role of a relationship (Chen: a participant of the link) and false for
+  the end of a plain relation; a Relationship lists its participant roles in ``roles``, never in
+  ``attributes``, and an Entity has none.
 
 - ``cardinality`` and ``inverse_cardinality`` are the two ends of the relation as ``str``, one of ``one``, ``many``,
   ``0..1`` and ``1..*``: ``cardinality`` is the end at the role's own entity, ``inverse_cardinality`` the end at its
@@ -1742,8 +1748,13 @@ refs):
 - ``expression`` and ``requires`` are refs to an Expression record; ``ast`` is the tree of the expression
   language, nested ``list`` values whose operator and names are ``str``.
 
-- ``Extension.entity`` is a ``@map`` whose keys are among ``meaning``, ``label``, ``help``, ``synonyms``, ``key``,
-  ``supertypes`` and ``certification``, each with the encoding of the Entity field of that name.
+- ``Extension.entity`` is a ``@map`` whose keys are among ``kind``, ``meaning``, ``label``, ``help``, ``synonyms``,
+  ``key``, ``supertypes`` and ``certification``: ``kind`` is the ``str`` ``entity`` or ``relationship`` (default
+  ``entity``), and each other key has the encoding of the Entity field of that name. An Extension that declares a
+  participant role states ``kind`` ``relationship``; so does every Extension of a relationship type, since
+  ``kind`` is structural (a redefinition that restates it **MUST** equal it). So a reader that composes from the
+  contributions builds a Relationship, with the participant roles in ``roles``, exactly where the writer did.
+  The map is at its default, and omitted, when every key it holds is (empty, or ``kind`` ``entity``).
 
 - ``IntentRecord.intent`` is a ``@tup`` of two ``str``; ``target`` is the ``str`` name of the target's cell
   (``<type name>#<32 hex digits>``); ``arguments`` is a ``@map`` from parameter name to canonical value (an entity
@@ -1759,7 +1770,9 @@ refs):
 
 - **Omission.** Defaults are omitted, in the records and in the canonical form: absent text, an empty ``@tup``
   or ``@map``, ``required`` false, ``indexed`` false, ``enforced`` true, ``sensitivity`` ``internal``, ``binding``
-  ``identity``, ``ordered`` false and ``deprecated`` false. A writer writes no field at its default; a reader
+  ``identity``, ``ordered`` false, ``participant`` false, ``deprecated`` false and, in ``Extension.entity``,
+  ``kind`` ``entity``. A field whose value is a map of such fields (``Extension.entity``) is at its default
+  when they all are. A writer writes no field at its default; a reader
   that meets one accepts it and its canonical form omits it. Every other optional field is written when it is
   declared.
 
@@ -1787,7 +1800,9 @@ composed one. A subtype entity (``supertypes`` is not empty) is composed as the 
 registry linearization from the last to the first; its inherited elements carry
 ``inherited_from``, and it **MUST NOT** change what a module may not change (the same list),
 because a role, query, aggregate or invariant typed by the supertype reads and writes subtype
-instances through the supertype's declaration.
+instances through the supertype's declaration. Of the entity-level fields a subtype inherits only
+``key``, which it **MUST NOT** redefine; its ``meaning``, ``label``, ``help``, ``synonyms`` and
+``certification`` are its own (absent unless it declares them).
 
 **The canonical form** of a catalog is the composed catalog expanded into one value: every ref
 replaced by the fields of the record it names, oids and pointers dropped, every Dictionary a
@@ -1801,8 +1816,8 @@ Every such map is sorted by key in code-point order. A
 ``@tup`` stays a ``@tup`` and a canonical value (``default``, an item of ``examples``, the ``ast``,
 a value inside ``ext``) is encoded as it is stored. The record types need no tag in the canonical
 form: an item of ``entities`` with ``roles`` is a Relationship, and an element with ``kind`` is an
-Attribute, one with ``target`` a Role, one with ``scope`` a Constraint and any other an Intent
-(their required fields make this unambiguous). The vector ``catalog/canonical.msgpack`` is the
+Attribute, one with ``target`` a Role (a participant role when ``participant`` is true), one with
+``scope`` a Constraint and any other an Intent (their required fields make this unambiguous). The vector ``catalog/canonical.msgpack`` is the
 canonical form of the vector space's catalog (`Conformance vectors`_).
 
 The expression language
@@ -2093,7 +2108,7 @@ Field types:
      - rid, inc; persisted (bool); ranges; optional ``unknown`` (bool, absent reads as false)
 
 An optional field may be absent; it is checked when present, and a receiver ignores a key it
-does not know. ``unknown`` is the only optional field of protocol 14. A member answers
+does not know. ``unknown`` is the only optional field of protocol 15. A member answers
 ``fetched`` or ``commit_info`` with ``unknown`` true when it cannot tell whether it holds what
 was asked: it has no storage attached, its space closed or detached while it served the
 request, or (``commit_info`` only) it is still attaching its storage. The asker counts such a
@@ -2116,7 +2131,7 @@ Values a member must compute like the others:
 
 The meaning of each message, and the rules that make the protocol safe, are those of
 :doc:`coordinator-protocol` and of decisions D44 to D55; the field list above is complete for
-protocol 14. The vectors hold one frame of every type.
+protocol 15. The vectors hold one frame of every type.
 
 
 A minimal external writer (file storage)
@@ -2278,13 +2293,15 @@ Every change since format 1 and how a reader of this revision treats data writte
    * - Format 5 to 6 (D63 to D72; development branch, no release yet)
      - The feature ``catalog``: eleven built-in types, aliases 24 to 34, for the roots
        ``__semanticCatalog`` and ``__intentLog`` (`Semantic catalog (format 6)`_). A record of
-       one of them is version 6; data that uses none of them keeps version 4 or 5, byte for byte
+       one of them is version 6; data that uses none of them keeps version 4 or 5, byte for byte.
+       The cluster ``PROTOCOL_VERSION`` rises to 15 in the same change
      - Format 2 to 5 segments and roots are read as before. A reader of format 5 refuses a
        format-6 segment or root (``ProtoNotSupportedError``), never misreads it
 
 The cluster protocol has no compatibility across versions: every node of a cluster runs the
-same protocol version (13 here; the history of versions 6 to 13 is in
-``proto_db/cluster/protocol.py``). Before D35 a DatabaseRoot had no ``mutables``; such a
+same protocol version (15 here; the history of versions 6 to 15 is in
+``proto_db/cluster/protocol.py``). Protocol 15 came with format 6: a node of protocol 14 does not know
+the catalog's aliases, so it would write a version-4 header over a segment opened by a catalog record. Before D35 a DatabaseRoot had no ``mutables``; such a
 database cannot be opened.
 
 

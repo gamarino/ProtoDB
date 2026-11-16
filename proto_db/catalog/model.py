@@ -11,6 +11,9 @@ The type of an item is told from its place and its required fields: ``modules`` 
 module's ``extensions`` Extension items, ``entities`` Relationship items (they have ``roles``) and Entity
 items; among elements an item with ``kind`` is an Attribute, one with ``target`` a Role, one with
 ``scope`` a Constraint, and any other an Intent.  The required fields of the types make that unambiguous.
+A Role with ``participant`` true is a role of a relationship: it is listed in the Relationship's ``roles``
+(never in ``attributes``), and an Extension that declares one states ``"kind": "relationship"`` in its
+``entity``, so a reader composing from the modules' contributions builds the same record.
 
 - :func:`check_model` validates a model (``ProtoValidationError`` naming the path of the first invalid
   item);
@@ -45,8 +48,10 @@ _ENUMERATIONS = {
     "inverse_cardinality": frozenset({"one", "many", "0..1", "1..*"}),
     "value_type": VALUE_KINDS,
 }
-#: The fields an ``Extension.entity`` map may state (each with the encoding of the Entity field).
-_ENTITY_MAP_FIELDS = ("meaning", "label", "help", "synonyms", "key", "supertypes", "certification")
+#: The fields an ``Extension.entity`` map may state, with their value kinds: ``kind`` (``entity`` or
+#: ``relationship``, default ``entity``) and Entity fields, each with the encoding of the Entity field.
+_ENTITY_MAP_FIELDS = {"kind": _a.TEXT, **{name: _a.Entity._fields[name] for name in (
+    "meaning", "label", "help", "synonyms", "key", "supertypes", "certification")}}
 _TOP_FIELDS = ("module_set", "modules", "entities")
 _TOP_OPTIONAL = ("ext",)
 
@@ -80,13 +85,23 @@ def _short(cls) -> str:
 
 
 def _is_default(name: str, kind: str, value) -> bool:
-    """Whether ``value`` of the field ``name`` (of value kind ``kind``) is that field's default."""
+    """Whether ``value`` of the field ``name`` (of value kind ``kind``) is that field's default.  An
+    ``Extension.entity`` map is at its default when every field it holds is (review I2)."""
+    if kind == _a.ENTITY_MAP:
+        return all(_is_entity_map_default(key, v) for key, v in value.items())
     if kind in _a.COLLECTION_KINDS:
         return len(value) == 0
     if name in _a.FIELD_DEFAULTS:
         default = _a.FIELD_DEFAULTS[name]
         return type(value) is type(default) and value == default
     return False
+
+
+def _is_entity_map_default(key: str, value) -> bool:
+    """Whether ``value`` of the ``Extension.entity`` field ``key`` is that field's default."""
+    if key == "kind":
+        return value == _a.ENTITY_KIND_DEFAULT
+    return _is_default(key, _ENTITY_MAP_FIELDS[key], value)
 
 
 def _refuse_atom(atom):
@@ -156,6 +171,11 @@ def _check_record(cls, item, path: str) -> None:
     for name, kind in cls._fields.items():
         if name in item:
             _check_field(cls, name, kind, item[name], f"{path}.{name}")
+    if cls is _a.Extension and item.get("entity", {}).get("kind", _a.ENTITY_KIND_DEFAULT) != "relationship":
+        for i, element in enumerate(item.get("elements", ())):
+            if "kind" not in element and "target" in element and element.get("participant"):
+                raise _invalid(f"{path}.elements[{i}]", "a participant role belongs to an Extension whose "
+                                                        "entity kind is relationship")
 
 
 def _check_names(path: str, value) -> None:
@@ -238,7 +258,11 @@ def _check_field(cls, name: str, kind: str, value, path: str) -> None:
         for key, v in value.items():
             if key not in _ENTITY_MAP_FIELDS:
                 raise _invalid(path, f"{key!r} is not an entity-level field; they are {list(_ENTITY_MAP_FIELDS)}")
-            _check_field(_a.Entity, key, _a.Entity._fields[key], v, f"{path}[{key!r}]")
+            if key == "kind":
+                if v not in _a.ENTITY_KINDS:
+                    raise _invalid(f"{path}[{key!r}]", f"{v!r} is not one of {sorted(_a.ENTITY_KINDS)}")
+                continue
+            _check_field(_a.Entity, key, _ENTITY_MAP_FIELDS[key], v, f"{path}[{key!r}]")
     elif kind == _a.ELEMENTS:
         if type(value) not in (list, tuple):
             raise _invalid(path, f"a list of items, not a {type(value).__name__}")
@@ -252,6 +276,13 @@ def _check_field(cls, name: str, kind: str, value, path: str) -> None:
                 raise _invalid(item_path, f"not one of {[_short(c) for c in allowed]} (an Attribute has kind, "
                                           f"a Role target, a Constraint scope)")
             _check_record(element, item, item_path)
+            if element is _a.Role:
+                participant = item.get("participant", False)
+                if name == "roles" and participant is not True:
+                    raise _invalid(item_path, "a role of a relationship has participant true")
+                if name == "attributes" and participant:
+                    raise _invalid(item_path, "a participant role is listed in a Relationship's roles, not in "
+                                              "attributes")
         if cls is _a.Relationship and name == "roles" and len(value) < 2:
             raise _invalid(path, "a relationship has two or more roles")
     else:                                   # DICTIONARY and NAME_PAIR are not fields of model items
@@ -299,8 +330,8 @@ def _record_value(cls, name: str, kind: str, value, context):
     if kind == _a.EXPRESSION:
         return _build(_a.Expression, value, context)
     if kind == _a.ENTITY_MAP:
-        return {key: _record_value(_a.Entity, key, _a.Entity._fields[key], v, context)
-                for key, v in value.items() if not _is_default(key, _a.Entity._fields[key], v)}
+        return {key: _record_value(_a.Entity, key, _ENTITY_MAP_FIELDS[key], v, context)
+                for key, v in value.items() if not _is_entity_map_default(key, v)}
     if kind == _a.ELEMENTS:
         allowed = _element_types(cls, name)
         return tuple(_build(_a.Extension if allowed == (_a.Extension,) else _item_type(item, allowed), item, context)
@@ -378,11 +409,11 @@ def _read_value(cls, name: str, kind: str, value, path: str):
         if kind == _a.ENTITY_MAP:
             out = {}
             for key, v in value.items():
-                field_kind = _a.Entity._fields.get(key) if key in _ENTITY_MAP_FIELDS else None
+                field_kind = _ENTITY_MAP_FIELDS.get(key)
                 if field_kind is None:
                     raise _malformed(path, f"{key!r} is not an entity-level field")
                 v = _read_value(_a.Entity, key, field_kind, v, f"{path}[{key!r}]")
-                if not _is_default(key, field_kind, v):
+                if not _is_entity_map_default(key, v):
                     out[key] = v
             return out
         return dict(value)
@@ -431,8 +462,8 @@ def _expanded_value(cls, name: str, kind: str, value):
     if kind == _a.EXPRESSION:
         return _expand(_a.Expression, value)
     if kind == _a.ENTITY_MAP:
-        return {key: _expanded_value(_a.Entity, key, _a.Entity._fields[key], v)
-                for key, v in sorted(value.items()) if not _is_default(key, _a.Entity._fields[key], v)}
+        return {key: _expanded_value(_a.Entity, key, _ENTITY_MAP_FIELDS[key], v)
+                for key, v in sorted(value.items()) if not _is_entity_map_default(key, v)}
     if kind == _a.ELEMENTS:
         allowed = _element_types(cls, name)
         return tuple(_expand(_a.Extension if allowed == (_a.Extension,) else _item_type(item, allowed), item)

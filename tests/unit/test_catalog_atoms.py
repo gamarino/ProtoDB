@@ -74,7 +74,8 @@ def _rich() -> dict:
               "intents": [intent], "constraints": [constraint], "certification": "reviewed",
               "provenance": ["m1", "m2"], "ext": {"e": 3}}
     relationship = {"type_name": "t.x.L", "meaning": "L",
-                    "roles": [dict(role, name="left"), dict(role, name="right", target="t.x.Base")],
+                    "roles": [dict(role, name="left", participant=True),
+                              dict(role, name="right", target="t.x.Base", participant=True)],
                     "attributes": [dict(attribute, name="w")], "provenance": ["m1"]}
     extension = {"module": "m1", "extends": "t.x.T",
                  "entity": {"meaning": "T", "label": {"und": "T"}, "help": {"und": "h"}, "synonyms": ["tee"],
@@ -136,7 +137,8 @@ def test_catalog_types_are_appended_aliases_24_to_34():
 
 def test_role_fields_are_the_attribute_fields_minus_the_value_ones_plus_its_own():
     removed = {"kind", "value_type", "values", "default", "unit", "expression"}
-    own = {"target", "inverse", "cardinality", "inverse_cardinality", "ordered", "index_by", "binding", "on_delete"}
+    own = {"target", "inverse", "cardinality", "inverse_cardinality", "participant", "ordered", "index_by",
+           "binding", "on_delete"}
     assert set(Role._fields) == (set(Attribute._fields) - removed) | own
 
 
@@ -436,3 +438,108 @@ def test_intent_records_are_checked_when_built():
         Intent(name="i", kind="field")
     with pytest.raises(ProtoValidationError, match="required"):
         SemanticCatalog(module_set=())
+
+
+# -- fix round 1: Omission inside Extension.entity, inherited_from, contributions ------------------
+
+@pytest.mark.parametrize("entity", [{"synonyms": []}, {"label": {}}, {"kind": "entity"},
+                                    {"synonyms": [], "key": [], "help": {}, "kind": "entity"}],
+                         ids=["empty-names", "empty-label", "default-kind", "all-defaults"])
+def test_an_entity_contribution_holding_only_defaults_is_omitted(entity):
+    """Review I2: a field whose inner values are all at their default is at its default (Omission)."""
+    model = _fixture()
+    original = canonical_form(model)
+    extension = model["modules"]["conformance.catalog_sales"]["extensions"][-1]
+    assert "entity" not in extension
+    extension["entity"] = entity
+    catalog = to_atoms(model, None)
+    stored = catalog.modules.get_at("conformance.catalog_sales").extensions[-1]._state()
+    assert "entity" not in stored
+    assert canonical_form(model) == canonical_form(from_atoms(catalog)) == original
+    assert from_atoms(catalog) == _fixture()
+
+
+def test_defaults_inside_an_entity_contribution_are_dropped_and_the_rest_kept():
+    model = _fixture()
+    extension = model["modules"]["conformance.catalog_base"]["extensions"][0]
+    extension["entity"].update(synonyms=[], kind="entity", help={})
+    catalog = to_atoms(model, None)
+    stored = catalog.modules.get_at("conformance.catalog_base").extensions[0]._state()["entity"]
+    assert set(stored) == {"meaning", "label", "key"}
+    assert canonical_form(model) == canonical_form(from_atoms(catalog)) == canonical_form(_fixture())
+
+
+def test_inherited_intents_and_constraints_carry_inherited_from():
+    """Review I3, ruling: R281 covers every inherited element."""
+    assert list(Intent._fields)[:2] == ["name", "inherited_from"]
+    assert list(Constraint._fields)[:2] == ["name", "inherited_from"]
+    rush = _fixture()["entities"]["conformance.sales.RushOrder"]
+    assert [i.get("inherited_from") for i in rush["intents"]] == ["conformance.sales.Order"] * 2
+    model = _rich()
+    model["entities"]["t.x.T"]["intents"][0]["inherited_from"] = "t.x.Base"
+    model["entities"]["t.x.T"]["constraints"][0]["inherited_from"] = "t.x.Base"
+    check_model(model)
+    assert from_atoms(to_atoms(model, None)) == model
+
+
+def test_a_subtype_inherits_the_key_but_not_the_presentation():
+    """Ruling M1: key is inherited (and not redefined); label, synonyms and meaning are the subtype's own."""
+    entities = _fixture()["entities"]
+    order, rush = entities["conformance.sales.Order"], entities["conformance.sales.RushOrder"]
+    assert rush["key"] == order["key"]
+    assert "synonyms" not in rush and rush["label"] != order["label"] and rush["meaning"] != order["meaning"]
+
+
+def _compose_single(extension: dict) -> tuple:
+    """The composed record of a type declared by one Extension only (no supertype, no other module):
+    what a reader composing from contributions builds (format spec, "Composition and the canonical form")."""
+    module = extension["module"]
+    entity = dict(extension.get("entity", {}))
+    kind = entity.pop("kind", "entity")
+    out = {"type_name": extension["extends"], **entity}
+    for element in extension.get("elements", []):
+        element = dict(element, provenance=[module])
+        if "kind" in element or ("target" in element and not element.get("participant")):
+            out.setdefault("attributes", []).append(element)
+        elif "target" in element:
+            out.setdefault("roles", []).append(element)
+        elif "scope" in element:
+            out.setdefault("constraints", []).append(element)
+        else:
+            out.setdefault("intents", []).append(element)
+    out["provenance"] = [module]
+    return kind, out
+
+
+def test_composition_from_contributions_reproduces_the_stored_records():
+    """Review I4, ruling: an Extension states its entity's kind and a relationship's roles are marked,
+    so the stored Relationship of OrderLine (and every single-contribution type) is derived from its
+    Extension exactly."""
+    model = _fixture()
+    single = {"conformance.sales.Order", "conformance.sales.OrderLine", "conformance.sales.Product"}
+    extensions = {e["extends"]: e for m in model["modules"].values() for e in m.get("extensions", [])
+                  if e["extends"] in single}
+    assert set(extensions) == single
+    for type_name, extension in extensions.items():
+        kind, composed = _compose_single(extension)
+        assert composed == model["entities"][type_name], type_name
+        assert (kind == "relationship") == ("roles" in model["entities"][type_name])
+    catalog = to_atoms(model, None)
+    assert type(catalog.entities.get_at("conformance.sales.OrderLine")).__name__ == "Relationship"
+    assert all(r.participant is True for r in catalog.entities.get_at("conformance.sales.OrderLine").roles)
+
+
+@pytest.mark.parametrize("edit, where", [
+    (lambda m: m["modules"]["conformance.catalog_sales"]["extensions"][1]["entity"].pop("kind"),
+     "modules['conformance.catalog_sales'].extensions[1].elements[0]"),
+    (lambda m: m["modules"]["conformance.catalog_sales"]["extensions"][1]["entity"].update(kind="link"),
+     "modules['conformance.catalog_sales'].extensions[1].entity['kind']"),
+    (lambda m: m["entities"]["conformance.sales.OrderLine"]["roles"][0].pop("participant"),
+     "entities['conformance.sales.OrderLine'].roles[0]"),
+    (lambda m: m["entities"]["conformance.sales.Order"]["attributes"][3].update(participant=True),
+     "entities['conformance.sales.Order'].attributes[3]"),
+])
+def test_relationship_markers_are_checked(edit, where):
+    with pytest.raises(ProtoValidationError) as info:
+        check_model(_broken(edit))
+    assert f"at {where}:" in str(info.value)

@@ -10,7 +10,7 @@
    6
   ],
   "log_format": 3,
-  "protocol": 14
+  "protocol": 15
  },
  "builtin_type_aliases": [
   "proto_db.avl.KeyNode",
@@ -23984,7 +23984,7 @@
     ]
    },
    {
-    "segment": "5eed000000004000800000000000701b.seg",
+    "segment": "5eed000000004000800000000000701c.seg",
     "format": 6,
     "records": [
      {
@@ -23993,7 +23993,7 @@
       "size": 156,
       "tag": 29,
       "type": "proto_db.catalog.Attribute",
-      "oid": "5eed000000004000800000000000701a",
+      "oid": "5eed000000004000800000000000701b",
       "state": [
        [
         "name",
@@ -24065,7 +24065,7 @@
       "size": 148,
       "tag": 29,
       "type": "proto_db.catalog.Attribute",
-      "oid": "5eed000000004000800000000000701c",
+      "oid": "5eed000000004000800000000000701d",
       "state": [
        [
         "name",
@@ -24107,7 +24107,7 @@
       "size": 276,
       "tag": 26,
       "type": "proto_db.catalog.Extension",
-      "oid": "5eed000000004000800000000000701d",
+      "oid": "5eed000000004000800000000000701e",
       "state": [
        [
         "module",
@@ -24171,14 +24171,14 @@
          "tuple": [
           {
            "ref": {
-            "segment": "5eed000000004000800000000000701b",
+            "segment": "5eed000000004000800000000000701c",
             "offset": 26,
             "type": "proto_db.catalog.Attribute"
            }
           },
           {
            "ref": {
-            "segment": "5eed000000004000800000000000701b",
+            "segment": "5eed000000004000800000000000701c",
             "offset": 182,
             "type": "proto_db.catalog.Attribute"
            }
@@ -24216,7 +24216,7 @@
          "tuple": [
           {
            "ref": {
-            "segment": "5eed000000004000800000000000701b",
+            "segment": "5eed000000004000800000000000701c",
             "offset": 330,
             "type": "proto_db.catalog.Extension"
            }
@@ -24258,7 +24258,7 @@
       "size": 116,
       "tag": 0,
       "type": "proto_db.avl.KeyNode",
-      "oid": "5eed000000004000800000000000701e",
+      "oid": "5eed000000004000800000000000701f",
       "state": [
        [
         "key",
@@ -24270,7 +24270,7 @@
         "value",
         {
          "ref": {
-          "segment": "5eed000000004000800000000000701b",
+          "segment": "5eed000000004000800000000000701c",
           "offset": 737,
           "type": "proto_db.catalog.Module"
          }
@@ -24307,10 +24307,177 @@
      {
       "offset": 917,
       "kind": 1,
-      "size": 150,
+      "size": 90,
+      "tag": 29,
+      "type": "proto_db.catalog.Attribute",
+      "oid": "5eed0000000040008000000000007020",
+      "state": [
+       [
+        "name",
+        {
+         "str": "name"
+        }
+       ],
+       [
+        "kind",
+        {
+         "str": "field"
+        }
+       ],
+       [
+        "value_type",
+        {
+         "str": "str"
+        }
+       ],
+       [
+        "required",
+        {
+         "bool": true
+        }
+       ]
+      ],
+      "canonical": true,
+      "rewritable": true
+     },
+     {
+      "offset": 1007,
+      "kind": 1,
+      "size": 154,
+      "tag": 29,
+      "type": "proto_db.catalog.Attribute",
+      "oid": "5eed0000000040008000000000007021",
+      "state": [
+       [
+        "name",
+        {
+         "str": "list_price"
+        }
+       ],
+       [
+        "kind",
+        {
+         "str": "field"
+        }
+       ],
+       [
+        "value_type",
+        {
+         "str": "decimal"
+        }
+       ],
+       [
+        "unit",
+        {
+         "str": "currency:company"
+        }
+       ],
+       [
+        "meaning",
+        {
+         "str": "The current price of the product"
+        }
+       ]
+      ],
+      "canonical": true,
+      "rewritable": true
+     },
+     {
+      "offset": 1161,
+      "kind": 1,
+      "size": 280,
+      "tag": 26,
+      "type": "proto_db.catalog.Extension",
+      "oid": "5eed0000000040008000000000007022",
+      "state": [
+       [
+        "module",
+        {
+         "str": "conformance.catalog_sales"
+        }
+       ],
+       [
+        "extends",
+        {
+         "str": "conformance.sales.Product"
+        }
+       ],
+       [
+        "entity",
+        {
+         "map": [
+          [
+           {
+            "str": "meaning"
+           },
+           {
+            "str": "A product the company sells"
+           }
+          ],
+          [
+           {
+            "str": "label"
+           },
+           {
+            "map": [
+             [
+              {
+               "str": "und"
+              },
+              {
+               "str": "Product"
+              }
+             ]
+            ]
+           }
+          ],
+          [
+           {
+            "str": "key"
+           },
+           {
+            "tuple": [
+             {
+              "str": "name"
+             }
+            ]
+           }
+          ]
+         ]
+        }
+       ],
+       [
+        "elements",
+        {
+         "tuple": [
+          {
+           "ref": {
+            "segment": "5eed000000004000800000000000701c",
+            "offset": 917,
+            "type": "proto_db.catalog.Attribute"
+           }
+          },
+          {
+           "ref": {
+            "segment": "5eed000000004000800000000000701c",
+            "offset": 1007,
+            "type": "proto_db.catalog.Attribute"
+           }
+          }
+         ]
+        }
+       ]
+      ],
+      "canonical": true,
+      "rewritable": true
+     },
+     {
+      "offset": 1441,
+      "kind": 1,
+      "size": 163,
       "tag": 30,
       "type": "proto_db.catalog.Role",
-      "oid": "5eed000000004000800000000000701f",
+      "oid": "5eed0000000040008000000000007023",
       "state": [
        [
         "name",
@@ -24343,6 +24510,12 @@
         }
        ],
        [
+        "participant",
+        {
+         "bool": true
+        }
+       ],
+       [
         "ordered",
         {
          "bool": true
@@ -24353,12 +24526,12 @@
       "rewritable": true
      },
      {
-      "offset": 1067,
+      "offset": 1604,
       "kind": 1,
-      "size": 149,
+      "size": 162,
       "tag": 30,
       "type": "proto_db.catalog.Role",
-      "oid": "5eed0000000040008000000000007020",
+      "oid": "5eed0000000040008000000000007024",
       "state": [
        [
         "name",
@@ -24376,6 +24549,12 @@
         "cardinality",
         {
          "str": "one"
+        }
+       ],
+       [
+        "participant",
+        {
+         "bool": true
         }
        ],
        [
@@ -24399,12 +24578,12 @@
       "rewritable": true
      },
      {
-      "offset": 1216,
+      "offset": 1766,
       "kind": 1,
       "size": 116,
       "tag": 29,
       "type": "proto_db.catalog.Attribute",
-      "oid": "5eed0000000040008000000000007021",
+      "oid": "5eed0000000040008000000000007025",
       "state": [
        [
         "name",
@@ -24441,12 +24620,12 @@
       "rewritable": true
      },
      {
-      "offset": 1332,
+      "offset": 1882,
       "kind": 1,
       "size": 222,
       "tag": 29,
       "type": "proto_db.catalog.Attribute",
-      "oid": "5eed0000000040008000000000007022",
+      "oid": "5eed0000000040008000000000007026",
       "state": [
        [
         "name",
@@ -24495,12 +24674,12 @@
       "rewritable": true
      },
      {
-      "offset": 1554,
+      "offset": 2104,
       "kind": 1,
       "size": 78,
       "tag": 33,
       "type": "proto_db.catalog.Expression",
-      "oid": "5eed0000000040008000000000007023",
+      "oid": "5eed0000000040008000000000007027",
       "state": [
        [
         "ast",
@@ -24537,12 +24716,12 @@
       "rewritable": true
      },
      {
-      "offset": 1632,
+      "offset": 2182,
       "kind": 1,
       "size": 110,
       "tag": 29,
       "type": "proto_db.catalog.Attribute",
-      "oid": "5eed0000000040008000000000007024",
+      "oid": "5eed0000000040008000000000007028",
       "state": [
        [
         "name",
@@ -24560,8 +24739,8 @@
         "expression",
         {
          "ref": {
-          "segment": "5eed000000004000800000000000701b",
-          "offset": 1554,
+          "segment": "5eed000000004000800000000000701c",
+          "offset": 2104,
           "type": "proto_db.catalog.Expression"
          }
         }
@@ -24571,12 +24750,12 @@
       "rewritable": true
      },
      {
-      "offset": 1742,
+      "offset": 2292,
       "kind": 1,
-      "size": 352,
+      "size": 371,
       "tag": 26,
       "type": "proto_db.catalog.Extension",
-      "oid": "5eed0000000040008000000000007025",
+      "oid": "5eed0000000040008000000000007029",
       "state": [
        [
         "module",
@@ -24596,6 +24775,14 @@
          "map": [
           [
            {
+            "str": "kind"
+           },
+           {
+            "str": "relationship"
+           }
+          ],
+          [
+           {
             "str": "meaning"
            },
            {
@@ -24611,36 +24798,36 @@
          "tuple": [
           {
            "ref": {
-            "segment": "5eed000000004000800000000000701b",
-            "offset": 917,
+            "segment": "5eed000000004000800000000000701c",
+            "offset": 1441,
             "type": "proto_db.catalog.Role"
            }
           },
           {
            "ref": {
-            "segment": "5eed000000004000800000000000701b",
-            "offset": 1067,
+            "segment": "5eed000000004000800000000000701c",
+            "offset": 1604,
             "type": "proto_db.catalog.Role"
            }
           },
           {
            "ref": {
-            "segment": "5eed000000004000800000000000701b",
-            "offset": 1216,
+            "segment": "5eed000000004000800000000000701c",
+            "offset": 1766,
             "type": "proto_db.catalog.Attribute"
            }
           },
           {
            "ref": {
-            "segment": "5eed000000004000800000000000701b",
-            "offset": 1332,
+            "segment": "5eed000000004000800000000000701c",
+            "offset": 1882,
             "type": "proto_db.catalog.Attribute"
            }
           },
           {
            "ref": {
-            "segment": "5eed000000004000800000000000701b",
-            "offset": 1632,
+            "segment": "5eed000000004000800000000000701c",
+            "offset": 2182,
             "type": "proto_db.catalog.Attribute"
            }
           }
@@ -24652,12 +24839,12 @@
       "rewritable": true
      },
      {
-      "offset": 2094,
+      "offset": 2663,
       "kind": 1,
       "size": 191,
       "tag": 29,
       "type": "proto_db.catalog.Attribute",
-      "oid": "5eed0000000040008000000000007026",
+      "oid": "5eed000000004000800000000000702a",
       "state": [
        [
         "name",
@@ -24719,12 +24906,12 @@
       "rewritable": true
      },
      {
-      "offset": 2285,
+      "offset": 2854,
       "kind": 1,
       "size": 133,
       "tag": 29,
       "type": "proto_db.catalog.Attribute",
-      "oid": "5eed0000000040008000000000007027",
+      "oid": "5eed000000004000800000000000702b",
       "state": [
        [
         "name",
@@ -24771,12 +24958,12 @@
       "rewritable": true
      },
      {
-      "offset": 2418,
+      "offset": 2987,
       "kind": 1,
       "size": 90,
       "tag": 29,
       "type": "proto_db.catalog.Attribute",
-      "oid": "5eed0000000040008000000000007028",
+      "oid": "5eed000000004000800000000000702c",
       "state": [
        [
         "name",
@@ -24807,12 +24994,12 @@
       "rewritable": true
      },
      {
-      "offset": 2508,
+      "offset": 3077,
       "kind": 1,
       "size": 148,
       "tag": 30,
       "type": "proto_db.catalog.Role",
-      "oid": "5eed0000000040008000000000007029",
+      "oid": "5eed000000004000800000000000702d",
       "state": [
        [
         "name",
@@ -24849,12 +25036,12 @@
       "rewritable": true
      },
      {
-      "offset": 2656,
+      "offset": 3225,
       "kind": 1,
       "size": 154,
       "tag": 30,
       "type": "proto_db.catalog.Role",
-      "oid": "5eed000000004000800000000000702a",
+      "oid": "5eed000000004000800000000000702e",
       "state": [
        [
         "name",
@@ -24897,12 +25084,12 @@
       "rewritable": true
      },
      {
-      "offset": 2810,
+      "offset": 3379,
       "kind": 1,
       "size": 72,
       "tag": 33,
       "type": "proto_db.catalog.Expression",
-      "oid": "5eed000000004000800000000000702b",
+      "oid": "5eed000000004000800000000000702f",
       "state": [
        [
         "ast",
@@ -24932,12 +25119,12 @@
       "rewritable": true
      },
      {
-      "offset": 2882,
+      "offset": 3451,
       "kind": 1,
       "size": 136,
       "tag": 29,
       "type": "proto_db.catalog.Attribute",
-      "oid": "5eed000000004000800000000000702c",
+      "oid": "5eed0000000040008000000000007030",
       "state": [
        [
         "name",
@@ -24961,8 +25148,8 @@
         "expression",
         {
          "ref": {
-          "segment": "5eed000000004000800000000000701b",
-          "offset": 2810,
+          "segment": "5eed000000004000800000000000701c",
+          "offset": 3379,
           "type": "proto_db.catalog.Expression"
          }
         }
@@ -24972,12 +25159,12 @@
       "rewritable": true
      },
      {
-      "offset": 3018,
+      "offset": 3587,
       "kind": 1,
       "size": 262,
       "tag": 31,
       "type": "proto_db.catalog.Intent",
-      "oid": "5eed000000004000800000000000702d",
+      "oid": "5eed0000000040008000000000007031",
       "state": [
        [
         "name",
@@ -25043,12 +25230,12 @@
       "rewritable": true
      },
      {
-      "offset": 3280,
+      "offset": 3849,
       "kind": 1,
       "size": 76,
       "tag": 33,
       "type": "proto_db.catalog.Expression",
-      "oid": "5eed000000004000800000000000702e",
+      "oid": "5eed0000000040008000000000007032",
       "state": [
        [
         "ast",
@@ -25085,12 +25272,12 @@
       "rewritable": true
      },
      {
-      "offset": 3356,
+      "offset": 3925,
       "kind": 1,
       "size": 158,
       "tag": 31,
       "type": "proto_db.catalog.Intent",
-      "oid": "5eed000000004000800000000000702f",
+      "oid": "5eed0000000040008000000000007033",
       "state": [
        [
         "name",
@@ -25108,8 +25295,8 @@
         "requires",
         {
          "ref": {
-          "segment": "5eed000000004000800000000000701b",
-          "offset": 3280,
+          "segment": "5eed000000004000800000000000701c",
+          "offset": 3849,
           "type": "proto_db.catalog.Expression"
          }
         }
@@ -25119,12 +25306,12 @@
       "rewritable": true
      },
      {
-      "offset": 3514,
+      "offset": 4083,
       "kind": 1,
       "size": 515,
       "tag": 26,
       "type": "proto_db.catalog.Extension",
-      "oid": "5eed0000000040008000000000007030",
+      "oid": "5eed0000000040008000000000007034",
       "state": [
        [
         "module",
@@ -25203,57 +25390,57 @@
          "tuple": [
           {
            "ref": {
-            "segment": "5eed000000004000800000000000701b",
-            "offset": 2094,
+            "segment": "5eed000000004000800000000000701c",
+            "offset": 2663,
             "type": "proto_db.catalog.Attribute"
            }
           },
           {
            "ref": {
-            "segment": "5eed000000004000800000000000701b",
-            "offset": 2285,
+            "segment": "5eed000000004000800000000000701c",
+            "offset": 2854,
             "type": "proto_db.catalog.Attribute"
            }
           },
           {
            "ref": {
-            "segment": "5eed000000004000800000000000701b",
-            "offset": 2418,
+            "segment": "5eed000000004000800000000000701c",
+            "offset": 2987,
             "type": "proto_db.catalog.Attribute"
            }
           },
           {
            "ref": {
-            "segment": "5eed000000004000800000000000701b",
-            "offset": 2508,
+            "segment": "5eed000000004000800000000000701c",
+            "offset": 3077,
             "type": "proto_db.catalog.Role"
            }
           },
           {
            "ref": {
-            "segment": "5eed000000004000800000000000701b",
-            "offset": 2656,
+            "segment": "5eed000000004000800000000000701c",
+            "offset": 3225,
             "type": "proto_db.catalog.Role"
            }
           },
           {
            "ref": {
-            "segment": "5eed000000004000800000000000701b",
-            "offset": 2882,
+            "segment": "5eed000000004000800000000000701c",
+            "offset": 3451,
             "type": "proto_db.catalog.Attribute"
            }
           },
           {
            "ref": {
-            "segment": "5eed000000004000800000000000701b",
-            "offset": 3018,
+            "segment": "5eed000000004000800000000000701c",
+            "offset": 3587,
             "type": "proto_db.catalog.Intent"
            }
           },
           {
            "ref": {
-            "segment": "5eed000000004000800000000000701b",
-            "offset": 3356,
+            "segment": "5eed000000004000800000000000701c",
+            "offset": 3925,
             "type": "proto_db.catalog.Intent"
            }
           }
@@ -25265,12 +25452,12 @@
       "rewritable": true
      },
      {
-      "offset": 4029,
+      "offset": 4598,
       "kind": 1,
       "size": 84,
       "tag": 29,
       "type": "proto_db.catalog.Attribute",
-      "oid": "5eed0000000040008000000000007031",
+      "oid": "5eed0000000040008000000000007035",
       "state": [
        [
         "name",
@@ -25295,12 +25482,12 @@
       "rewritable": true
      },
      {
-      "offset": 4113,
+      "offset": 4682,
       "kind": 1,
       "size": 292,
       "tag": 26,
       "type": "proto_db.catalog.Extension",
-      "oid": "5eed0000000040008000000000007032",
+      "oid": "5eed0000000040008000000000007036",
       "state": [
        [
         "module",
@@ -25364,8 +25551,8 @@
          "tuple": [
           {
            "ref": {
-            "segment": "5eed000000004000800000000000701b",
-            "offset": 4029,
+            "segment": "5eed000000004000800000000000701c",
+            "offset": 4598,
             "type": "proto_db.catalog.Attribute"
            }
           }
@@ -25377,12 +25564,12 @@
       "rewritable": true
      },
      {
-      "offset": 4405,
+      "offset": 4974,
       "kind": 1,
       "size": 123,
       "tag": 29,
       "type": "proto_db.catalog.Attribute",
-      "oid": "5eed0000000040008000000000007033",
+      "oid": "5eed0000000040008000000000007037",
       "state": [
        [
         "name",
@@ -25422,12 +25609,12 @@
       "rewritable": true
      },
      {
-      "offset": 4528,
+      "offset": 5097,
       "kind": 1,
       "size": 145,
       "tag": 30,
       "type": "proto_db.catalog.Role",
-      "oid": "5eed0000000040008000000000007034",
+      "oid": "5eed0000000040008000000000007038",
       "state": [
        [
         "name",
@@ -25464,12 +25651,12 @@
       "rewritable": true
      },
      {
-      "offset": 4673,
+      "offset": 5242,
       "kind": 1,
       "size": 105,
       "tag": 33,
       "type": "proto_db.catalog.Expression",
-      "oid": "5eed0000000040008000000000007035",
+      "oid": "5eed0000000040008000000000007039",
       "state": [
        [
         "ast",
@@ -25526,12 +25713,12 @@
       "rewritable": true
      },
      {
-      "offset": 4778,
+      "offset": 5347,
       "kind": 1,
       "size": 142,
       "tag": 29,
       "type": "proto_db.catalog.Attribute",
-      "oid": "5eed0000000040008000000000007036",
+      "oid": "5eed000000004000800000000000703a",
       "state": [
        [
         "name",
@@ -25555,8 +25742,8 @@
         "expression",
         {
          "ref": {
-          "segment": "5eed000000004000800000000000701b",
-          "offset": 4673,
+          "segment": "5eed000000004000800000000000701c",
+          "offset": 5242,
           "type": "proto_db.catalog.Expression"
          }
         }
@@ -25566,12 +25753,12 @@
       "rewritable": true
      },
      {
-      "offset": 4920,
+      "offset": 5489,
       "kind": 1,
       "size": 87,
       "tag": 33,
       "type": "proto_db.catalog.Expression",
-      "oid": "5eed0000000040008000000000007037",
+      "oid": "5eed000000004000800000000000703b",
       "state": [
        [
         "ast",
@@ -25608,12 +25795,12 @@
       "rewritable": true
      },
      {
-      "offset": 5007,
+      "offset": 5576,
       "kind": 1,
       "size": 258,
       "tag": 32,
       "type": "proto_db.catalog.Constraint",
-      "oid": "5eed0000000040008000000000007038",
+      "oid": "5eed000000004000800000000000703c",
       "state": [
        [
         "name",
@@ -25631,8 +25818,8 @@
         "expression",
         {
          "ref": {
-          "segment": "5eed000000004000800000000000701b",
-          "offset": 4920,
+          "segment": "5eed000000004000800000000000701c",
+          "offset": 5489,
           "type": "proto_db.catalog.Expression"
          }
         }
@@ -25654,12 +25841,12 @@
       "rewritable": true
      },
      {
-      "offset": 5265,
+      "offset": 5834,
       "kind": 1,
       "size": 244,
       "tag": 26,
       "type": "proto_db.catalog.Extension",
-      "oid": "5eed0000000040008000000000007039",
+      "oid": "5eed000000004000800000000000703d",
       "state": [
        [
         "module",
@@ -25679,29 +25866,29 @@
          "tuple": [
           {
            "ref": {
-            "segment": "5eed000000004000800000000000701b",
-            "offset": 4405,
+            "segment": "5eed000000004000800000000000701c",
+            "offset": 4974,
             "type": "proto_db.catalog.Attribute"
            }
           },
           {
            "ref": {
-            "segment": "5eed000000004000800000000000701b",
-            "offset": 4528,
+            "segment": "5eed000000004000800000000000701c",
+            "offset": 5097,
             "type": "proto_db.catalog.Role"
            }
           },
           {
            "ref": {
-            "segment": "5eed000000004000800000000000701b",
-            "offset": 4778,
+            "segment": "5eed000000004000800000000000701c",
+            "offset": 5347,
             "type": "proto_db.catalog.Attribute"
            }
           },
           {
            "ref": {
-            "segment": "5eed000000004000800000000000701b",
-            "offset": 5007,
+            "segment": "5eed000000004000800000000000701c",
+            "offset": 5576,
             "type": "proto_db.catalog.Constraint"
            }
           }
@@ -25713,9 +25900,9 @@
       "rewritable": true
      },
      {
-      "offset": 5509,
+      "offset": 6078,
       "kind": 1,
-      "size": 259,
+      "size": 288,
       "tag": 25,
       "type": "proto_db.catalog.Module",
       "oid": "5eed0000000040008000000000007015",
@@ -25748,29 +25935,36 @@
          "tuple": [
           {
            "ref": {
-            "segment": "5eed000000004000800000000000701b",
-            "offset": 1742,
+            "segment": "5eed000000004000800000000000701c",
+            "offset": 1161,
             "type": "proto_db.catalog.Extension"
            }
           },
           {
            "ref": {
-            "segment": "5eed000000004000800000000000701b",
-            "offset": 3514,
+            "segment": "5eed000000004000800000000000701c",
+            "offset": 2292,
             "type": "proto_db.catalog.Extension"
            }
           },
           {
            "ref": {
-            "segment": "5eed000000004000800000000000701b",
-            "offset": 4113,
+            "segment": "5eed000000004000800000000000701c",
+            "offset": 4083,
             "type": "proto_db.catalog.Extension"
            }
           },
           {
            "ref": {
-            "segment": "5eed000000004000800000000000701b",
-            "offset": 5265,
+            "segment": "5eed000000004000800000000000701c",
+            "offset": 4682,
+            "type": "proto_db.catalog.Extension"
+           }
+          },
+          {
+           "ref": {
+            "segment": "5eed000000004000800000000000701c",
+            "offset": 5834,
             "type": "proto_db.catalog.Extension"
            }
           }
@@ -25782,12 +25976,12 @@
       "rewritable": true
      },
      {
-      "offset": 5768,
+      "offset": 6366,
       "kind": 1,
       "size": 137,
       "tag": 0,
       "type": "proto_db.avl.KeyNode",
-      "oid": "5eed000000004000800000000000703a",
+      "oid": "5eed000000004000800000000000703e",
       "state": [
        [
         "key",
@@ -25799,8 +25993,8 @@
         "value",
         {
          "ref": {
-          "segment": "5eed000000004000800000000000701b",
-          "offset": 5509,
+          "segment": "5eed000000004000800000000000701c",
+          "offset": 6078,
           "type": "proto_db.catalog.Module"
          }
         }
@@ -25834,12 +26028,12 @@
       "rewritable": true
      },
      {
-      "offset": 5905,
+      "offset": 6503,
       "kind": 1,
       "size": 192,
       "tag": 0,
       "type": "proto_db.avl.KeyNode",
-      "oid": "5eed000000004000800000000000703b",
+      "oid": "5eed000000004000800000000000703f",
       "state": [
        [
         "key",
@@ -25851,7 +26045,7 @@
         "value",
         {
          "ref": {
-          "segment": "5eed000000004000800000000000701b",
+          "segment": "5eed000000004000800000000000701c",
           "offset": 606,
           "type": "proto_db.catalog.Module"
          }
@@ -25861,7 +26055,7 @@
         "left",
         {
          "ref": {
-          "segment": "5eed000000004000800000000000701b",
+          "segment": "5eed000000004000800000000000701c",
           "offset": 801,
           "type": "proto_db.avl.KeyNode"
          }
@@ -25871,8 +26065,8 @@
         "right",
         {
          "ref": {
-          "segment": "5eed000000004000800000000000701b",
-          "offset": 5768,
+          "segment": "5eed000000004000800000000000701c",
+          "offset": 6366,
           "type": "proto_db.avl.KeyNode"
          }
         }
@@ -25894,12 +26088,12 @@
       "rewritable": true
      },
      {
-      "offset": 6097,
+      "offset": 6695,
       "kind": 1,
       "size": 50,
       "tag": 3,
       "type": "proto_db.collections.IndexSet",
-      "oid": "5eed000000004000800000000000703c",
+      "oid": "5eed0000000040008000000000007040",
       "state": [
        [
         "root",
@@ -25912,19 +26106,19 @@
       "rewritable": true
      },
      {
-      "offset": 6147,
+      "offset": 6745,
       "kind": 1,
       "size": 122,
       "tag": 6,
       "type": "proto_db.collections.Dictionary",
-      "oid": "5eed000000004000800000000000703d",
+      "oid": "5eed0000000040008000000000007041",
       "state": [
        [
         "root",
         {
          "ref": {
-          "segment": "5eed000000004000800000000000701b",
-          "offset": 5905,
+          "segment": "5eed000000004000800000000000701c",
+          "offset": 6503,
           "type": "proto_db.avl.KeyNode"
          }
         }
@@ -25939,8 +26133,8 @@
         "indexes",
         {
          "ref": {
-          "segment": "5eed000000004000800000000000701b",
-          "offset": 6097,
+          "segment": "5eed000000004000800000000000701c",
+          "offset": 6695,
           "type": "proto_db.collections.IndexSet"
          }
         }
@@ -25950,12 +26144,12 @@
       "rewritable": true
      },
      {
-      "offset": 6269,
+      "offset": 6867,
       "kind": 1,
       "size": 235,
       "tag": 29,
       "type": "proto_db.catalog.Attribute",
-      "oid": "5eed000000004000800000000000703e",
+      "oid": "5eed0000000040008000000000007042",
       "state": [
        [
         "name",
@@ -26027,12 +26221,12 @@
       "rewritable": true
      },
      {
-      "offset": 6504,
+      "offset": 7102,
       "kind": 1,
       "size": 177,
       "tag": 29,
       "type": "proto_db.catalog.Attribute",
-      "oid": "5eed000000004000800000000000703f",
+      "oid": "5eed0000000040008000000000007043",
       "state": [
        [
         "name",
@@ -26089,12 +26283,12 @@
       "rewritable": true
      },
      {
-      "offset": 6681,
+      "offset": 7279,
       "kind": 1,
       "size": 134,
       "tag": 29,
       "type": "proto_db.catalog.Attribute",
-      "oid": "5eed0000000040008000000000007040",
+      "oid": "5eed0000000040008000000000007044",
       "state": [
        [
         "name",
@@ -26135,12 +26329,12 @@
       "rewritable": true
      },
      {
-      "offset": 6815,
+      "offset": 7413,
       "kind": 1,
       "size": 192,
       "tag": 30,
       "type": "proto_db.catalog.Role",
-      "oid": "5eed0000000040008000000000007041",
+      "oid": "5eed0000000040008000000000007045",
       "state": [
        [
         "name",
@@ -26187,12 +26381,12 @@
       "rewritable": true
      },
      {
-      "offset": 7007,
+      "offset": 7605,
       "kind": 1,
       "size": 198,
       "tag": 30,
       "type": "proto_db.catalog.Role",
-      "oid": "5eed0000000040008000000000007042",
+      "oid": "5eed0000000040008000000000007046",
       "state": [
        [
         "name",
@@ -26245,12 +26439,12 @@
       "rewritable": true
      },
      {
-      "offset": 7205,
+      "offset": 7803,
       "kind": 1,
       "size": 72,
       "tag": 33,
       "type": "proto_db.catalog.Expression",
-      "oid": "5eed0000000040008000000000007043",
+      "oid": "5eed0000000040008000000000007047",
       "state": [
        [
         "ast",
@@ -26280,12 +26474,12 @@
       "rewritable": true
      },
      {
-      "offset": 7277,
+      "offset": 7875,
       "kind": 1,
       "size": 180,
       "tag": 29,
       "type": "proto_db.catalog.Attribute",
-      "oid": "5eed0000000040008000000000007044",
+      "oid": "5eed0000000040008000000000007048",
       "state": [
        [
         "name",
@@ -26309,8 +26503,8 @@
         "expression",
         {
          "ref": {
-          "segment": "5eed000000004000800000000000701b",
-          "offset": 7205,
+          "segment": "5eed000000004000800000000000701c",
+          "offset": 7803,
           "type": "proto_db.catalog.Expression"
          }
         }
@@ -26330,12 +26524,12 @@
       "rewritable": true
      },
      {
-      "offset": 7457,
+      "offset": 8055,
       "kind": 1,
       "size": 306,
       "tag": 31,
       "type": "proto_db.catalog.Intent",
-      "oid": "5eed0000000040008000000000007045",
+      "oid": "5eed0000000040008000000000007049",
       "state": [
        [
         "name",
@@ -26411,12 +26605,12 @@
       "rewritable": true
      },
      {
-      "offset": 7763,
+      "offset": 8361,
       "kind": 1,
       "size": 76,
       "tag": 33,
       "type": "proto_db.catalog.Expression",
-      "oid": "5eed0000000040008000000000007046",
+      "oid": "5eed000000004000800000000000704a",
       "state": [
        [
         "ast",
@@ -26453,12 +26647,12 @@
       "rewritable": true
      },
      {
-      "offset": 7839,
+      "offset": 8437,
       "kind": 1,
       "size": 202,
       "tag": 31,
       "type": "proto_db.catalog.Intent",
-      "oid": "5eed0000000040008000000000007047",
+      "oid": "5eed000000004000800000000000704b",
       "state": [
        [
         "name",
@@ -26476,8 +26670,8 @@
         "requires",
         {
          "ref": {
-          "segment": "5eed000000004000800000000000701b",
-          "offset": 7763,
+          "segment": "5eed000000004000800000000000701c",
+          "offset": 8361,
           "type": "proto_db.catalog.Expression"
          }
         }
@@ -26497,7 +26691,7 @@
       "rewritable": true
      },
      {
-      "offset": 8041,
+      "offset": 8639,
       "kind": 1,
       "size": 527,
       "tag": 27,
@@ -26560,43 +26754,43 @@
          "tuple": [
           {
            "ref": {
-            "segment": "5eed000000004000800000000000701b",
-            "offset": 6269,
+            "segment": "5eed000000004000800000000000701c",
+            "offset": 6867,
             "type": "proto_db.catalog.Attribute"
            }
           },
           {
            "ref": {
-            "segment": "5eed000000004000800000000000701b",
-            "offset": 6504,
+            "segment": "5eed000000004000800000000000701c",
+            "offset": 7102,
             "type": "proto_db.catalog.Attribute"
            }
           },
           {
            "ref": {
-            "segment": "5eed000000004000800000000000701b",
-            "offset": 6681,
+            "segment": "5eed000000004000800000000000701c",
+            "offset": 7279,
             "type": "proto_db.catalog.Attribute"
            }
           },
           {
            "ref": {
-            "segment": "5eed000000004000800000000000701b",
-            "offset": 6815,
+            "segment": "5eed000000004000800000000000701c",
+            "offset": 7413,
             "type": "proto_db.catalog.Role"
            }
           },
           {
            "ref": {
-            "segment": "5eed000000004000800000000000701b",
-            "offset": 7007,
+            "segment": "5eed000000004000800000000000701c",
+            "offset": 7605,
             "type": "proto_db.catalog.Role"
            }
           },
           {
            "ref": {
-            "segment": "5eed000000004000800000000000701b",
-            "offset": 7277,
+            "segment": "5eed000000004000800000000000701c",
+            "offset": 7875,
             "type": "proto_db.catalog.Attribute"
            }
           }
@@ -26609,15 +26803,15 @@
          "tuple": [
           {
            "ref": {
-            "segment": "5eed000000004000800000000000701b",
-            "offset": 7457,
+            "segment": "5eed000000004000800000000000701c",
+            "offset": 8055,
             "type": "proto_db.catalog.Intent"
            }
           },
           {
            "ref": {
-            "segment": "5eed000000004000800000000000701b",
-            "offset": 7839,
+            "segment": "5eed000000004000800000000000701c",
+            "offset": 8437,
             "type": "proto_db.catalog.Intent"
            }
           }
@@ -26639,12 +26833,12 @@
       "rewritable": true
      },
      {
-      "offset": 8568,
+      "offset": 9166,
       "kind": 1,
       "size": 199,
       "tag": 29,
       "type": "proto_db.catalog.Attribute",
-      "oid": "5eed0000000040008000000000007048",
+      "oid": "5eed000000004000800000000000704c",
       "state": [
        [
         "name",
@@ -26721,12 +26915,12 @@
       "rewritable": true
      },
      {
-      "offset": 8767,
+      "offset": 9365,
       "kind": 1,
       "size": 248,
       "tag": 29,
       "type": "proto_db.catalog.Attribute",
-      "oid": "5eed0000000040008000000000007049",
+      "oid": "5eed000000004000800000000000704d",
       "state": [
        [
         "name",
@@ -26791,12 +26985,12 @@
       "rewritable": true
      },
      {
-      "offset": 9015,
+      "offset": 9613,
       "kind": 1,
       "size": 189,
       "tag": 30,
       "type": "proto_db.catalog.Role",
-      "oid": "5eed000000004000800000000000704a",
+      "oid": "5eed000000004000800000000000704e",
       "state": [
        [
         "name",
@@ -26843,12 +27037,12 @@
       "rewritable": true
      },
      {
-      "offset": 9204,
+      "offset": 9802,
       "kind": 1,
       "size": 105,
       "tag": 33,
       "type": "proto_db.catalog.Expression",
-      "oid": "5eed000000004000800000000000704b",
+      "oid": "5eed000000004000800000000000704f",
       "state": [
        [
         "ast",
@@ -26905,12 +27099,12 @@
       "rewritable": true
      },
      {
-      "offset": 9309,
+      "offset": 9907,
       "kind": 1,
       "size": 186,
       "tag": 29,
       "type": "proto_db.catalog.Attribute",
-      "oid": "5eed000000004000800000000000704c",
+      "oid": "5eed0000000040008000000000007050",
       "state": [
        [
         "name",
@@ -26934,8 +27128,8 @@
         "expression",
         {
          "ref": {
-          "segment": "5eed000000004000800000000000701b",
-          "offset": 9204,
+          "segment": "5eed000000004000800000000000701c",
+          "offset": 9802,
           "type": "proto_db.catalog.Expression"
          }
         }
@@ -26955,12 +27149,12 @@
       "rewritable": true
      },
      {
-      "offset": 9495,
+      "offset": 10093,
       "kind": 1,
       "size": 87,
       "tag": 33,
       "type": "proto_db.catalog.Expression",
-      "oid": "5eed000000004000800000000000704d",
+      "oid": "5eed0000000040008000000000007051",
       "state": [
        [
         "ast",
@@ -26997,12 +27191,12 @@
       "rewritable": true
      },
      {
-      "offset": 9582,
+      "offset": 10180,
       "kind": 1,
       "size": 302,
       "tag": 32,
       "type": "proto_db.catalog.Constraint",
-      "oid": "5eed000000004000800000000000704e",
+      "oid": "5eed0000000040008000000000007052",
       "state": [
        [
         "name",
@@ -27020,8 +27214,8 @@
         "expression",
         {
          "ref": {
-          "segment": "5eed000000004000800000000000701b",
-          "offset": 9495,
+          "segment": "5eed000000004000800000000000701c",
+          "offset": 10093,
           "type": "proto_db.catalog.Expression"
          }
         }
@@ -27053,7 +27247,7 @@
       "rewritable": true
      },
      {
-      "offset": 9884,
+      "offset": 10482,
       "kind": 1,
       "size": 409,
       "tag": 27,
@@ -27103,29 +27297,29 @@
          "tuple": [
           {
            "ref": {
-            "segment": "5eed000000004000800000000000701b",
-            "offset": 8568,
+            "segment": "5eed000000004000800000000000701c",
+            "offset": 9166,
             "type": "proto_db.catalog.Attribute"
            }
           },
           {
            "ref": {
-            "segment": "5eed000000004000800000000000701b",
-            "offset": 8767,
+            "segment": "5eed000000004000800000000000701c",
+            "offset": 9365,
             "type": "proto_db.catalog.Attribute"
            }
           },
           {
            "ref": {
-            "segment": "5eed000000004000800000000000701b",
-            "offset": 9015,
+            "segment": "5eed000000004000800000000000701c",
+            "offset": 9613,
             "type": "proto_db.catalog.Role"
            }
           },
           {
            "ref": {
-            "segment": "5eed000000004000800000000000701b",
-            "offset": 9309,
+            "segment": "5eed000000004000800000000000701c",
+            "offset": 9907,
             "type": "proto_db.catalog.Attribute"
            }
           }
@@ -27138,8 +27332,8 @@
          "tuple": [
           {
            "ref": {
-            "segment": "5eed000000004000800000000000701b",
-            "offset": 9582,
+            "segment": "5eed000000004000800000000000701c",
+            "offset": 10180,
             "type": "proto_db.catalog.Constraint"
            }
           }
@@ -27164,12 +27358,12 @@
       "rewritable": true
      },
      {
-      "offset": 10293,
+      "offset": 10891,
       "kind": 1,
       "size": 138,
       "tag": 0,
       "type": "proto_db.avl.KeyNode",
-      "oid": "5eed000000004000800000000000704f",
+      "oid": "5eed0000000040008000000000007053",
       "state": [
        [
         "key",
@@ -27181,8 +27375,8 @@
         "value",
         {
          "ref": {
-          "segment": "5eed000000004000800000000000701b",
-          "offset": 9884,
+          "segment": "5eed000000004000800000000000701c",
+          "offset": 10482,
           "type": "proto_db.catalog.Entity"
          }
         }
@@ -27216,12 +27410,190 @@
       "rewritable": true
      },
      {
-      "offset": 10431,
+      "offset": 11029,
+      "kind": 1,
+      "size": 134,
+      "tag": 29,
+      "type": "proto_db.catalog.Attribute",
+      "oid": "5eed0000000040008000000000007054",
+      "state": [
+       [
+        "name",
+        {
+         "str": "name"
+        }
+       ],
+       [
+        "kind",
+        {
+         "str": "field"
+        }
+       ],
+       [
+        "value_type",
+        {
+         "str": "str"
+        }
+       ],
+       [
+        "required",
+        {
+         "bool": true
+        }
+       ],
+       [
+        "provenance",
+        {
+         "tuple": [
+          {
+           "str": "conformance.catalog_sales"
+          }
+         ]
+        }
+       ]
+      ],
+      "canonical": true,
+      "rewritable": true
+     },
+     {
+      "offset": 11163,
+      "kind": 1,
+      "size": 198,
+      "tag": 29,
+      "type": "proto_db.catalog.Attribute",
+      "oid": "5eed0000000040008000000000007055",
+      "state": [
+       [
+        "name",
+        {
+         "str": "list_price"
+        }
+       ],
+       [
+        "kind",
+        {
+         "str": "field"
+        }
+       ],
+       [
+        "value_type",
+        {
+         "str": "decimal"
+        }
+       ],
+       [
+        "unit",
+        {
+         "str": "currency:company"
+        }
+       ],
+       [
+        "meaning",
+        {
+         "str": "The current price of the product"
+        }
+       ],
+       [
+        "provenance",
+        {
+         "tuple": [
+          {
+           "str": "conformance.catalog_sales"
+          }
+         ]
+        }
+       ]
+      ],
+      "canonical": true,
+      "rewritable": true
+     },
+     {
+      "offset": 11361,
+      "kind": 1,
+      "size": 278,
+      "tag": 27,
+      "type": "proto_db.catalog.Entity",
+      "oid": "5eed0000000040008000000000007019",
+      "state": [
+       [
+        "type_name",
+        {
+         "str": "conformance.sales.Product"
+        }
+       ],
+       [
+        "meaning",
+        {
+         "str": "A product the company sells"
+        }
+       ],
+       [
+        "label",
+        {
+         "map": [
+          [
+           {
+            "str": "und"
+           },
+           {
+            "str": "Product"
+           }
+          ]
+         ]
+        }
+       ],
+       [
+        "key",
+        {
+         "tuple": [
+          {
+           "str": "name"
+          }
+         ]
+        }
+       ],
+       [
+        "attributes",
+        {
+         "tuple": [
+          {
+           "ref": {
+            "segment": "5eed000000004000800000000000701c",
+            "offset": 11029,
+            "type": "proto_db.catalog.Attribute"
+           }
+          },
+          {
+           "ref": {
+            "segment": "5eed000000004000800000000000701c",
+            "offset": 11163,
+            "type": "proto_db.catalog.Attribute"
+           }
+          }
+         ]
+        }
+       ],
+       [
+        "provenance",
+        {
+         "tuple": [
+          {
+           "str": "conformance.catalog_sales"
+          }
+         ]
+        }
+       ]
+      ],
+      "canonical": true,
+      "rewritable": true
+     },
+     {
+      "offset": 11639,
       "kind": 1,
       "size": 160,
       "tag": 29,
       "type": "proto_db.catalog.Attribute",
-      "oid": "5eed0000000040008000000000007050",
+      "oid": "5eed0000000040008000000000007056",
       "state": [
        [
         "name",
@@ -27268,12 +27640,12 @@
       "rewritable": true
      },
      {
-      "offset": 10591,
+      "offset": 11799,
       "kind": 1,
       "size": 266,
       "tag": 29,
       "type": "proto_db.catalog.Attribute",
-      "oid": "5eed0000000040008000000000007051",
+      "oid": "5eed0000000040008000000000007057",
       "state": [
        [
         "name",
@@ -27332,12 +27704,12 @@
       "rewritable": true
      },
      {
-      "offset": 10857,
+      "offset": 12065,
       "kind": 1,
       "size": 78,
       "tag": 33,
       "type": "proto_db.catalog.Expression",
-      "oid": "5eed0000000040008000000000007052",
+      "oid": "5eed0000000040008000000000007058",
       "state": [
        [
         "ast",
@@ -27374,12 +27746,12 @@
       "rewritable": true
      },
      {
-      "offset": 10935,
+      "offset": 12143,
       "kind": 1,
       "size": 154,
       "tag": 29,
       "type": "proto_db.catalog.Attribute",
-      "oid": "5eed0000000040008000000000007053",
+      "oid": "5eed0000000040008000000000007059",
       "state": [
        [
         "name",
@@ -27397,8 +27769,8 @@
         "expression",
         {
          "ref": {
-          "segment": "5eed000000004000800000000000701b",
-          "offset": 10857,
+          "segment": "5eed000000004000800000000000701c",
+          "offset": 12065,
           "type": "proto_db.catalog.Expression"
          }
         }
@@ -27418,12 +27790,12 @@
       "rewritable": true
      },
      {
-      "offset": 11089,
+      "offset": 12297,
       "kind": 1,
-      "size": 194,
+      "size": 207,
       "tag": 30,
       "type": "proto_db.catalog.Role",
-      "oid": "5eed0000000040008000000000007054",
+      "oid": "5eed000000004000800000000000705a",
       "state": [
        [
         "name",
@@ -27456,6 +27828,12 @@
         }
        ],
        [
+        "participant",
+        {
+         "bool": true
+        }
+       ],
+       [
         "ordered",
         {
          "bool": true
@@ -27476,12 +27854,12 @@
       "rewritable": true
      },
      {
-      "offset": 11283,
+      "offset": 12504,
       "kind": 1,
-      "size": 193,
+      "size": 206,
       "tag": 30,
       "type": "proto_db.catalog.Role",
-      "oid": "5eed0000000040008000000000007055",
+      "oid": "5eed000000004000800000000000705b",
       "state": [
        [
         "name",
@@ -27499,6 +27877,12 @@
         "cardinality",
         {
          "str": "one"
+        }
+       ],
+       [
+        "participant",
+        {
+         "bool": true
         }
        ],
        [
@@ -27532,7 +27916,7 @@
       "rewritable": true
      },
      {
-      "offset": 11476,
+      "offset": 12710,
       "kind": 1,
       "size": 365,
       "tag": 28,
@@ -27557,22 +27941,22 @@
          "tuple": [
           {
            "ref": {
-            "segment": "5eed000000004000800000000000701b",
-            "offset": 10431,
+            "segment": "5eed000000004000800000000000701c",
+            "offset": 11639,
             "type": "proto_db.catalog.Attribute"
            }
           },
           {
            "ref": {
-            "segment": "5eed000000004000800000000000701b",
-            "offset": 10591,
+            "segment": "5eed000000004000800000000000701c",
+            "offset": 11799,
             "type": "proto_db.catalog.Attribute"
            }
           },
           {
            "ref": {
-            "segment": "5eed000000004000800000000000701b",
-            "offset": 10935,
+            "segment": "5eed000000004000800000000000701c",
+            "offset": 12143,
             "type": "proto_db.catalog.Attribute"
            }
           }
@@ -27585,15 +27969,15 @@
          "tuple": [
           {
            "ref": {
-            "segment": "5eed000000004000800000000000701b",
-            "offset": 11089,
+            "segment": "5eed000000004000800000000000701c",
+            "offset": 12297,
             "type": "proto_db.catalog.Role"
            }
           },
           {
            "ref": {
-            "segment": "5eed000000004000800000000000701b",
-            "offset": 11283,
+            "segment": "5eed000000004000800000000000701c",
+            "offset": 12504,
             "type": "proto_db.catalog.Role"
            }
           }
@@ -27615,12 +27999,64 @@
       "rewritable": true
      },
      {
-      "offset": 11841,
+      "offset": 13075,
+      "kind": 1,
+      "size": 139,
+      "tag": 0,
+      "type": "proto_db.avl.KeyNode",
+      "oid": "5eed000000004000800000000000705c",
+      "state": [
+       [
+        "key",
+        {
+         "str": "conformance.sales.OrderLine"
+        }
+       ],
+       [
+        "value",
+        {
+         "ref": {
+          "segment": "5eed000000004000800000000000701c",
+          "offset": 12710,
+          "type": "proto_db.catalog.Relationship"
+         }
+        }
+       ],
+       [
+        "left",
+        {
+         "nil": null
+        }
+       ],
+       [
+        "right",
+        {
+         "nil": null
+        }
+       ],
+       [
+        "height",
+        {
+         "int": "1"
+        }
+       ],
+       [
+        "count",
+        {
+         "int": "1"
+        }
+       ]
+      ],
+      "canonical": true,
+      "rewritable": true
+     },
+     {
+      "offset": 13214,
       "kind": 1,
       "size": 274,
       "tag": 29,
       "type": "proto_db.catalog.Attribute",
-      "oid": "5eed0000000040008000000000007056",
+      "oid": "5eed000000004000800000000000705d",
       "state": [
        [
         "name",
@@ -27698,12 +28134,12 @@
       "rewritable": true
      },
      {
-      "offset": 12115,
+      "offset": 13488,
       "kind": 1,
       "size": 216,
       "tag": 29,
       "type": "proto_db.catalog.Attribute",
-      "oid": "5eed0000000040008000000000007057",
+      "oid": "5eed000000004000800000000000705e",
       "state": [
        [
         "name",
@@ -27766,12 +28202,12 @@
       "rewritable": true
      },
      {
-      "offset": 12331,
+      "offset": 13704,
       "kind": 1,
       "size": 173,
       "tag": 29,
       "type": "proto_db.catalog.Attribute",
-      "oid": "5eed0000000040008000000000007058",
+      "oid": "5eed000000004000800000000000705f",
       "state": [
        [
         "name",
@@ -27818,12 +28254,12 @@
       "rewritable": true
      },
      {
-      "offset": 12504,
+      "offset": 13877,
       "kind": 1,
       "size": 231,
       "tag": 30,
       "type": "proto_db.catalog.Role",
-      "oid": "5eed0000000040008000000000007059",
+      "oid": "5eed0000000040008000000000007060",
       "state": [
        [
         "name",
@@ -27876,12 +28312,12 @@
       "rewritable": true
      },
      {
-      "offset": 12735,
+      "offset": 14108,
       "kind": 1,
       "size": 237,
       "tag": 30,
       "type": "proto_db.catalog.Role",
-      "oid": "5eed000000004000800000000000705a",
+      "oid": "5eed0000000040008000000000007061",
       "state": [
        [
         "name",
@@ -27940,12 +28376,12 @@
       "rewritable": true
      },
      {
-      "offset": 12972,
+      "offset": 14345,
       "kind": 1,
       "size": 72,
       "tag": 33,
       "type": "proto_db.catalog.Expression",
-      "oid": "5eed000000004000800000000000705b",
+      "oid": "5eed0000000040008000000000007062",
       "state": [
        [
         "ast",
@@ -27975,12 +28411,12 @@
       "rewritable": true
      },
      {
-      "offset": 13044,
+      "offset": 14417,
       "kind": 1,
       "size": 219,
       "tag": 29,
       "type": "proto_db.catalog.Attribute",
-      "oid": "5eed000000004000800000000000705c",
+      "oid": "5eed0000000040008000000000007063",
       "state": [
        [
         "name",
@@ -28010,8 +28446,8 @@
         "expression",
         {
          "ref": {
-          "segment": "5eed000000004000800000000000701b",
-          "offset": 12972,
+          "segment": "5eed000000004000800000000000701c",
+          "offset": 14345,
           "type": "proto_db.catalog.Expression"
          }
         }
@@ -28031,12 +28467,12 @@
       "rewritable": true
      },
      {
-      "offset": 13263,
+      "offset": 14636,
       "kind": 1,
       "size": 128,
       "tag": 29,
       "type": "proto_db.catalog.Attribute",
-      "oid": "5eed000000004000800000000000705d",
+      "oid": "5eed0000000040008000000000007064",
       "state": [
        [
         "name",
@@ -28071,17 +28507,23 @@
       "rewritable": true
      },
      {
-      "offset": 13391,
+      "offset": 14764,
       "kind": 1,
-      "size": 306,
+      "size": 345,
       "tag": 31,
       "type": "proto_db.catalog.Intent",
-      "oid": "5eed000000004000800000000000705e",
+      "oid": "5eed0000000040008000000000007065",
       "state": [
        [
         "name",
         {
          "str": "add_line"
+        }
+       ],
+       [
+        "inherited_from",
+        {
+         "str": "conformance.sales.Order"
         }
        ],
        [
@@ -28152,12 +28594,12 @@
       "rewritable": true
      },
      {
-      "offset": 13697,
+      "offset": 15109,
       "kind": 1,
       "size": 76,
       "tag": 33,
       "type": "proto_db.catalog.Expression",
-      "oid": "5eed000000004000800000000000705f",
+      "oid": "5eed0000000040008000000000007066",
       "state": [
        [
         "ast",
@@ -28194,17 +28636,23 @@
       "rewritable": true
      },
      {
-      "offset": 13773,
+      "offset": 15185,
       "kind": 1,
-      "size": 202,
+      "size": 241,
       "tag": 31,
       "type": "proto_db.catalog.Intent",
-      "oid": "5eed0000000040008000000000007060",
+      "oid": "5eed0000000040008000000000007067",
       "state": [
        [
         "name",
         {
          "str": "confirm"
+        }
+       ],
+       [
+        "inherited_from",
+        {
+         "str": "conformance.sales.Order"
         }
        ],
        [
@@ -28217,8 +28665,8 @@
         "requires",
         {
          "ref": {
-          "segment": "5eed000000004000800000000000701b",
-          "offset": 13697,
+          "segment": "5eed000000004000800000000000701c",
+          "offset": 15109,
           "type": "proto_db.catalog.Expression"
          }
         }
@@ -28238,12 +28686,12 @@
       "rewritable": true
      },
      {
-      "offset": 13975,
+      "offset": 15426,
       "kind": 1,
-      "size": 537,
+      "size": 564,
       "tag": 27,
       "type": "proto_db.catalog.Entity",
-      "oid": "5eed0000000040008000000000007019",
+      "oid": "5eed000000004000800000000000701a",
       "state": [
        [
         "type_name",
@@ -28283,55 +28731,68 @@
         }
        ],
        [
+        "key",
+        {
+         "tuple": [
+          {
+           "str": "customer"
+          },
+          {
+           "str": "number"
+          }
+         ]
+        }
+       ],
+       [
         "attributes",
         {
          "tuple": [
           {
            "ref": {
-            "segment": "5eed000000004000800000000000701b",
-            "offset": 11841,
+            "segment": "5eed000000004000800000000000701c",
+            "offset": 13214,
             "type": "proto_db.catalog.Attribute"
            }
           },
           {
            "ref": {
-            "segment": "5eed000000004000800000000000701b",
-            "offset": 12115,
+            "segment": "5eed000000004000800000000000701c",
+            "offset": 13488,
             "type": "proto_db.catalog.Attribute"
            }
           },
           {
            "ref": {
-            "segment": "5eed000000004000800000000000701b",
-            "offset": 12331,
+            "segment": "5eed000000004000800000000000701c",
+            "offset": 13704,
             "type": "proto_db.catalog.Attribute"
            }
           },
           {
            "ref": {
-            "segment": "5eed000000004000800000000000701b",
-            "offset": 12504,
+            "segment": "5eed000000004000800000000000701c",
+            "offset": 13877,
             "type": "proto_db.catalog.Role"
            }
           },
           {
            "ref": {
-            "segment": "5eed000000004000800000000000701b",
-            "offset": 12735,
+            "segment": "5eed000000004000800000000000701c",
+            "offset": 14108,
             "type": "proto_db.catalog.Role"
            }
           },
           {
            "ref": {
-            "segment": "5eed000000004000800000000000701b",
-            "offset": 13044,
+            "segment": "5eed000000004000800000000000701c",
+            "offset": 14417,
             "type": "proto_db.catalog.Attribute"
            }
           },
           {
            "ref": {
-            "segment": "5eed000000004000800000000000701b",
-            "offset": 13263,
+            "segment": "5eed000000004000800000000000701c",
+            "offset": 14636,
             "type": "proto_db.catalog.Attribute"
            }
           }
@@ -28344,15 +28805,15 @@
          "tuple": [
           {
            "ref": {
-            "segment": "5eed000000004000800000000000701b",
-            "offset": 13391,
+            "segment": "5eed000000004000800000000000701c",
+            "offset": 14764,
             "type": "proto_db.catalog.Intent"
            }
           },
           {
            "ref": {
-            "segment": "5eed000000004000800000000000701b",
-            "offset": 13773,
+            "segment": "5eed000000004000800000000000701c",
+            "offset": 15185,
             "type": "proto_db.catalog.Intent"
            }
           }
@@ -28374,12 +28835,12 @@
       "rewritable": true
      },
      {
-      "offset": 14512,
+      "offset": 15990,
       "kind": 1,
       "size": 139,
       "tag": 0,
       "type": "proto_db.avl.KeyNode",
-      "oid": "5eed0000000040008000000000007061",
+      "oid": "5eed0000000040008000000000007068",
       "state": [
        [
         "key",
@@ -28391,8 +28852,8 @@
         "value",
         {
          "ref": {
-          "segment": "5eed000000004000800000000000701b",
-          "offset": 13975,
+          "segment": "5eed000000004000800000000000701c",
+          "offset": 15426,
           "type": "proto_db.catalog.Entity"
          }
         }
@@ -28426,41 +28887,45 @@
       "rewritable": true
      },
      {
-      "offset": 14651,
+      "offset": 16129,
       "kind": 1,
-      "size": 167,
+      "size": 193,
       "tag": 0,
       "type": "proto_db.avl.KeyNode",
-      "oid": "5eed0000000040008000000000007062",
+      "oid": "5eed0000000040008000000000007069",
       "state": [
        [
         "key",
         {
-         "str": "conformance.sales.OrderLine"
+         "str": "conformance.sales.Product"
         }
        ],
        [
         "value",
         {
          "ref": {
-          "segment": "5eed000000004000800000000000701b",
-          "offset": 11476,
-          "type": "proto_db.catalog.Relationship"
+          "segment": "5eed000000004000800000000000701c",
+          "offset": 11361,
+          "type": "proto_db.catalog.Entity"
          }
         }
        ],
        [
         "left",
         {
-         "nil": null
+         "ref": {
+          "segment": "5eed000000004000800000000000701c",
+          "offset": 13075,
+          "type": "proto_db.avl.KeyNode"
+         }
         }
        ],
        [
         "right",
         {
          "ref": {
-          "segment": "5eed000000004000800000000000701b",
-          "offset": 14512,
+          "segment": "5eed000000004000800000000000701c",
+          "offset": 15990,
           "type": "proto_db.avl.KeyNode"
          }
         }
@@ -28474,7 +28939,7 @@
        [
         "count",
         {
-         "int": "2"
+         "int": "3"
         }
        ]
       ],
@@ -28482,12 +28947,12 @@
       "rewritable": true
      },
      {
-      "offset": 14818,
+      "offset": 16322,
       "kind": 1,
       "size": 191,
       "tag": 0,
       "type": "proto_db.avl.KeyNode",
-      "oid": "5eed0000000040008000000000007063",
+      "oid": "5eed000000004000800000000000706a",
       "state": [
        [
         "key",
@@ -28499,8 +28964,8 @@
         "value",
         {
          "ref": {
-          "segment": "5eed000000004000800000000000701b",
-          "offset": 8041,
+          "segment": "5eed000000004000800000000000701c",
+          "offset": 8639,
           "type": "proto_db.catalog.Entity"
          }
         }
@@ -28509,8 +28974,8 @@
         "left",
         {
          "ref": {
-          "segment": "5eed000000004000800000000000701b",
-          "offset": 10293,
+          "segment": "5eed000000004000800000000000701c",
+          "offset": 10891,
           "type": "proto_db.avl.KeyNode"
          }
         }
@@ -28519,8 +28984,8 @@
         "right",
         {
          "ref": {
-          "segment": "5eed000000004000800000000000701b",
-          "offset": 14651,
+          "segment": "5eed000000004000800000000000701c",
+          "offset": 16129,
           "type": "proto_db.avl.KeyNode"
          }
         }
@@ -28534,7 +28999,7 @@
        [
         "count",
         {
-         "int": "4"
+         "int": "5"
         }
        ]
       ],
@@ -28542,12 +29007,12 @@
       "rewritable": true
      },
      {
-      "offset": 15009,
+      "offset": 16513,
       "kind": 1,
       "size": 50,
       "tag": 3,
       "type": "proto_db.collections.IndexSet",
-      "oid": "5eed0000000040008000000000007064",
+      "oid": "5eed000000004000800000000000706b",
       "state": [
        [
         "root",
@@ -28560,19 +29025,19 @@
       "rewritable": true
      },
      {
-      "offset": 15059,
+      "offset": 16563,
       "kind": 1,
       "size": 122,
       "tag": 6,
       "type": "proto_db.collections.Dictionary",
-      "oid": "5eed0000000040008000000000007065",
+      "oid": "5eed000000004000800000000000706c",
       "state": [
        [
         "root",
         {
          "ref": {
-          "segment": "5eed000000004000800000000000701b",
-          "offset": 14818,
+          "segment": "5eed000000004000800000000000701c",
+          "offset": 16322,
           "type": "proto_db.avl.KeyNode"
          }
         }
@@ -28580,15 +29045,15 @@
        [
         "count",
         {
-         "int": "4"
+         "int": "5"
         }
        ],
        [
         "indexes",
         {
          "ref": {
-          "segment": "5eed000000004000800000000000701b",
-          "offset": 15009,
+          "segment": "5eed000000004000800000000000701c",
+          "offset": 16513,
           "type": "proto_db.collections.IndexSet"
          }
         }
@@ -28598,19 +29063,19 @@
       "rewritable": true
      },
      {
-      "offset": 15181,
+      "offset": 16685,
       "kind": 1,
       "size": 193,
       "tag": 24,
       "type": "proto_db.catalog.SemanticCatalog",
-      "oid": "5eed0000000040008000000000007066",
+      "oid": "5eed000000004000800000000000706d",
       "state": [
        [
         "modules",
         {
          "ref": {
-          "segment": "5eed000000004000800000000000701b",
-          "offset": 6147,
+          "segment": "5eed000000004000800000000000701c",
+          "offset": 6745,
           "type": "proto_db.collections.Dictionary"
          }
         }
@@ -28635,8 +29100,8 @@
         "entities",
         {
          "ref": {
-          "segment": "5eed000000004000800000000000701b",
-          "offset": 15059,
+          "segment": "5eed000000004000800000000000701c",
+          "offset": 16563,
           "type": "proto_db.collections.Dictionary"
          }
         }
@@ -28646,12 +29111,12 @@
       "rewritable": true
      },
      {
-      "offset": 15374,
+      "offset": 16878,
       "kind": 1,
       "size": 129,
       "tag": 0,
       "type": "proto_db.avl.KeyNode",
-      "oid": "5eed0000000040008000000000007068",
+      "oid": "5eed000000004000800000000000706f",
       "state": [
        [
         "key",
@@ -28663,8 +29128,8 @@
         "value",
         {
          "ref": {
-          "segment": "5eed000000004000800000000000701b",
-          "offset": 15181,
+          "segment": "5eed000000004000800000000000701c",
+          "offset": 16685,
           "type": "proto_db.catalog.SemanticCatalog"
          }
         }
@@ -28698,12 +29163,12 @@
       "rewritable": true
      },
      {
-      "offset": 15503,
+      "offset": 17007,
       "kind": 1,
       "size": 145,
       "tag": 0,
       "type": "proto_db.avl.KeyNode",
-      "oid": "5eed0000000040008000000000007069",
+      "oid": "5eed0000000040008000000000007070",
       "state": [
        [
         "key",
@@ -28725,8 +29190,8 @@
         "left",
         {
          "ref": {
-          "segment": "5eed000000004000800000000000701b",
-          "offset": 15374,
+          "segment": "5eed000000004000800000000000701c",
+          "offset": 16878,
           "type": "proto_db.avl.KeyNode"
          }
         }
@@ -28754,19 +29219,19 @@
       "rewritable": true
      },
      {
-      "offset": 15648,
+      "offset": 17152,
       "kind": 1,
       "size": 120,
       "tag": 6,
       "type": "proto_db.collections.Dictionary",
-      "oid": "5eed000000004000800000000000706a",
+      "oid": "5eed0000000040008000000000007071",
       "state": [
        [
         "root",
         {
          "ref": {
-          "segment": "5eed000000004000800000000000701b",
-          "offset": 15503,
+          "segment": "5eed000000004000800000000000701c",
+          "offset": 17007,
           "type": "proto_db.avl.KeyNode"
          }
         }
@@ -28792,19 +29257,19 @@
       "rewritable": true
      },
      {
-      "offset": 15768,
+      "offset": 17272,
       "kind": 1,
       "size": 231,
       "tag": 18,
       "type": "proto_db.transactions.DatabaseRoot",
-      "oid": "5eed0000000040008000000000007067",
+      "oid": "5eed000000004000800000000000706e",
       "state": [
        [
         "objects",
         {
          "ref": {
-          "segment": "5eed000000004000800000000000701b",
-          "offset": 15648,
+          "segment": "5eed000000004000800000000000701c",
+          "offset": 17152,
           "type": "proto_db.collections.Dictionary"
          }
         }
@@ -28866,12 +29331,12 @@
       "rewritable": true
      },
      {
-      "offset": 15999,
+      "offset": 17503,
       "kind": 1,
       "size": 114,
       "tag": 0,
       "type": "proto_db.avl.KeyNode",
-      "oid": "5eed000000004000800000000000706b",
+      "oid": "5eed0000000040008000000000007072",
       "state": [
        [
         "key",
@@ -28883,8 +29348,8 @@
         "value",
         {
          "ref": {
-          "segment": "5eed000000004000800000000000701b",
-          "offset": 15768,
+          "segment": "5eed000000004000800000000000701c",
+          "offset": 17272,
           "type": "proto_db.transactions.DatabaseRoot"
          }
         }
@@ -28918,19 +29383,19 @@
       "rewritable": true
      },
      {
-      "offset": 16113,
+      "offset": 17617,
       "kind": 1,
       "size": 122,
       "tag": 6,
       "type": "proto_db.collections.Dictionary",
-      "oid": "5eed000000004000800000000000706c",
+      "oid": "5eed0000000040008000000000007073",
       "state": [
        [
         "root",
         {
          "ref": {
-          "segment": "5eed000000004000800000000000701b",
-          "offset": 15999,
+          "segment": "5eed000000004000800000000000701c",
+          "offset": 17503,
           "type": "proto_db.avl.KeyNode"
          }
         }
@@ -28956,19 +29421,19 @@
       "rewritable": true
      },
      {
-      "offset": 16235,
+      "offset": 17739,
       "kind": 1,
       "size": 83,
       "tag": 17,
       "type": "proto_db.transactions.SpaceRoot",
-      "oid": "5eed000000004000800000000000706d",
+      "oid": "5eed0000000040008000000000007074",
       "state": [
        [
         "databases",
         {
          "ref": {
-          "segment": "5eed000000004000800000000000701b",
-          "offset": 16113,
+          "segment": "5eed000000004000800000000000701c",
+          "offset": 17617,
           "type": "proto_db.collections.Dictionary"
          }
         }
@@ -28978,12 +29443,12 @@
       "rewritable": true
      },
      {
-      "offset": 16318,
+      "offset": 17822,
       "kind": 1,
       "size": 185,
       "tag": 34,
       "type": "proto_db.catalog.IntentRecord",
-      "oid": "5eed000000004000800000000000706f",
+      "oid": "5eed0000000040008000000000007076",
       "state": [
        [
         "intent",
@@ -29021,12 +29486,12 @@
       "rewritable": true
      },
      {
-      "offset": 16503,
+      "offset": 18007,
       "kind": 1,
       "size": 292,
       "tag": 34,
       "type": "proto_db.catalog.IntentRecord",
-      "oid": "5eed000000004000800000000000706e",
+      "oid": "5eed0000000040008000000000007075",
       "state": [
        [
         "intent",
@@ -29089,19 +29554,19 @@
       "rewritable": true
      },
      {
-      "offset": 16795,
+      "offset": 18299,
       "kind": 1,
       "size": 107,
       "tag": 1,
       "type": "proto_db.avl.PosNode",
-      "oid": "5eed0000000040008000000000007070",
+      "oid": "5eed0000000040008000000000007077",
       "state": [
        [
         "value",
         {
          "ref": {
-          "segment": "5eed000000004000800000000000701b",
-          "offset": 16503,
+          "segment": "5eed000000004000800000000000701c",
+          "offset": 18007,
           "type": "proto_db.catalog.IntentRecord"
          }
         }
@@ -29135,19 +29600,19 @@
       "rewritable": true
      },
      {
-      "offset": 16902,
+      "offset": 18406,
       "kind": 1,
       "size": 135,
       "tag": 1,
       "type": "proto_db.avl.PosNode",
-      "oid": "5eed0000000040008000000000007071",
+      "oid": "5eed0000000040008000000000007078",
       "state": [
        [
         "value",
         {
          "ref": {
-          "segment": "5eed000000004000800000000000701b",
-          "offset": 16318,
+          "segment": "5eed000000004000800000000000701c",
+          "offset": 17822,
           "type": "proto_db.catalog.IntentRecord"
          }
         }
@@ -29156,8 +29621,8 @@
         "left",
         {
          "ref": {
-          "segment": "5eed000000004000800000000000701b",
-          "offset": 16795,
+          "segment": "5eed000000004000800000000000701c",
+          "offset": 18299,
           "type": "proto_db.avl.PosNode"
          }
         }
@@ -29185,12 +29650,12 @@
       "rewritable": true
      },
      {
-      "offset": 17037,
+      "offset": 18541,
       "kind": 1,
       "size": 50,
       "tag": 3,
       "type": "proto_db.collections.IndexSet",
-      "oid": "5eed0000000040008000000000007072",
+      "oid": "5eed0000000040008000000000007079",
       "state": [
        [
         "root",
@@ -29203,19 +29668,19 @@
       "rewritable": true
      },
      {
-      "offset": 17087,
+      "offset": 18591,
       "kind": 1,
       "size": 122,
       "tag": 5,
       "type": "proto_db.collections.List",
-      "oid": "5eed0000000040008000000000007073",
+      "oid": "5eed000000004000800000000000707a",
       "state": [
        [
         "root",
         {
          "ref": {
-          "segment": "5eed000000004000800000000000701b",
-          "offset": 16902,
+          "segment": "5eed000000004000800000000000701c",
+          "offset": 18406,
           "type": "proto_db.avl.PosNode"
          }
         }
@@ -29230,8 +29695,8 @@
         "indexes",
         {
          "ref": {
-          "segment": "5eed000000004000800000000000701b",
-          "offset": 17037,
+          "segment": "5eed000000004000800000000000701c",
+          "offset": 18541,
           "type": "proto_db.collections.IndexSet"
          }
         }
@@ -29241,12 +29706,12 @@
       "rewritable": true
      },
      {
-      "offset": 17209,
+      "offset": 18713,
       "kind": 1,
       "size": 123,
       "tag": 0,
       "type": "proto_db.avl.KeyNode",
-      "oid": "5eed0000000040008000000000007075",
+      "oid": "5eed000000004000800000000000707c",
       "state": [
        [
         "key",
@@ -29258,8 +29723,8 @@
         "value",
         {
          "ref": {
-          "segment": "5eed000000004000800000000000701b",
-          "offset": 17087,
+          "segment": "5eed000000004000800000000000701c",
+          "offset": 18591,
           "type": "proto_db.collections.List"
          }
         }
@@ -29293,12 +29758,12 @@
       "rewritable": true
      },
      {
-      "offset": 17332,
+      "offset": 18836,
       "kind": 1,
       "size": 117,
       "tag": 0,
       "type": "proto_db.avl.KeyNode",
-      "oid": "5eed0000000040008000000000007076",
+      "oid": "5eed000000004000800000000000707d",
       "state": [
        [
         "key",
@@ -29345,12 +29810,12 @@
       "rewritable": true
      },
      {
-      "offset": 17449,
+      "offset": 18953,
       "kind": 1,
       "size": 185,
       "tag": 0,
       "type": "proto_db.avl.KeyNode",
-      "oid": "5eed0000000040008000000000007077",
+      "oid": "5eed000000004000800000000000707e",
       "state": [
        [
         "key",
@@ -29362,8 +29827,8 @@
         "value",
         {
          "ref": {
-          "segment": "5eed000000004000800000000000701b",
-          "offset": 15181,
+          "segment": "5eed000000004000800000000000701c",
+          "offset": 16685,
           "type": "proto_db.catalog.SemanticCatalog"
          }
         }
@@ -29372,8 +29837,8 @@
         "left",
         {
          "ref": {
-          "segment": "5eed000000004000800000000000701b",
-          "offset": 17209,
+          "segment": "5eed000000004000800000000000701c",
+          "offset": 18713,
           "type": "proto_db.avl.KeyNode"
          }
         }
@@ -29382,8 +29847,8 @@
         "right",
         {
          "ref": {
-          "segment": "5eed000000004000800000000000701b",
-          "offset": 17332,
+          "segment": "5eed000000004000800000000000701c",
+          "offset": 18836,
           "type": "proto_db.avl.KeyNode"
          }
         }
@@ -29405,19 +29870,19 @@
       "rewritable": true
      },
      {
-      "offset": 17634,
+      "offset": 19138,
       "kind": 1,
       "size": 120,
       "tag": 6,
       "type": "proto_db.collections.Dictionary",
-      "oid": "5eed0000000040008000000000007078",
+      "oid": "5eed000000004000800000000000707f",
       "state": [
        [
         "root",
         {
          "ref": {
-          "segment": "5eed000000004000800000000000701b",
-          "offset": 17449,
+          "segment": "5eed000000004000800000000000701c",
+          "offset": 18953,
           "type": "proto_db.avl.KeyNode"
          }
         }
@@ -29443,19 +29908,19 @@
       "rewritable": true
      },
      {
-      "offset": 17754,
+      "offset": 19258,
       "kind": 1,
       "size": 231,
       "tag": 18,
       "type": "proto_db.transactions.DatabaseRoot",
-      "oid": "5eed0000000040008000000000007074",
+      "oid": "5eed000000004000800000000000707b",
       "state": [
        [
         "objects",
         {
          "ref": {
-          "segment": "5eed000000004000800000000000701b",
-          "offset": 17634,
+          "segment": "5eed000000004000800000000000701c",
+          "offset": 19138,
           "type": "proto_db.collections.Dictionary"
          }
         }
@@ -29506,8 +29971,8 @@
         "previous",
         {
          "ref": {
-          "segment": "5eed000000004000800000000000701b",
-          "offset": 15768,
+          "segment": "5eed000000004000800000000000701c",
+          "offset": 17272,
           "type": "proto_db.transactions.DatabaseRoot"
          }
         }
@@ -29517,12 +29982,12 @@
       "rewritable": true
      },
      {
-      "offset": 17985,
+      "offset": 19489,
       "kind": 1,
       "size": 114,
       "tag": 0,
       "type": "proto_db.avl.KeyNode",
-      "oid": "5eed0000000040008000000000007079",
+      "oid": "5eed0000000040008000000000007080",
       "state": [
        [
         "key",
@@ -29534,8 +29999,8 @@
         "value",
         {
          "ref": {
-          "segment": "5eed000000004000800000000000701b",
-          "offset": 17754,
+          "segment": "5eed000000004000800000000000701c",
+          "offset": 19258,
           "type": "proto_db.transactions.DatabaseRoot"
          }
         }
@@ -29569,19 +30034,19 @@
       "rewritable": true
      },
      {
-      "offset": 18099,
+      "offset": 19603,
       "kind": 1,
       "size": 122,
       "tag": 6,
       "type": "proto_db.collections.Dictionary",
-      "oid": "5eed000000004000800000000000707a",
+      "oid": "5eed0000000040008000000000007081",
       "state": [
        [
         "root",
         {
          "ref": {
-          "segment": "5eed000000004000800000000000701b",
-          "offset": 17985,
+          "segment": "5eed000000004000800000000000701c",
+          "offset": 19489,
           "type": "proto_db.avl.KeyNode"
          }
         }
@@ -29607,19 +30072,19 @@
       "rewritable": true
      },
      {
-      "offset": 18221,
+      "offset": 19725,
       "kind": 1,
       "size": 83,
       "tag": 17,
       "type": "proto_db.transactions.SpaceRoot",
-      "oid": "5eed000000004000800000000000707b",
+      "oid": "5eed0000000040008000000000007082",
       "state": [
        [
         "databases",
         {
          "ref": {
-          "segment": "5eed000000004000800000000000701b",
-          "offset": 18099,
+          "segment": "5eed000000004000800000000000701c",
+          "offset": 19603,
           "type": "proto_db.collections.Dictionary"
          }
         }
@@ -29633,8 +30098,8 @@
   ],
   "root": {
    "version": 6,
-   "segment": "5eed000000004000800000000000701b",
-   "offset": 18221,
+   "segment": "5eed000000004000800000000000701c",
+   "offset": 19725,
    "epoch": 4
   },
   "contents": {
@@ -30961,6 +31426,12 @@
                    }
                   ],
                   [
+                   "participant",
+                   {
+                    "bool": true
+                   }
+                  ],
+                  [
                    "provenance",
                    {
                     "tuple": [
@@ -31010,6 +31481,12 @@
                    }
                   ],
                   [
+                   "participant",
+                   {
+                    "bool": true
+                   }
+                  ],
+                  [
                    "provenance",
                    {
                     "tuple": [
@@ -31034,6 +31511,154 @@
               "type_name",
               {
                "str": "conformance.sales.OrderLine"
+              }
+             ]
+            ]
+           }
+          ],
+          [
+           {
+            "str": "conformance.sales.Product"
+           },
+           {
+            "catalog": "proto_db.catalog.Entity",
+            "attrs": [
+             [
+              "attributes",
+              {
+               "tuple": [
+                {
+                 "catalog": "proto_db.catalog.Attribute",
+                 "attrs": [
+                  [
+                   "kind",
+                   {
+                    "str": "field"
+                   }
+                  ],
+                  [
+                   "name",
+                   {
+                    "str": "name"
+                   }
+                  ],
+                  [
+                   "provenance",
+                   {
+                    "tuple": [
+                     {
+                      "str": "conformance.catalog_sales"
+                     }
+                    ]
+                   }
+                  ],
+                  [
+                   "required",
+                   {
+                    "bool": true
+                   }
+                  ],
+                  [
+                   "value_type",
+                   {
+                    "str": "str"
+                   }
+                  ]
+                 ]
+                },
+                {
+                 "catalog": "proto_db.catalog.Attribute",
+                 "attrs": [
+                  [
+                   "kind",
+                   {
+                    "str": "field"
+                   }
+                  ],
+                  [
+                   "meaning",
+                   {
+                    "str": "The current price of the product"
+                   }
+                  ],
+                  [
+                   "name",
+                   {
+                    "str": "list_price"
+                   }
+                  ],
+                  [
+                   "provenance",
+                   {
+                    "tuple": [
+                     {
+                      "str": "conformance.catalog_sales"
+                     }
+                    ]
+                   }
+                  ],
+                  [
+                   "unit",
+                   {
+                    "str": "currency:company"
+                   }
+                  ],
+                  [
+                   "value_type",
+                   {
+                    "str": "decimal"
+                   }
+                  ]
+                 ]
+                }
+               ]
+              }
+             ],
+             [
+              "key",
+              {
+               "tuple": [
+                {
+                 "str": "name"
+                }
+               ]
+              }
+             ],
+             [
+              "label",
+              {
+               "map": [
+                [
+                 {
+                  "str": "und"
+                 },
+                 {
+                  "str": "Product"
+                 }
+                ]
+               ]
+              }
+             ],
+             [
+              "meaning",
+              {
+               "str": "A product the company sells"
+              }
+             ],
+             [
+              "provenance",
+              {
+               "tuple": [
+                {
+                 "str": "conformance.catalog_sales"
+                }
+               ]
+              }
+             ],
+             [
+              "type_name",
+              {
+               "str": "conformance.sales.Product"
               }
              ]
             ]
@@ -31464,6 +32089,12 @@
                    }
                   ],
                   [
+                   "inherited_from",
+                   {
+                    "str": "conformance.sales.Order"
+                   }
+                  ],
+                  [
                    "meaning",
                    {
                     "str": "Add a product to the order with an agreed quantity and price"
@@ -31528,6 +32159,12 @@
                  "catalog": "proto_db.catalog.Intent",
                  "attrs": [
                   [
+                   "inherited_from",
+                   {
+                    "str": "conformance.sales.Order"
+                   }
+                  ],
+                  [
                    "meaning",
                    {
                     "str": "Confirm the order; it accepts no new lines afterwards"
@@ -31588,6 +32225,19 @@
                    }
                   ]
                  ]
+                }
+               ]
+              }
+             ],
+             [
+              "key",
+              {
+               "tuple": [
+                {
+                 "str": "customer"
+                },
+                {
+                 "str": "number"
                 }
                ]
               }
@@ -31914,6 +32564,138 @@
                    {
                     "tuple": [
                      {
+                      "catalog": "proto_db.catalog.Attribute",
+                      "attrs": [
+                       [
+                        "kind",
+                        {
+                         "str": "field"
+                        }
+                       ],
+                       [
+                        "name",
+                        {
+                         "str": "name"
+                        }
+                       ],
+                       [
+                        "required",
+                        {
+                         "bool": true
+                        }
+                       ],
+                       [
+                        "value_type",
+                        {
+                         "str": "str"
+                        }
+                       ]
+                      ]
+                     },
+                     {
+                      "catalog": "proto_db.catalog.Attribute",
+                      "attrs": [
+                       [
+                        "kind",
+                        {
+                         "str": "field"
+                        }
+                       ],
+                       [
+                        "meaning",
+                        {
+                         "str": "The current price of the product"
+                        }
+                       ],
+                       [
+                        "name",
+                        {
+                         "str": "list_price"
+                        }
+                       ],
+                       [
+                        "unit",
+                        {
+                         "str": "currency:company"
+                        }
+                       ],
+                       [
+                        "value_type",
+                        {
+                         "str": "decimal"
+                        }
+                       ]
+                      ]
+                     }
+                    ]
+                   }
+                  ],
+                  [
+                   "entity",
+                   {
+                    "map": [
+                     [
+                      {
+                       "str": "meaning"
+                      },
+                      {
+                       "str": "A product the company sells"
+                      }
+                     ],
+                     [
+                      {
+                       "str": "label"
+                      },
+                      {
+                       "map": [
+                        [
+                         {
+                          "str": "und"
+                         },
+                         {
+                          "str": "Product"
+                         }
+                        ]
+                       ]
+                      }
+                     ],
+                     [
+                      {
+                       "str": "key"
+                      },
+                      {
+                       "tuple": [
+                        {
+                         "str": "name"
+                        }
+                       ]
+                      }
+                     ]
+                    ]
+                   }
+                  ],
+                  [
+                   "extends",
+                   {
+                    "str": "conformance.sales.Product"
+                   }
+                  ],
+                  [
+                   "module",
+                   {
+                    "str": "conformance.catalog_sales"
+                   }
+                  ]
+                 ]
+                },
+                {
+                 "catalog": "proto_db.catalog.Extension",
+                 "attrs": [
+                  [
+                   "elements",
+                   {
+                    "tuple": [
+                     {
                       "catalog": "proto_db.catalog.Role",
                       "attrs": [
                        [
@@ -31942,6 +32724,12 @@
                        ],
                        [
                         "ordered",
+                        {
+                         "bool": true
+                        }
+                       ],
+                       [
+                        "participant",
                         {
                          "bool": true
                         }
@@ -31983,6 +32771,12 @@
                         "name",
                         {
                          "str": "product"
+                        }
+                       ],
+                       [
+                        "participant",
+                        {
+                         "bool": true
                         }
                        ],
                        [
@@ -32137,6 +32931,14 @@
                    "entity",
                    {
                     "map": [
+                     [
+                      {
+                       "str": "kind"
+                      },
+                      {
+                       "str": "relationship"
+                      }
+                     ],
                      [
                       {
                        "str": "meaning"
@@ -33344,7 +34146,7 @@
         "str": "v"
        },
        {
-        "int": "14"
+        "int": "15"
        }
       ],
       [
@@ -33409,7 +34211,7 @@
         "str": "v"
        },
        {
-        "int": "14"
+        "int": "15"
        }
       ],
       [
@@ -33516,7 +34318,7 @@
         "str": "v"
        },
        {
-        "int": "14"
+        "int": "15"
        }
       ],
       [
@@ -33626,7 +34428,7 @@
         "str": "v"
        },
        {
-        "int": "14"
+        "int": "15"
        }
       ],
       [
@@ -33749,7 +34551,7 @@
         "str": "v"
        },
        {
-        "int": "14"
+        "int": "15"
        }
       ],
       [
@@ -33782,7 +34584,7 @@
         "str": "v"
        },
        {
-        "int": "14"
+        "int": "15"
        }
       ],
       [
@@ -33869,7 +34671,7 @@
         "str": "v"
        },
        {
-        "int": "14"
+        "int": "15"
        }
       ],
       [
@@ -34071,7 +34873,7 @@
         "str": "v"
        },
        {
-        "int": "14"
+        "int": "15"
        }
       ],
       [
@@ -34221,7 +35023,7 @@
         "str": "v"
        },
        {
-        "int": "14"
+        "int": "15"
        }
       ],
       [
@@ -34320,7 +35122,7 @@
         "str": "v"
        },
        {
-        "int": "14"
+        "int": "15"
        }
       ],
       [
@@ -34385,7 +35187,7 @@
         "str": "v"
        },
        {
-        "int": "14"
+        "int": "15"
        }
       ],
       [
@@ -34442,7 +35244,7 @@
         "str": "v"
        },
        {
-        "int": "14"
+        "int": "15"
        }
       ],
       [
@@ -34559,7 +35361,7 @@
         "str": "v"
        },
        {
-        "int": "14"
+        "int": "15"
        }
       ],
       [
@@ -34624,7 +35426,7 @@
         "str": "v"
        },
        {
-        "int": "14"
+        "int": "15"
        }
       ],
       [
@@ -34747,7 +35549,7 @@
         "str": "v"
        },
        {
-        "int": "14"
+        "int": "15"
        }
       ],
       [
@@ -34841,7 +35643,7 @@
         "str": "v"
        },
        {
-        "int": "14"
+        "int": "15"
        }
       ],
       [
@@ -34906,7 +35708,7 @@
         "str": "v"
        },
        {
-        "int": "14"
+        "int": "15"
        }
       ],
       [
@@ -35029,7 +35831,7 @@
         "str": "v"
        },
        {
-        "int": "14"
+        "int": "15"
        }
       ],
       [
@@ -35094,7 +35896,7 @@
         "str": "v"
        },
        {
-        "int": "14"
+        "int": "15"
        }
       ],
       [
@@ -35167,7 +35969,7 @@
         "str": "v"
        },
        {
-        "int": "14"
+        "int": "15"
        }
       ],
       [
@@ -35248,7 +36050,7 @@
         "str": "v"
        },
        {
-        "int": "14"
+        "int": "15"
        }
       ],
       [
@@ -35311,7 +36113,7 @@
         "str": "v"
        },
        {
-        "int": "14"
+        "int": "15"
        }
       ],
       [
@@ -35381,7 +36183,7 @@
         "str": "v"
        },
        {
-        "int": "14"
+        "int": "15"
        }
       ],
       [
@@ -35460,7 +36262,7 @@
         "str": "v"
        },
        {
-        "int": "14"
+        "int": "15"
        }
       ],
       [

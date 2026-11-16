@@ -75,7 +75,10 @@ NAME_PAIR = "name_pair"
 COLLECTION_KINDS = frozenset({NAMES, ELEMENTS, LANGUAGE_MAP, VALUES, PARAMETERS, ENTITY_MAP, EXT, MAP})
 #: The fields that have a default other than "absent" or "empty" ("Omission").
 FIELD_DEFAULTS = {"required": False, "indexed": False, "ordered": False, "deprecated": False, "enforced": True,
-                  "sensitivity": "internal", "binding": "identity"}
+                  "participant": False, "sensitivity": "internal", "binding": "identity"}
+#: The kind of the type an Extension contributes to, ``Extension.entity["kind"]``, and its default.
+ENTITY_KINDS = frozenset({"entity", "relationship"})
+ENTITY_KIND_DEFAULT = "entity"
 
 _ENTITY_FIELDS = (("type_name", TEXT), ("supertypes", NAMES), ("meaning", TEXT), ("label", LANGUAGE_MAP),
                   ("help", LANGUAGE_MAP), ("synonyms", NAMES), ("key", NAMES), ("attributes", ELEMENTS))
@@ -90,7 +93,7 @@ _ATTRIBUTE_FIELDS = (("name", TEXT), ("inherited_from", TEXT), ("kind", TEXT), (
                      ("synonyms", NAMES), ("examples", VALUES), ("caveats", TEXT), ("sensitivity", TEXT),
                      ("certification", TEXT), ("deprecated", BOOL), ("provenance", NAMES), ("ext", EXT))
 _ROLE_OWN = (("target", TEXT), ("inverse", TEXT), ("cardinality", TEXT), ("inverse_cardinality", TEXT),
-             ("ordered", BOOL), ("index_by", NAMES), ("binding", TEXT), ("on_delete", TEXT))
+             ("participant", BOOL), ("ordered", BOOL), ("index_by", NAMES), ("binding", TEXT), ("on_delete", TEXT))
 
 
 class _CatalogRecord:
@@ -143,8 +146,9 @@ class Module(_CatalogRecord, _Immutable, Atom):
 
 class Extension(_CatalogRecord, _Immutable, Atom):
     """One contribution of a module to a type: ``module``, ``extends`` (the type name), ``entity`` (the
-    entity-level fields it states) and ``elements`` (the Attribute, Role, Intent and Constraint records it
-    declares, with the fields it states)."""
+    entity-level fields it states, and ``kind``: ``relationship`` for a relationship type, omitted for an
+    entity) and ``elements`` (the Attribute, Role, Intent and Constraint records it declares, with the
+    fields it states)."""
 
     __type_name__ = "proto_db.catalog.Extension"
     _fields = dict((("module", TEXT), ("extends", TEXT), ("entity", ENTITY_MAP), ("elements", ELEMENTS),
@@ -179,7 +183,9 @@ class Attribute(_CatalogRecord, _Immutable, Atom):
 
 class Role(_CatalogRecord, _Immutable, Atom):
     """One end of a relation, or a role of a relationship: the Attribute fields except ``kind``,
-    ``value_type``, ``values``, ``default``, ``unit`` and ``expression``, plus the role's own."""
+    ``value_type``, ``values``, ``default``, ``unit`` and ``expression``, plus the role's own.
+    ``participant`` is true for a role of a relationship (listed in its ``roles``), false (omitted) for
+    the end of a plain relation."""
 
     __type_name__ = "proto_db.catalog.Role"
     _fields = dict(_ATTRIBUTE_FIELDS[:2] + _ROLE_OWN
@@ -191,7 +197,8 @@ class Intent(_CatalogRecord, _Immutable, Atom):
     """An operation with a meaning."""
 
     __type_name__ = "proto_db.catalog.Intent"
-    _fields = dict((("name", TEXT), ("meaning", TEXT), ("parameters", PARAMETERS), ("requires", EXPRESSION),
+    _fields = dict((("name", TEXT), ("inherited_from", TEXT), ("meaning", TEXT), ("parameters", PARAMETERS),
+                    ("requires", EXPRESSION),
                     ("commutes_with", NAMES), ("effects", NAMES), ("languages", NAMES), ("provenance", NAMES),
                     ("ext", EXT)))
     _required_fields = ("name",)
@@ -201,7 +208,8 @@ class Constraint(_CatalogRecord, _Immutable, Atom):
     """A rule the data must keep."""
 
     __type_name__ = "proto_db.catalog.Constraint"
-    _fields = dict((("name", TEXT), ("scope", TEXT), ("expression", EXPRESSION), ("enforced", BOOL),
+    _fields = dict((("name", TEXT), ("inherited_from", TEXT), ("scope", TEXT), ("expression", EXPRESSION),
+                    ("enforced", BOOL),
                     ("meaning", TEXT), ("message", TEXT), ("provenance", NAMES), ("ext", EXT)))
     _required_fields = ("name", "scope", "expression")
 

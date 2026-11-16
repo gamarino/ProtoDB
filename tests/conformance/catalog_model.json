@@ -26,13 +26,23 @@
    "extensions": [
     {
      "module": "conformance.catalog_sales",
+     "extends": "conformance.sales.Product",
+     "entity": {"meaning": "A product the company sells", "label": {"und": "Product"}, "key": ["name"]},
+     "elements": [
+      {"name": "name", "kind": "field", "value_type": "str", "required": true},
+      {"name": "list_price", "kind": "field", "value_type": "decimal", "unit": "currency:company",
+       "meaning": "The current price of the product"}
+     ]
+    },
+    {
+     "module": "conformance.catalog_sales",
      "extends": "conformance.sales.OrderLine",
-     "entity": {"meaning": "A product included in an order, with the agreed terms"},
+     "entity": {"kind": "relationship", "meaning": "A product included in an order, with the agreed terms"},
      "elements": [
       {"name": "order", "target": "conformance.sales.Order", "inverse": "lines", "cardinality": "one",
-       "inverse_cardinality": "many", "ordered": true},
-      {"name": "product", "target": "conformance.sales.Product", "cardinality": "one", "index_by": ["order.date"],
-       "binding": "version"},
+       "inverse_cardinality": "many", "participant": true, "ordered": true},
+      {"name": "product", "target": "conformance.sales.Product", "cardinality": "one", "participant": true,
+       "index_by": ["order.date"], "binding": "version"},
       {"name": "quantity", "kind": "field", "value_type": "decimal", "required": true, "unit": "unit:product"},
       {"name": "price", "kind": "field", "value_type": "decimal", "required": true, "unit": "currency:order",
        "meaning": "The unit price agreed at the sale; not the product's current price",
@@ -162,9 +172,23 @@
    ],
    "roles": [
     {"name": "order", "target": "conformance.sales.Order", "inverse": "lines", "cardinality": "one",
-     "inverse_cardinality": "many", "ordered": true, "provenance": ["conformance.catalog_sales"]},
-    {"name": "product", "target": "conformance.sales.Product", "cardinality": "one", "index_by": ["order.date"],
-     "binding": "version", "provenance": ["conformance.catalog_sales"]}
+     "inverse_cardinality": "many", "participant": true, "ordered": true,
+     "provenance": ["conformance.catalog_sales"]},
+    {"name": "product", "target": "conformance.sales.Product", "cardinality": "one", "participant": true,
+     "index_by": ["order.date"], "binding": "version", "provenance": ["conformance.catalog_sales"]}
+   ],
+   "provenance": ["conformance.catalog_sales"]
+  },
+  "conformance.sales.Product": {
+   "type_name": "conformance.sales.Product",
+   "meaning": "A product the company sells",
+   "label": {"und": "Product"},
+   "key": ["name"],
+   "attributes": [
+    {"name": "name", "kind": "field", "value_type": "str", "required": true,
+     "provenance": ["conformance.catalog_sales"]},
+    {"name": "list_price", "kind": "field", "value_type": "decimal", "unit": "currency:company",
+     "meaning": "The current price of the product", "provenance": ["conformance.catalog_sales"]}
    ],
    "provenance": ["conformance.catalog_sales"]
   },
@@ -173,6 +197,7 @@
    "supertypes": ["conformance.sales.Order"],
    "meaning": "An order delivered before the others",
    "label": {"und": "Rush order"},
+   "key": ["customer", "number"],
    "attributes": [
     {"name": "number", "inherited_from": "conformance.sales.Order", "kind": "field", "value_type": "int",
      "required": true, "label": {"und": "Number"}, "meaning": "Sequential per customer, assigned at creation",
@@ -193,10 +218,10 @@
     {"name": "priority", "kind": "field", "value_type": "int", "provenance": ["conformance.catalog_sales"]}
    ],
    "intents": [
-    {"name": "add_line", "meaning": "Add a product to the order with an agreed quantity and price",
+    {"name": "add_line", "inherited_from": "conformance.sales.Order", "meaning": "Add a product to the order with an agreed quantity and price",
      "parameters": [["product", "conformance.sales.Product"], ["quantity", "decimal"], ["price", "decimal"]],
      "commutes_with": ["add_line"], "provenance": ["conformance.catalog_sales"]},
-    {"name": "confirm", "meaning": "Confirm the order; it accepts no new lines afterwards",
+    {"name": "confirm", "inherited_from": "conformance.sales.Order", "meaning": "Confirm the order; it accepts no new lines afterwards",
      "requires": {"ast": ["==", ["attr", "state"], ["const", "open"]]}, "provenance": ["conformance.catalog_sales"]}
    ],
    "provenance": ["conformance.catalog_sales"]
