@@ -46,8 +46,11 @@ The commit (spec section 9; :meth:`IntentLog.replay`)
     snapshot's catalog; (2) the log is replayed on the current cells with the operations of direct mode
     (:class:`proto_db.semantic.entities.Operations`, over a fresh :class:`Cells`): both ends of every
     relation, maintained keys and aggregates, and each intent's ``requires`` on its target (false:
-    ``ProtoValidationError`` naming ``<type>.<intent>.requires``; Task 9 makes it ``ProtoConstraintError``);
-    (3) ``__intentLog`` is set to a ``List`` of the commit's :class:`~proto_db.catalog.atoms.IntentRecord`\\ s,
+    ``ProtoConstraintError`` naming ``<type>.<intent>.requires``); (3) the constraints are checked on the
+    combined result (:meth:`IntentLog._check`, :mod:`proto_db.semantic.constraints`): the cardinality of every
+    entity the replay wrote and the enforced invariants whose operands it changed (``ProtoConstraintError``,
+    never retried, R273; nothing of the commit is published, and in a group-commit round only this commit
+    fails); (4) ``__intentLog`` is set to a ``List`` of the commit's :class:`~proto_db.catalog.atoms.IntentRecord`\\ s,
     whose ``transaction`` is the version the commit produces (R271).  A commit whose transaction logged
     nothing, or that is not in intent mode, writes no ``__intentLog`` and removes an older one: the root holds
     the records of the commit that wrote its version, and nothing older.
@@ -78,8 +81,9 @@ Replay failures
     on a version other than the snapshot, fails because a concurrent commit changed the state it was
     recorded on: ``ProtoConflictError`` (``Database.run`` retries it), whatever the operation reports (an
     entity no longer linked, a raw-written cell the replay reaches, a creation that diverges from the
-    recorded one).  A false ``requires`` keeps its class (``ProtoValidationError`` naming its constraint;
-    F26, Task 9), as does a closed space.
+    recorded one).  A ``ProtoConstraintError`` keeps its class (a false ``requires``, F26; a violated
+    invariant or cardinality, checked after the replay): the rule decides on the combined result, and
+    retrying would decide the same.  So does a closed space.
 
 Determinism
     An intent reads nothing external during the replay: external values travel as arguments.  This is
@@ -98,7 +102,7 @@ from ..catalog.atoms import INTENT_LOG_ROOT, SEMANTIC_CATALOG_ROOT, IntentRecord
 from ..collections.lists import List
 from ..collections.sets import Set
 from ..core.dbobject import DBObject
-from ..errors import ProtoClosedError, ProtoConflictError, ProtoUserError, ProtoValidationError
+from ..errors import ProtoClosedError, ProtoConflictError, ProtoConstraintError, ProtoUserError, ProtoValidationError
 from ..indexing.keyspec import _step as _stored_step
 from ..transactions import _ABSENT, _same_token, _token
 from ..values import MISSING, MutableObject, canonical_for, is_atom
@@ -486,6 +490,21 @@ class IntentLog:
                         f"Intent transaction: the root {name!r} of database {database!r} was changed by a "
                         f"concurrent commit; the log was recorded with the catalog it replaced")
 
+    def _check(self, cells: Cells, mutables) -> None:
+        """Step 3 of the commit (spec section 10): the cardinality of every entity the replay wrote, and the
+        enforced invariants whose operands it changed against ``mutables`` (the current version's cells), on
+        the combined result, with the catalog of the log's last operation.  A violation is
+        ``ProtoConstraintError``: never a conflict, whatever the state it was replayed on."""
+        written = cells.written()
+        if not written:
+            return
+        touched = {MutableObject(name): value for name, value in written.items()}
+        before = {}
+        for name in written:
+            value = mutables.get_at(name, _ABSENT)
+            before[name] = None if value is _ABSENT else value
+        ReplaySession(self.entries[-1], cells)._operations().check_constraints(touched, before)
+
     def replay(self, tr, db_root, objects, mutables) -> tuple:
         """Under the root lock, in ``Transaction._build_root`` (preflight F22): validate the fine reads
         (``ProtoConflictError``), replay the log on ``mutables`` (the current version's cells), and set
@@ -510,6 +529,7 @@ class IntentLog:
                         f"The replay of {entry.intent[1]!r} on {entry.target!r} failed on the state a concurrent "
                         f"commit left, where it was recorded: {error}; retry the transaction") from error
                 session.check_created()
+            self._check(cells, mutables)
         finally:
             resolution.reset_reader(token)
         for name, value in cells.written().items():
@@ -522,10 +542,9 @@ class IntentLog:
 def _changed_state(error, db_root, tr) -> bool:
     """Whether ``error``, raised by a replayed operation that succeeded when it was recorded, comes from the
     state a concurrent commit changed (the replay runs on another version than the snapshot): a conflict.
-    An intent's false ``requires`` keeps its class (F26; it names its ``constraint``), and so does a closed
-    space."""
-    return (db_root is not tr._db_root and getattr(error, "constraint", None) is None
-            and not isinstance(error, ProtoClosedError))
+    A ``ProtoConstraintError`` (an intent's false ``requires``, F26) keeps its class, never retried (R273),
+    and so does a closed space."""
+    return (db_root is not tr._db_root and not isinstance(error, (ProtoConstraintError, ProtoClosedError)))
 
 
 def without_intent_log(objects):

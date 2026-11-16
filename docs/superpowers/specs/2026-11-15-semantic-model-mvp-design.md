@@ -523,7 +523,15 @@ Requirements:
   - Never "conflict on root X". Nothing of the failed commit is published; in a group-commit round only that
     commit fails.
 - **Direct mode** checks enforced invariants when the operation is applied, on the transaction's view. Every
-  value the check reads enters today's read set, so the commit's validation keeps the check valid.
+  value the check reads enters today's read set, so the commit's validation keeps the check valid. A refused
+  operation leaves nothing in the transaction (the outermost operation is all or nothing), and the
+  transaction goes on.
+- **Enforceable invariants (MVP).** An enforced invariant reads only its entity's own attributes (fields,
+  maintained aggregates, roles, the count of a role's members, computeds over them), so a change that touches
+  its operands touches its entity. One that reads another entity would not be checked again when that entity
+  changes: composition refuses it (`ProtoNotSupportedError`), and `enforced=False` publishes it. Raw cell
+  writes keep today's rules. The rendering of messages, the key of an entity without `__key__` (its cell
+  name) and the rest are normative in format-spec, "Constraints".
 
 ## 11. Agent interface
 

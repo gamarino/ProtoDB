@@ -14,6 +14,13 @@ label of the order number; the catalog says which module defined each field.
 Step 3: relations navigable from both sides.  Orders with several lines are loaded.  From an order its
 products are reached; from a product, its sales by date through its own index, with no global structure;
 an invoice shows each product as it was when sold.
+Step 4: coexist or collide by meaning.  Several threads create orders for the same company concurrently, in
+intent mode, all from one snapshot.  The independent ones all commit, with no conflict; of two orders of
+Fabrikam that fit its credit limit each but not together, the one replayed second fails with
+``ProtoConstraintError``, whose message names the rule.  A walk of the database's history recomputes every
+customer's committed amount from the lines and finds no version above a limit.  The agent then describes the
+customer through the interface: the rule, its meaning and the aggregate's terms are its material to explain
+the refusal and propose alternatives.
 
 Step 5: questions with verifiable answers.  "How much of the widget did we sell in June?", "Which customer
 is closest to its limit?" and "How much did we spend on advertising?" (not answerable: the catalog names
@@ -21,10 +28,10 @@ neither term).  Each answer carries the query, its ``explain()`` and the version
 to start through the interface: ``list_entities`` gives the company's cell, and a query from the company
 finds the widget among its products.
 
-Steps 1, 2 and 5 ask through the agent interface: a scripted MCP client (ruling R266: no language model runs
+Steps 1, 2, 4 and 5 ask through the agent interface: a scripted MCP client (ruling R266: no language model runs
 in the demo) starts the server (``python -m proto_db.agent``) over stdio and prints each tool call and its
 response.  They need the optional extra ``agent`` (the MCP SDK).  The server opens the database's files, so
-the demo closes its own space while the agent asks.  Steps 4 and 6 arrive with later tasks.
+the demo closes its own space while the agent asks.  Step 6 arrives with a later task.
 
 The demo checks what it shows.  Each "[check]" line is an assertion that held; a failed check stops the
 demo with exit status 1.  It ends with "every check passed" only when all of them held.
@@ -37,13 +44,14 @@ import shutil
 import sys
 import sysconfig
 import tempfile
+import threading
 from datetime import date
 from decimal import Decimal
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 sys.path.insert(0, REPO)        # the canonical import path of the demo's modules is docs.kit.semantic (F41)
 
-from proto_db import FileStorage, ObjectSpace  # noqa: E402
+from proto_db import FileStorage, MutableObject, ObjectSpace, ProtoConflictError, ProtoConstraintError  # noqa: E402
 from proto_db.semantic import semantic  # noqa: E402
 
 DATABASE = "acme"
@@ -291,10 +299,141 @@ def step_3(db) -> dict:
         customer = order.customer
         check(customer.committed == sum(o.total for o in customer.orders if o.state != "cancelled"),
               "the customer's committed amount is maintained over its orders")
-        return {"widget": widget.name, "company": world["company"].name,
-                "customers": [c.name for c in world["customers"]], "version": s.version()["number"]}
+        customers = [c.name for c in world["customers"]]
+        return {"widget": widget.name, "company": world["company"].name, "customers": customers,
+                "version": s.version()["number"], "limits": dict.fromkeys(customers, Decimal("100000")),
+                "placed": [(customers[customer], _amount(lines)) for _, customer, _, lines in ORDERS]}
     finally:
         tr.abort()
+
+
+# -- step 4 ----------------------------------------------------------------------------------------------------
+
+#: Step 4's customers: (name, credit limit).  Fabrikam's two orders fit its limit each, not together.
+NEW_CUSTOMERS = [("Fabrikam", "100.00"), ("Litware", "100.00"), ("Tailspin", "100.00"), ("Adatum", "100.00")]
+#: Step 4's orders: (order number, customer name, agreed price of its one line of the widget).
+CONCURRENT = [(101, "Fabrikam", "30.00"), (102, "Fabrikam", "80.00"), (103, "Litware", "40.00"),
+              (104, "Tailspin", "60.00"), (105, "Adatum", "100.00"), (106, "Northwind", "25.00"),
+              (107, "Contoso", "25.00")]
+
+
+def _verify_history(db, company: str) -> tuple:
+    """Walk every committed version of ``db``: per customer of ``company``, recompute what it has committed
+    from its orders' lines (orders not cancelled), independently of the maintained aggregate.  Returns
+    ``(versions read, violations, mismatches)``: the versions where a customer is above its limit, and those
+    where the maintained ``committed`` differs from the recomputation."""
+    versions, violations, mismatches = 0, [], []
+    for entry in db.history():
+        if entry.get_mutable(company) is None:
+            continue                            # before the load: no company yet
+        versions += 1
+        with db.snapshot_at(entry) as snapshot:
+            s = semantic(snapshot)
+            for customer in s.get(MutableObject(company)).customers:
+                recomputed = sum((line.quantity * line.price for order in customer.orders
+                                  if order.state != "cancelled" for line in order.lines), Decimal(0))
+                if recomputed > customer.credit_limit:
+                    violations.append((entry.version, customer.entity.name, recomputed, customer.credit_limit))
+                if recomputed != customer.committed:
+                    mismatches.append((entry.version, customer.entity.name, recomputed, customer.committed))
+    return versions, violations, mismatches
+
+
+def step_4(db, world: dict) -> dict:
+    """Concurrent orders for one company, in intent mode: the independent ones commit, the one that exceeds a
+    limit together with a concurrent one fails with the rule.  Returns what the agent is asked about, and
+    updates ``world`` (the script's own record, for step 5's checks) with the new customers' limits, the
+    orders that committed and the version read afterwards."""
+    company, widget = MutableObject(world["company"]), MutableObject(world["widget"])
+
+    def setup(tr):
+        s = semantic(tr)
+        return {name: s.create("acme.sales.Customer", name=name, credit_limit=Decimal(limit), company=company)
+                for name, limit in NEW_CUSTOMERS}
+    customers = db.run(setup)
+    customers.update(zip(("Northwind", "Contoso"), map(MutableObject, world["customers"])))
+    say(f"{len(NEW_CUSTOMERS)} customers added, each with a credit limit of 100.00; "
+        f"{len(CONCURRENT)} threads each record one order, all from one snapshot, then commit together")
+    recorded = threading.Barrier(len(CONCURRENT))
+    outcome = {}
+
+    def place(number: int, customer: str, price: str) -> None:
+        tr = db.new_transaction(intents=True)
+        try:
+            s = semantic(tr)
+            order = s.create(ORDER, number=number, date=date(2026, 7, 1), company=company,
+                             customer=customers[customer])
+            s.get(order).add_line(widget, Decimal("1"), Decimal(price))
+            recorded.wait(60)                   # every order recorded before any commit: one snapshot
+            tr.commit()
+            outcome[number] = ("committed", order)
+        except BaseException as error:          # reported and checked below
+            outcome[number] = ("refused", error)
+        finally:
+            if tr.is_active:
+                tr.abort()
+    threads = [threading.Thread(target=place, args=order, name=f"order {order[0]}") for order in CONCURRENT]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(120)
+    check(not any(thread.is_alive() for thread in threads), "every thread finished")
+    refused = {}
+    for number, customer, price in CONCURRENT:
+        state, what = outcome[number]
+        say(f"   order {number} for {customer} ({price}): " + (state if state == "committed" else
+                                                                 f"refused: {type(what).__name__}: {what}"))
+        if state == "refused":
+            refused[number] = what
+    fabrikam = {number for number, customer, _ in CONCURRENT if customer == "Fabrikam"}
+    check(not any(isinstance(error, ProtoConflictError) for error in refused.values()),
+          "no order conflicted: concurrent orders of one company and one customer are replayed one after another")
+    check(len(refused) == 1 and set(refused) <= fabrikam,
+          "zero independent orders rejected: only one of Fabrikam's two orders, which exceed its limit together")
+    error = next(iter(refused.values()))
+    check(isinstance(error, ProtoConstraintError) and str(error).startswith("The order exceeds the credit limit "
+                                                                            "of Fabrikam by "),
+          "the refused order fails with ProtoConstraintError, whose message names the rule's subject and excess")
+    described = error.describe()
+    say(f"   the error, as data: constraint {described['constraint']!r}, meaning {described['meaning']!r}, "
+        f"values {{{', '.join(f'{k}: {v}' for k, v in described['values'].items())}}}")
+    tr = db.new_transaction()
+    try:
+        s = semantic(tr)
+        committed = s.get(customers["Fabrikam"]).committed
+        check(committed <= Decimal("100.00") and {o.number for o in s.get(customers["Fabrikam"]).orders}
+              == fabrikam - set(refused), "Fabrikam's committed amount stays within its limit: "
+              f"{committed}, the order that fits; nothing of the refused one was published")
+        world["version"] = s.version()["number"]
+    finally:
+        tr.abort()
+    world["limits"].update((customers[name].name, Decimal(limit)) for name, limit in NEW_CUSTOMERS)
+    world["placed"] += [(customers[customer].name, Decimal(price)) for number, customer, price in CONCURRENT
+                        if number not in refused]
+    versions, violations, mismatches = _verify_history(db, world["company"])
+    say(f"the history walk read {versions} versions, recomputing each customer's committed amount from the lines")
+    check(violations == [], "no version of the history holds a customer above its credit limit")
+    check(mismatches == [], "in every version the maintained committed amount equals the recomputation")
+    return {"constraint": described["constraint"], "meaning": described["meaning"],
+            "room": Decimal("100.00") - committed}
+
+
+def step_4_agent(path: str, refused: dict) -> None:
+    """The agent describes the customer: the rule and the aggregate it reads, its material for explaining
+    the refusal and proposing alternatives (no language model runs in the demo, R266)."""
+    customer, = ask(path, [("describe", {"type_name": "acme.sales.Customer"})])
+    rule = next((c for c in customer.get("constraints", []) if c["name"] == refused["constraint"]), None)
+    check(rule is not None and rule["meaning"] == refused["meaning"],
+          "the agent finds the refused rule in the catalog, by its name, with its meaning")
+    say(f"   the rule {rule['name']}: {rule['expression']['ast']}, "
+        f"{'enforced' if rule.get('enforced', True) else 'informative'}; message {rule.get('message')!r}")
+    committed = _element(customer, "committed")
+    say(f"   committed = {committed['expression']['ast']}: {committed.get('meaning', '')}")
+    check(committed["expression"]["ast"][3] == ["!=", ["attr", "state"], ["const", "cancelled"]],
+          "the catalog says cancelled orders do not count: cancelling an order frees credit")
+    say("   the material an agent explains and proposes from: the order exceeds what Fabrikam may still commit "
+        f"({refused['room']}); alternatives: an order of at most {refused['room']}, cancelling an open order "
+        "(cancelled orders leave the committed amount), or raising credit_limit")
 
 
 # -- step 5 ----------------------------------------------------------------------------------------------------
@@ -351,12 +490,12 @@ def step_5(path: str, world: dict) -> None:
                   key=lambda row: Decimal(row["values"]["credit_limit"]) - Decimal(row["values"]["committed"]))
     left = Decimal(closest["values"]["credit_limit"]) - Decimal(closest["values"]["committed"])
     say(f"   answer: {closest['entity']['cell']}, {left} below its limit")
-    committed = {}
-    for _, customer, _, lines in ORDERS:
-        committed[customer] = committed.get(customer, Decimal(0)) + _amount(lines)
-    expected = world["customers"][min(committed, key=lambda c: Decimal("100000") - committed[c])]
+    committed = dict.fromkeys(world["limits"], Decimal(0))
+    for customer, amount in world["placed"]:
+        committed[customer] += amount
+    expected = min(committed, key=lambda c: world["limits"][c] - committed[c])
     check(closest["entity"]["cell"] == expected, "the answer is the customer with the least credit left, "
-          "recomputed from the loaded orders")
+          "recomputed from the orders the script placed")
     withheld = [t for t in limits["terms"] if t.get("withheld")]
     check(all("name" not in row["values"] for row in limits["rows"])
           and [(t["name"], t["sensitivity"]) for t in withheld] == [("name", "personal")],
@@ -416,6 +555,9 @@ def main(argv=None) -> int:
         step_2(path)
         title("Step 3: relations navigable from both sides")
         world = _in_space(workdir, step_3)
+        title("Step 4: coexist or collide by meaning")
+        refused = _in_space(workdir, lambda db: step_4(db, world))
+        step_4_agent(path, refused)
         title("Step 5: questions with verifiable answers")
         step_5(path, world)
     finally:

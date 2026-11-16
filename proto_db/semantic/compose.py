@@ -55,6 +55,7 @@ from ..catalog.atoms import FIELD_DEFAULTS
 from ..catalog.model import check_model
 from ..errors import ProtoValidationError
 from ..registry import DESCRIPTOR, METHOD, Registry, _is_intent, _load_order
+from .constraints import check_enforceable
 from .descriptors import Aggregate
 
 __all__ = ["module_contributions", "compose", "compose_modules", "describe", "subtypes", "is_a", "index_paths",
@@ -579,6 +580,7 @@ def compose_modules(modules: Mapping) -> dict:
     entities = {name: _compose_type(name, owns, lins, rank) for name in sorted(owns, key=lambda n: owns[n].first)}
     _check_agreement(entities, owns)
     _check_aggregates(entities)
+    check_enforceable(entities)
     model = {"module_set": list(names), "modules": {name: copy.deepcopy(dict(modules[name])) for name in names},
              "entities": entities}
     check_model(model)

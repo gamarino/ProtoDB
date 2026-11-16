@@ -10,7 +10,9 @@
 - :mod:`proto_db.semantic.store` is the catalog in the database: written at install, verified on use;
 - :mod:`proto_db.semantic.session` is the semantic session (``semantic(transaction or snapshot)``);
 - :mod:`proto_db.semantic.entities` holds its entities and relations (cells, links, relationship atoms,
-  maintained keys and aggregates, the versions and members it gives) and its query engine.
+  maintained keys and aggregates, the versions and members it gives) and its query engine;
+- :mod:`proto_db.semantic.constraints` checks cardinality and enforced invariants, raising
+  ``ProtoConstraintError`` with the rule's name, meaning and rendered message.
 
 The names below are the user-facing API, in the brief's spellings.
 """

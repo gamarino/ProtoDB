@@ -6,6 +6,7 @@ from proto_db import errors as e
 
 DEFAULTS = [
     (e.ProtoValidationError, 10_000),
+    (e.ProtoConstraintError, 10_100),
     (e.ProtoUserError, 20_000),
     (e.ProtoCorruptionError, 30_000),
     (e.ProtoNotSupportedError, 40_000),

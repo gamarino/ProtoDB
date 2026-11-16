@@ -73,6 +73,14 @@ Atomicity
       waits for the operation in progress and publishes all of it, and one made from inside an operation
       on its own thread (a computed attribute, a hook) is refused (``ProtoUserError``).
 
+Constraints (spec section 10; :mod:`proto_db.semantic.constraints`)
+    In direct mode the outermost write operation (a primitive, or an intent with everything it runs) is all
+    or nothing in the transaction (``Transaction.semantic_operation``): it checks the enforced invariants of
+    the entities whose operands it changed, on the transaction's view, before it returns; a violation
+    (``ProtoConstraintError``), like any failure, undoes its writes, and the transaction goes on.  The
+    commit checks the cardinality of every entity the operations wrote.  In intent mode the replay checks
+    both on the combined result (:mod:`proto_db.semantic.intents`).
+
 Versions and navigation
     The session gives :class:`Version`\\ s: views over a stored record that navigate.  ``version.record`` is
     the stored ``DBObject``, ``version.entity`` the identity handle (``None`` for a relationship atom), and
@@ -132,6 +140,7 @@ from ..query.linq import from_collection
 from ..query.terms import Term
 from ..values import MISSING, MutableObject, is_atom, values_equal
 from . import compose as _compose
+from . import constraints as _constraints
 from .classes import IntentContext
 from .descriptors import RegistryReader
 from .expressions import (Reader, _arithmetic, _identity, _number, _operand_error, _truth, check_ast, describe_operand,
@@ -231,12 +240,17 @@ def _handle_of(value):
 def _atomic(method):
     """Run the write operation ``method`` holding its transaction's lock (see "Atomicity"): the session's
     guard, once its store is known to be writable (a session over a snapshot raises ``ProtoUserError``).  A
-    replay (:mod:`proto_db.semantic.intents`) holds no lock."""
+    replay (:mod:`proto_db.semantic.intents`) holds no lock.  The outermost operation of a direct-mode
+    transaction checks the enforced invariants of the entities it changed before it returns, and is undone
+    in the transaction when it raises (see "Constraints")."""
     @functools.wraps(method)
     def run(self, *args, **kwargs):
         self.session._store()
-        with self.session._guard():
-            return method(self, *args, **kwargs)
+        with self.session._guard() as top:
+            result = method(self, *args, **kwargs)
+            if top:
+                self._check_operation()
+            return result
     return run
 
 
@@ -1189,19 +1203,40 @@ class Operations:
 
     def _check_requires(self, handle: MutableObject, record, type_name: str, element: Mapping) -> None:
         """The intent's ``requires`` on ``record``, the target's current version: false (MISSING counts
-        false) is ``ProtoValidationError`` naming ``<type>.<intent>.requires`` and the intent's meaning (spec
-        section 9; preflight F26: Task 9 makes it ``ProtoConstraintError``)."""
+        false) is ``ProtoConstraintError`` naming ``<type>.<intent>.requires``, with the intent's meaning and
+        the values it read (spec section 9; preflight F25, F26); the replay keeps that class."""
         requires = element.get("requires")
         if requires is None:
             return
         if _truth("requires", self._evaluate(requires["ast"], record), "the requires of an intent"):
             return
-        constraint = f"{type_name}.{element['name']}.requires"
-        meaning = element.get("meaning")
-        error = _invalid(f"The intent {element['name']!r} does not apply to {handle.name!r}: {constraint} is false "
-                         f"on its current version" + (f" ({meaning})" if meaning else ""))
-        error.constraint = constraint        # the replay keeps this class (proto_db.semantic.intents)
-        raise error
+        with self.reading():
+            raise _constraints.requires_error(self.schema.model, type_name, element, handle.name, record,
+                                              self.reader)
+
+    # -- constraints (spec section 10) ------------------------------------------------------------------
+
+    def check_constraints(self, touched: Mapping, before: Mapping | None, *, cardinality: bool = True,
+                          invariants: bool = True) -> None:
+        """:func:`proto_db.semantic.constraints.check_constraints` over the session's catalog, reading through
+        its source (a transaction's reads enter its read set)."""
+        with self.reading():
+            _constraints.check_constraints(self.schema.model, touched, self.reader, before=before,
+                                           cardinality=cardinality, invariants=invariants)
+
+    def _check_operation(self) -> None:
+        """At the end of the outermost operation of a direct-mode transaction, still inside it: the enforced
+        invariants of the entities whose operands it changed (the cells it wrote, against their values before
+        it), on the transaction's view."""
+        tr = self.session._store()
+        changes = tr.semantic_changes()
+        touched = {}
+        for name in changes:
+            record = tr.get_mutable(name)
+            if record is not None:
+                touched[MutableObject(name)] = record
+        if touched:
+            self.check_constraints(touched, changes, cardinality=False)
 
     # -- the query engine (preflight F17, F18) ---------------------------------------------------------
 

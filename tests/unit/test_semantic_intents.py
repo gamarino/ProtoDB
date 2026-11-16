@@ -27,7 +27,7 @@ from unittest import mock
 import pytest
 
 from proto_db.catalog.atoms import INTENT_LOG_ROOT, intent_log_root, intent_records
-from proto_db.errors import (ProtoConflictError, ProtoNotSupportedError, ProtoUserError,
+from proto_db.errors import (ProtoConflictError, ProtoConstraintError, ProtoNotSupportedError, ProtoUserError,
                              ProtoValidationError)
 from proto_db.semantic import IntentContext, Version, intent_context, semantic
 from proto_db.storage.memory import MemoryStorage
@@ -409,16 +409,28 @@ def test_requires_is_evaluated_at_replay(db):
     semantic(late).get(order).confirm()                     # requires holds at record time
     semantic(early).get(order).confirm()
     early.commit()
-    with pytest.raises(ProtoValidationError, match=r"acme\.sales\.Order\.confirm\.requires") as raised:
+    with pytest.raises(ProtoConstraintError, match=r"acme\.sales\.Order\.confirm\.requires") as raised:
         late.commit()
-    # F26: the record-time check is a courtesy that records no fine read; the replay decides (Task 9 makes
-    # the class ProtoConstraintError).
-    assert not isinstance(raised.value, ProtoConflictError)
-    assert "Confirm the order" in str(raised.value)
+    # F26/F25: the record-time check is a courtesy that records no fine read; the replay decides, with a
+    # ProtoConstraintError that keeps its class through the replay (never a retryable conflict, R273).
+    error = raised.value
+    assert not isinstance(error, ProtoConflictError)
+    assert error.constraint == "acme.sales.Order.confirm.requires"
+    assert error.meaning == "Confirm the order; it accepts no new lines afterwards"
+    assert error.entity == order.name and error.values == {"state": "confirmed"}
+    assert "Confirm the order" in str(error)
     tr = db.new_transaction(intents=True)
-    with pytest.raises(ProtoValidationError, match=r"acme\.sales\.Order\.confirm\.requires"):
+    with pytest.raises(ProtoConstraintError, match=r"acme\.sales\.Order\.confirm\.requires"):
         semantic(tr).get(order).confirm()                   # false at record time: refused at once
     tr.abort()
+    calls = []
+
+    def confirm(tr):                                        # in Database.run: raised once, never retried
+        calls.append(tr)
+        semantic(tr).get(order).confirm()
+    with pytest.raises(ProtoConstraintError):
+        db.run(confirm, intents=True)
+    assert len(calls) == 1
 
 
 def test_cluster_space_refuses_intents():

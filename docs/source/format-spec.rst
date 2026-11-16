@@ -1986,6 +1986,51 @@ read it as specified.
   immutable records hold no cycle. Several bindings of one target in one transaction therefore
   share one stored version, and a traversal counts it once.
 
+Constraints
+~~~~~~~~~~~
+
+This section specifies what a writer of entity data checks before it publishes, so that every language
+refuses the same commits and names the rule alike. A violation is ``ProtoConstraintError`` (code 10100, a
+``ProtoValidationError``): it is never retried, and nothing of the commit or the operation it refuses is
+published. Raw cell writes are not checked: these rules bind the semantic operations.
+
+* **Cardinality**, at commit, for every entity the commit wrote through the semantic operations: a role
+  of an Entity of ``cardinality`` ``one`` **MUST** hold a target (absent and nil violate it); a ``1..*`` end
+  **MUST** hold at least one member. A relationship atom holds every role by construction. ``0..1`` and
+  ``many`` always hold. The rule is named ``<type name>.<role>.cardinality``.
+* **Enforced invariants** (a Constraint whose ``enforced`` is true) are evaluated on every entity whose
+  operands changed (an entity created counts as changed), on the state the commit publishes: after the
+  replay in intent mode, and in direct mode when each operation is applied, on the transaction's view,
+  the reads entering its read set. The tree is evaluated on the entity's record (`The expression
+  language`_); true holds, false and MISSING violate the invariant, and any other result is
+  ``ProtoValidationError``. A Constraint whose ``enforced`` is false is never checked.
+* **Enforceable invariants.** An enforced invariant **MUST** read only its entity's own attributes:
+  ``attr`` of one step (a field, a maintained aggregate, a role's stored value, or a computed attribute
+  whose expression obeys the same rule), ``count`` of a role of the entity without ``where``, constants,
+  arithmetic, comparisons and logic. Its operands then change only when the entity's record does. A
+  composition that holds another enforced invariant is refused (``ProtoNotSupportedError``).
+* **An intent's** ``requires`` false or MISSING on its target is the rule ``<type name>.<intent>.requires``,
+  carrying the intent's ``meaning``.
+
+The error carries the rule's name (``constraint``), its ``meaning``, the cell name of the entity (``entity``)
+and the values of the attribute paths the tree reads (``values``; an absent one is MISSING, ``None`` in
+neutral data, and its name is listed). Its message is the Constraint's ``message`` with these placeholders
+replaced (R279):
+
+- ``{name}``: the entity's attribute ``name``;
+- ``{entity}``, and the lower-case last component of the entity's type name or of any of its supertypes
+  (``{customer}``, ``{order}``): the entity's **key**, its ``key`` attributes' values joined by ``", "``, where a
+  key part that is a role renders as its target's key. An entity whose type declares no ``key`` renders as its
+  cell name;
+- for a tree that is an ordering comparison (``<``, ``<=``, ``>``, ``>=``): ``{left}`` and ``{right}``, its
+  operands, and ``{excess}``, the left operand minus the right one.
+
+These reserved names win over an attribute of the same name; any other placeholder is left as written. A
+MISSING operand renders as ``<missing name>``, ``name`` being the attribute path it reads. A decimal renders
+in plain notation (``10.00``), a boolean as ``true`` or ``false``, nil as ``nil``, a date or a time in ISO 8601.
+The demo's ``"The order exceeds the credit limit of {customer} by {excess}"`` renders as ``The order exceeds
+the credit limit of Fabrikam by 10.00``.
+
 The intent log
 ~~~~~~~~~~~~~~
 

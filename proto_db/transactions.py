@@ -259,6 +259,24 @@ def _intents():
     return intents
 
 
+def _constraints():
+    """:mod:`proto_db.semantic.constraints`, imported on first use (the semantic layer imports this module)."""
+    from .semantic import constraints
+    return constraints
+
+
+class _SemanticUndo:
+    """What the top-level semantic operation in progress changed in its transaction, to undo it when it fails
+    (:meth:`Transaction.semantic_operation`): per cell, whether it was written before, its earlier write and
+    whether it was set blindly; per field-version slot, its earlier record (``_ABSENT``: none)."""
+
+    __slots__ = ("cells", "versions")
+
+    def __init__(self):
+        self.cells: dict = {}
+        self.versions: dict = {}
+
+
 def _check_intents_flag(intents) -> None:
     if not isinstance(intents, bool):
         raise ProtoValidationError(f"intents must be a bool, not {intents!r}")
@@ -2724,6 +2742,12 @@ class Transaction:
     call that never waits for the root lock.  So the replay adds no edge to the order ``_lock``,
     then the root lock, then the leaf locks (atom cache, registry cache), and no cycle.
 
+    Constraints (spec section 10, :mod:`proto_db.semantic.constraints`): the outermost semantic operation
+    is all or nothing (:meth:`semantic_operation` undoes its writes when it raises), and :meth:`commit`
+    checks the cardinality of the entities the semantic operations wrote under the lock, before the state
+    leaves active and outside the root lock, so its reads enter the read set; a violation aborts the
+    transaction (``ProtoConstraintError``).  A transaction that ran no semantic write checks nothing.
+
     With ``intents=True`` (spec section 9) the transaction is in intent mode: see
     :mod:`proto_db.semantic.intents`.  A raw write (:meth:`set_mutable`, :meth:`new_mutable`,
     :meth:`remove_mutable`) of a cell its intent log touches is refused (``ProtoUserError``), and so is a
@@ -2772,6 +2796,11 @@ class Transaction:
         # The semantic operations in progress (semantic_operation), nested ones included; changed under the
         # lock only, so a non-zero count seen by the lock's holder is its own (see "Locks").
         self._semantic_depth = 0
+        # The undo log of the top-level semantic operation in progress (None outside one), and the cells the
+        # semantic operations that succeeded wrote, in order: the commit checks their constraints
+        # (proto_db.semantic.constraints).  Both under the lock.
+        self._semantic_undo: Optional[_SemanticUndo] = None
+        self._semantic_touched: dict = {}
         self._committed_version: Optional[int] = None    # the version the last build produced
         self._committed_key: Optional[tuple] = None      # its (label, version), for the rebind
         self._committed_origin: Optional[tuple] = None   # its root's (label, cluster epoch), cluster mode
@@ -3011,6 +3040,8 @@ class Transaction:
             self._check_not_logged(name)
             if self._mutable_view(name, record=True) is not _ABSENT:
                 raise ProtoValidationError(f"Mutable {name!r} already exists")
+            if self._semantic_undo is not None:
+                self._note_undo(name)
             self._mwrites[name] = value
         return MutableObject(name)
 
@@ -3051,31 +3082,113 @@ class Transaction:
     @contextlib.contextmanager
     def semantic_operation(self):
         """Hold the transaction's lock for a semantic operation (:mod:`proto_db.semantic.entities`):
-        ``with tr.semantic_operation(): ...``.  Every other call of this transaction, its commit and
+        ``with tr.semantic_operation() as top: ...``.  Every other call of this transaction, its commit and
         its abort happen entirely before or after the block (see "Locks" in the class docstring).  The
         transaction is checked active once the lock is held, so an operation that waited for a commit
-        fails before its first step.  Reentrant: an operation may run others."""
+        fails before its first step.  Reentrant: an operation may run others; ``top`` is true for the
+        outermost one only.
+
+        The outermost operation is all or nothing in the transaction: when its block raises, every cell
+        write and field-version binding it made is undone (its reads stay in the read set), and when it
+        returns, the cells it wrote join those whose constraints the commit checks
+        (:meth:`semantic_changes`, :mod:`proto_db.semantic.constraints`)."""
         if self._state != _ACTIVE:      # fails before the lock (see "Locks" in the class docstring)
             self._check_active()
         with self._lock:
             if self._state != _ACTIVE:
                 self._check_active()
             depth = self._semantic_depth
+            top = depth == 0
             try:
                 self._semantic_depth = depth + 1
-                yield
+                if top:
+                    self._semantic_undo = _SemanticUndo()
+                yield top
+                if top:
+                    self._semantic_touched.update(dict.fromkeys(self._semantic_undo.cells))
+            except BaseException:
+                if top:
+                    self._undo_semantic_operation()
+                raise
             finally:
                 self._semantic_depth = depth        # restored exactly, whatever interrupted the block
+                if top:
+                    self._semantic_undo = None
+
+    def _note_undo(self, name: str) -> None:
+        """Under the lock, inside a top-level semantic operation: remember the cell ``name`` as it was
+        before the operation's first write of it."""
+        cells = self._semantic_undo.cells
+        if name not in cells:
+            had = name in self._mwrites
+            cells[name] = (had, self._mwrites.get(name), name in self._mexpected)
+
+    def _undo_semantic_operation(self) -> None:
+        """Under the lock: undo what the failed top-level semantic operation wrote (see
+        :meth:`semantic_operation`)."""
+        undo = self._semantic_undo
+        for name, (had, previous, expected) in undo.cells.items():
+            if had:
+                self._mwrites[name] = previous
+            else:
+                self._mwrites.pop(name, None)
+            if expected:
+                self._mexpected.add(name)
+            else:
+                self._mexpected.discard(name)
+        for name, previous in undo.versions.items():
+            if previous is _ABSENT:
+                self._semantic_versions.pop(name, None)
+            else:
+                self._semantic_versions[name] = previous
+
+    def semantic_changes(self) -> dict:
+        """Inside the top-level semantic operation in progress (holding the lock): the cells it wrote so far,
+        each with its value before the operation in this transaction's view (``None``: absent).  Raises
+        ``ProtoUserError`` outside one."""
+        with self._lock:
+            undo = self._semantic_undo
+            if undo is None or not self._semantic_depth:
+                raise ProtoUserError("semantic_changes() is read inside a semantic operation")
+            out = {}
+            for name, (had, previous, _) in undo.cells.items():
+                if not had:
+                    previous = self._mutables.get_at(name, _ABSENT)
+                out[name] = None if previous is _ABSENT or previous is _REMOVED else previous
+            return out
+
+    def semantic_touched(self) -> tuple:
+        """The cells the transaction's semantic operations wrote, in the order of their first write (the
+        commit checks their cardinality, :mod:`proto_db.semantic.constraints`)."""
+        with self._lock:
+            return tuple(self._semantic_touched)
 
     def _end(self, verb: str) -> None:
         """Under the lock: the change of state of :meth:`commit` and :meth:`abort`; refused inside a
         semantic operation of this thread (it would publish or drop half of it).  A semantic operation
         of another thread was waited for by taking the lock."""
+        self._check_can_end(verb)
+        self._state = _COMMITTING if verb == "commit" else _ABORTED
+
+    def _check_can_end(self, verb: str) -> None:
         if self._semantic_depth:
             raise ProtoUserError(f"Cannot {verb} the transaction inside one of its semantic operations; "
                                  f"{verb} after the operation returns")
         self._check_active()
-        self._state = _COMMITTING if verb == "commit" else _ABORTED
+
+    def _check_semantic_commit(self) -> None:
+        """Under the lock, before the commit leaves the active state and outside the root lock (preflight
+        F28): the cardinality of every entity the transaction's semantic operations wrote (direct mode;
+        :func:`proto_db.semantic.constraints.check_commit`).  What it reads enters the read set, so the
+        commit's validation keeps the check valid.  A violation aborts the transaction and raises
+        ``ProtoConstraintError``; a refusal to commit (inside an operation, not active) keeps today's
+        behaviour."""
+        self._check_can_end("commit")
+        try:
+            _constraints().check_commit(self)
+        except BaseException:
+            self._state = _ABORTED
+            raise
 
     def semantic_field_version(self, name: str):
         """The field version the semantic layer bound for the entity in cell ``name`` in this transaction
@@ -3099,6 +3212,8 @@ class Transaction:
                 self._check_active()
             current = self._semantic_versions.get(name)
             if current is expected:
+                if self._semantic_undo is not None and name not in self._semantic_undo.versions:
+                    self._semantic_undo.versions[name] = self._semantic_versions.get(name, _ABSENT)
                 self._semantic_versions[name] = current = record
             return current
 
@@ -3120,6 +3235,8 @@ class Transaction:
             self._check_not_logged(name)
             if self._mutable_view(name, record=False) is _ABSENT:
                 raise ProtoValidationError(f"Mutable {name!r} does not exist; create it with new_mutable")
+            if self._semantic_undo is not None:
+                self._note_undo(name)
             if name not in self._mwrites:
                 self._mexpected.add(name)
             self._mwrites[name] = value
@@ -3139,6 +3256,8 @@ class Transaction:
             self._check_not_logged(name)
             if self._mutable_view(name, record=False) is _ABSENT:
                 raise ProtoValidationError(f"Mutable {name!r} does not exist")
+            if self._semantic_undo is not None:
+                self._note_undo(name)
             self._mwrites[name] = _REMOVED
 
     def mutable_names(self) -> list:
@@ -3592,6 +3711,8 @@ class Transaction:
         this thread.
         """
         with self._lock:
+            if self._semantic_touched:
+                self._check_semantic_commit()
             self._end("commit")
             committed = False
             try:

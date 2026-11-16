@@ -49,10 +49,10 @@ def db():
         space.close()
 
 
-def _world(s):
-    """A company with one customer and one product, every ``one`` role set (F28)."""
+def _world(s, limit="1000"):
+    """A company with one customer (credit limit ``limit``) and one product, every ``one`` role set (F28)."""
     company = s.create("acme.core.Company", name="ACME")
-    customer = s.create("acme.sales.Customer", name="Bob", credit_limit=Decimal("1000"), company=company)
+    customer = s.create("acme.sales.Customer", name="Bob", credit_limit=Decimal(limit), company=company)
     product = s.create("acme.catalog.Product", name="widget", list_price=Decimal("10"), company=company)
     return company, customer, product
 
@@ -565,10 +565,11 @@ def test_concurrent_link_and_unlink_from_both_ends_of_an_inverse(db):
 def test_semantic_operations_are_atomic_on_a_shared_transaction(db):
     """concurrency-model.rst: a misuse of one transaction from several threads sees each call happen
     entirely before or after the others; semantic operations too.  Whatever the interleaving, every line
-    of every thread is linked at both ends."""
+    of every thread is linked at both ends.  The customer's credit limit is above the lines' total (the
+    credit invariant is not what this test is about)."""
     def build(tr):
         s = semantic(tr)
-        company, customer, product = _world(s)
+        company, customer, product = _world(s, limit="1000000")
         return _order(s, company, customer, 1), product
     order, product = db.run(build)
     tr = db.new_transaction()
