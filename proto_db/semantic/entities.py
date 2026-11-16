@@ -50,10 +50,22 @@ Storage (spec section 6)
       is ``ProtoNotSupportedError``.
 
 Atomicity
-    Every write operation (create, update, link, unlink, relate, with the version bindings inside them)
-    holds its transaction's semantic-operation lock (``Transaction.semantic_operation``) throughout, so a
-    misuse of one transaction from several threads sees each operation happen entirely before or after
-    the others.
+    A transaction is meant for one thread at a time; a misuse from several threads sees each call happen
+    entirely before or after each semantic operation (``Transaction.semantic_operation``; the locks are
+    described on ``Transaction``):
+
+    - every write operation (create, update, link, unlink, relate, with the version bindings inside them)
+      holds the transaction's semantic lock throughout, and checks the transaction is active once it holds
+      it, so an operation that waited for a commit or an abort fails before its first step;
+    - every read of a session over a transaction (get, navigate, query, and a version's attribute, whose
+      roles navigate) holds it for the call, so it sees an operation entirely or not at all; a session over
+      a ``Snapshot`` reads an immutable version and takes no lock.  :class:`Members` reads each member's
+      current version as the iteration reaches it, each read on its own;
+    - the transaction's own methods (``get_mutable``, ``set_mutable`` and the others that read or write its
+      state) take the lock for the call, and ``commit`` and ``abort`` take it for their change of state: a
+      commit from another thread waits for the operation in progress and publishes all of it, and one made
+      from inside an operation on its own thread (a computed attribute, a hook) is refused
+      (``ProtoUserError``).
 
 Versions and navigation
     The session gives :class:`Version`\\ s: views over a stored record that navigate.  ``version.record`` is
@@ -137,11 +149,23 @@ def _handle_of(value):
 
 
 def _atomic(method):
-    """Run the write operation ``method`` under its transaction's semantic-operation lock, so it happens
-    entirely before or after the other semantic operations of that transaction (concurrency model)."""
+    """Run the write operation ``method`` holding its transaction's semantic lock (see "Atomicity")."""
     @functools.wraps(method)
     def run(self, *args, **kwargs):
         with self.session._transaction().semantic_operation():
+            return method(self, *args, **kwargs)
+    return run
+
+
+def _consistent(method):
+    """Run the read ``method`` holding the semantic lock of the session's transaction, if the session reads
+    one (a snapshot never changes): see "Atomicity"."""
+    @functools.wraps(method)
+    def run(self, *args, **kwargs):
+        from ..transactions import Transaction
+        if not isinstance(self.source, Transaction):
+            return method(self, *args, **kwargs)
+        with self.source.semantic_operation():
             return method(self, *args, **kwargs)
     return run
 
@@ -526,11 +550,13 @@ class Operations:
 
     # -- reading ----------------------------------------------------------------------------------------
 
+    @_consistent
     def get(self, handle) -> Version:
         handle = self.handle(handle, "get")
         record, _ = self.record(handle, "get")
         return Version(self.session, record, handle)
 
+    @_consistent
     def attribute(self, version: Version, name: str):
         record = version.record
         type_name = type(record).__type_name__
@@ -540,6 +566,7 @@ class Operations:
         with self.reading():
             return record[name]
 
+    @_consistent
     def navigate(self, source, role: str):
         if isinstance(source, Version):
             record = source.record
@@ -929,6 +956,7 @@ class Operations:
 
     # -- the query engine (preflight F17, F18) ---------------------------------------------------------
 
+    @_consistent
     def query(self, tree: Mapping) -> dict:
         if not isinstance(tree, Mapping):
             raise _invalid(f"A query is a mapping (spec section 11), not {type(tree).__name__}")

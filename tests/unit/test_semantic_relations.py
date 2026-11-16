@@ -599,6 +599,167 @@ def test_semantic_operations_are_atomic_on_a_shared_transaction(db):
     tr.abort()
 
 
+# -- one transaction shared by threads: each call entirely before or after a semantic operation -----------
+
+class _Watched:
+    """A transaction's semantic lock, wrapped so that ``progress`` is set when the thread named ``who`` is
+    about to take it: the test knows that thread reached the lock, and no sleep decides the order."""
+
+    def __init__(self, lock, who: str, progress: threading.Event):
+        self._lock, self._who, self._progress = lock, who, progress
+
+    def _signal(self):
+        if threading.current_thread().name == self._who:
+            self._progress.set()
+
+    def __enter__(self):
+        self._signal()
+        return self._lock.__enter__()
+
+    def __exit__(self, *exc):
+        return self._lock.__exit__(*exc)
+
+    def acquire(self, *args, **kwargs):
+        self._signal()
+        return self._lock.acquire(*args, **kwargs)
+
+    def release(self):
+        self._lock.release()
+
+
+def _order_and_product(db):
+    def build(tr):
+        s = semantic(tr)
+        company, customer, product = _world(s)
+        return _order(s, company, customer, 1), product
+    return db.run(build)
+
+
+def _held_relate(db, monkeypatch, call):
+    """Thread A relates a line to an order and a product and is held right after its first cell write;
+    thread B runs ``call(tr, order, product)`` meanwhile.  A is released once B has reached the
+    transaction's semantic lock or has finished (a call that never takes the lock finishes in the middle of
+    A's operation).  Returns ``(A's outcome, B's outcome, tr, order, product)``."""
+    from proto_db.semantic import entities
+    order, product = _order_and_product(db)
+    tr = db.new_transaction()
+    held, progress = threading.Event(), threading.Event()
+    tr._semantic_lock = _Watched(tr._semantic_lock, "B", progress)
+    original, writes = entities.Operations._write, []
+
+    def write(self, handle, old, new):
+        original(self, handle, old, new)
+        if threading.current_thread().name == "A":
+            writes.append(handle.name)
+            if len(writes) == 1:
+                held.set()
+                assert progress.wait(60), "thread B neither reached the semantic lock nor finished"
+    monkeypatch.setattr(entities.Operations, "_write", write)
+    out = {}
+
+    def a():
+        try:
+            out["A"] = _line(semantic(tr), order, product)
+        except BaseException as error:              # reported to the test
+            out["A"] = error
+
+    def b():
+        try:
+            assert held.wait(60)
+            out["B"] = call(tr, order, product)
+        except BaseException as error:              # reported to the test
+            out["B"] = error
+        finally:
+            progress.set()
+    threads = [threading.Thread(target=a, name="A"), threading.Thread(target=b, name="B")]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(60)
+    assert not any(thread.is_alive() for thread in threads)
+    monkeypatch.setattr(entities.Operations, "_write", original)
+    return out["A"], out["B"], tr, order, product
+
+
+def _published(db, order, product) -> tuple:
+    """(lines of the order, order lines of the product) in the database's current version."""
+    tr = db.new_transaction()
+    s = semantic(tr)
+    try:
+        return len(s.navigate(order, "lines")), len(s.navigate(product, "order_lines"))
+    finally:
+        tr.abort()
+
+
+def test_a_commit_from_another_thread_waits_for_a_semantic_operation(db, monkeypatch):
+    """A commit arriving in the middle of a relate waits for it and publishes both ends (re-review 3, probe8:
+    it published the order's line without the product's)."""
+    a, b, tr, order, product = _held_relate(db, monkeypatch, lambda tr, order, product: tr.commit())
+    assert isinstance(a, Version) and b is None
+    assert not tr.is_active
+    assert _published(db, order, product) == (1, 1)
+
+
+def test_a_read_from_another_thread_sees_a_semantic_operation_entirely_before_or_after(db, monkeypatch):
+    def read(tr, order, product):
+        s = semantic(tr)
+        return len(s.navigate(order, "lines")), len(s.navigate(product, "order_lines"))
+    a, b, tr, order, product = _held_relate(db, monkeypatch, read)
+    assert isinstance(a, Version)
+    assert b == (1, 1)
+    tr.abort()
+
+
+def test_a_raw_write_from_another_thread_waits_for_a_semantic_operation(db, monkeypatch):
+    """A raw ``set_mutable`` of a cell the operation writes after the held point happens after the
+    operation: the operation's later write does not overwrite it."""
+    def write(tr, order, product):
+        before = tr.snapshot_mutable(product.name)
+        tr.set_mutable(product.name, before)
+        return before
+    a, before, tr, order, product = _held_relate(db, monkeypatch, write)
+    assert isinstance(a, Version)
+    assert tr.get_mutable(product.name) is before
+    tr.abort()
+
+
+def test_an_operation_after_a_commit_fails_before_its_body(db):
+    """An operation that passed the session's catalog check before a commit (as one waiting for the lock
+    has) is refused on taking the lock, before its body runs."""
+    order, product = _order_and_product(db)
+    tr = db.new_transaction()
+    operations = semantic(tr)._operations()
+    tr.commit()
+    with pytest.raises(ProtoUserError, match="committed"):
+        operations.relate(LINE, {"order": order})       # its body would refuse the missing role
+
+
+@pytest.mark.parametrize("end", ["commit", "abort"])
+def test_a_commit_or_abort_inside_a_semantic_operation_is_refused(db, monkeypatch, end):
+    """Ending the transaction from inside an operation of the same thread (a computed attribute, a hook)
+    would publish or drop half of it: refused, and the operation completes."""
+    from proto_db.semantic import entities
+    order, product = _order_and_product(db)
+    tr = db.new_transaction()
+    original, outcome = entities.Operations._write, []
+
+    def write(self, handle, old, new):
+        original(self, handle, old, new)
+        if not outcome:
+            try:
+                getattr(tr, end)()
+                outcome.append(None)
+            except ProtoUserError as error:
+                outcome.append(error)
+    monkeypatch.setattr(entities.Operations, "_write", write)
+    _line(semantic(tr), order, product)
+    monkeypatch.setattr(entities.Operations, "_write", original)
+    assert isinstance(outcome[0], ProtoUserError) and "semantic operation" in str(outcome[0])
+    assert tr.is_active
+    tr.commit()
+    assert _published(db, order, product) == (1, 1)
+
+
 # -- subtypes (R280, Review Focus 6) --------------------------------------------------------------------
 
 def test_role_typed_by_supertype_accepts_a_subtype(db):
