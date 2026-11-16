@@ -3099,8 +3099,8 @@ class Transaction:
         (:meth:`semantic_changes`, :mod:`proto_db.semantic.constraints`).  The first operation that writes
         also enters the catalog roots (``__currentModules``, ``__catalog``, ``__semanticCatalog``) in the read
         set: its writes were checked against this version's catalog, so a concurrent install makes the commit
-        conflict and a retry checks them against the new one, as an intent-mode commit does.  The undo log is made by the
-        operation's first write, so an operation that only reads allocates nothing.
+        conflict and a retry checks them against the new one, as an intent-mode commit does.  The undo log is
+        made by the operation's first write, so an operation that only reads allocates nothing.
 
         Only the outermost operation is undone: a nested operation that fails inside it is not undone by
         itself, so an intent that catches a nested operation's failure and goes on keeps that operation's

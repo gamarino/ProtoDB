@@ -17,8 +17,9 @@ Storage (spec section 6)
       of its semantic class; the cell's :class:`~proto_db.values.MutableObject` handle is its identity.
     - A ``one`` end (cardinality ``one`` or ``0..1``) is an attribute of the version holding the target's
       handle, or ``{"entity": handle, "version": record}`` for ``binding="version"`` (the product as sold).
-      It is absent until first linked and holds nil after an unlink.  A ``one`` end that is linked is never overwritten: linking it again is
-      refused ("unlink it first"); an unlink and a link in one transaction move it.
+      It is absent until first linked and holds nil after an unlink.  A ``one`` end that is linked is never
+      overwritten: linking it again is refused ("unlink it first"); an unlink and a link in one transaction
+      move it.
     - ``binding="version"`` binds the target's **field version**, current when the operation is applied (in
       direct mode the transaction's view, validated by its read set at commit; in intent mode at replay):
       the committed record the transaction read while the target's fields equal it; otherwise the
@@ -663,8 +664,10 @@ class _QueryReader(_SessionReader):
     never read as missing unless the row's type declares it.  A row of a catalogued type follows the catalog
     (an attribute its type or one of its subtypes declares is its default or MISSING when the row does not hold
     it, as everywhere; an undeclared one is refused); a row of a type the catalog does not describe follows the
-    raw rule (what it stores, or inherits, is read; anything else is refused).  The planning check (:meth:`Operations._check_declared`) refuses what
-    it can before anything is read; this covers rows whose type the ``from`` does not tell."""
+    raw rule (what it stores is read, and at a path's last step also what it inherits; anything else is
+    refused, an inherited intermediate step with a message that says so).  The planning check
+    (:meth:`Operations._check_declared`) refuses what it can before anything is read; this covers rows whose
+    type the ``from`` does not tell."""
 
     def __init__(self, source, schema: "Schema"):
         super().__init__(source)
@@ -689,6 +692,9 @@ class _QueryReader(_SessionReader):
     def absent(self, element, name: str):
         if self._declared(element, name):
             return MISSING
+        if super().default(element, name) is not MISSING:
+            raise _plain(_invalid(f"The path step {name!r} of {describe_operand(element)} is inherited, not stored; "
+                                  f"a query reads an inherited value only at the last step of a path"))
         raise _not_stored(element, name)
 
 

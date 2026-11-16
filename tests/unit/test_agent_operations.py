@@ -1151,3 +1151,22 @@ def test_raw_as_of_before_the_catalog_uses_the_current_policy(space):
     db.run(lambda tr: tr.install_module("acme_sales"))
     then = query(db, {"from": ["root", "people"], "as_of": before["version"]["ref"]}, raw=True)
     assert then["rows"][0]["values"] == {"n": 1} and MARK not in json.dumps(then)
+
+
+def test_an_inherited_intermediate_step_of_an_uncatalogued_row_is_refused_for_what_it_is(db):
+    """Deferred minor 208 (N1): catalog mode reads an uncatalogued row's inherited value at a path's last step;
+    an inherited intermediate step is refused, and the refusal says it is inherited (not "not stored" alone)."""
+    from proto_db.core.dbobject import DBObject
+
+    def build(tr):
+        parent = DBObject(inherited=Decimal("7"), link=DBObject(v=Decimal("3")))
+        tr.new_mutable("holder", DBObject(items=tr.new_list().append_last(DBObject(parents=(parent,),
+                                                                                    own=Decimal("1")))))
+    db.run(build)
+    items = ["via", ["cell", "holder"], "items"]
+    assert query(db, {"from": items, "select": ["own", "inherited"]})["rows"][0]["values"] == \
+        {"own": "1", "inherited": "7"}
+    with pytest.raises(ProtoValidationError) as refused:
+        query(db, {"from": items, "select": ["link.v"]})
+    message = str(refused.value)
+    assert "'link'" in message and "inherited" in message and "last step" in message, message

@@ -22,8 +22,8 @@ The fold (normative)
     omits is unchanged; a redefined intent's parameter whose type it does not declare keeps the
     composed type.  ``provenance`` lists the module that defined the element (on a subtype, the module
     whose contribution introduced it on the type chain, which ``inherited_from`` names), then each
-    module that modified it, once, in load order (ties by module name), whatever the fold order.  Entity-level fields fold alike (``kind``, ``key`` and
-    ``supertypes`` are structural).
+    module that modified it, once, in load order (ties by module name), whatever the fold order.  Entity-level
+    fields fold alike (``kind``, ``key`` and ``supertypes`` are structural).
 
 Inverses
     A role or relation that names an inverse gets that end on its target, unless the target (or one
