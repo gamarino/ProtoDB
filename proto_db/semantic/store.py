@@ -21,6 +21,10 @@ Reading (:func:`verified_model`)
     (``ProtoNotSupportedError`` until the next install, F24), and each stored Module item must equal the
     contributions of the code this process loaded: a difference is ``ProtoValidationError`` naming the
     module, the type, the element and the field (R263), never corrected silently.
+
+    :func:`checked_stored_model` is the part of that verification that needs no code (the model, its
+    expression trees and the composition of its contributions): what a reader without the modules' code (the
+    agent interface's raw mode) can still trust, for instance to withhold what the catalog marks personal.
 """
 from __future__ import annotations
 
@@ -37,7 +41,7 @@ from .constraints import check_enforceable
 from .expressions import check_ast
 
 __all__ = ["has_contributions", "read_stored", "read_catalog",
-           "merged_model", "merged_semantic_catalog", "verified_model",
+           "merged_model", "merged_semantic_catalog", "verified_model", "checked_stored_model",
            "NO_CATALOG"]
 
 #: The message of a database whose modules are installed and that has no semantic catalog (spec 5).
@@ -185,6 +189,34 @@ def _code_difference(module: str, stored: dict, code: dict) -> str:
 _VERIFIED: OrderedDict = OrderedDict()
 _VERIFIED_LOCK = threading.Lock()
 _VERIFIED_SIZE = 64
+
+
+#: Models of stored catalogs that passed the checks that need no code (:func:`checked_stored_model`), by
+#: catalog record pointer.  Bounded; the oldest goes first.
+_CHECKED: OrderedDict = OrderedDict()
+
+
+def checked_stored_model(catalog) -> dict | None:
+    """The model of the stored ``__semanticCatalog`` value ``catalog`` (``None``: absent, so ``None``), after the
+    checks that do not depend on the code (see the module docstring): a malformed or inconsistent catalog is
+    ``ProtoCorruptionError``, an operator this revision does not implement ``ProtoNotSupportedError``.  The
+    model is shared: the caller must not change it."""
+    if catalog is None:
+        return None
+    key = catalog.atom_pointer
+    if key is not None:
+        with _VERIFIED_LOCK:
+            found = _CHECKED.get(key)
+        if found is not None:
+            return found
+    model = from_atoms(catalog)
+    _checked_stored(model)
+    if key is not None:
+        with _VERIFIED_LOCK:
+            _CHECKED[key] = model
+            while len(_CHECKED) > _VERIFIED_SIZE:
+                _CHECKED.popitem(last=False)
+    return model
 
 
 def verified_model(stored: dict | None, registry: Registry | None, listed: tuple, *, key=None) -> dict:

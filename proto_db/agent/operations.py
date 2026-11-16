@@ -63,7 +63,8 @@ Sensitivity (spec section 11; ``describe`` lists every attribute, ``query`` omit
       of type T"), never by its message or a value.  One caused by a ``LookupError`` or an ``AttributeError``
       (likely a programming error) is also logged, with the original exception, at WARNING.
     - Any other failure of an operation, opening included (a corruption, a storage or I/O error, a closed
-      space: anything that is not an evaluation failure), keeps its type, so a client knows the store is
+      space: anything that is not an evaluation failure; and the code of the installed modules differing from
+      the stored catalog, whose message quotes stored catalog values), keeps its type, so a client knows the store is
       damaged or unavailable, but its message is replaced by one that names only the operation and the kind
       (a corruption's message may preview the stored bytes), raised ``from None``; the original exception is
       logged at ERROR.  Both logs go to ``logging.getLogger("proto_db.agent")``, the operator's side.
@@ -78,7 +79,20 @@ Raw mode (``raw=True``; the agent experiment's control group)
     whose key only the catalog explains); an attribute a row does not store is refused, never read as missing.
     Reserved roots are not available.  Sensitivity still holds: when
     the database has a catalog, its personal and secret attributes are withheld as above, and a refusal says
-    only that an attribute is not available (it names no catalog type and no sensitivity).
+    only that an attribute is not available (it names no catalog type and no sensitivity).  The policy is
+    read from the stored catalog alone, after the checks that need no code, so a server whose process cannot
+    import the modules withholds exactly what a configured one does; only an absent ``__semanticCatalog``
+    root means "nothing to withhold", and a stored catalog that cannot be decoded or checked makes the
+    operation refuse (``ProtoCorruptionError`` or ``ProtoNotSupportedError``, by its kind only), never serve
+    everything (fail closed).
+
+The version read and today's policy
+    Sensitivity is today's disclosure policy, not history (spec section 5 lets a later module redefine it).
+    A :func:`query` with ``as_of`` withholds what the catalog of that version withholds and what the
+    current version's catalog withholds: the stricter wins, element by element, and a term reports the
+    stricter declared sensitivity.  In raw mode a version older than the catalog (data written before the
+    first install) is read under the current catalog's policy.  ``describe`` stays a photograph of one
+    version (R259): it shows what a version declares, never values.
 """
 from __future__ import annotations
 
@@ -94,10 +108,12 @@ from decimal import Decimal, InvalidOperation
 from ..collections.lists import List
 from ..collections.sets import Set
 from ..core.dbobject import DBObject
-from ..errors import ProtoNotSupportedError, ProtoUserError, ProtoValidationError
+from ..catalog.atoms import SEMANTIC_CATALOG_ROOT, semantic_catalog_value
+from ..errors import ProtoUserError, ProtoValidationError
 from ..semantic import semantic
 from ..semantic import compose as _compose
 from ..semantic.entities import check_query, is_evaluation_failure, query_stored, scrubbed
+from ..semantic.store import checked_stored_model
 from ..semantic.expressions import unwrap_entry
 from ..values import MutableObject, check_text, is_atom
 
@@ -233,7 +249,7 @@ def _own(record) -> Mapping:
     return record._own if isinstance(record, DBObject) else {}
 
 
-def _value(value, policy: "_Withholding"):
+def _value(value, policy: "_Strictest"):
     """A row's value: :func:`_flat`, except that a version-bound role shows the version it binds (the
     product as sold): ``{"entity": {"cell"}, "version": {"type_name", "values"}}``, its values withheld as a
     row's are."""
@@ -279,13 +295,27 @@ def _version(snapshot) -> dict:
     return {"number": snapshot.version, "ref": base64.b64encode(snapshot.ref).decode("ascii")}
 
 
-def _catalog_or_none(snapshot):
-    """The verified catalog of the snapshot, or ``None`` when the database has none (raw mode over a
-    database written before the semantic layer: nothing is known to withhold)."""
+def _stored_model(snapshot):
+    """The stored catalog of ``snapshot`` after the checks that need no code
+    (:func:`~proto_db.semantic.store.checked_stored_model`), or ``None`` when the version has no
+    ``__semanticCatalog`` root: the withholding policy of raw mode, which never depends on the process having
+    the modules' code (fail closed).  Only an absent root means "no catalog"; a catalog that cannot be decoded
+    or checked raises (``ProtoCorruptionError``, ``ProtoNotSupportedError``) and the operation serves nothing."""
+    return checked_stored_model(semantic_catalog_value(snapshot.get_root_object(SEMANTIC_CATALOG_ROOT)))
+
+
+def _verified_catalog(session, operation: str) -> dict:
+    """The verified catalog of ``session`` (catalog mode).  A ``ProtoValidationError`` here is the code of the
+    installed modules differing from the stored catalog (R263): its message quotes stored catalog values, so
+    the agent is told only the operation and the kind, as for a storage failure, and the operator's log keeps
+    the message (see "Sensitivity")."""
     try:
-        return semantic(snapshot).catalog()
-    except ProtoNotSupportedError:
-        return None
+        return session.catalog()
+    except ProtoValidationError as error:
+        _LOG.error("The agent operation %s could not open the semantic catalog (%s); the agent was told the kind "
+                   "only", operation, type(error).__name__, exc_info=error)
+        withheld = _content_free(error, operation)
+    raise withheld from None
 
 
 # -- sensitivity ---------------------------------------------------------------------------------------------
@@ -527,7 +557,9 @@ def list_entities(db, filter: str | None = None, *, limit: int = LIST_LIMIT, aft
         return scrubbed("list_entities", listing, log=_LOG)
     if start is not None and start[0] != "cell":
         raise ProtoValidationError("after is the 'next' token a list_entities answer gave")
-    listed = semantic(snapshot).list_entities(filter)
+    session = semantic(snapshot)
+    _verified_catalog(session, "list_entities")
+    listed = session.list_entities(filter)
     types = {entity["type_name"] for entity in listed}
 
     def cells() -> dict:
@@ -550,7 +582,7 @@ def describe(db, type_name: str, *, raw: bool = False) -> dict:
         raise ProtoValidationError(f"A type name is a str, not {type(type_name).__name__}")
     snapshot = _snapshot(db)
     if not raw:
-        model = semantic(snapshot).catalog()
+        model = _verified_catalog(semantic(snapshot), "describe")
         if type_name not in model["entities"]:
             raise ProtoValidationError(f"The semantic catalog describes no type {type_name!r}; list_entities gives "
                                        f"the types it describes")
@@ -667,8 +699,8 @@ def check_answerable(db, terms: list, *, raw: bool = False) -> dict:
             or not all(isinstance(term, str) and term.strip() for term in terms):
         raise ProtoValidationError(f"check_answerable takes a list of non-empty terms (str), not {terms!r}")
     snapshot = _snapshot(db)
-    return scrubbed("check_answerable", _answerable, snapshot, None if raw else semantic(snapshot).catalog(), terms,
-                    log=_LOG)
+    model = None if raw else _verified_catalog(semantic(snapshot), "check_answerable")
+    return scrubbed("check_answerable", _answerable, snapshot, model, terms, log=_LOG)
 
 
 def _answerable(snapshot, model: Mapping | None, terms) -> dict:
@@ -708,8 +740,8 @@ def _reserved_root(tree: Mapping):
 
 
 def _screen(policy: _Withholding, tree) -> frozenset | None:
-    """Refuse a ``from``, ``where`` or ``aggregate`` that reads a withheld attribute (see "Sensitivity");
-    return the types the members may have (``None``: any), for the default selection."""
+    """Refuse a ``from``, ``where`` or ``aggregate`` that reads an attribute ``policy`` withholds (see
+    "Sensitivity"); return the types the members may have (``None``: any), for the default selection."""
     origin = tree["from"]
     finding, types = (None, None) if origin[0] == "root" else policy.via_types(origin, None, frozenset())
     policy.refuse("'from'", finding)
@@ -722,11 +754,63 @@ def _screen(policy: _Withholding, tree) -> frozenset | None:
     return types
 
 
+#: The sensitivities from the least to the most strict.
+_STRICTNESS = ("public", "internal", "personal", "secret")
+
+
+class _Strictest:
+    """The withholding of a query: the policy of the catalog of the version it reads, made stricter by the
+    current version's (spec section 11, ruling I3).  Sensitivity is today's disclosure policy, not history: a
+    later module that marks an attribute personal binds the reads of earlier versions too.  Every check is
+    made against each policy and the strictest answer wins; the types (subtypes, candidates) are those of the
+    version read."""
+
+    def __init__(self, read: _Withholding, current: _Withholding | None = None):
+        self.read = read
+        self.policies = (read,) if current is None or current.model is None else (read, current)
+        self.raw = read.raw
+        self.entities = read.entities
+
+    def subtypes(self, type_name: str) -> frozenset:
+        return self.read.subtypes(type_name)
+
+    def candidates(self, types) -> frozenset:
+        return self.read.candidates(types)
+
+    def screen(self, tree) -> frozenset | None:
+        """:func:`_screen` against every policy; the member types of the version read."""
+        types = _screen(self.read, tree)
+        for policy in self.policies[1:]:
+            _screen(policy, tree)
+        return types
+
+    def withheld(self, type_name: str, steps) -> bool:
+        return any(policy.withheld(type_name, steps) for policy in self.policies)
+
+    def allowed(self, type_name: str) -> list:
+        return [name for name in self.read.allowed(type_name)
+                if not any(policy.withheld(type_name, [name]) for policy in self.policies[1:])]
+
+    def term(self, term: dict) -> dict:
+        """The term of the version read (:meth:`_Withholding.term`), with the strictest declared sensitivity
+        and, when only a stricter policy withholds it, that policy's reason."""
+        out = self.read.term(term)
+        for policy in self.policies[1:]:
+            stricter = policy.term(term)
+            if _STRICTNESS.index(stricter["sensitivity"]) > _STRICTNESS.index(out["sensitivity"]):
+                out["sensitivity"] = stricter["sensitivity"]
+            if "withheld" not in out and "withheld" in stricter:
+                out["withheld"], out["withheld_because"] = True, stricter["withheld_because"]
+        return out
+
+
 @_boundary("query")
 def query(db, tree: Mapping, *, raw: bool = False) -> dict:
     """Run the query ``tree`` (spec section 11) and answer ``{"rows", "explain", "version", "query",
     "terms"}`` as JSON-ready data (see the module docstring: rows, sensitivity, raw mode).  ``tree["as_of"]``
-    is the ``ref`` of a version an earlier answer gave; without it the current version is read."""
+    is the ``ref`` of a version an earlier answer gave; without it the current version is read.  What is
+    withheld is decided by the current catalog as well as by the catalog of the version read (the stricter
+    wins), so a later tightening of a sensitivity binds every version."""
     check_query(tree)
     reserved = _reserved_root(tree) if raw else None
     if reserved is not None:
@@ -736,11 +820,13 @@ def query(db, tree: Mapping, *, raw: bool = False) -> dict:
     if "as_of" in tree:
         run["as_of"] = _version(snapshot)["ref"]
     session = None if raw else semantic(snapshot)
-    policy = _Withholding(_catalog_or_none(snapshot) if raw else session.catalog(), raw=raw)
+    read = _Withholding(_stored_model(snapshot) if raw else _verified_catalog(session, "query"), raw=raw)
+    current = None if "as_of" not in tree else _Withholding(_stored_model(_snapshot(db)), raw=raw)
+    policy = _Strictest(read, current)
     of_type = tree.get("of_type")
     if not raw and of_type is not None and of_type not in policy.entities:
         raise ProtoValidationError(f"The semantic catalog describes no type {of_type!r}")
-    types = _screen(policy, tree)
+    types = policy.screen(tree)
     aggregate, select = tree.get("aggregate"), tree.get("select")
     default = select is None and aggregate is None
     chosen: dict = {}
@@ -766,7 +852,7 @@ def query(db, tree: Mapping, *, raw: bool = False) -> dict:
     return scrubbed("the query", answered, log=_LOG)
 
 
-def _answer(answer: dict, tree: Mapping, policy: _Withholding, raw: bool) -> dict:
+def _answer(answer: dict, tree: Mapping, policy: _Strictest, raw: bool) -> dict:
     """The engine's ``answer`` to ``tree`` as the agent receives it (see the module docstring, "Rows")."""
     aggregate = tree.get("aggregate")
     default = tree.get("select") is None and aggregate is None

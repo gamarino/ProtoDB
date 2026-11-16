@@ -994,3 +994,160 @@ def test_catalog_mode_reads_an_uncatalogued_record_by_the_raw_rule(sentinel_db):
             query(db, tree)
         message = str(refused.value)
         assert "'nope'" in message and "not stored" in message and MARK not in message, message
+
+
+# -- final review: the withholding policy never depends on the code or on the version read -----------------
+
+def _customers_of_bob(db):
+    """A company with the customer Bob (``name`` personal, ``credit_limit`` 777); returns the company."""
+    def build(tr):
+        s = semantic(tr)
+        company = s.create("acme.core.Company", name="ACME")
+        s.create(CUSTOMER, name=f"{MARK}-Bob", credit_limit=Decimal("777"), company=company)
+        return company
+    return db.run(build)
+
+
+def test_raw_mode_withholds_from_the_stored_catalog_without_the_code():
+    """C1: a raw server whose process cannot import the catalogued modules still withholds what the stored
+    catalog marks personal or secret (fail closed), and catalog mode still refuses without the code."""
+    from proto_db.errors import ProtoNotSupportedError
+    storage = MemoryStorage()
+    first = ObjectSpace(storage, modules_mapping=MAPPING)
+    second = ObjectSpace(storage, modules_mapping={})        # an operator's server without the application's code
+    try:
+        db = first.new_database("db")
+        db.run(lambda tr: tr.install_module("acme_sales"))
+        company = _customers_of_bob(db)
+        customers = ["via", ["cell", company.name], "customers"]
+        bare = second.open_database("db")
+        rows = query(bare, {"from": customers}, raw=True)["rows"]
+        assert len(rows) == 1 and "name" not in rows[0]["values"] and rows[0]["values"]["credit_limit"] == "777"
+        assert MARK not in json.dumps(query(bare, {"from": customers, "select": ["name", "credit_limit"]},
+                                            raw=True))
+        with pytest.raises(ProtoValidationError, match="not available"):
+            query(bare, {"from": customers, "where": ["==", ["attr", "name"], ["const", "x"]]}, raw=True)
+        with pytest.raises(ProtoNotSupportedError):
+            query(bare, {"from": customers})
+    finally:
+        second.close()
+        first.close()
+
+
+def _damaged(monkeypatch, storage, original_text: str, replacement):
+    """Every stored ``original_text`` read back from ``storage`` as ``replacement`` (a damaged store).  The
+    process's memo of verified catalogs is emptied, since it remembers the catalog as it was first read."""
+    from collections import OrderedDict
+    from proto_db.semantic import store
+    get_atom = MemoryStorage.get_atom
+    for memo in ("_VERIFIED", "_CHECKED"):
+        if hasattr(store, memo):
+            monkeypatch.setattr(store, memo, OrderedDict())
+
+    def damaged(self, pointer):
+        def walk(value):
+            if isinstance(value, dict):
+                return {key: walk(item) for key, item in value.items()}
+            if isinstance(value, list):
+                return [walk(item) for item in value]
+            return replacement if value == original_text else value
+        payload = get_atom(self, pointer)
+        return walk(payload) if self is storage else payload
+    monkeypatch.setattr(MemoryStorage, "get_atom", damaged)
+
+
+@pytest.mark.parametrize("mapping", ["code", "no code"])
+def test_a_damaged_sensitivity_refuses_to_serve_never_serves_everything(monkeypatch, caplog, mapping):
+    """C1 and deferred minor 150: a stored sensitivity outside its enumeration makes the catalog corrupt; raw
+    mode (with or without the code) refuses with a content-free ProtoCorruptionError, never serves the
+    personal value."""
+    import logging
+    from proto_db.errors import ProtoCorruptionError
+    storage = MemoryStorage()
+    first = ObjectSpace(storage, modules_mapping=MAPPING)
+    try:
+        db = first.new_database("db")
+        db.run(lambda tr: tr.install_module("acme_sales"))
+        company = _customers_of_bob(db)
+        _damaged(monkeypatch, storage, "personal", f"{MARK}-sensitivity")
+        second = ObjectSpace(storage, modules_mapping=MAPPING if mapping == "code" else {})
+        try:
+            bare = second.open_database("db")
+            for raw in (True, False):
+                with caplog.at_level(logging.ERROR, logger="proto_db.agent"):
+                    with pytest.raises(ProtoCorruptionError) as refused:
+                        query(bare, {"from": ["via", ["cell", company.name], "customers"]}, raw=raw)
+                assert MARK not in str(refused.value), refused.value
+                assert refused.value.__cause__ is None and refused.value.__context__ is None
+        finally:
+            second.close()
+    finally:
+        first.close()
+
+
+def test_a_code_difference_reaches_the_agent_without_stored_catalog_values(monkeypatch, caplog):
+    """M3: the code-vs-catalog difference quotes stored catalog values (``default``); at the agent boundary it
+    keeps its type and the operator's log keeps the message, but the agent is told the kind only."""
+    import logging
+    storage = MemoryStorage()
+    first = ObjectSpace(storage, modules_mapping=MAPPING)
+    try:
+        db = first.new_database("db")
+        db.run(lambda tr: tr.install_module("acme_sales"))
+        _customers_of_bob(db)
+        _damaged(monkeypatch, storage, "open", f"{MARK}-default")
+        second = ObjectSpace(storage, modules_mapping=MAPPING)
+        try:
+            bare = second.open_database("db")
+            calls = [lambda: list_entities(bare), lambda: describe(bare, ORDER),
+                     lambda: check_answerable(bare, ["order"]), lambda: query(bare, {"from": ["root", "x"]})]
+            for call in calls:
+                caplog.clear()
+                with caplog.at_level(logging.ERROR, logger="proto_db.agent"):
+                    with pytest.raises(ProtoValidationError) as refused:
+                        call()
+                assert MARK not in str(refused.value) and "ProtoValidationError" in str(refused.value), refused.value
+                assert refused.value.__cause__ is None and refused.value.__context__ is None
+                [record] = _logged(caplog, "ERROR", ProtoValidationError)
+                assert MARK in str(record.exc_info[1])
+        finally:
+            second.close()
+    finally:
+        first.close()
+
+
+def test_as_of_applies_the_stricter_of_then_and_now(space):
+    """I3: a later module that tightens a sensitivity binds reads of earlier versions too."""
+    db = space.new_database("db")
+    db.run(lambda tr: tr.install_module("acme_sales"))
+    company = _customers_of_bob(db)
+    customers = {"from": ["via", ["cell", company.name], "customers"]}
+    before = query(db, customers)
+    assert before["rows"][0]["values"]["credit_limit"] == "777"
+    db.run(lambda tr: tr.install_module("acme_tighten"))
+    assert "credit_limit" not in query(db, customers)["rows"][0]["values"]
+    then = query(db, dict(customers, as_of=before["version"]["ref"]))
+    assert then["version"] == before["version"] and "credit_limit" not in then["rows"][0]["values"]
+    assert "777" not in json.dumps(then)
+    term = next(t for t in query(db, dict(customers, select=["credit_limit"], as_of=before["version"]["ref"]))
+                ["terms"] if t["name"] == "credit_limit")
+    assert term["withheld"] is True and term["sensitivity"] == "secret"
+    for raw in (False, True):
+        with pytest.raises(ProtoValidationError):
+            query(db, dict(customers, as_of=before["version"]["ref"],
+                           where=[">", ["attr", "credit_limit"], ["const", 1]]), raw=raw)
+        raw_rows = query(db, dict(customers, as_of=before["version"]["ref"]), raw=True)["rows"]
+        assert "credit_limit" not in raw_rows[0]["values"]
+
+
+def test_raw_as_of_before_the_catalog_uses_the_current_policy(space):
+    """I3: a raw read of a version older than the catalog (data written raw before the first install) withholds
+    what the current catalog marks personal or secret."""
+    from proto_db.core.dbobject import DBObject
+    db = space.new_database("db")
+    db.run(lambda tr: tr.set_root_object("people", tr.new_list().append_last(DBObject(name=f"{MARK}-raw", n=1))))
+    before = query(db, {"from": ["root", "people"]}, raw=True)
+    assert before["rows"][0]["values"]["name"] == f"{MARK}-raw"
+    db.run(lambda tr: tr.install_module("acme_sales"))
+    then = query(db, {"from": ["root", "people"], "as_of": before["version"]["ref"]}, raw=True)
+    assert then["rows"][0]["values"] == {"n": 1} and MARK not in json.dumps(then)
