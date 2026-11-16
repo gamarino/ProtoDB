@@ -730,9 +730,9 @@ def blind_snapshot_of'''),),
         "ProtoConflictError", "product: reading __currentModules enters the read set, so an install conflicts ordinary work"),
     "mismatch_not_checked": Plant((
         ("proto_db/transactions.py",
-         "        if binding is None or binding.names != names:\n"
+         "        if binding is None:\n"
          "            raise _mismatch(database, self._bound[database].names, names)\n",
-         "        if binding is None or binding.names != names:\n"
+         "        if binding is None:\n"
          "            return self.build(database, names)     # PLANT: an automatic rebuild, no mismatch\n"),),
         ("tests/unit/test_registry_database.py::test_mismatch_raises_after_a_foreign_install",),
         "DID NOT RAISE", "product: a module-list mismatch is rebuilt silently instead of raising (spec Q2)"),

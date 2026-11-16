@@ -179,15 +179,19 @@ A mismatch is an error (Q2)
     ``reload_registry`` (R202): Python does not cache a failed import, and every commit would retry it. A
     failed reload is not itself remembered: the next lookup tries the import once more.
 
-    A list the space committed itself, or bound the database to, is never a mismatch, whatever the order of
-    the steps: a transaction reads its snapshot and then binds, while an install commit publishes and then
-    rebinds, and no clock decides which comes first (R82). So the space records each list it committed
-    (under the root lock, before the publish; a publish of unknown outcome keeps its record) and each list
-    the database was bound to, with its version. A transaction on such a list at a version at or below its
-    snapshot's binds the database to it when it is newer than the bound one, and otherwise gets a binding
-    of its own, leaving the database's binding unchanged. The records are never pruned: there is one per
-    install commit and per binding event, bounded by the space's installs and reloads, and pruning would
-    need the snapshot versions of the transactions still between their snapshot read and their bind.
+    The space keeps the lists it **adopted** for each database: the one its first transaction bound, each one
+    its own install commits published (or ended with an unknown outcome), and each one ``reload_registry``
+    bound. A transaction whose snapshot lists an adopted list resolves with that list's registry, whatever its
+    version and whatever the order of its snapshot read and the space's commits (a commit publishes and then
+    rebinds, a transaction reads and then binds, and no clock decides which comes first, R82); while an install
+    commit is between its publish and its rebind, its list counts as adopted. A list never adopted is the
+    mismatch above. The database's binding, which a loaded object resolved outside any block uses, moves only
+    forward in the order of the database's versions, (label, version), the cluster's root order, in which a
+    later lineage orders after the one it replaced: concurrent installs never move it back, and a transaction
+    on an earlier version gets a binding of its own. ``reload_registry`` always rebinds it to the list it
+    reloads (unless an install of the space bound a newer version meanwhile, which it then reloads), also to a
+    version below the bound one: the explicit recovery after a cluster failover beyond the failure model. The
+    adopted lists are never pruned; they are bounded by the space's installs and reloads.
 
 **The invariant behind the caches: what a cache entry is keyed by never changes.** The linearization of a
 tuple of saved parents is cached by the parents' pointers and the registry. A record at a pointer never

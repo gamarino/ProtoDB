@@ -440,7 +440,7 @@ def test_the_binding_ends_on_the_newest_committed_list():
         db = space.new_database("db")
         _install(db, "acme_sales")                           # version 1
         _install(db, "acme_delivery")                        # version 2
-        space._registries.rebind("db", ("base", "acme_sales"), version=1)
+        space._registries.rebind("db", ("base", "acme_sales"), key=(0, 1))
         assert "delivery_date" in _attributes(db.run(lambda tr: Order.describe(tr)))
     finally:
         space.close()
@@ -485,17 +485,18 @@ def test_a_transaction_started_between_publish_and_rebind_resolves():
         space.close()
 
 
-def test_a_reload_that_loses_to_a_newer_commit_still_builds_fresh():
+def test_a_reload_that_finds_a_newer_binding_reloads_the_newer_list():
     # Review minor 1, R243: a reload invalidates every registry of the database built before it, also when
-    # its own rebind is ignored because a newer commit's binding won.
+    # a newer commit's binding won meanwhile: the reload reads again and binds the newer list, built fresh.
     from proto_db.transactions import _SpaceRegistries
     registries = _SpaceRegistries(MAPPING, None)
     older, newer = ("base", "acme_sales"), ("base", "acme_sales", "acme_delivery")
-    registries.rebind("x", newer, None, 7)
+    registries.rebind("x", newer, None, (0, 7))
     before = registries.registry("x", registries._bound["x"])
-    registries.reload("x", older, 6)
+    reads = iter([(older, (0, 6)), (newer, (0, 7))])
+    registries.reload("x", lambda: next(reads))
     binding = registries._bound["x"]
-    assert binding.names == newer
+    assert binding.names == newer and binding.key == (0, 7)
     assert registries.registry("x", binding) is not before
 
 
@@ -561,14 +562,14 @@ def test_overlapping_install_commits_each_keep_their_publish_record():
         t1_held, t1_release = threading.Event(), threading.Event()
         t2_held, t2_release = threading.Event(), threading.Event()
 
-        def gated_rebind(database, names, registry=None, version=None):
+        def gated_rebind(database, names, registry=None, key=None):
             if "acme_delivery" in names and "semc_01" not in names:
                 t1_held.set()
                 assert t1_release.wait(60)
-            return rebind(database, names, registry, version)
+            return rebind(database, names, registry, key)
 
-        def gated_committing(database, names, version):
-            committing(database, names, version)
+        def gated_committing(database, names):
+            committing(database, names)
             if "semc_01" in names:
                 t2_held.set()
                 assert t2_release.wait(60)
@@ -595,23 +596,25 @@ def test_overlapping_install_commits_each_keep_their_publish_record():
             first.join(60)
             second.join(60)
         assert not first.is_alive() and not second.is_alive()
-        # Only the published lists stay recorded, one per install commit.
-        assert registries._committed_lists["db"] == {
-            (1, ("base", "acme_sales")): 1, (2, ("base", "acme_sales", "acme_delivery")): 1,
-            (3, ("base", "acme_sales", "acme_delivery", "semc_01")): 1}
+        # Nothing stays pending; the first start's list and every published list are adopted.
+        assert not registries._pending["db"]
+        assert registries._adopted["db"] == {
+            (), ("base", "acme_sales"), ("base", "acme_sales", "acme_delivery"),
+            ("base", "acme_sales", "acme_delivery", "semc_01")}
         assert "semc_01_note" in _attributes(db.run(lambda tr: semantic(tr).describe("acme.core.Company")))
     finally:
         space.close()
 
 
 def test_a_registry_build_in_flight_across_a_losing_reload_is_not_stored(monkeypatch):
-    # Re-review minor 1, R243: a registry() build that started before a reload (whose rebind loses to a
-    # newer binding) must not store its pre-reload registry once the reload reset the binding.
+    # Re-review minor 1, R243, ``probe_reload_race.py``: a registry() build that started before a reload
+    # must not store its pre-reload registry in the binding the database has after the reload.  The reload
+    # first reads an older list, so it finds the newer binding and reads again.
     from proto_db import registry as registry_module
     from proto_db.transactions import _SpaceRegistries
     registries = _SpaceRegistries(MAPPING, None)
     older, newer = ("base", "acme_sales"), ("base", "acme_sales", "acme_delivery")
-    registries.rebind("x", newer, None, 7)
+    registries.rebind("x", newer, None, (0, 7))
     before = registry_module.registry_for(newer, mapping=MAPPING, allowed=None)     # the process cache
     original = registry_module.registry_for
     built, go = threading.Event(), threading.Event()
@@ -630,13 +633,16 @@ def test_a_registry_build_in_flight_across_a_losing_reload_is_not_stored(monkeyp
     try:
         assert built.wait(60)                                # built the pre-reload registry, not stored yet
         monkeypatch.setattr(registry_module, "registry_for", original)
-        registries.reload("x", older, 6)                     # loses to version 7: resets the binding
+        reads = iter([(older, (0, 6)), (newer, (0, 7))])
+        registries.reload("x", lambda: next(reads))
     finally:
         go.set()
         reader.join(60)
     assert not reader.is_alive()
-    binding = registries._bound["x"]
-    assert binding.registry is not before and out["registry"] is binding.registry
+    current = registries._bound["x"]
+    assert current is not binding and current.names == newer
+    assert current.registry is not before and registries.registry("x", current) is current.registry
+    assert out["registry"] is before                         # the build that predates the reload, unstored
 
 
 def test_a_transaction_that_read_its_snapshot_before_a_rebind_keeps_its_list():
@@ -652,12 +658,12 @@ def test_a_transaction_that_read_its_snapshot_before_a_rebind_keeps_its_list():
         _install(db, "acme_delivery")                        # version 2: rebound
         registries = space._registries
         older = ("base", "acme_sales")
-        own = registries.started("db", older, 1)
+        own = registries.started("db", older, (0, 1))
         assert own is not None and own.names == older
         assert registries._bound["db"].names == older + ("acme_delivery",)
         assert "delivery_date" not in _attributes(compose(registries.registry("db", own))["entities"][
             "acme.sales.Order"])
-        assert registries.started("db", older + ("semc_01",), 2) is None
+        assert registries.started("db", older + ("semc_01",), (0, 2)) is None
     finally:
         space.close()
 
@@ -678,6 +684,9 @@ def _read_then_bind_after_an_install(tmp_path, mode: str) -> dict:
         space = _space(path)
         db = space.open_database("db")
         db.run(lambda tr: tr.installed_modules())           # binds at the first start
+        install = "acme_delivery"
+    elif mode == "reload":
+        space.reload_registry("db")                          # binds the list it reads
         install = "acme_delivery"
     else:
         db.run(lambda tr: tr.installed_modules())
@@ -727,11 +736,11 @@ def _read_then_bind_after_an_install(tmp_path, mode: str) -> dict:
         space.close()
 
 
-@pytest.mark.parametrize("mode", ["reopen", "other"])
+@pytest.mark.parametrize("mode", ["reopen", "reload", "other"])
 def test_a_transaction_on_a_bound_list_that_binds_after_an_install_keeps_its_list(tmp_path, mode):
     out = _read_then_bind_after_an_install(tmp_path, mode)
     assert "error" not in out, out.get("error")
-    if mode == "reopen":
+    if mode in ("reopen", "reload"):
         assert out["listed"] == ("base", "acme_sales") and "delivery_date" not in out["attributes"]
         assert out["bound"] == ("base", "acme_sales", "acme_delivery")
     else:
@@ -768,5 +777,216 @@ def test_an_install_publish_of_unknown_outcome_that_landed_binds_the_next_transa
         finally:
             tr.abort()
         assert space._registries._bound["db"].names[-1] == "acme_delivery"
+    finally:
+        space.close()
+
+
+# -- fix round 4: adopted lists, the binding ordered by (label, version) --------------------------------------
+
+@pytest.mark.parametrize("mode", ["first", "reload"])
+def test_a_transaction_on_a_list_read_before_the_space_bound_it_keeps_it(tmp_path, mode):
+    # Re-review 3 (R82), ``probe_first_bind_later.py``: A reads its snapshot on the list L at version 1 of a
+    # reopened, unbound space; another space commits plain data (version 2, still L); this space binds L at
+    # version 2 (a first start, or reload_registry); this space installs (version 3) and rebinds; A binds.  L
+    # is a list this space adopted, whatever the version A read it at.  Events decide the order.
+    path = tmp_path / "s"
+    space = _space(path)
+    try:
+        _install(space.new_database("db"), "acme_sales")
+    finally:
+        space.close()
+    space = _space(path)
+    try:
+        db = space.open_database("db")
+        registries = space._registries
+        started = registries.started
+        read, go = threading.Event(), threading.Event()
+
+        def gated(database, names, *args):
+            if threading.current_thread().name == "A":
+                read.set()
+                assert go.wait(60)
+            return started(database, names, *args)
+
+        registries.started = gated
+        out = {}
+
+        def a():
+            tr = db.new_transaction()
+            try:
+                out["listed"] = tr.installed_modules()
+                out["attributes"] = _attributes(Order.describe(tr))
+            except Exception as e:      # recorded: the assertion names it
+                out["error"] = e
+            finally:
+                tr.abort()
+
+        thread = threading.Thread(target=a, name="A")
+        thread.start()
+        try:
+            assert read.wait(60)                             # A read version 1; the space is unbound
+            other = _space(path)
+            try:
+                other.open_database("db").run(lambda tr: tr.set_root_object("x", 1))     # version 2, list L
+            finally:
+                other.close()
+            if mode == "reload":
+                space.reload_registry("db")
+            else:
+                db.run(lambda tr: tr.installed_modules())
+            _install(db, "acme_delivery")                    # version 3: published and rebound
+        finally:
+            go.set()
+            thread.join(60)
+        assert not thread.is_alive()
+        assert "error" not in out, out.get("error")
+        assert out["listed"] == ("base", "acme_sales") and "delivery_date" not in out["attributes"]
+        assert registries._bound["db"].names == ("base", "acme_sales", "acme_delivery")
+    finally:
+        space.close()
+
+
+#: The label of a refounded lineage's roots (``proto_db.cluster.coordinator.REFOUND_TERM_STEP``): above every
+#: label of the lineage it replaces.
+_LATER_LINEAGE = 1 << 44
+
+
+def _snapshot_pointer(db):
+    tr = db.new_transaction()
+    try:
+        return tr._snapshot_pointer
+    finally:
+        tr.abort()
+
+
+def _move_to_lineage(space, base_pointer, term):
+    """Make the storage's current root a space root over the databases of the space root at
+    ``base_pointer``, labelled ``term`` (``None``: unlabelled): what a node's snapshots start from after a
+    failover beyond the failure model (``refound``, ``force_rejoin``) moved the cluster to a lineage that
+    lost the later commits.  A cluster's new lineage carries a label above the lost one's; an unlabelled
+    root stands for the persisted root a node reads when its confirmation under a lease failed."""
+    from proto_db.transactions import SpaceRoot, _ClusterStamp, _SpaceContext
+    storage = space.storage
+    context = _SpaceContext(storage)
+    base = context.load(base_pointer, SpaceRoot.__type_name__)
+    current = storage.read_root()
+    stamp = None if term is None else _ClusterStamp(term, current.epoch + 1)
+    pointer = context.save(SpaceRoot(databases=base.databases, context=context, cluster=stamp, previous=base))
+    storage.flush()
+    with storage.root_lock():
+        storage.publish_root(pointer, current.epoch)
+
+
+def _lost_lineage(space):
+    """``db`` at version 3 (bound to base, acme_sales, acme_delivery, semc_01), and the pointer of the space
+    root of its version 1 (base, acme_sales)."""
+    db = space.new_database("db")
+    _install(db, "acme_sales")                               # version 1
+    base = _snapshot_pointer(db)
+    _install(db, "acme_delivery")                            # version 2
+    _install(db, "semc_01")                                  # version 3
+    assert space._registries._bound["db"].names[-1] == "semc_01"
+    return db, base
+
+
+def test_a_database_moved_to_a_later_lineage_binds_its_adopted_list():
+    # Re-review 3, failover beyond the failure model: the database is back at version 1 (list L, which this
+    # space committed) on a later lineage.  A transaction on L binds the database to it, and a loaded object
+    # resolved outside any block never resolves with the lost lineage's registry.
+    space = _space()
+    try:
+        db, base = _lost_lineage(space)
+        _move_to_lineage(space, base, _LATER_LINEAGE)
+        tr = db.new_transaction()
+        try:
+            assert tr.installed_modules() == ("base", "acme_sales")
+            assert "delivery_date" not in _attributes(Order.describe(tr))
+        finally:
+            tr.abort()
+        assert space._registries._bound["db"].names == ("base", "acme_sales")
+        assert tuple(space._registries.fallback().key) == ("base", "acme_sales")
+    finally:
+        space.close()
+
+
+def test_a_database_moved_to_a_later_lineage_on_a_list_never_adopted_mismatches_until_reloaded(tmp_path):
+    # The later lineage installs a module elsewhere: a list this space never adopted is the mismatch (Q2),
+    # also for a loaded object outside any block; reload_registry rebinds although the versions went back.
+    path = tmp_path / "s"
+    space = _space(path)
+    try:
+        db, base = _lost_lineage(space)
+        _move_to_lineage(space, base, _LATER_LINEAGE)
+        other = _space(path)
+        try:
+            _install(other.open_database("db"), "semc_02")
+        finally:
+            other.close()
+        _move_to_lineage(space, space.storage.read_root().pointer, _LATER_LINEAGE + 1)
+        tr = db.new_transaction()
+        try:
+            assert tr.installed_modules() == ("base", "acme_sales", "semc_02")
+            with pytest.raises(ProtoValidationError, match="no automatic rebuild"):
+                Order.describe(tr)
+        finally:
+            tr.abort()
+        with pytest.raises(ProtoValidationError, match="no automatic rebuild"):
+            space._registries.fallback()
+        space.reload_registry("db")
+        assert tuple(space._registries.fallback().key) == ("base", "acme_sales", "semc_02")
+        assert "delivery_date" not in _attributes(db.run(lambda tr: Order.describe(tr)))
+    finally:
+        space.close()
+
+
+def test_reload_rebinds_a_database_whose_current_root_orders_below_its_binding():
+    # The node reads a root that orders below the one its binding came from (the persisted root, when the
+    # confirmation under a lease failed): reload_registry, the explicit rebuild, rebinds to it.
+    space = _space()
+    try:
+        db, base = _lost_lineage(space)
+        _move_to_lineage(space, base, None)
+        space.reload_registry("db")
+        assert space._registries._bound["db"].names == ("base", "acme_sales")
+        assert tuple(space._registries.fallback().key) == ("base", "acme_sales")
+        assert "delivery_date" not in _attributes(db.run(lambda tr: Order.describe(tr)))
+    finally:
+        space.close()
+
+
+def test_a_reload_that_read_before_an_own_install_published_ends_on_the_newest_list():
+    # reload_registry reads the current root (L), and an install commit of this space publishes L+m and
+    # rebinds before the reload binds: the binding must end on L+m (never back on L), built fresh (R243).
+    from proto_db import registry as registry_module
+    space = _space()
+    try:
+        db = space.new_database("db")
+        _install(db, "acme_sales")
+        registries = space._registries
+        build_fresh = registries.build_fresh
+        held, go = threading.Event(), threading.Event()
+
+        def gated(database, names):
+            if threading.current_thread().name == "reload" and not held.is_set():
+                held.set()
+                assert go.wait(60)
+            return build_fresh(database, names)
+
+        registries.build_fresh = gated
+        reloader = threading.Thread(target=lambda: space.reload_registry("db"), name="reload")
+        reloader.start()
+        try:
+            assert held.wait(60)                             # read the list L, building its registry
+            _install(db, "acme_delivery")                    # published and rebound meanwhile
+        finally:
+            go.set()
+            reloader.join(60)
+        assert not reloader.is_alive()
+        newest = ("base", "acme_sales", "acme_delivery")
+        binding = registries._bound["db"]
+        assert binding.names == newest
+        found = registries.registry("db", binding)
+        assert found is not registry_module.registry_for(newest, mapping=MAPPING, allowed=None)
+        assert registries.fallback() is found
     finally:
         space.close()
