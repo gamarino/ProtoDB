@@ -424,6 +424,21 @@ def test_catalog_canonical_form_vector(tmp_path):
     assert list(decoded) == ["entities", "module_set", "modules"] and _reencode(decoded) == expected
 
 
+def test_declared_fixture_composes_to_the_catalog_vector():
+    """The catalog vector's model declared in Python (``catalog_fixture.py``, the brief's spelling)
+    composes, through the registry, to the vector's canonical form byte for byte (R258; Task 4): the
+    declaration API, the module contributions and the composition agree with the format."""
+    from proto_db.catalog.model import canonical_form
+    from proto_db.registry import Registry
+    from proto_db.semantic.compose import compose
+    from tests.conformance.catalog_fixture import MAPPING
+    db = MANIFEST["catalog_database"]
+    registry = Registry.build(("base", "conformance.catalog_base", "conformance.catalog_sales"), mapping=MAPPING)
+    model = compose(registry)
+    assert model == json.loads((HERE / db["model"]).read_text())
+    assert canonical_form(model) == _bytes(db["canonical"])
+
+
 # -- the expression language (format spec, "The expression language") ---------------------------
 
 @pytest.mark.parametrize("vector", MANIFEST["expressions"], ids=lambda v: v["id"])
