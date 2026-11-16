@@ -7,6 +7,11 @@ every cell it reads enters the read set (``Transaction.get_mutable``), every cel
 ``Transaction.set_mutable``.  A session over a ``Snapshot`` reads only; its write operations raise
 ``ProtoUserError`` (preflight F24).
 
+In intent mode (``Database.new_transaction(intents=True)``, :mod:`proto_db.semantic.intents`) the same
+operations run on the transaction's record view when they are recorded, and on the cells current at commit
+when they are replayed: the session gives them their store (``_store``), their lock (``_guard``, none at
+replay) and the names of the cells they create (``_new_cell``, recorded once, never drawn at replay).
+
 Storage (spec section 6)
     - An entity lives in a mutable cell named ``<type name>#<32 hex digits>`` (R260) whose value is a record
       of its semantic class; the cell's :class:`~proto_db.values.MutableObject` handle is its identity.
@@ -76,6 +81,11 @@ Versions and navigation
     version for ``binding="version"``), a ``many`` end gives :class:`Members`.  ``version["name"]`` reads an
     attribute named like ``entity`` or ``record``.
 
+    An intent of the version's type (``order.add_line``) is a :class:`BoundIntent`: calling it invokes the
+    intent through the session (:meth:`Operations.invoke`; logged in intent mode).  In intent mode, a read
+    of a version records the fine read its caller decides on (:mod:`proto_db.semantic.intents`, "Fine reads
+    and condition reads"); ``version._bound`` marks the version a role binds, whose reads record nothing.
+
     :class:`Members` is the member view of a ``many`` end (preflight row 44): it yields the members as
     versions, never the entries a maintained-key end stores.  ``members.collection`` is the stored ``List``
     or ``Set`` (``None`` while the end holds nothing), ``members.ordered`` says which.
@@ -105,7 +115,6 @@ import base64
 import contextlib
 import copy
 import functools
-import uuid
 from collections.abc import Mapping
 from typing import NamedTuple
 
@@ -123,12 +132,13 @@ from ..query.linq import from_collection
 from ..query.terms import Term
 from ..values import MISSING, MutableObject, is_atom, values_equal
 from . import compose as _compose
+from .classes import IntentContext
 from .descriptors import RegistryReader
 from .expressions import (Reader, _arithmetic, _identity, _number, _operand_error, _truth, check_ast, describe_operand,
                           evaluate, to_planner, unwrap_entry)
 
-__all__ = ["Version", "Members", "Operations", "Schema", "StoredReader", "check_query", "query_stored", "scrubbed",
-           "is_evaluation_failure"]
+__all__ = ["Version", "Members", "BoundIntent", "SessionContext", "Operations", "Schema", "StoredReader", "check_query",
+           "query_stored", "scrubbed", "is_evaluation_failure"]
 
 #: The end cardinalities that hold one target; the others hold a collection.
 _SINGLE = frozenset({"one", "0..1"})
@@ -219,23 +229,25 @@ def _handle_of(value):
 
 
 def _atomic(method):
-    """Run the write operation ``method`` holding its transaction's lock (see "Atomicity")."""
+    """Run the write operation ``method`` holding its transaction's lock (see "Atomicity"): the session's
+    guard, once its store is known to be writable (a session over a snapshot raises ``ProtoUserError``).  A
+    replay (:mod:`proto_db.semantic.intents`) holds no lock."""
     @functools.wraps(method)
     def run(self, *args, **kwargs):
-        with self.session._transaction().semantic_operation():
+        self.session._store()
+        with self.session._guard():
             return method(self, *args, **kwargs)
     return run
 
 
 def _consistent(method):
     """Run the read ``method`` holding the lock of the session's transaction, if the session reads one (a
-    snapshot never changes): see "Atomicity"."""
+    snapshot never changes, a replay holds no lock): see "Atomicity"."""
     @functools.wraps(method)
     def run(self, *args, **kwargs):
-        from ..transactions import Transaction
-        if not isinstance(self.source, Transaction):
+        if self.session is None:
             return method(self, *args, **kwargs)
-        with self.source.semantic_operation():
+        with self.session._guard():
             return method(self, *args, **kwargs)
     return run
 
@@ -323,6 +335,8 @@ class Schema:
         self.model = model
         self._elements = {name: {e["name"]: e for e in entity.get("attributes", []) + entity.get("roles", [])}
                           for name, entity in model["entities"].items()}
+        self._intents = {name: {i["name"]: i for i in entity.get("intents", [])}
+                         for name, entity in model["entities"].items()}
         self._subtypes: dict = {}
         self._ends: dict = {}
         self._keyed: dict = {}
@@ -344,6 +358,10 @@ class Schema:
 
     def elements(self, type_name: str) -> dict:
         return self._elements.get(type_name, {})
+
+    def intent(self, type_name: str, name: str):
+        """The composed intent ``name`` of ``type_name``, or ``None``."""
+        return self._intents.get(type_name, {}).get(name)
 
     def subtypes(self, type_name: str) -> frozenset:
         found = self._subtypes.get(type_name)
@@ -412,16 +430,21 @@ class Version:
     """A version of an entity or a relationship atom, as a semantic session gives it (see "Versions and
     navigation" in the module docstring).  Immutable."""
 
-    __slots__ = ("_session", "_record", "_entity")
+    __slots__ = ("_session", "_record", "_entity", "_bound")
 
-    def __init__(self, session, record, entity: MutableObject | None = None):
+    def __init__(self, session, record, entity: MutableObject | None = None, bound: bool = False):
         object.__setattr__(self, "_session", session)
         object.__setattr__(self, "_record", record)
         object.__setattr__(self, "_entity", entity)
+        object.__setattr__(self, "_bound", bound)       # the version a role binds, not the cell's
 
     @property
     def record(self):
-        """The stored record (a ``DBObject`` of the type's semantic class)."""
+        """The stored record (a ``DBObject`` of the type's semantic class).  In intent mode, reading what it
+        holds may decide anything, so taking it is a fine read of the whole cell
+        (:mod:`proto_db.semantic.intents`)."""
+        if self._session is not None:
+            self._session._record_read(self)
         return self._record
 
     @property
@@ -459,6 +482,69 @@ class Version:
     def __repr__(self):
         where = self._entity.name if self._entity is not None else type(self._record).__type_name__
         return f"<Version of {where}: {self._record!r}>"
+
+
+class BoundIntent:
+    """An intent of a version the session gave, as attribute access returns it (``order.add_line``): calling
+    it binds the arguments to the intent's signature and invokes it through the session
+    (:meth:`~proto_db.semantic.SemanticSession.invoke`), which applies it in direct mode and logs and applies
+    it in intent mode.  Called while an intent runs, it runs as part of that intent."""
+
+    __slots__ = ("_session", "_version", "_invoker")
+
+    def __init__(self, session, version: Version, invoker):
+        self._session = session
+        self._version = version
+        self._invoker = invoker
+
+    @property
+    def name(self) -> str:
+        """The intent's name."""
+        return self._invoker.name
+
+    def __call__(self, *args, **kwargs):
+        from .classes import _arguments
+        arguments = _arguments(self._invoker._function, self._version._record, args, kwargs)
+        return self._session.invoke(self._version, self.name, **arguments)
+
+    def __repr__(self) -> str:
+        return f"<intent {self.name!r} of {self._version!r}>"
+
+
+class SessionContext(IntentContext):
+    """The :class:`~proto_db.semantic.IntentContext` of an intent invoked through a session: ``target`` is the
+    target's handle, and the operations are the session's (direct mode: the transaction's cells; intent mode:
+    the record view, then the replay's cells).  The receiver passed to the implementation (``self``, the
+    target's stored record) names the target wherever an entity is expected (``order=self``)."""
+
+    def __init__(self, operations: "Operations", target: MutableObject, receiver):
+        super().__init__(target)
+        self._operations = operations
+        self._receiver = receiver
+
+    def _entity(self, value):
+        return self.target if value is self._receiver else value
+
+    def _given(self, given: Mapping) -> dict:
+        return {name: self._entity(value) for name, value in given.items()}
+
+    def create(self, type_name: str, **fields):
+        return self._operations.create(type_name, self._given(fields))
+
+    def get(self, handle):
+        return self._operations.get(self._entity(handle))
+
+    def update(self, handle, **changes):
+        self._operations.update(self._entity(handle), changes)
+
+    def link(self, source, role: str, target):
+        self._operations.link(self._entity(source), role, self._entity(target))
+
+    def unlink(self, source, role: str, target):
+        self._operations.link(self._entity(source), role, self._entity(target), add=False)
+
+    def relate(self, type_name: str, **roles_and_fields):
+        return self._operations.relate(type_name, self._given(roles_and_fields))
 
 
 class Members:
@@ -508,7 +594,7 @@ class Members:
 
     def __contains__(self, item) -> bool:
         raw = item.entity if isinstance(item, Version) and item.entity is not None else \
-            item.record if isinstance(item, Version) else item
+            item._record if isinstance(item, Version) else item
         try:
             wanted = _identity(raw)
         except ProtoValidationError:
@@ -552,18 +638,26 @@ class Operations:
     """The operations of one semantic session (see the module docstring); built per call by the session.
     With ``schema=None`` it is the query engine over stored structure alone (:func:`query_stored`)."""
 
-    __slots__ = ("session", "source", "schema", "reader")
+    __slots__ = ("session", "source", "schema", "reader", "tracker", "_resolver")
 
-    def __init__(self, session, source, schema: Schema | None, reader: Reader | None = None):
+    def __init__(self, session, source, schema: Schema | None, reader: Reader | None = None, tracker=None):
+        """``tracker``: the intent log whose fine reads this call's reads enter (intent mode, a read the caller
+        decides on; :mod:`proto_db.semantic.intents`), else ``None``."""
         self.session = session
         self.source = source
         self.schema = schema
-        self.reader = _SessionReader(source) if reader is None else reader
+        self.tracker = tracker
+        self._resolver = source
+        if tracker is not None:
+            from .intents import Tracking
+            self._resolver = Tracking(source, tracker)
+        self.reader = _SessionReader(self._resolver) if reader is None else reader
 
     @contextlib.contextmanager
     def reading(self):
-        """Resolution and evaluation read with the session's source as the reader (its registry)."""
-        token = resolution.set_reader(self.source)
+        """Resolution and evaluation read with the session's source as the reader (its registry); a tracked
+        read, through the view that records the cells it reads."""
+        token = resolution.set_reader(self._resolver)
         try:
             yield
         finally:
@@ -603,7 +697,7 @@ class Operations:
             record = self.source.get_mutable(raw.name)
             return None if record is None else Version(self.session, record, raw)
         if isinstance(raw, dict) and isinstance(raw.get("entity"), MutableObject):
-            return Version(self.session, raw["version"], raw["entity"])
+            return Version(self.session, raw["version"], raw["entity"], bound=True)
         if is_atom(raw):
             return Version(self.session, raw, None)
         raise _operand_error(f"A role holds records, identity handles or version-bound references, not "
@@ -611,7 +705,7 @@ class Operations:
 
     def _write(self, handle: MutableObject, old, new) -> None:
         """Write ``new`` in ``handle``'s cell and move the aggregates ``old`` contributed to."""
-        self.session._transaction().set_mutable(handle.name, new)
+        self.session._store().set_mutable(handle.name, new)
         self._propagate(old, new)
 
     def _same_fields(self, type_name: str, one, other) -> bool:
@@ -626,7 +720,7 @@ class Operations:
         ``{"entity", "version"}`` with its field version (see "Storage").  The rule is history-free: the
         committed record while the fields equal it; otherwise the record kept for the transaction while the
         fields equal it; otherwise ``record``, kept from now on."""
-        tr = self.session._transaction()
+        tr = self.session._store()
         committed = tr.snapshot_mutable(handle.name)
         if committed is not None and self._same_fields(type_name, committed, record):
             return {"entity": handle, "version": committed}
@@ -645,26 +739,50 @@ class Operations:
         record, _ = self.record(handle, "get")
         return Version(self.session, record, handle)
 
+    def _track(self, cell: str | None, attribute: str | None) -> None:
+        """Record a fine read of ``attribute`` (``None``: the whole cell) of the entity ``cell`` when this
+        call tracks (intent mode, a read the caller decides on); ``cell`` ``None`` (a bound version, an atom:
+        nothing that changes) records nothing."""
+        if self.tracker is not None and cell is not None:
+            self.tracker.read(cell, attribute)
+
+    @staticmethod
+    def _cell_of(version: Version) -> str | None:
+        """The cell ``version`` was read from, or ``None`` (a relationship atom, a bound version)."""
+        return None if version.entity is None or version._bound else version.entity.name
+
     @_consistent
     def attribute(self, version: Version, name: str):
-        record = version.record
+        record = version._record
         type_name = type(record).__type_name__
+        if self.schema.intent(type_name, name) is not None:
+            from .classes import IntentInvoker
+            with self.reading():
+                found = resolution.resolve(record, name)[0]
+            if not isinstance(found, IntentInvoker):
+                raise _invalid(f"The catalog describes the intent {name!r} of {type_name!r}, and the registry resolves "
+                               f"{name!r} to {type(found).__name__}, not an intent")
+            return BoundIntent(self.session, version, found)
         element = self.schema.element(type_name, name)
         if element is not None and "target" in element:
             return self.navigate(version, name)
+        stored = element is not None and _kind(element) in ("field", "computed_stored")
+        self._track(self._cell_of(version), name if stored else None)
         with self.reading():
             return record[name]
 
     @_consistent
     def navigate(self, source, role: str):
         if isinstance(source, Version):
-            record = source.record
+            record, cell = source._record, self._cell_of(source)
         else:
-            record, _ = self.record(self.handle(source, "navigate"), "navigate")
+            handle = self.handle(source, "navigate")
+            (record, _), cell = self.record(handle, "navigate"), handle.name
         type_name = type(record).__type_name__
         element = self.schema.element(type_name, role)
         if element is None or "target" not in element:
             raise _invalid(f"{type_name!r} has no role {role!r}")
+        self._track(cell, role)
         value = _stored_step(record, role)
         if _single(element):
             return self.version_of(value)
@@ -724,7 +842,7 @@ class Operations:
     # -- collections --------------------------------------------------------------------------------------
 
     def _new_collection(self, info: _EndIndex):
-        tr = self.session._transaction()
+        tr = self.session._store()
         collection = tr.new_list() if info.ordered else tr.new_set()
         for name, key in info.indexes:
             collection = collection.add_index(RangeIndex(name, key))
@@ -800,7 +918,7 @@ class Operations:
         position, element = found
         entry = self._entry(raw, new_key)
         collection = collection.set_at(position, entry) if info.ordered else collection.remove(element).add(entry)
-        self.session._transaction().set_mutable(owner_handle.name, owner.with_(**{info.end: collection}))
+        self.session._store().set_mutable(owner_handle.name, owner.with_(**{info.end: collection}))
 
     def _owner_of(self, info: _EndIndex, member):
         """The handle of the entity whose end ``info`` holds ``member`` (a record), through the inverse."""
@@ -877,7 +995,7 @@ class Operations:
 
     @_atomic
     def create(self, type_name: str, given: Mapping) -> MutableObject:
-        tr = self.session._transaction()
+        tr = self.session._store()
         where = f"create({type_name!r})"
         entity = self.schema.entity(type_name)
         if "roles" in entity:
@@ -897,14 +1015,13 @@ class Operations:
                                 where=f"{where}, {element['name']}")
         with self.reading():
             record = cls(**fields, **self._initial_aggregates(type_name, where))
-        handle = tr.new_mutable(f"{type_name}#{uuid.uuid4().hex}", record)
+        handle = tr.new_mutable(self.session._new_cell(type_name), record)
         for element, (target, _, _) in links:
             self._apply_link(handle, element, target)
         return handle
 
     @_atomic
     def update(self, handle, changes: Mapping) -> None:
-        self.session._transaction()
         handle = self.handle(handle, "update")
         where = f"update({handle.name!r})"
         old, type_name = self.record(handle, where)
@@ -982,7 +1099,7 @@ class Operations:
             owner = self._owner_of(info, new)
             if owner is not None:
                 rekeys.append((owner, info, self._key(info, record), self._key(info, new)))
-        self.session._transaction().set_mutable(handle.name, new)
+        self.session._store().set_mutable(handle.name, new)
         for owner, info, old_key, new_key in rekeys:
             self._rekey(owner, info, handle, old_key, new_key)
 
@@ -995,7 +1112,6 @@ class Operations:
 
     @_atomic
     def link(self, source, role: str, target, add: bool = True) -> None:
-        self.session._transaction()
         verb = "link" if add else "unlink"
         handle = self.handle(source, verb)
         where = f"{verb}({handle.name!r}, {role!r})"
@@ -1010,7 +1126,6 @@ class Operations:
 
     @_atomic
     def relate(self, type_name: str, given: Mapping) -> Version:
-        self.session._transaction()
         where = f"relate({type_name!r})"
         entity = self.schema.entity(type_name)
         if "roles" not in entity:
@@ -1042,6 +1157,46 @@ class Operations:
             record, target_type = self.record(handle, where)
             self._write(handle, record, self._with_member(record, target_type, inverse, atom, atom, True, fresh=True))
         return Version(self.session, atom, None)
+
+    # -- intents (spec sections 4 and 9; R278) -----------------------------------------------------------
+
+    @_atomic
+    def invoke(self, target, name: str, arguments: Mapping):
+        """Invoke the intent ``name`` on the entity ``target`` (a handle or a version) with ``arguments`` (by
+        parameter name): its ``requires`` is checked on the target's current version, then its
+        implementation, found by D62 resolution (so ``_super()`` works), runs with :func:`intent_context`
+        bound to a :class:`SessionContext` over these operations.  A result that is a new version of the
+        receiver (``self.with_(...)``) updates the target, and the target's current version is returned;
+        any other result is returned as it is."""
+        from .classes import _invoke
+        if not isinstance(name, str) or not name:
+            raise _invalid(f"An intent is named by a non-empty str, not {name!r}")
+        handle = self.handle(target, f"invoke({name!r})")
+        where = f"The intent {name!r} of {handle.name!r}"
+        record, type_name = self.record(handle, where)
+        element = self.schema.intent(type_name, name)
+        if element is None:
+            raise _invalid(f"{where}: {type_name!r} has no intent named {name!r}")
+        self._check_requires(handle, record, type_name, element)
+        with self.reading():
+            result = _invoke(record, name, arguments, SessionContext(self, handle, record))
+        if isinstance(result, DBObject) and type(result) is type(record):
+            return self.get(handle)
+        return result
+
+    def _check_requires(self, handle: MutableObject, record, type_name: str, element: Mapping) -> None:
+        """The intent's ``requires`` on ``record``, the target's current version: false (MISSING counts
+        false) is ``ProtoValidationError`` naming ``<type>.<intent>.requires`` and the intent's meaning (spec
+        section 9; preflight F26: Task 9 makes it ``ProtoConstraintError``)."""
+        requires = element.get("requires")
+        if requires is None:
+            return
+        if _truth("requires", self._evaluate(requires["ast"], record), "the requires of an intent"):
+            return
+        constraint = f"{type_name}.{element['name']}.requires"
+        meaning = element.get("meaning")
+        raise _invalid(f"The intent {element['name']!r} does not apply to {handle.name!r}: {constraint} is false on "
+                       f"its current version" + (f" ({meaning})" if meaning else ""))
 
     # -- the query engine (preflight F17, F18) ---------------------------------------------------------
 
@@ -1121,7 +1276,7 @@ class Operations:
         a bare root) through ``roles``, as ``via`` reaches them (format spec, "Traversal"), keeping the
         stored value (the handle) beside the record it designates."""
         if origin[0] == "cell":
-            found = self.source.get_mutable(origin[1])
+            found = self.reader.cell(origin[1])
             current = [] if found is None else [(MutableObject(origin[1]), found)]
         else:
             current = self._reached(self.reader.members(self.reader.root(origin[1])))
@@ -1185,7 +1340,7 @@ class Operations:
         return kept, {**source, "plan": None, "indexed": [], "residual": copy.deepcopy(conjuncts)}, member_type, used
 
     def _row_version(self, raw, member) -> Version:
-        return Version(self.session, member, _handle_of(raw))
+        return Version(self.session, member, _handle_of(raw), bound=isinstance(raw, dict))
 
     def _satisfying(self, pairs, conjuncts) -> list:
         """The ``(stored value, member)`` pairs whose member satisfies every conjunct."""

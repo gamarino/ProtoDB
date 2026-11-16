@@ -27,6 +27,7 @@ MAPPING = {
     "acme_ghost": f"{_PACKAGE}.acme_ghost",
     "acme_keyed": f"{_PACKAGE}.acme_keyed",
     "acme_leaky": f"{_PACKAGE}.acme_leaky",
+    "acme_audit": f"{_PACKAGE}.acme_audit",
     **{f"r282_{field}": f"{_PACKAGE}.acme_r282" for field in ("value_type", "cardinality", "target", "binding",
                                                                "kind")},
     **{f"semc_0{i}": f"{_PACKAGE}.semc_0{i}" for i in range(1, 9)},

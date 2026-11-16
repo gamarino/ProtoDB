@@ -107,7 +107,10 @@ sees each call happen entirely before or after the others: a commit or an abort 
 for a semantic operation in progress, and an operation that waited for a commit fails before its first
 step. Iterating the members of a ``many`` end is many calls, each one atomic, not one. Ending a transaction
 from inside one of its semantic operations on the same thread (from a computed attribute, for example) is
-refused with ``ProtoUserError``. The test suite runs on free-threaded CPython 3.14t and with the GIL.
+refused with ``ProtoUserError``. An intent transaction (``intents=True``) is replayed at commit under the
+root lock, possibly by a group-commit leader in another thread while the owner's thread holds the
+transaction's lock and waits; the replay takes no transaction's lock, so it adds no wait to that order. The
+test suite runs on free-threaded CPython 3.14t and with the GIL.
 
 Interrupts and signal handlers on Python 3.14
 ---------------------------------------------

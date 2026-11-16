@@ -37,10 +37,13 @@ Semantic classes
 Intents (spec sections 4 and 9, R278)
     An intent method found by resolution is bound to an :class:`IntentInvoker`.  Every call is routed
     through :func:`_invoke`, which runs the implementation with :func:`intent_context` bound; a call on
-    a version that no ``SemanticSession`` gave raises ``ProtoUserError`` (sessions arrive with Task 8,
-    which supplies the context).  Inside a running intent, an intent called on any version (also
-    through ``_super()``) runs directly as part of it.  An intent that returns a new version of its
-    receiver updates the target through ``context.update``.
+    a version that no ``SemanticSession`` gave raises ``ProtoUserError``.  A version the session gave
+    invokes through the session (``proto_db.semantic.entities.BoundIntent``), which supplies the
+    context and, in intent mode, logs the call (:mod:`proto_db.semantic.intents`).  Inside a running
+    intent, an intent called on any version (also through ``_super()``) runs as part of it.  An intent
+    that returns a new version of its receiver updates the target through ``context.update``.  An
+    intent may not be named like a logged session operation (:data:`PRIMITIVES`): its log records
+    would read as that operation's.
 """
 from __future__ import annotations
 
@@ -61,6 +64,8 @@ __all__ = ["Extension", "Relationship", "IntentContext", "IntentInvoker", "inten
 #: Class-body names that configure a declaration and are not elements.
 _CONFIG = frozenset({"__type_name__", "__type_aliases__", "__registry_module__"})
 _EXTENSION_CONFIG = frozenset({"__extends__", "__parents__", "__registry_module__"})
+#: The session operations an intent log records by name beside the intents (spec section 9).
+PRIMITIVES = frozenset({"create", "update", "link", "unlink", "relate"})
 
 
 class Relationship(DBObject):
@@ -111,6 +116,9 @@ def _check_elements(where: str, definitions: Mapping) -> bool:
                                            f"descriptor object declares one attribute")
             participant = participant or isinstance(value, Role)
         elif kind == _registry.METHOD and _registry._is_intent(value):
+            if name in PRIMITIVES:
+                raise ProtoValidationError(f"{where}: an intent may not be named {name!r}: the intent log records the "
+                                           f"session operation of that name, and the two would read alike")
             spec = value.__proto_intent__
             named = getattr(spec, "name", None)
             if named is None:
@@ -291,8 +299,9 @@ _RUNNING: contextvars.ContextVar = contextvars.ContextVar("proto_db_intent_conte
 class IntentContext:
     """What :func:`intent_context` returns while an intent runs (R278): ``target`` (the handle of the
     entity the intent was invoked on) and the operations ``create``, ``get``, ``update``, ``link``,
-    ``unlink`` and ``relate``.  This base class defines the protocol; the semantic session implements
-    it (Task 8), and every operation here raises ``NotImplementedError``."""
+    ``unlink`` and ``relate``.  This base class defines the protocol, and every operation here raises
+    ``NotImplementedError``; the semantic session implements it
+    (:class:`proto_db.semantic.entities.SessionContext`)."""
 
     def __init__(self, target):
         self.target = target

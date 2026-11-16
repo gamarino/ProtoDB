@@ -1991,7 +1991,24 @@ records: those of the commit that wrote this version of the database, in the ord
 ran, and nothing older (history is the chain of versions, `Space and database roots`_). A value
 that is not a ``List``, or an element that is not an IntentRecord, is ``ProtoCorruptionError``
 when read. ``IntentRecord.transaction`` is the ``version`` of the DatabaseRoot the commit
-produced. A database that never used intents has no ``__intentLog``.
+produced. A database that never used intents has no ``__intentLog``; a commit that records no
+operation writes none, and so removes the one the version before held.
+
+Each record is one top-level operation of an intent transaction: an intent invocation or one of the
+five primitives ``create``, ``update``, ``link``, ``unlink`` and ``relate`` (an intent **MUST NOT**
+be named like a primitive, so the two never read alike).
+
+- ``intent`` is the pair of a type name and the intent's or the primitive's name. The type is the
+  target's (the created entity's for ``create``), and the relationship's for ``relate``.
+- ``target`` is the cell of the entity the operation applies to: the new cell for ``create``, the
+  entity whose role changes for ``link`` and ``unlink``, and for ``relate`` the entity bound to the
+  relationship's first role in declaration order.
+- ``arguments`` are the intent's parameters; the fields and roles given to ``create``, ``update``
+  and ``relate``; and ``{"role", "target"}`` for ``link`` and ``unlink``. An entity is carried as
+  its cell name. The cells an operation creates other than its target (those an intent creates)
+  are listed, in creation order, under the key ``#created``, which no parameter name can take.
+  Their names are drawn when the operation is recorded and reused when it is replayed at commit,
+  which draws none (R260).
 
 
 Framed log files
