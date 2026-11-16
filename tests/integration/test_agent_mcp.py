@@ -19,6 +19,7 @@ from mcp import ClientSession, StdioServerParameters  # noqa: E402
 from mcp.client.stdio import stdio_client  # noqa: E402
 
 from proto_db import FileStorage, ObjectSpace  # noqa: E402
+from proto_db.semantic import semantic  # noqa: E402
 from tests.unit.semantic_modules import MAPPING  # noqa: E402
 
 pytestmark = [pytest.mark.timeout(120)]
@@ -26,19 +27,27 @@ pytestmark = [pytest.mark.timeout(120)]
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
-async def _session_calls(path: str):
-    parameters = StdioServerParameters(
+def _parameters(path: str, *extra: str) -> StdioServerParameters:
+    return StdioServerParameters(
         command=sys.executable,
         args=["-m", "proto_db.agent", "--path", path, "--database", "acme",
-              "--mapping", f"acme_sales={MAPPING['acme_sales']}"],
+              "--mapping", f"acme_sales={MAPPING['acme_sales']}", *extra],
         cwd=REPO, env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"))
-    async with stdio_client(parameters) as (read, write):
+
+
+async def _session_calls(path: str):
+    async with stdio_client(_parameters(path)) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
             tools = await session.list_tools()
             described = await session.call_tool("describe", {"type_name": "acme.sales.Order"})
             missing = await session.call_tool("describe", {"type_name": "acme.ads.Campaign"})
-            return tools, described, missing
+            listed = await session.call_tool("list_entities", {"filter": "acme.core.Company", "limit": 5})
+    async with stdio_client(_parameters(path, "--raw")) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            raw = await session.call_tool("list_entities", {})
+    return tools, described, missing, listed, raw
 
 
 def test_mcp_server_lists_the_four_tools_and_answers_describe(tmp_path):
@@ -47,9 +56,10 @@ def test_mcp_server_lists_the_four_tools_and_answers_describe(tmp_path):
     try:
         db = space.new_database("acme")
         db.run(lambda tr: tr.install_module("acme_sales"))
+        company = db.run(lambda tr: semantic(tr).create("acme.core.Company", name="ACME")).name
     finally:
         space.close()
-    tools, described, missing = asyncio.run(_session_calls(path))
+    tools, described, missing, listed, raw = asyncio.run(_session_calls(path))
     assert sorted(tool.name for tool in tools.tools) == ["check_answerable", "describe", "list_entities", "query"]
     assert not described.isError
     order = json.loads(described.content[0].text)
@@ -57,3 +67,8 @@ def test_mcp_server_lists_the_four_tools_and_answers_describe(tmp_path):
     number = next(e for e in order["attributes"] if e["name"] == "number")
     assert number["provenance"] == ["acme_sales"] and number["label"] == {"und": "Number"}
     assert missing.isError and "acme.ads.Campaign" in missing.content[0].text
+    assert json.loads(listed.content[0].text) == {"entities": [
+        {"type_name": "acme.core.Company", "label": {"und": "Company"},
+         "meaning": "The company that sells: it has customers, products and orders", "cells": [company]}],
+        "next": None}
+    assert json.loads(raw.content[0].text) == {"roots": [], "cells": [company], "next": None}

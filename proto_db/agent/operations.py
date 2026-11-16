@@ -7,58 +7,68 @@ snapshot of a fresh transaction's ``snapshot_ref``), or, for :func:`query`, the 
 Every answer is JSON-ready (:func:`to_json`).  This module imports no third-party package; the MCP server
 (:mod:`proto_db.agent.mcp_server`) serves these operations as tools of the same names.
 
-- :func:`list_entities` and :func:`describe` are the semantic session's, as JSON.
+- :func:`list_entities` says where an agent starts: the catalog's types (label, meaning) and, per type, the
+  names of the cells holding its entities, a bounded page at a time (a ``limit`` and a ``next`` token that
+  reads the same version).  :func:`describe` is the semantic session's, as JSON.
 - :func:`check_answerable` says whether the catalog names every term of a question (R274): a **match** is a
   case-folded, exact equality with the name, a label or a synonym of an entity, an attribute or a role; a
   term without a match is **unmatched**; a **suggestion** (for an unmatched term) is a name, label or synonym
   that contains it, and is never presented as a match (S7).  ``answerable`` is true when there are terms and
   every one of them matched.
-- :func:`query` opens a semantic session over the snapshot and runs :meth:`SemanticSession.query
-  <proto_db.semantic.session.SemanticSession.query>`, the single query engine (preflight F18): ``of_type``
-  keeps the rows whose type is that type or one of its subtypes, ``where`` goes to the planner where it can
-  answer it exactly and is a residual otherwise, and ``version`` is the version read, ``{"number", "ref"}``
-  (F23; ``as_of`` takes that ``ref``).
+- :func:`query` runs the session's single query engine (preflight F18): in catalog mode through
+  :meth:`SemanticSession.query <proto_db.semantic.session.SemanticSession.query>` on a session over the
+  snapshot, in raw mode through :func:`~proto_db.semantic.entities.query_stored`, the same engine without the
+  catalog.  ``of_type`` keeps the rows whose type is that type or one of its subtypes, ``where`` goes to the
+  planner where it can answer it exactly and is a residual otherwise, and ``version`` is the version read,
+  ``{"number", "ref"}`` (F23; ``as_of`` takes that ``ref``).  The tree's shape is checked by the engine's
+  own check (:func:`~proto_db.semantic.entities.check_query`).
 
 Rows
     A row of a query without an aggregate is ``{"entity": {"cell": name} | None, "type_name", "values"}``:
     the cell of the entity it reads (``None`` for a relationship atom, which has no identity), its type, and
     its values.  Without ``select`` the values are the type's catalogued attributes (fields, computed
-    attributes, maintained aggregates) and its ``one`` roles; with it, the selected paths.  A value the
-    element does not have (MISSING) is left out.  A role's value is the cell it designates
-    (``{"cell": name}``, also for a version-bound role), a record held inside another
-    ``{"record": type name}``, a collection ``{"collection": "list" | "set", "count": n}``; ``from``
-    reaches what they hold.  An aggregate query answers ``[{"sum": value}]`` or ``[{"count": n}]``.
+    attributes, maintained aggregates) and its ``one`` roles (raw mode: the record's stored attributes); with
+    it, the selected paths.  A value the element does not have (MISSING) is left out.  A role's value is the
+    cell it designates (``{"cell": name}``); a version-bound role is ``{"entity": {"cell": name}, "version":
+    {"type_name", "values"}}``, the version it binds (the product as sold), whose own roles, records and
+    collections are shown as below; a record held inside another is ``{"record": type name}``, a collection
+    ``{"collection": "list" | "set", "count": n}``; ``from`` reaches what they hold.  An aggregate query
+    answers ``[{"sum": value}]`` or ``[{"count": n}]``.
 
 Sensitivity (spec section 11; ``describe`` lists every attribute, ``query`` omits the personal ones)
     An attribute or role whose ``sensitivity`` is ``personal`` or ``secret`` never reaches the agent, neither
-    as a value nor through what a query computes from it.  The check is static, over the catalog, before
-    anything is read, and it is conservative: where the members' type is not known (a ``root`` origin), every
-    type of the catalog is a candidate; a step is withheld when it is withheld in any candidate type (a
-    subtype included); a computed attribute or an aggregate is withheld when its expression reads a withheld
-    attribute, at any depth and across roles, and a computed attribute whose expression is Python-only is
-    withheld, since what it reads cannot be checked.
+    as a value nor through what a query computes from it.  A computed attribute or an aggregate is withheld
+    when its expression reads a withheld attribute, at any depth and across roles, and a computed attribute
+    whose expression is Python-only is withheld, since what it reads cannot be checked.
 
-    - A ``from``, ``where`` or ``aggregate`` that reads a withheld attribute is refused
-      (``ProtoValidationError`` naming it): a filter or a sum over a personal value discloses it.
-    - A selected path that reads one is omitted from every row; ``terms`` lists its element with
-      ``"sensitivity"`` and ``"withheld": True``, so the agent knows what it did not get and why.
+    - A ``from``, ``where`` or ``aggregate`` that reads a withheld attribute is refused before anything is
+      read (``ProtoValidationError`` naming it): a filter or a sum over a personal value discloses it.  The
+      check is static and conservative: where the members' type is not known (a ``root`` origin), every type
+      of the catalog is a candidate, and a step is withheld when it is withheld in any candidate type (a
+      subtype included).
+    - A value a row would show is checked against that row's own type: a selected path that reads a withheld
+      attribute is omitted from that row (the default selection the same way), and ``terms`` lists the
+      withheld element with ``"sensitivity"`` and ``"withheld": True``, so the agent knows what it did not
+      get and why.
 
 Raw mode (``raw=True``; the agent experiment's control group)
-    The catalog is not reported: :func:`list_entities` lists the types of the records held by cells
-    (``{"type_name", "cells"}``) and the roots that are not reserved (``{"root", "type_name"}``);
-    :func:`describe` gives what the stored records of a type hold (attribute names and the kinds of the
-    values stored); :func:`check_answerable` matches stored type and attribute names; :func:`query` runs the
-    same tree with the expression evaluator over the stored values alone: no catalogued defaults, no
-    subtypes (``of_type`` is the stored type), no index planning (``explain`` has no plan, every conjunct is
-    a residual), no ``terms``.  Reserved roots (``__`` names) cannot be read.  Sensitivity still holds: when
-    the database has a catalog, its personal and secret attributes are withheld exactly as above (the
-    catalog decides what is withheld; nothing of it is reported).
+    The catalog is not reported.  :func:`list_entities` lists the names of the roots (reserved ``__`` roots
+    excepted) and of the cells (spec section 11), paged as above; :func:`describe` gives what the stored
+    records of a type hold (attribute names and the kinds of the values stored); :func:`check_answerable`
+    matches stored type and attribute names; :func:`query` runs the same engine over the stored values alone:
+    no catalogued defaults, no subtypes (``of_type`` is the stored type), no ``terms``, and index planning
+    where the stored structure allows it (a collection of records; never the entries of a maintained key,
+    whose key only the catalog explains).  Reserved roots are not available.  Sensitivity still holds: when
+    the database has a catalog, its personal and secret attributes are withheld as above, and a refusal says
+    only that an attribute is not available (it names no catalog type and no sensitivity).
 """
 from __future__ import annotations
 
 import base64
 import binascii
+import bisect
 import datetime
+import json
 from collections.abc import Mapping
 from decimal import Decimal, InvalidOperation
 
@@ -66,19 +76,16 @@ from ..collections.lists import List
 from ..collections.sets import Set
 from ..core.dbobject import DBObject
 from ..errors import ProtoNotSupportedError, ProtoUserError, ProtoValidationError
-from ..indexing.keyspec import _step as _stored_step
 from ..semantic import semantic
 from ..semantic import compose as _compose
-from ..semantic.expressions import (Reader, _arithmetic, _identity, _number, _truth, check_ast, evaluate,
-                                    unwrap_entry)
-from ..values import MISSING, MutableObject, is_atom
+from ..semantic.entities import check_query, query_stored
+from ..semantic.expressions import unwrap_entry
+from ..values import MutableObject, is_atom
 
 __all__ = ["list_entities", "describe", "check_answerable", "query", "to_json", "from_json"]
 
 #: The sensitivities kept from agents (spec section 11).
 WITHHELD = frozenset({"personal", "secret"})
-#: The keys of a query tree (spec section 11).
-_QUERY_KEYS = frozenset({"from", "of_type", "where", "select", "aggregate", "as_of"})
 #: The one-key objects :func:`from_json` reads as typed values.
 _TYPED = ("decimal", "date", "time", "datetime", "bytes", "cell")
 
@@ -149,17 +156,35 @@ def from_json(value):
     return {key: from_json(item) for key, item in value.items()}
 
 
-def _shallow(value):
-    """A row's value: what a role, a record or a collection holds is reached with ``from``, not inlined
-    (see "Rows")."""
-    if isinstance(value, dict) and value.keys() == {"entity", "version"} and isinstance(value["entity"],
-                                                                                         MutableObject):
-        return {"cell": value["entity"].name}
+def _bound(value) -> bool:
+    return isinstance(value, dict) and value.keys() == {"entity", "version"} \
+        and isinstance(value["entity"], MutableObject) and is_atom(value["version"])
+
+
+def _flat(value):
+    """A value inside a row: what a role, a record or a collection holds is reached with ``from``, not
+    inlined (see "Rows")."""
+    if _bound(value):
+        return {"entity": {"cell": value["entity"].name}, "version": {"record": _stored_type(value["version"])}}
     if isinstance(value, (List, Set)):
         return {"collection": "list" if isinstance(value, List) else "set", "count": value.count}
     if isinstance(value, DBObject) and is_atom(value):
-        return {"record": getattr(type(value), "__type_name__", None)}
+        return {"record": _stored_type(value)}
     return to_json(value)
+
+
+def _value(value, policy: "_Withholding"):
+    """A row's value: :func:`_flat`, except that a version-bound role shows the version it binds (the
+    product as sold): ``{"entity": {"cell"}, "version": {"type_name", "values"}}``, its values withheld as a
+    row's are."""
+    if not _bound(value):
+        return _flat(value)
+    record = value["version"]
+    type_name = _stored_type(record)
+    return {"entity": {"cell": value["entity"].name},
+            "version": {"type_name": type_name,
+                        "values": {name: _flat(item) for name, item in record._own.items()
+                                   if not policy.withheld(type_name, [name])}}}
 
 
 # -- the version read ----------------------------------------------------------------------------------------
@@ -208,8 +233,9 @@ def _catalog_or_none(snapshot):
 class _Withholding:
     """The static sensitivity check of a query over a catalog model (see "Sensitivity")."""
 
-    def __init__(self, model: Mapping | None):
+    def __init__(self, model: Mapping | None, *, raw: bool = False):
         self.model = model
+        self.raw = raw
         self.entities = {} if model is None else model["entities"]
         self.elements = {name: {e["name"]: e for e in entity.get("attributes", []) + entity.get("roles", [])}
                          for name, entity in self.entities.items()}
@@ -313,7 +339,14 @@ class _Withholding:
                 return finding
         return None
 
+    def withheld(self, type_name: str, steps) -> bool:
+        """Whether the path ``steps`` read on a member of ``type_name`` reads a withheld attribute (a type
+        the catalog does not describe may be any of its types)."""
+        return self.path(frozenset({type_name}) if type_name in self.entities else None, steps)[0] is not None
+
     def refuse(self, part: str, finding) -> None:
+        if finding is not None and self.raw:
+            raise ProtoValidationError(f"The query's {part} reads an attribute that is not available")
         if finding is not None:
             type_name, name, sensitivity = finding
             raise ProtoValidationError(f"The query's {part} reads the attribute {name!r} of {type_name}, which is "
@@ -333,28 +366,74 @@ class _Withholding:
 
 # -- list_entities and describe ------------------------------------------------------------------------------
 
-def list_entities(db, filter: str | None = None, *, raw: bool = False) -> list:
-    """The types the catalog describes, ``{"type_name", "label", "meaning"}`` each, filtered as
-    :meth:`SemanticSession.list_entities <proto_db.semantic.session.SemanticSession.list_entities>` does.
-    Raw mode: see the module docstring."""
-    snapshot = _snapshot(db)
-    if not raw:
-        return to_json(semantic(snapshot).list_entities(filter))
+#: The default and the largest number of cell names one page of :func:`list_entities` gives.
+LIST_LIMIT, LIST_LIMIT_MAX = 100, 1000
+
+
+def _page_start(db, limit, after) -> tuple:
+    """``(snapshot, the cell name the page starts after)``: a continuation token pins the version its first
+    page read, so the pages of one listing read one version."""
+    if type(limit) is not int or not 1 <= limit <= LIST_LIMIT_MAX:
+        raise ProtoValidationError(f"limit is an int from 1 to {LIST_LIMIT_MAX}, not {limit!r}")
+    if after is None:
+        return _snapshot(db), None
+    try:
+        token = json.loads(base64.b64decode(after, validate=True)) if isinstance(after, str) else None
+    except (binascii.Error, ValueError) as e:
+        raise ProtoValidationError("after is the 'next' token a list_entities answer gave") from e
+    if not isinstance(token, dict) or not isinstance(token.get("ref"), str) or not isinstance(token.get("after"), str):
+        raise ProtoValidationError("after is the 'next' token a list_entities answer gave")
+    return _snapshot(db, token["ref"]), token["after"]
+
+
+def _page(snapshot, start, keep, limit: int) -> tuple:
+    """``(the next cell names after start that keep accepts, at most limit, the continuation or None)``."""
+    names = snapshot.mutable_names
+    out, index = [], 0 if start is None else bisect.bisect_right(names, start)
+    for index in range(index, len(names)):
+        if keep(names[index]):
+            if len(out) == limit:
+                token = json.dumps({"ref": _version(snapshot)["ref"], "after": out[-1]})
+                return out, base64.b64encode(token.encode("utf-8")).decode("ascii")
+            out.append(names[index])
+    return out, None
+
+
+def _cell_type(name: str):
+    return name.rsplit("#", 1)[0] if "#" in name else None
+
+
+def list_entities(db, filter: str | None = None, *, limit: int = LIST_LIMIT, after: str | None = None,
+                  raw: bool = False) -> dict:
+    """Where an agent starts: ``{"entities": [{"type_name", "label", "meaning", "cells"}], "next"}``.  The
+    types are those the catalog describes, filtered as :meth:`SemanticSession.list_entities
+    <proto_db.semantic.session.SemanticSession.list_entities>` does; ``cells`` are the names of the cells
+    holding entities of exactly that type (R260: ``<type name>#<hex>``), at most ``limit`` names in all, in
+    name order.  ``next`` is ``None`` when the listing is complete, else the token to pass as ``after`` for
+    the next page, which reads the same version.
+
+    Raw mode lists the stored structure only (spec section 11): ``{"roots", "cells", "next"}``, the names of
+    the roots (reserved ``__`` roots excepted) and of the cells, paged the same way; ``filter`` keeps the
+    names that contain it."""
     if filter is not None and not isinstance(filter, str):
         raise ProtoUserError(f"The filter of list_entities is a str or None, not {type(filter).__name__}")
-    needle = None if filter is None else filter.casefold()
-    counts: dict = {}
-    for name in snapshot.mutable_names:
-        record = snapshot.get_mutable(name)
-        type_name = _stored_type(record)
-        counts[type_name] = counts.get(type_name, 0) + 1
-    out = [{"type_name": t, "cells": n} for t, n in sorted(counts.items(), key=lambda item: str(item[0]))]
-    out += [{"root": name, "type_name": _stored_type(snapshot.get_root_object(name))}
-            for name in snapshot.root_names if not name.startswith("__")]
-    if needle is not None:
-        out = [item for item in out if any(needle in str(text).casefold()
-                                           for text in (item.get("type_name"), item.get("root")) if text)]
-    return out
+    snapshot, start = _page_start(db, limit, after)
+    if raw:
+        needle = None if filter is None else filter.casefold()
+
+        def wanted(name: str) -> bool:
+            return needle is None or needle in name.casefold()
+        cells, token = _page(snapshot, start, wanted, limit)
+        roots = [name for name in snapshot.root_names if not name.startswith("__") and wanted(name)]
+        return {"roots": roots, "cells": cells, "next": token}
+    listed = semantic(snapshot).list_entities(filter)
+    types = {entity["type_name"] for entity in listed}
+    cells, token = _page(snapshot, start, lambda name: _cell_type(name) in types, limit)
+    by_type: dict = {}
+    for name in cells:
+        by_type.setdefault(_cell_type(name), []).append(name)
+    return {"entities": [{**to_json(entity), "cells": by_type.get(entity["type_name"], [])} for entity in listed],
+            "next": token}
 
 
 def describe(db, type_name: str, *, raw: bool = False) -> dict:
@@ -493,203 +572,56 @@ def check_answerable(db, terms: list, *, raw: bool = False) -> dict:
 
 # -- query ---------------------------------------------------------------------------------------------------
 
-def _check_tree(tree) -> None:
-    if not isinstance(tree, Mapping):
-        raise ProtoValidationError(f"A query is a mapping (spec section 11), not {type(tree).__name__}")
-    unknown = sorted(set(tree) - _QUERY_KEYS)
-    if unknown:
-        raise ProtoValidationError(f"A query has the keys {sorted(_QUERY_KEYS)}; unknown keys {unknown}")
-    origin = tree.get("from")
-    if not isinstance(origin, list) or not origin or origin[0] not in ("via", "root"):
-        raise ProtoValidationError(f"A query's 'from' is a via expression or a bare root, not {origin!r}")
-    check_ast(origin, in_query=True)
-    if origin[0] == "via" and origin[1][0] == "self":
-        raise ProtoValidationError("A query has no current element: its 'from' starts at a root or a cell")
-    if tree.get("where") is not None:
-        check_ast(tree["where"], in_query=True)
-    aggregate = tree.get("aggregate")
-    if aggregate is not None:
-        if not isinstance(aggregate, list) or not aggregate or aggregate[0] not in ("sum", "count") \
-                or len(aggregate) != (2 if aggregate[0] == "sum" else 1):
-            raise ProtoValidationError(f"A query's 'aggregate' is ['sum', term] or ['count'], not {aggregate!r}")
-        if aggregate[0] == "sum":
-            check_ast(aggregate[1], in_query=True)
-    select = tree.get("select")
-    if select is not None and (isinstance(select, str) or not isinstance(select, (list, tuple))
-                               or not all(isinstance(n, str) and n and all(n.split(".")) for n in select)):
-        raise ProtoValidationError(f"A query's 'select' is a list of attribute paths, not {select!r}")
-
-
-def _from_types(policy: _Withholding, origin):
-    """``(finding, member types)`` of a query's ``from``."""
-    if origin[0] == "root":
-        return None, None
-    return policy.via_types(origin, None, frozenset())
-
-
-def _screen(policy: _Withholding, tree) -> tuple:
-    """Refuse a ``from``, ``where`` or ``aggregate`` that reads a withheld attribute; return ``(select to
-    run or None, withheld term entries, the row types a default selection is computed for)``."""
-    finding, types = _from_types(policy, tree["from"])
+def _screen(policy: _Withholding, tree) -> frozenset | None:
+    """Refuse a ``from``, ``where`` or ``aggregate`` that reads a withheld attribute (see "Sensitivity");
+    return the types the members may have (``None``: any), for the default selection."""
+    origin = tree["from"]
+    finding, types = (None, None) if origin[0] == "root" else policy.via_types(origin, None, frozenset())
     policy.refuse("'from'", finding)
     policy.refuse("'where'", None if tree.get("where") is None else policy.tree(tree["where"], types))
     aggregate = tree.get("aggregate")
     if aggregate is not None and aggregate[0] == "sum":
         policy.refuse("aggregate", policy.tree(aggregate[1], types))
-    if tree.get("of_type") is not None and tree["of_type"] in policy.entities:
+    if tree.get("of_type") in policy.entities:
         types = policy.subtypes(tree["of_type"])
-    select, withheld, seen = tree.get("select"), [], set()
-    if select is not None:
-        kept = []
-        for name in select:
-            finding, _ = policy.path(types, name.split("."))
-            if finding is None:
-                kept.append(name)
-            elif finding[:2] not in seen and finding[1] in policy.elements.get(finding[0], {}):
-                seen.add(finding[:2])
-                withheld.append(policy.entry(*finding))
-        select = kept
-    return select, withheld, types
+    return types
 
 
 def query(db, tree: Mapping, *, raw: bool = False) -> dict:
     """Run the query ``tree`` (spec section 11) and answer ``{"rows", "explain", "version", "query",
     "terms"}`` as JSON-ready data (see the module docstring: rows, sensitivity, raw mode).  ``tree["as_of"]``
     is the ``ref`` of a version an earlier answer gave; without it the current version is read."""
-    _check_tree(tree)
+    check_query(tree)
     snapshot = _snapshot(db, tree.get("as_of"))
-    if raw:
-        return _raw_query(snapshot, tree)
-    session = semantic(snapshot)
-    policy = _Withholding(session.catalog())
-    if tree.get("of_type") is not None and tree["of_type"] not in policy.entities:
-        raise ProtoValidationError(f"The semantic catalog describes no type {tree['of_type']!r}")
-    select, withheld, types = _screen(policy, tree)
-    aggregate = tree.get("aggregate")
+    run = dict(tree)
+    if "as_of" in tree:
+        run["as_of"] = _version(snapshot)["ref"]
+    session = None if raw else semantic(snapshot)
+    policy = _Withholding(_catalog_or_none(snapshot) if raw else session.catalog(), raw=raw)
+    types = _screen(policy, tree)
+    aggregate, select = tree.get("aggregate"), tree.get("select")
     default = select is None and aggregate is None
-    if default:
-        select = sorted({name for type_name in policy.candidates(types) for name in policy.allowed(type_name)})
-    run = {**tree, "as_of": _version(snapshot)["ref"]} if "as_of" in tree else dict(tree)
-    if aggregate is None:
-        run["select"] = select
-    answer = session.query(run, members=True)
+    if default and not raw:
+        run["select"] = sorted({name for type_name in policy.candidates(types) for name in policy.allowed(type_name)})
+    answer = query_stored(snapshot, run, with_members=True) if raw else session.query(run, members=True)
     if aggregate is not None:
         rows = to_json(answer["rows"])
     else:
         rows = []
         for values, version in zip(answer["rows"], answer["members"]):
-            type_name = type(version.record).__type_name__
-            shown = set(policy.allowed(type_name)) if default else None
+            record = version.record
+            type_name = _stored_type(record)
+            if default and raw:
+                values = dict(record._own)
+            shown = frozenset(policy.allowed(type_name)) if default and not raw else None
+            values = {name: value for name, value in values.items()
+                      if (shown is None or name in shown) and not policy.withheld(type_name, name.split("."))}
             rows.append({"entity": None if version.entity is None else {"cell": version.entity.name},
                          "type_name": type_name,
-                         "values": {name: _shallow(value) for name, value in values.items()
-                                    if shown is None or name in shown}})
+                         "values": {name: _value(value, policy) for name, value in values.items()}})
+    terms = []
+    for term in answer["terms"]:
+        finding = policy.path(frozenset({term["type_name"]}), [term["name"]])[0]
+        terms.append(term if finding is None else {**term, "sensitivity": finding[2], "withheld": True})
     return {"rows": rows, "explain": to_json(answer["explain"]), "version": to_json(answer["version"]),
-            "query": to_json(dict(tree)), "terms": to_json(answer["terms"]) + withheld}
-
-
-# -- raw mode ------------------------------------------------------------------------------------------------
-
-class _StoredReader(Reader):
-    """What raw evaluation reads beyond the element: cells and roots of the snapshot; no catalogued
-    defaults (a value not stored is MISSING)."""
-
-    def __init__(self, snapshot):
-        self._snapshot = snapshot
-
-    def cell(self, name: str):
-        return self._snapshot.get_mutable(name)
-
-    def root(self, name: str):
-        if name.startswith("__"):
-            raise ProtoValidationError(f"The root {name!r} is reserved; raw mode reads the application's roots")
-        return self._snapshot.get_root_object(name)
-
-
-def _reserved_roots(node) -> None:
-    stack = [node]
-    while stack:
-        item = stack.pop()
-        if isinstance(item, list) and item and isinstance(item[0], str):
-            if item[0] == "root" and len(item) == 2 and isinstance(item[1], str) and item[1].startswith("__"):
-                raise ProtoValidationError(f"The root {item[1]!r} is reserved; raw mode reads the application's "
-                                           f"roots")
-            if item[0] != "const":
-                stack.extend(item[1:])
-
-
-def _stored_members(reader: _StoredReader, origin) -> list:
-    """``(stored value, element)`` of each member a ``from`` reaches, as ``via`` reaches them (format spec,
-    "Traversal"), keeping the stored value (an identity handle) beside the element it designates."""
-    if origin[0] == "root":
-        start, roles = origin, ()
-    else:
-        start, roles = origin[1], origin[2:]
-    if start[0] == "cell":
-        found = reader.cell(start[1])
-        current = [] if found is None else [(MutableObject(start[1]), found)]
-    else:
-        current = _reach(reader, reader.members(reader.root(start[1])))
-    for role in roles:
-        current = _reach(reader, (unwrap_entry(raw) for _, element in current
-                                  for raw in reader.members(_stored_step(element, role))))
-    return current
-
-
-def _reach(reader: _StoredReader, raws) -> list:
-    out, seen = [], set()
-    for raw in raws:
-        key = _identity(raw)
-        if key not in seen:
-            seen.add(key)
-            followed = reader.follow(raw)
-            if followed is not MISSING:
-                out.append((raw, followed))
-    return out
-
-
-def _raw_query(snapshot, tree) -> dict:
-    """The query over the stored values alone (see "Raw mode")."""
-    _reserved_roots([tree["from"], tree.get("where"), tree.get("aggregate")])
-    policy = _Withholding(_catalog_or_none(snapshot))
-    select, _, _ = _screen(policy, {**tree, "of_type": None})       # raw mode reports no catalog term
-    reader = _StoredReader(snapshot)
-    where, aggregate, of_type = tree.get("where"), tree.get("aggregate"), tree.get("of_type")
-    conjuncts = [] if where is None else list(where[1:]) if where[0] == "and" else [where]
-    members = []
-    for raw, element in _stored_members(reader, tree["from"]):
-        if not is_atom(element) or (of_type is not None and _stored_type(element) != of_type):
-            continue
-        if all(_truth("where", evaluate(c, element, reader=reader), "a conjunct of the where") for c in conjuncts):
-            members.append((raw, element))
-    if aggregate is not None and aggregate[0] == "count":
-        rows = [{"count": len(members)}]
-    elif aggregate is not None:
-        total = 0
-        for _, element in members:
-            value = _number("sum", evaluate(aggregate[1], element, reader=reader))
-            if value is not MISSING:
-                total = _arithmetic("+", total, value)
-        rows = [{"sum": to_json(total)}]
-    else:
-        rows = []
-        for raw, element in members:
-            type_name = _stored_type(element)
-            if select is None:
-                types = frozenset({type_name}) if type_name in policy.entities else None
-                values = {name: value for name, value in element._own.items()
-                          if policy.path(types, [name])[0] is None}
-            else:
-                values = {}
-                for name in select:
-                    value = evaluate(["attr", *name.split(".")], element, reader=reader)
-                    if value is not MISSING:
-                        values[name] = value
-            handle = raw if isinstance(raw, MutableObject) else raw["entity"] \
-                if isinstance(raw, dict) and isinstance(raw.get("entity"), MutableObject) else None
-            rows.append({"entity": None if handle is None else {"cell": handle.name}, "type_name": type_name,
-                         "values": {name: _shallow(value) for name, value in values.items()}})
-    explain = {"from": tree["from"], "plan": None, "indexed": [], "residual": conjuncts}
-    return {"rows": rows, "explain": to_json(explain), "version": _version(snapshot), "query": to_json(dict(tree)),
-            "terms": []}
-
+            "query": to_json(dict(tree)), "terms": to_json(terms)}

@@ -95,6 +95,7 @@ The query engine (preflight F17, F18)
 """
 from __future__ import annotations
 
+import base64
 import contextlib
 import copy
 import functools
@@ -104,6 +105,7 @@ from typing import NamedTuple
 
 from .. import resolution
 from ..collections.lists import List
+from ..collections.sets import Set
 from ..core.atom import Atom
 from ..core.dbobject import DBObject
 from ..errors import ProtoCorruptionError, ProtoNotSupportedError, ProtoUserError, ProtoValidationError
@@ -115,9 +117,10 @@ from ..query.terms import Term
 from ..values import MISSING, MutableObject, is_atom, values_equal
 from . import compose as _compose
 from .descriptors import RegistryReader
-from .expressions import _arithmetic, _identity, _number, _truth, check_ast, evaluate, to_planner, unwrap_entry
+from .expressions import (Reader, _arithmetic, _identity, _number, _truth, check_ast, evaluate, to_planner,
+                          unwrap_entry)
 
-__all__ = ["Version", "Members", "Operations", "Schema"]
+__all__ = ["Version", "Members", "Operations", "Schema", "StoredReader", "check_query", "query_stored"]
 
 #: The end cardinalities that hold one target; the others hold a collection.
 _SINGLE = frozenset({"one", "0..1"})
@@ -464,16 +467,34 @@ class _SessionReader(RegistryReader):
         return self._source.get_root_object(name)
 
 
+class StoredReader(Reader):
+    """The evaluation reader of a query over stored structure alone (``schema=None``; the agent interface's
+    raw mode): cells and roots of the source, no catalogued default (a value not stored is MISSING), and no
+    reserved root (``__`` names hold the database's own structures, catalog included)."""
+
+    def __init__(self, source):
+        self._source = source
+
+    def cell(self, name: str):
+        return self._source.get_mutable(name)
+
+    def root(self, name: str):
+        if name.startswith("__"):
+            raise _invalid(f"The root {name!r} is not available")
+        return self._source.get_root_object(name)
+
+
 class Operations:
-    """The operations of one semantic session (see the module docstring); built per call by the session."""
+    """The operations of one semantic session (see the module docstring); built per call by the session.
+    With ``schema=None`` it is the query engine over stored structure alone (:func:`query_stored`)."""
 
     __slots__ = ("session", "source", "schema", "reader")
 
-    def __init__(self, session, source, schema: Schema):
+    def __init__(self, session, source, schema: Schema | None, reader: Reader | None = None):
         self.session = session
         self.source = source
         self.schema = schema
-        self.reader = _SessionReader(source)
+        self.reader = _SessionReader(source) if reader is None else reader
 
     @contextlib.contextmanager
     def reading(self):
@@ -959,45 +980,28 @@ class Operations:
 
     # -- the query engine (preflight F17, F18) ---------------------------------------------------------
 
+    def _version(self) -> dict:
+        """The version the engine reads, ``{"number", "ref"}`` (preflight F23)."""
+        if self.session is not None:
+            return self.session.version()
+        return {"number": self.source.version, "ref": base64.b64encode(self.source.ref).decode("ascii")}
+
     @_consistent
     def query(self, tree: Mapping, *, with_members: bool = False) -> dict:
-        if not isinstance(tree, Mapping):
-            raise _invalid(f"A query is a mapping (spec section 11), not {type(tree).__name__}")
-        unknown = sorted(set(tree) - _QUERY_KEYS)
-        if unknown:
-            raise _invalid(f"A query has the keys {sorted(_QUERY_KEYS)}; unknown keys {unknown}")
-        version = self.session.version()
+        check_query(tree)
+        version = self._version()
         if "as_of" in tree and tree["as_of"] != version["ref"]:
             raise ProtoUserError("This session reads one version; to read another, open a session over "
                                  "Database.snapshot_at(<ref>) and query it")
-        origin = tree.get("from")
-        if not isinstance(origin, list) or not origin or origin[0] not in ("via", "root"):
-            raise _invalid(f"A query's 'from' is a via expression or a bare root, not {origin!r}")
-        check_ast(origin, in_query=True)
-        if origin[0] == "via" and origin[1][0] == "self":
-            raise _invalid("A query has no current element: its 'from' starts at a root or a cell")
-        where = tree.get("where")
-        if where is not None:
-            check_ast(where, in_query=True)
+        origin, where, select, aggregate = tree["from"], tree.get("where"), tree.get("select"), tree.get("aggregate")
         of_type = tree.get("of_type")
-        if of_type is not None:
+        if of_type is not None and self.schema is not None:
             self.schema.entity(of_type)
-        select = tree.get("select")
-        if select is not None and (isinstance(select, str) or not isinstance(select, (list, tuple))
-                                   or not all(isinstance(n, str) and n and all(n.split(".")) for n in select)):
-            raise _invalid(f"A query's 'select' is a list of attribute paths, not {select!r}")
-        aggregate = tree.get("aggregate")
-        if aggregate is not None:
-            if not isinstance(aggregate, list) or not aggregate or aggregate[0] not in ("sum", "count") \
-                    or len(aggregate) != (2 if aggregate[0] == "sum" else 1):
-                raise _invalid(f"A query's 'aggregate' is ['sum', term] or ['count'], not {aggregate!r}")
-            if aggregate[0] == "sum":
-                check_ast(aggregate[1], in_query=True)
         with self.reading():
             members, explain, member_type, used = self._members(origin, where)
             if of_type is not None:
-                allowed = self.schema.subtypes(of_type)
-                members = [(raw, m) for raw, m in members if type(m).__type_name__ in allowed]
+                allowed = self.schema.subtypes(of_type) if self.schema is not None else frozenset({of_type})
+                members = [(raw, m) for raw, m in members if getattr(type(m), "__type_name__", None) in allowed]
                 member_type = of_type
             if aggregate is not None and aggregate[0] == "count":
                 rows = [{"count": len(members)}]
@@ -1021,9 +1025,11 @@ class Operations:
                 rows = [self._row_version(raw, member) for raw, member in members]
         reads = [t for t in (where, aggregate[1] if aggregate and aggregate[0] == "sum" else None) if t is not None]
         reads += [["attr", *name.split(".")] for name in select or ()]
-        types = [member_type] if member_type is not None else sorted({type(m).__type_name__ for _, m in members})
+        types = [member_type] if member_type is not None else \
+            sorted({getattr(type(m), "__type_name__", type(m).__name__) for _, m in members})
+        terms = [] if self.schema is None else self._terms(used, types, reads)
         answer = {"rows": rows, "explain": explain, "version": version, "query": copy.deepcopy(dict(tree)),
-                  "terms": self._terms(used, types, reads)}
+                  "terms": terms}
         if with_members and aggregate is None:
             answer["members"] = [self._row_version(raw, member) for raw, member in members]
         return answer
@@ -1057,7 +1063,7 @@ class Operations:
     def _static_types(self, origin) -> tuple:
         """The roles a ``via`` from a cell crosses, ``[(owner type, role)]``, and its members' type, as the
         catalog declares them (``None`` when not known: a root origin)."""
-        if origin[0] != "via" or origin[1][0] != "cell":
+        if self.schema is None or origin[0] != "via" or origin[1][0] != "cell":
             return [], None
         type_name = origin[1][1].rsplit("#", 1)[0]
         used = []
@@ -1079,13 +1085,17 @@ class Operations:
             last = origin[-1]
             if len(elements) == 1 and is_atom(elements[0][1]):
                 record = elements[0][1]
-                owner_type = getattr(type(record), "__type_name__", None)
-                element = self.schema.element(owner_type, last) if self.schema.has(owner_type) else None
-                if element is not None and "target" in element and not _single(element):
-                    collection = _stored_step(record, last)
-                    info = self.schema.end_index(owner_type, last)
-                    return (*self._indexed(None if _unset(collection) else collection, info, conjuncts, source),
-                            member_type or info.member_type, used)
+                collection = _stored_step(record, last)
+                if self.schema is None:
+                    if isinstance(collection, (List, Set)):
+                        return (*self._indexed(collection, None, conjuncts, source), None, used)
+                else:
+                    owner_type = getattr(type(record), "__type_name__", None)
+                    element = self.schema.element(owner_type, last) if self.schema.has(owner_type) else None
+                    if element is not None and "target" in element and not _single(element):
+                        info = self.schema.end_index(owner_type, last)
+                        return (*self._indexed(None if _unset(collection) else collection, info, conjuncts, source),
+                                member_type or info.member_type, used)
             reached = self._traverse(origin[1], origin[2:])
         else:
             reached = self._traverse(origin, ())
@@ -1099,18 +1109,30 @@ class Operations:
         return all(_truth("where", evaluate(c, member, reader=self.reader), "a conjunct of the where")
                    for c in conjuncts)
 
-    def _indexed(self, collection, info: _EndIndex, conjuncts, source) -> tuple:
+    def _indexed(self, collection, info: _EndIndex | None, conjuncts, source) -> tuple:
         """The members of the stored ``collection`` of the end ``info`` that satisfy ``conjuncts``: what the
-        planner can answer exactly goes to it over the collection (its indexes), the rest is a residual."""
+        planner can answer exactly goes to it over the collection (its indexes), the rest is a residual.
+        With ``info=None`` (no catalog) the collection's stored structure decides: over records, a conjunct
+        on one stored attribute plans (evaluation reads stored values only, as the planner does); over
+        entries or handles, nothing does."""
         planned, indexed, residual = [], [], []
         allowed = None
-        if info.entries:
+        if info is None:
+            first = next(iter(collection.elements()), None) if collection is not None else None
+            entries = first is not None and unwrap_entry(first) is not first
+            if first is not None and not entries and is_atom(first):
+                allowed = _ANY_NAME
+        elif info.entries:
+            entries = True
             if info.key.attribute in self.schema.plannable(info.key.target):
                 allowed = frozenset({"key"})
-        elif info.records:
-            allowed = self.schema.plannable(info.member_type)
+        else:
+            entries = False
+            if info.records:
+                allowed = self.schema.plannable(info.member_type)
         for conjunct in conjuncts:
-            candidate = _rewrite(conjunct, info.key.role, info.key.attribute) if info.entries else conjunct
+            candidate = _rewrite(conjunct, info.key.role, info.key.attribute) if info is not None and info.entries \
+                else conjunct
             term = to_planner(candidate) if allowed is not None and _reads_only(candidate, allowed) else None
             if term is None:
                 residual.append(conjunct)
@@ -1124,7 +1146,7 @@ class Operations:
             query = query.where(planned[0] if len(planned) == 1 else And(*planned))
         plan = query.explain()
         members = []
-        for raw, member in self._reached(element.member if info.entries else element for element in query.to_list()):
+        for raw, member in self._reached(unwrap_entry(element) if entries else element for element in query.to_list()):
             if self._passes(residual, member):
                 members.append((raw, member))
         return members, {**source, "plan": plan, "indexed": copy.deepcopy(indexed), "residual": copy.deepcopy(residual)}
@@ -1181,7 +1203,59 @@ def _rewrite(node, role: str, attribute: str):
     return [node[0], *(_rewrite(child, role, attribute) for child in node[1:])]
 
 
-def _reads_only(node, names: frozenset) -> bool:
+class _AnyName:
+    """Every attribute name (a stored collection of records without a catalog: every stored value plans)."""
+
+    def __contains__(self, name) -> bool:
+        return True
+
+
+_ANY_NAME = _AnyName()
+
+
+def check_query(tree) -> None:
+    """Check the shape of a query tree (spec section 11), before anything is read: its keys, a ``from`` that
+    is a ``via`` from a root or a cell or a bare root, a ``where`` and an ``aggregate`` term that are
+    expressions of the language, an ``aggregate`` that is ``["sum", term]`` or ``["count"]``, a ``select``
+    that is a list of attribute paths.  ``ProtoValidationError`` names what is wrong."""
+    if not isinstance(tree, Mapping):
+        raise _invalid(f"A query is a mapping (spec section 11), not {type(tree).__name__}")
+    unknown = sorted(set(tree) - _QUERY_KEYS)
+    if unknown:
+        raise _invalid(f"A query has the keys {sorted(_QUERY_KEYS)}; unknown keys {unknown}")
+    origin = tree.get("from")
+    if not isinstance(origin, list) or not origin or origin[0] not in ("via", "root"):
+        raise _invalid(f"A query's 'from' is a via expression or a bare root, not {origin!r}")
+    check_ast(origin, in_query=True)
+    if origin[0] == "via" and origin[1][0] == "self":
+        raise _invalid("A query has no current element: its 'from' starts at a root or a cell")
+    if tree.get("where") is not None:
+        check_ast(tree["where"], in_query=True)
+    select = tree.get("select")
+    if select is not None and (isinstance(select, str) or not isinstance(select, (list, tuple))
+                               or not all(isinstance(n, str) and n and all(n.split(".")) for n in select)):
+        raise _invalid(f"A query's 'select' is a list of attribute paths, not {select!r}")
+    aggregate = tree.get("aggregate")
+    if aggregate is not None:
+        if not isinstance(aggregate, list) or not aggregate or aggregate[0] not in ("sum", "count") \
+                or len(aggregate) != (2 if aggregate[0] == "sum" else 1):
+            raise _invalid(f"A query's 'aggregate' is ['sum', term] or ['count'], not {aggregate!r}")
+        if aggregate[0] == "sum":
+            check_ast(aggregate[1], in_query=True)
+    of_type = tree.get("of_type")
+    if of_type is not None and (not isinstance(of_type, str) or not of_type):
+        raise _invalid(f"A query's 'of_type' is a type name, not {of_type!r}")
+
+
+def query_stored(snapshot, tree, *, with_members: bool = False) -> dict:
+    """Run the query ``tree`` with the session's engine over the stored structure of ``snapshot`` alone:
+    no catalog (no defaults, ``of_type`` is the stored type, no terms), the stored collections' indexes
+    where their structure allows (see :meth:`Operations._indexed`), and no reserved root.  The agent
+    interface's raw mode (:mod:`proto_db.agent.operations`)."""
+    return Operations(None, snapshot, None, reader=StoredReader(snapshot)).query(tree, with_members=with_members)
+
+
+def _reads_only(node, names) -> bool:
     """Whether every ``attr`` of ``node`` is one step naming one of ``names``."""
     stack = [node]
     while stack:

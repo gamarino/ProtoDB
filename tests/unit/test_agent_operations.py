@@ -98,15 +98,54 @@ def _json_ready(value) -> None:
 # -- list_entities and describe -------------------------------------------------------------------------
 
 def test_list_entities_gives_label_and_meaning(db):
+    world = _load(db)
     listed = list_entities(db)
     _json_ready(listed)
-    by_name = {e["type_name"]: e for e in listed}
+    assert set(listed) == {"entities", "next"} and listed["next"] is None
+    by_name = {e["type_name"]: e for e in listed["entities"]}
     assert set(by_name) == {"acme.core.Company", CUSTOMER, "acme.catalog.Product", ORDER, LINE}
     assert by_name[ORDER]["label"] == {"und": "Order"}
     assert by_name[ORDER]["meaning"].startswith("A customer's order")
     assert by_name[LINE]["label"] is None and by_name[LINE]["meaning"].startswith("A product included")
-    assert [e["type_name"] for e in list_entities(db, "purchase")] == [ORDER]      # by synonym
-    assert list_entities(db, "advertising") == []
+    # where an agent starts: the cells of each entity type (a relationship's atoms have none)
+    assert by_name["acme.core.Company"]["cells"] == [world["company"].name]
+    assert sorted(by_name[CUSTOMER]["cells"]) == sorted([world["bob"].name, world["ann"].name])
+    assert sorted(by_name[ORDER]["cells"]) == sorted(o.name for o in world["orders"])
+    assert by_name[LINE]["cells"] == []
+    purchase = list_entities(db, "purchase")                                       # by synonym
+    assert [e["type_name"] for e in purchase["entities"]] == [ORDER] and len(purchase["entities"][0]["cells"]) == 4
+    assert list_entities(db, "advertising") == {"entities": [], "next": None}
+
+
+def test_list_entities_pages_its_cells(db):
+    world = _load(db)
+    expected = sorted([world["company"].name, world["bob"].name, world["ann"].name, world["widget"].name,
+                       world["gadget"].name, *(o.name for o in world["orders"])])
+    seen, after, pages = [], None, 0
+    while True:
+        page = list_entities(db, limit=3, after=after)
+        _json_ready(page)
+        cells = [c for e in page["entities"] for c in e["cells"]]
+        assert len(cells) <= 3
+        seen += cells
+        pages += 1
+        after = page["next"]
+        if after is None:
+            break
+        db.run(lambda tr: semantic(tr).create("acme.core.Company", name=f"later {pages}"))   # pages read one version
+    assert sorted(seen) == expected and pages == 3
+    raw, after = [], None
+    while True:
+        page = list_entities(db, limit=4, after=after, raw=True)
+        raw += page["cells"]
+        after = page["next"]
+        if after is None:
+            break
+    assert len(raw) == len(expected) + 2 and set(expected) <= set(raw)               # the two later companies
+    with pytest.raises(ProtoValidationError):
+        list_entities(db, limit=0)
+    with pytest.raises(ProtoValidationError):
+        list_entities(db, after="not a token")
 
 
 def test_describe_includes_provenance(db):
@@ -261,12 +300,13 @@ def test_personal_attributes_are_omitted(db):
 
 def test_raw_mode_hides_the_catalog(db):
     world = _load(db)
+    db.run(lambda tr: tr.set_root_object("customers", tr.new_list().append_last(world["bob"])))
     listed = list_entities(db, raw=True)
     _json_ready(listed)
-    cells = [item for item in listed if "cells" in item]
-    assert all(set(item) == {"type_name", "cells"} for item in cells)
-    assert {"type_name": CUSTOMER, "cells": 2} in cells
-    assert all(set(item) == {"root", "type_name"} for item in listed if "cells" not in item)
+    assert set(listed) == {"roots", "cells", "next"}                       # root and cell names (spec 11)
+    assert listed["roots"] == ["customers"]                                 # no reserved root
+    assert {world["bob"].name, world["ann"].name, world["company"].name} <= set(listed["cells"])
+    assert all(isinstance(name, str) for name in listed["cells"])
     text = json.dumps([listed, describe(db, ORDER, raw=True)])
     for leaked in ("meaning", "label", "provenance", "certification", "A customer's order", "__semanticCatalog",
                    "synonyms"):
@@ -278,11 +318,66 @@ def test_raw_mode_hides_the_catalog(db):
                         "select": ["quantity"]}, raw=True)
     _json_ready(answer)
     assert sorted(r["values"]["quantity"] for r in answer["rows"]) == ["2", "5"]
-    assert answer["terms"] == [] and answer["explain"]["plan"] is None           # no catalog, no index planning
+    assert answer["terms"] == [] and answer["explain"]["indexed"] == []      # an entry's key needs the catalog
     customers = query(db, {"from": ["via", ["cell", world["company"].name], "customers"]}, raw=True)
     assert all("name" not in r["values"] for r in customers["rows"])               # still withheld
-    with pytest.raises(ProtoValidationError, match="reserved"):
+    with pytest.raises(ProtoValidationError, match="not available"):
         query(db, {"from": ["root", "__semanticCatalog"]}, raw=True)
+    for tree in ({"from": ["via", ["cell", world["company"].name], "customers"],
+                  "where": ["==", ["attr", "name"], ["const", "Ann"]]},
+                 {"from": ["via", ["cell", world["company"].name], "orders"], "select": ["customer.name"],
+                  "aggregate": ["sum", ["attr", "customer", "name"]]}):
+        with pytest.raises(ProtoValidationError) as refused:
+            query(db, tree, raw=True)
+        message = str(refused.value)
+        assert "not available" in message                                  # generic: no catalog type or sensitivity
+        assert "personal" not in message and "acme.sales.Customer" not in message and "sensitiv" not in message
+
+
+def test_raw_and_catalog_modes_run_one_engine(db):
+    world = _load(db)
+    trees = [{"from": ["via", ["cell", world["widget"].name], "order_lines"], "where": JUNE,
+              "select": ["quantity", "price", "order.number"]},
+             {"from": ["via", ["cell", world["orders"][0].name], "lines"],
+              "where": ["==", ["attr", "quantity"], ["const", Decimal(2)]], "select": ["quantity", "price"]},
+             {"from": ["via", ["cell", world["company"].name], "customers"], "select": ["credit_limit", "committed"]},
+             {"from": ["via", ["cell", world["company"].name], "orders", "lines"],
+              "aggregate": ["sum", ["*", ["attr", "quantity"], ["attr", "price"]]]},
+             {"from": ["via", ["cell", world["company"].name], "orders"], "aggregate": ["count"]}]
+    for tree in trees:
+        catalog, raw = query(db, tree), query(db, tree, raw=True)
+        # the same rows; an index may give a Set's members in another order than a scan does
+        assert sorted(map(json.dumps, catalog["rows"])) == sorted(map(json.dumps, raw["rows"])), tree
+        assert catalog["rows"] and catalog["version"] == raw["version"]
+    # raw mode plans over a stored collection of records, as the catalog mode does
+    catalog, raw = query(db, trees[1]), query(db, trees[1], raw=True)
+    assert raw["explain"]["plan"] is not None and raw["explain"]["indexed"] != []
+    assert raw["explain"]["plan"] == catalog["explain"]["plan"]
+    assert raw["explain"]["indexed"] == catalog["explain"]["indexed"]
+
+
+def test_a_version_bound_role_keeps_the_version_it_binds(db):
+    world = _load(db)
+    db.run(lambda tr: semantic(tr).update(world["widget"], list_price=Decimal("12")))
+    for raw in (False, True):
+        rows = query(db, {"from": ["via", ["cell", world["orders"][0].name], "lines"]}, raw=raw)["rows"]
+        product = rows[0]["values"]["product"]
+        assert product["entity"] == {"cell": world["widget"].name}
+        assert product["version"]["type_name"] == "acme.catalog.Product"
+        assert product["version"]["values"]["list_price"] == "10"               # the product as sold
+        assert product["version"]["values"]["name"] == "widget"
+
+
+def test_a_root_origin_select_agrees_with_the_default_selection(db):
+    world = _load(db)
+    db.run(lambda tr: tr.set_root_object("starts", tr.new_list().append_last(world["company"])
+                                         .append_last(world["bob"])))
+    default = query(db, {"from": ["root", "starts"]})["rows"]
+    selected = query(db, {"from": ["root", "starts"], "select": ["name"]})["rows"]
+    by_type = {row["type_name"]: row["values"] for row in default}
+    assert by_type["acme.core.Company"]["name"] == "ACME" and "name" not in by_type[CUSTOMER]
+    assert {row["type_name"]: row["values"] for row in selected} == {"acme.core.Company": {"name": "ACME"},
+                                                                     CUSTOMER: {}}
 
 
 def test_to_json():

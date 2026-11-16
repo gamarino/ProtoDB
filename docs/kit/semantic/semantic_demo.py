@@ -17,7 +17,9 @@ an invoice shows each product as it was when sold.
 
 Step 5: questions with verifiable answers.  "How much of the widget did we sell in June?", "Which customer
 is closest to its limit?" and "How much did we spend on advertising?" (not answerable: the catalog names
-neither term).  Each answer carries the query, its ``explain()`` and the version read.
+neither term).  Each answer carries the query, its ``explain()`` and the version read.  The agent finds where
+to start through the interface: ``list_entities`` gives the company's cell, and a query from the company
+finds the widget among its products.
 
 Steps 1, 2 and 5 ask through the agent interface: a scripted MCP client (ruling R266: no language model runs
 in the demo) starts the server (``python -m proto_db.agent``) over stdio and prints each tool call and its
@@ -143,6 +145,7 @@ def ask(path: str, calls: list) -> list:
 def step_1(path: str) -> None:
     listed, order, line = ask(path, [("list_entities", {}), ("describe", {"type_name": ORDER}),
                                      ("describe", {"type_name": LINE})])
+    listed = listed["entities"]
     say("the entities:")
     for entity in listed:
         say(f"   {entity['type_name']}: {_text(entity['label']) or '-'}, {entity['meaning']}")
@@ -301,7 +304,17 @@ def _amount(lines) -> Decimal:
 
 
 def step_5(path: str, world: dict) -> None:
-    widget, company = world["widget"], world["company"]
+    """The agent finds where to start through the interface (list_entities, then a query from the company
+    to its products); ``world`` is the load's own record, used only to check the answers."""
+    say("Where to start: the agent lists the companies, then finds the widget among the company's products.")
+    companies, = ask(path, [("list_entities", {"filter": "acme.core.Company"})])
+    [company] = next(e for e in companies["entities"] if e["type_name"] == "acme.core.Company")["cells"]
+    found, = ask(path, [("query", {"tree": {"from": ["via", ["cell", company], "products"],
+                                            "where": ["==", ["attr", "name"], ["const", "widget"]]}})])
+    widget = found["rows"][0]["entity"]["cell"]
+    check(company == world["company"] and widget == world["widget"],
+          "the agent found the company and the widget through the interface, not from the script")
+    say()
     june = ["and", [">=", ["attr", "order", "date"], ["const", {"date": "2026-06-01"}]],
             ["<=", ["attr", "order", "date"], ["const", {"date": "2026-06-30"}]]]
     sold_tree = {"from": ["via", ["cell", widget], "order_lines"], "where": june, "select": ["quantity", "price"]}

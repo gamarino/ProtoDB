@@ -46,10 +46,13 @@ def build_server(db, *, raw: bool = False):
 
     server = FastMCP("proto_db" + (" (raw)" if raw else ""), instructions=_INSTRUCTIONS, log_level="WARNING")
 
-    @server.tool(name="list_entities", description="The entity types of the database, with label and meaning; "
-                 "an optional filter keeps those whose name, label, synonyms or meaning contain it.")
-    def list_entities(filter: str | None = None) -> str:
-        return _dump(operations.list_entities(db, filter, raw=raw))
+    @server.tool(name="list_entities", description="Where to start: the entity types of the database, with label "
+                 "and meaning, and per type the names of the cells holding its entities (a query starts at "
+                 "[\"cell\", name]).  An optional filter keeps the types whose name, label, synonyms or meaning "
+                 "contain it.  At most 'limit' cell names per answer; pass the answer's 'next' as 'after' for the "
+                 "next page (it reads the same version).")
+    def list_entities(filter: str | None = None, limit: int = operations.LIST_LIMIT, after: str | None = None) -> str:
+        return _dump(operations.list_entities(db, filter, limit=limit, after=after, raw=raw))
 
     @server.tool(name="describe", description="The composed entity type_name: its attributes, roles, intents, "
                  "constraints, the module that defined or modified each element (provenance), certification "
