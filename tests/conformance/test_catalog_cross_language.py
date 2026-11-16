@@ -13,6 +13,7 @@ The tests that always run prove the comparator: the expected output is stable, c
 difference (a changed value, a missing or an extra key) is reported, so a pass of the cross-language tests
 means something.
 """
+import functools
 import importlib.util
 import json
 import os
@@ -31,13 +32,20 @@ from docs.kit.semantic import queries
 REPO = Path(__file__).resolve().parents[2]
 
 
-@pytest.fixture(scope="module")
-def world(tmp_path_factory):
-    """A database of the kit's demo with its modules installed and its orders loaded (steps 1 to 3)."""
+@functools.lru_cache(maxsize=None)
+def _demo():
+    """The kit's demo module, loaded once."""
     spec = importlib.util.spec_from_file_location("semantic_demo_t11", REPO / "docs" / "kit" / "semantic" /
                                                   "semantic_demo.py")
     demo = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(demo)
+    return demo
+
+
+@pytest.fixture(scope="module")
+def world(tmp_path_factory):
+    """A database of the kit's demo with its modules installed and its orders loaded (steps 1 to 3)."""
+    demo = _demo()
     workdir = str(tmp_path_factory.mktemp("step6"))
     space = demo._space(workdir)
     try:
@@ -61,7 +69,7 @@ def test_step6_expected_output_is_stable(world, tmp_path):
     """Two runs over one database give identical bytes (and nothing in them depends on the run)."""
     _expected(world, tmp_path / "a.json", tmp_path / "a.mpk")
     _expected(world, tmp_path / "b.json", tmp_path / "b.mpk")
-    assert (tmp_path / "a.json").read_bytes() == (tmp_path / "b.json").read_bytes()
+    assert (tmp_path / "a.json").read_bytes() == (tmp_path / "b.json").read_bytes()    # Python's own two runs
     assert (tmp_path / "a.mpk").read_bytes() == (tmp_path / "b.mpk").read_bytes()
     text = (tmp_path / "a.json").read_text(encoding="utf-8")
     assert json.dumps(json.loads(text), sort_keys=True, ensure_ascii=False, indent=2) + "\n" == text
@@ -77,13 +85,14 @@ def test_step6_expected_output_is_complete(world, tmp_path):
     assert set(out["queries"]) == set(queries.STEP6)
     for name, answer in out["queries"].items():
         assert answer["rows"], name
-        assert answer["query"] and "version" in answer and "explain" in answer
+        # Only what the format specification defines is compared: no planner output, no terms.
+        assert set(answer) == {"query", "rows", "version"}, name
 
 
 def test_step6_canonical_form_is_the_catalogs(world, tmp_path):
     _expected(world, tmp_path / "out.json", tmp_path / "canonical.mpk")
     data = (tmp_path / "canonical.mpk").read_bytes()
-    decoded = step6._decode(data)
+    decoded = step6.decode_canonical(data)
     assert list(decoded) == ["entities", "module_set", "modules"]
     assert {"acme_sales", "acme_delivery"} <= set(decoded["modules"])
     assert data == step6.canonical_bytes(world, queries.DATABASE)
@@ -117,11 +126,24 @@ def test_the_comparator_accepts_equal_and_flags_a_planted_difference(world, tmp_
     assert len(step6.differences(out, retyped)) == 1
 
 
+def test_the_comparison_is_semantic_not_textual(world, tmp_path):
+    """A file with other indentation, key order and escaping holds the same data: no difference; one planted
+    value in such a file is found."""
+    _expected(world, tmp_path / "out.json")
+    data = json.loads((tmp_path / "out.json").read_text(encoding="utf-8"))
+    other = tmp_path / "other.json"
+    other.write_text(json.dumps(data, indent=4, ensure_ascii=True), encoding="utf-8")
+    assert other.read_bytes() != (tmp_path / "out.json").read_bytes()
+    assert step6.file_differences(data, str(other)) == []
+    data["queries"]["widget"]["rows"][0]["type_name"] = "planted"
+    assert len(step6.file_differences(data, str(other))) == 1
+
+
 def test_the_canonical_comparator_flags_a_planted_difference(world, tmp_path):
     _expected(world, tmp_path / "out.json", tmp_path / "canonical.mpk")
     data = (tmp_path / "canonical.mpk").read_bytes()
     assert step6.canonical_differences(data, data) == []
-    decoded = step6._decode(data)
+    decoded = step6.decode_canonical(data)
     first = next(iter(decoded["entities"]))
     decoded["entities"][first]["meaning"] = "planted"
     planted = msgpack.packb(codec.encode_value(decoded, None), use_bin_type=True)
@@ -140,14 +162,6 @@ def test_the_command_line_writes_the_same_bytes(world, tmp_path):
     _expected(world, tmp_path / "api.json", tmp_path / "api.mpk")
     assert (tmp_path / "cli.json").read_bytes() == (tmp_path / "api.json").read_bytes()
     assert (tmp_path / "cli.mpk").read_bytes() == (tmp_path / "api.mpk").read_bytes()
-
-
-def _demo():
-    spec = importlib.util.spec_from_file_location("semantic_demo_t11_step", REPO / "docs" / "kit" / "semantic" /
-                                                  "semantic_demo.py")
-    demo = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(demo)
-    return demo
 
 
 def _python():
@@ -200,9 +214,7 @@ def test_protobasest_step6_output_equals_pythons(tmp_path):
     database, output = _env("PROTODB_ST_STEP6_DB", "PROTODB_ST_STEP6_OUTPUT")
     name = os.environ.get("PROTODB_ST_STEP6_DATABASE", queries.DATABASE)
     expected = step6.write_expected(database, name, str(tmp_path / "expected.json"))
-    actual = json.loads(Path(output).read_text(encoding="utf-8"))
-    assert step6.differences(expected, actual) == []
-    assert Path(output).read_bytes() == (tmp_path / "expected.json").read_bytes()
+    assert step6.file_differences(expected, output) == []
 
 
 def test_protobasest_canonical_form_equals_pythons():

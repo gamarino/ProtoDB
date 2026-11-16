@@ -5,7 +5,8 @@ import os
 import sys
 
 
-def _mapping(items) -> dict:
+def parse_mapping(items) -> dict:
+    """``{module: import path}`` from ``--mapping module=import.path`` items."""
     out = {}
     for item in items or ():
         name, sep, path = item.partition("=")
@@ -30,7 +31,7 @@ def main(argv=None) -> int:
     except ImportError:
         raise SystemExit("The MCP server needs the optional extra 'agent': pip install proto_db[agent]") from None
     from .mcp_server import serve
-    serve(args.path, args.database, mapping=_mapping(args.mapping), raw=args.raw)
+    serve(args.path, args.database, mapping=parse_mapping(args.mapping), raw=args.raw)
     return 0
 
 

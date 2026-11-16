@@ -3,7 +3,8 @@
 ``python -m proto_db.agent.step6 --path P --database D --out FILE [--canonical FILE] [--mapping M=I ...]``
 opens the database read-only in effect (it only reads) and writes, as JSON with sorted keys and two-space
 indentation (the agent interface's ``to_json`` form), ``{"describe": {type name: description}, "queries":
-{name: answer}}``: ``describe`` of every entity the catalog lists, and the answers of the named queries of
+{name: {"query", "rows", "version"}}}``: ``describe`` of every entity the catalog lists, and the answers
+(the query, its rows and the version read; no ``explain``, no ``terms``) of the named queries of
 ``docs/kit/semantic/queries.py`` (``STEP6``), their starting cells found through ``list_entities``.  With
 ``--canonical`` it also writes the canonical form of the catalog (format spec, "Composition and the canonical
 form").  Two runs over one database give identical bytes: protoBaseST's output for the same database must be
@@ -50,7 +51,9 @@ def expected(db) -> dict:
     cells = {"company": kit.company_cell(list_entities(db, kit.COMPANY))}
     for name, tree in kit.STEP6.items():
         answer = query(db, from_json(tree(cells)))
-        out["queries"][name] = answer
+        # Only what the format specification defines is compared: the query, its rows and the version read.
+        # ``explain`` (the planner's plan and estimates) and ``terms`` belong to the implementation.
+        out["queries"][name] = {key: answer[key] for key in ("query", "rows", "version")}
         if name == "widget":
             cells["widget"] = kit.widget_cell(answer)
     return out
@@ -143,9 +146,16 @@ def _plain(value):
     return value
 
 
-def _decode(data: bytes):
+def decode_canonical(data: bytes):
     """One canonical form as plain values (a tuple as a list): what two implementations compare."""
     return _plain(codec.decode_value(msgpack.unpackb(data, raw=False), _no_reference))
+
+
+def file_differences(expected_value, actual_path: str) -> list:
+    """:func:`differences` between ``expected_value`` and the JSON file at ``actual_path``: the comparison is of
+    the parsed data, never of the file's formatting (indentation, key order, escaping, number spelling)."""
+    with open(actual_path, encoding="utf-8") as f:
+        return differences(expected_value, json.load(f))
 
 
 def canonical_differences(expected_bytes: bytes, actual_bytes: bytes) -> list:
@@ -154,7 +164,7 @@ def canonical_differences(expected_bytes: bytes, actual_bytes: bytes) -> list:
     if expected_bytes == actual_bytes:
         return []
     try:
-        expected_value, actual_value = _decode(expected_bytes), _decode(actual_bytes)
+        expected_value, actual_value = decode_canonical(expected_bytes), decode_canonical(actual_bytes)
     except (msgpack.UnpackException, ValueError, ProtoCorruptionError) as e:
         return [f"<bytes>: not one msgpack value ({type(e).__name__})"]
     found = differences(expected_value, actual_value)
@@ -170,11 +180,11 @@ def main(argv=None) -> int:
     parser.add_argument("--mapping", action="append", metavar="MODULE=IMPORT.PATH",
                         help="where the code of a registry module is imported from (default: the kit's)")
     args = parser.parse_args(argv)
-    from .__main__ import _mapping
+    from .__main__ import parse_mapping
     if REPO not in sys.path:
         sys.path.insert(0, REPO)
     write_expected(args.path, args.database, args.out, canonical_out=args.canonical,
-                   mapping=_mapping(args.mapping) if args.mapping else None)
+                   mapping=parse_mapping(args.mapping) if args.mapping else None)
     return 0
 
 

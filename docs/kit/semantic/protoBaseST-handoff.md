@@ -9,7 +9,7 @@ differ, the specification wins.
 
 Step 6 of the demo: a database written by the Python demo (modules `acme_sales` and `acme_delivery`
 installed, orders loaded) is opened by protoBaseST, which describes every entity of its catalog and answers
-the step-5 queries through generated accessors, giving exactly the data Python gives.
+the step-6 queries through generated accessors, giving exactly the data Python gives.
 
 ## Declaration spelling
 
@@ -44,8 +44,10 @@ form"; the bytes to match are in `tests/conformance/vectors/catalog/canonical.ms
 - **`describe`** of every entity, in the `to_json` form the agent operations return.
 - **The step-6 queries** (`widget`, `sold_in_june`, `customer_limits` in `queries.py`) through accessors
   generated from the catalog: starting cells found through the catalog (`list_entities` lists, per type, its
-  cells, paged by `limit` and the `next` token), never hard-coded. Rows have the shape of the `query`
-  answer: `rows`, `explain`, `version`, `query`, `terms`.
+  cells, paged by `limit` and the `next` token), never hard-coded. Each answer has `query`, `rows` and
+  `version`, in the shape the agent operations give (`operations.py`). The planner is not part of the
+  comparison: `explain` (plans, index statistics, cost estimates) and `terms` are implementation output the
+  format does not define, so they are neither written nor compared.
 - Reading entities as "Entity data" specifies: cells named `<type>#<32 hex>`, records without parents, bound
   references `{entity, version}`, absent and nil ends read as empty, defaults read when a field is absent,
   maintained values compared by value.
@@ -63,15 +65,19 @@ The expected output is produced by Python:
 
     python -m proto_db.agent.step6 --path SPACE_DIR --database acme --out expected.json [--canonical canonical.msgpack]
 
-It holds `{"describe": {type name: description}, "queries": {name: answer}}` as UTF-8 JSON, sorted keys,
-two-space indentation, one final newline. protoBaseST writes the same file for the same database; the demo
+It holds `{"describe": {type name: description}, "queries": {name: {"query", "rows", "version"}}}` as UTF-8
+JSON. Python writes it with sorted keys, two-space indentation and one final newline, for humans to read; that
+formatting is **not** compared. The comparison is of the parsed data: the same keys, the same values with the
+same JSON types (a decimal is a string, `1` is not `1.0`) and the same array order. protoBaseST writes any
+JSON with that content for the same database; the demo
 writes the database with `python docs/kit/semantic/semantic_demo.py --workdir DIR` (the space is `DIR/space`).
 
 Acceptance, in this order:
 
 1. every catalog vector passes in protoBaseST (`tests/conformance/README.md`, steps 13 and 14, plus the
    earlier steps its reader depends on);
-2. the cross-language tests pass with protoBaseST's outputs, from the repository root:
+2. the cross-language tests pass with protoBaseST's outputs (what they compare: `describe` of every entity, the
+   step-6 queries' `query`, `rows` and `version`, and the canonical form's bytes), from the repository root:
 
        PROTODB_ST_STEP6_DB=DIR/space PROTODB_ST_STEP6_OUTPUT=st-step6.json PROTODB_ST_CANONICAL=st-canonical.msgpack \
          python -m pytest tests/conformance/test_catalog_cross_language.py
