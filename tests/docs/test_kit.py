@@ -2,6 +2,7 @@
 
 * The ERP demo runs from the repository with one command, checks its own results and prints
   what it shows; a demo that stops checking, or whose acts stop printing, fails here.
+* The semantic-model demo (docs/kit/semantic) does the same for its steps.
 * The C1 exercise test passes on this tree (the fix is in), and fails on the scratch copy that
   ``make_exercise.py`` plants (a planted bug that the test does not catch proves nothing).
 """
@@ -35,6 +36,17 @@ def test_the_erp_demo_runs_and_checks_itself(tmp_path):
         assert act in out.stdout, f"{act} printed nothing:\n{out.stdout}"
     assert "every check passed" in out.stdout, out.stdout
     assert out.stdout.count("[check]") >= 9, f"the demo checks too little:\n{out.stdout}"
+
+
+@pytest.mark.timeout(330)
+def test_the_semantic_demo_runs_and_checks_itself(tmp_path):
+    out = _run([os.path.join(KIT, "semantic", "semantic_demo.py"), "--workdir", str(tmp_path / "demo")], REPO, 300)
+    assert out.returncode == 0, f"the demo failed\n--- stdout ---\n{out.stdout}\n--- stderr ---\n{out.stderr}"
+    for step in ("Step 1", "Step 2", "Step 3"):
+        assert step in out.stdout, f"{step} printed nothing:\n{out.stdout}"
+    assert "every check passed" in out.stdout, out.stdout
+    assert out.stdout.count("[check]") >= 12, f"the demo checks too little:\n{out.stdout}"
+    assert "by_order_date" in out.stdout, out.stdout
 
 
 @pytest.mark.timeout(300)

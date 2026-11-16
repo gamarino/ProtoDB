@@ -1039,6 +1039,10 @@ def _expression_cases() -> list:
     entity = MutableObject(product_cell)
     bound = DBObject(lines=List.from_iterable([{"entity": entity, "version": DBObject(sku="p1", price=Decimal("10.00"))},
                                                {"entity": entity, "version": DBObject(sku="p1", price=Decimal("10.50"))}]))
+    # A many end with a maintained key (R262) holds entry records {member, key}: a hop takes the member.
+    entries = DBObject(lines=List.from_iterable([DBObject(member=DBObject(quantity=2), key=7),
+                                                 DBObject(member=MutableObject(product_cell)),
+                                                 DBObject(member=DBObject(quantity=3), key=5)]))
     from proto_db.semantic.expressions import MAX_EXPRESSION_DEPTH
 
     def nested_not(depth):
@@ -1110,6 +1114,8 @@ def _expression_cases() -> list:
         ("via-a-member-reached-twice-counts-once", ["via", ["self"], "lines"], repeated, with_handles),
         ("via-version-bound-members", ["via", ["self"], "lines"], bound, {}),
         ("via-over-a-non-role-refused", ["count", "name"], customer, {}),
+        ("via-entry-records-stand-for-their-members", ["via", ["self"], "lines"], entries, with_handles),
+        ("sum-over-entry-records", ["sum", "lines", attr("quantity")], entries, with_handles),
         ("via-two-hops", via_lines, customer, {}),
         ("sum-over-via-two-hops", ["sum", via_lines, amount], customer, {}),
         ("via-three-hops-through-handles", ["via", ["self"], "orders", "lines", "product"], handled_customer,

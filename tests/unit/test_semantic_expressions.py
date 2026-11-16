@@ -333,6 +333,22 @@ def test_via_identity_order_and_absent_cells():
         evaluate(["count", "name"], DBObject(name="ACME"))
 
 
+def test_via_takes_the_member_of_an_entry_record():
+    # A maintained-key end (R262) holds entry records {member, key}: a hop yields members, never entries.
+    line, other = DBObject(quantity=2), DBObject(quantity=3)
+    h = MutableObject("acme.P#1")
+    reader = _Cells({"acme.P#1": DBObject(quantity=4)})
+    element = DBObject(lines=Set.from_iterable([DBObject(member=line, key=7), DBObject(member=h),
+                                                DBObject(member=line, key=8)]))
+    reached = evaluate(["via", ["self"], "lines"], element, reader=reader)
+    assert sorted(m["quantity"] for m in reached) == [2, 4]            # the line once, by its own oid
+    assert evaluate(["sum", "lines", attr("quantity")], element, reader=reader) == 6
+    # A plain record with other fields, or with parents, is a member like any record.
+    plain = DBObject(lines=List.from_iterable([DBObject(member=other, note="x"),
+                                               DBObject(member=other, parents=(other,))]))
+    assert [m["note"] for m in evaluate(["via", ["self"], "lines"], plain)] == ["x", None]
+
+
 def test_root_origin_is_deduplicated_and_a_bare_root_is_an_expression():
     record = DBObject(n=1)
     h = MutableObject("acme.P#1")

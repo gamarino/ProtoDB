@@ -29,13 +29,14 @@ from decimal import Context, Decimal, DecimalException, Inexact, InvalidOperatio
 
 from ..collections.lists import List
 from ..collections.sets import Set
+from ..core.dbobject import DBObject
 from ..errors import ProtoNotSupportedError, ProtoUserError, ProtoValidationError
 from ..indexing.keyspec import _step as _stored_step
 from ..query.expressions import And, Expression, Not, Or
 from ..query.terms import MIRRORED, Term, compare
 from ..values import MISSING, MutableObject, canonical, is_atom
 
-__all__ = ["Reader", "check_ast", "evaluate", "to_planner", "dependencies", "parse",
+__all__ = ["Reader", "check_ast", "evaluate", "to_planner", "dependencies", "parse", "unwrap_entry",
            "ARITHMETIC", "COMPARISONS", "RESERVED", "MAX_EXPRESSION_DEPTH"]
 
 #: The arithmetic operators (R264); division is not specified.
@@ -356,9 +357,21 @@ def _members_of(node, element, reader: Reader) -> tuple:
     for role in roles:
         reached, seen = [], set()
         for member in current:
-            _reach(reader.members(_stored_step(member, role)), reached, seen, reader)
+            _reach(map(unwrap_entry, reader.members(_stored_step(member, role))), reached, seen, reader)
         current = reached
     return tuple(current)
+
+
+def unwrap_entry(raw):
+    """The member an element of a role's collection stands for (format spec, "Traversal"): an **entry
+    record** -- a record of the plain record type ``proto_db.core.dbobject.DBObject``, without parents,
+    whose fields are ``member`` and optionally ``key``, which a ``many`` end with a maintained key stores
+    (spec section 6, R262) -- stands for its ``member``; any other element for itself."""
+    if type(raw) is DBObject and not raw._persisted_parents():
+        own = raw._own
+        if "member" in own and own.keys() <= {"member", "key"}:
+            return own["member"]
+    return raw
 
 
 def _aggregate(op: str, args, element, reader: Reader, depth: int):

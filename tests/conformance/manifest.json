@@ -38596,6 +38596,343 @@
    }
   },
   {
+   "id": "via-entry-records-stand-for-their-members",
+   "ast": [
+    "via",
+    [
+     "self"
+    ],
+    "lines"
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "lines",
+      {
+       "collection": "proto_db.collections.List",
+       "elements": [
+        {
+         "object": "proto_db.core.dbobject.DBObject",
+         "attrs": [
+          [
+           "key",
+           {
+            "int": "7"
+           }
+          ],
+          [
+           "member",
+           {
+            "object": "proto_db.core.dbobject.DBObject",
+            "attrs": [
+             [
+              "quantity",
+              {
+               "int": "2"
+              }
+             ]
+            ]
+           }
+          ]
+         ]
+        },
+        {
+         "object": "proto_db.core.dbobject.DBObject",
+         "attrs": [
+          [
+           "member",
+           {
+            "mutable": "conformance.sales.Product#fedcba9876543210fedcba9876543210"
+           }
+          ]
+         ]
+        },
+        {
+         "object": "proto_db.core.dbobject.DBObject",
+         "attrs": [
+          [
+           "key",
+           {
+            "int": "5"
+           }
+          ],
+          [
+           "member",
+           {
+            "object": "proto_db.core.dbobject.DBObject",
+            "attrs": [
+             [
+              "quantity",
+              {
+               "int": "3"
+              }
+             ]
+            ]
+           }
+          ]
+         ]
+        }
+       ]
+      }
+     ]
+    ]
+   },
+   "cells": [
+    [
+     "conformance.sales.Order#0123456789abcdef0123456789abcdef",
+     {
+      "object": "proto_db.core.dbobject.DBObject",
+      "attrs": [
+       [
+        "lines",
+        {
+         "collection": "proto_db.collections.List",
+         "elements": [
+          {
+           "object": "proto_db.core.dbobject.DBObject",
+           "attrs": [
+            [
+             "product",
+             {
+              "mutable": "conformance.sales.Product#fedcba9876543210fedcba9876543210"
+             }
+            ],
+            [
+             "quantity",
+             {
+              "int": "2"
+             }
+            ]
+           ]
+          }
+         ]
+        }
+       ],
+       [
+        "state",
+        {
+         "str": "open"
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     "conformance.sales.Product#fedcba9876543210fedcba9876543210",
+     {
+      "object": "proto_db.core.dbobject.DBObject",
+      "attrs": [
+       [
+        "price",
+        {
+         "decimal": "10.50"
+        }
+       ],
+       [
+        "sku",
+        {
+         "str": "p1"
+        }
+       ]
+      ]
+     }
+    ]
+   ],
+   "expected": {
+    "tuple": [
+     {
+      "object": "proto_db.core.dbobject.DBObject",
+      "attrs": [
+       [
+        "quantity",
+        {
+         "int": "2"
+        }
+       ]
+      ]
+     },
+     {
+      "object": "proto_db.core.dbobject.DBObject",
+      "attrs": [
+       [
+        "price",
+        {
+         "decimal": "10.50"
+        }
+       ],
+       [
+        "sku",
+        {
+         "str": "p1"
+        }
+       ]
+      ]
+     },
+     {
+      "object": "proto_db.core.dbobject.DBObject",
+      "attrs": [
+       [
+        "quantity",
+        {
+         "int": "3"
+        }
+       ]
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "id": "sum-over-entry-records",
+   "ast": [
+    "sum",
+    "lines",
+    [
+     "attr",
+     "quantity"
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "lines",
+      {
+       "collection": "proto_db.collections.List",
+       "elements": [
+        {
+         "object": "proto_db.core.dbobject.DBObject",
+         "attrs": [
+          [
+           "key",
+           {
+            "int": "7"
+           }
+          ],
+          [
+           "member",
+           {
+            "object": "proto_db.core.dbobject.DBObject",
+            "attrs": [
+             [
+              "quantity",
+              {
+               "int": "2"
+              }
+             ]
+            ]
+           }
+          ]
+         ]
+        },
+        {
+         "object": "proto_db.core.dbobject.DBObject",
+         "attrs": [
+          [
+           "member",
+           {
+            "mutable": "conformance.sales.Product#fedcba9876543210fedcba9876543210"
+           }
+          ]
+         ]
+        },
+        {
+         "object": "proto_db.core.dbobject.DBObject",
+         "attrs": [
+          [
+           "key",
+           {
+            "int": "5"
+           }
+          ],
+          [
+           "member",
+           {
+            "object": "proto_db.core.dbobject.DBObject",
+            "attrs": [
+             [
+              "quantity",
+              {
+               "int": "3"
+              }
+             ]
+            ]
+           }
+          ]
+         ]
+        }
+       ]
+      }
+     ]
+    ]
+   },
+   "cells": [
+    [
+     "conformance.sales.Order#0123456789abcdef0123456789abcdef",
+     {
+      "object": "proto_db.core.dbobject.DBObject",
+      "attrs": [
+       [
+        "lines",
+        {
+         "collection": "proto_db.collections.List",
+         "elements": [
+          {
+           "object": "proto_db.core.dbobject.DBObject",
+           "attrs": [
+            [
+             "product",
+             {
+              "mutable": "conformance.sales.Product#fedcba9876543210fedcba9876543210"
+             }
+            ],
+            [
+             "quantity",
+             {
+              "int": "2"
+             }
+            ]
+           ]
+          }
+         ]
+        }
+       ],
+       [
+        "state",
+        {
+         "str": "open"
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     "conformance.sales.Product#fedcba9876543210fedcba9876543210",
+     {
+      "object": "proto_db.core.dbobject.DBObject",
+      "attrs": [
+       [
+        "price",
+        {
+         "decimal": "10.50"
+        }
+       ],
+       [
+        "sku",
+        {
+         "str": "p1"
+        }
+       ]
+      ]
+     }
+    ]
+   ],
+   "expected": {
+    "int": "5"
+   }
+  },
+  {
    "id": "via-two-hops",
    "ast": [
     "via",

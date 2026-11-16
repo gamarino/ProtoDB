@@ -24,6 +24,7 @@ import copy
 
 from ..errors import ProtoUserError
 from . import compose as _compose
+from . import entities as _entities
 from . import store as _store
 
 __all__ = ["SemanticSession", "semantic"]
@@ -43,12 +44,13 @@ class SemanticSession:
     """The semantic catalog of one database version (see the module docstring).  Open it with
     :func:`semantic`.  Its answers are neutral data (dicts, lists, strings and canonical values)."""
 
-    __slots__ = ("_source", "_model")
+    __slots__ = ("_source", "_model", "_schema")
 
     def __init__(self, source):
         """Bind the session to ``source`` (use :func:`semantic`)."""
         self._source = source
         self._model = None          # (stamp, verified model): see _stamp
+        self._schema = None         # (verified model, its Schema)
 
     # -- the source -------------------------------------------------------------------------------------
 
@@ -99,6 +101,14 @@ class SemanticSession:
             memo = self._model = (stamp, _store.verified_model(stored, registry, listed, key=key))
         return memo[1]
 
+    def _operations(self) -> "_entities.Operations":
+        """The entity operations over the verified catalog of the session's version."""
+        model = self._verified()
+        memo = self._schema
+        if memo is None or memo[0] is not model:
+            memo = self._schema = (model, _entities.Schema(model))
+        return _entities.Operations(self, self._source, memo[1])
+
     # -- reading ----------------------------------------------------------------------------------------
 
     def catalog(self) -> dict:
@@ -142,3 +152,52 @@ class SemanticSession:
         else:
             number, ref = source._db_root.version, source.snapshot_ref
         return {"number": number, "ref": base64.b64encode(ref).decode("ascii")}
+
+    # -- entities and relations (Task 6; :mod:`proto_db.semantic.entities`) ----------------------------------
+
+    def create(self, type_name: str, **fields):
+        """Create an entity of ``type_name`` and return its handle (a ``MutableObject``): a cell named
+        ``f"{type_name}#{uuid4().hex}"`` (R260) holding a record of the semantic class registered for the
+        type (``ProtoNotSupportedError`` when this process has none).  ``fields`` are its fields and its
+        ``one`` roles (handles or versions from the session), which are linked.  A missing required field,
+        an unknown name, a computed attribute or a ``many`` end is ``ProtoValidationError``; so is a role
+        target that is not of the declared type or one of its subtypes (R280)."""
+        return self._operations().create(type_name, fields)
+
+    def get(self, handle) -> "_entities.Version":
+        """The current version of the entity ``handle`` (a :class:`~proto_db.semantic.entities.Version`, whose
+        ``record`` is the stored ``DBObject``)."""
+        return self._operations().get(handle)
+
+    def update(self, handle, **changes) -> None:
+        """Change fields of the entity ``handle``.  Its maintained aggregates' owners move by deltas and the
+        maintained keys over the changed fields are re-keyed, in this transaction.  A role is changed with
+        :meth:`link` and :meth:`unlink`, never here (``ProtoValidationError``)."""
+        self._operations().update(handle, changes)
+
+    def link(self, source, role: str, target) -> None:
+        """Link ``target`` to the role ``role`` of ``source``: both ends and every maintained aggregate along
+        the inverses are updated.  A ``one`` end already linked is refused (unlink it first)."""
+        self._operations().link(source, role, target)
+
+    def unlink(self, source, role: str, target) -> None:
+        """Undo :meth:`link`: both ends and the aggregates along the inverses are updated."""
+        self._operations().link(source, role, target, add=False)
+
+    def relate(self, type_name: str, **roles_and_fields) -> "_entities.Version":
+        """Create an atom of the relationship ``type_name`` with every role and its fields, and add it to the
+        collection at each role's inverse end (one atom, referenced by every end).  A version-bound role
+        stores ``{"entity": handle, "version": version}``."""
+        return self._operations().relate(type_name, roles_and_fields)
+
+    def navigate(self, source, role: str):
+        """The role ``role`` of ``source`` (a handle or a version): a version for a ``one`` end (the bound
+        version for ``binding="version"``), ``None`` when nothing is linked, or the
+        :class:`~proto_db.semantic.entities.Members` of a ``many`` end (members, never entries)."""
+        return self._operations().navigate(source, role)
+
+    def query(self, tree) -> dict:
+        """Run the query ``tree`` (spec section 11) on the session's version: ``{"rows", "explain", "version",
+        "query", "terms"}``.  The session's single query engine (preflight F18): see
+        :mod:`proto_db.semantic.entities`, "The query engine"."""
+        return self._operations().query(tree)

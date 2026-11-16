@@ -141,7 +141,7 @@ record needs 5; this is conservative (nothing is lost or misread) and accepted.
 **The pinned vectors.** ``tests/conformance/vectors.sha256`` lists the SHA-256 of every file
 under ``tests/conformance/vectors/`` (``<hex digest>  <path>``, one line per file, sorted by path
 in code point order, ``/`` as the separator), then the digest of ``manifest.json``. The SHA-256
-of that list file is ``0db72d5a9810df502ceefd2133f7b9a0a454d066f6371efa718b3e9393f5dbb0``. ``test_conformance.py`` checks that the committed files
+of that list file is ``278e791c2741d3a74500089efbdc34bf489860e5e2a175ad557edce44085185e``. ``test_conformance.py`` checks that the committed files
 match the list and that this page states the list's digest. Each vector file is governed by
 the number that covers what it holds: ``vectors/cluster/*.log`` by ``LOG_FORMAT_VERSION``,
 ``vectors/cluster/messages/`` by ``PROTOCOL_VERSION``, every other file by ``FORMAT_VERSION``.
@@ -1889,7 +1889,12 @@ Traversal ``["via", origin, role, role...]``
     oid, a record by its oid. A role holds nothing else: any other value reached as a member raises
     ``ProtoValidationError``. A member is then followed: a handle to its cell's record (a handle whose
     cell is absent contributes nothing), a version-bound reference to its version. The same rules
-    give the members of a root origin.
+    give the members of a root origin. In a hop through a role, an **entry record** of the role's
+    collection stands for its member: a ``many`` end with a maintained key (an ``index_by`` path
+    through an identity role of the member, R262) holds records of the plain record type
+    ``proto_db.core.dbobject.DBObject``, without parents, whose fields are ``member`` (the member) and
+    ``key`` (its key, absent when the key is MISSING); the hop takes the ``member``, so a traversal
+    yields members, never entries.
 
 Reserved, not specified by this revision: ``in``, ``is_missing``, ``min``, ``max``, ``exists``,
 ``all``, ``reach`` and ``valid_at``. A reader that meets an operator it does not implement

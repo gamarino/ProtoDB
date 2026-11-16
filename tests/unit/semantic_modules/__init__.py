@@ -24,6 +24,8 @@ MAPPING = {
     "acme_via_python": f"{_PACKAGE}.acme_via_python",
     "acme_a_sub": f"{_PACKAGE}.acme_a_sub",
     "acme_x_foo": f"{_PACKAGE}.acme_x_foo",
+    "acme_ghost": f"{_PACKAGE}.acme_ghost",
+    "acme_keyed": f"{_PACKAGE}.acme_keyed",
     **{f"r282_{field}": f"{_PACKAGE}.acme_r282" for field in ("value_type", "cardinality", "target", "binding",
                                                                "kind")},
     **{f"semc_0{i}": f"{_PACKAGE}.semc_0{i}" for i in range(1, 9)},
