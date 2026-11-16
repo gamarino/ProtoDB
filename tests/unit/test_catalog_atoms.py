@@ -425,6 +425,13 @@ def _broken(edit):
     (lambda m: m.update(extra=1), "the model"),
     (lambda m: m["entities"]["conformance.sales.Order"]["intents"][0].update(name="update"),
      "entities['conformance.sales.Order'].intents[0].name"),
+    # Deferred minor 150: every enumerated text field is checked on read, sensitivity and on_delete included.
+    (lambda m: m["entities"]["conformance.sales.Order"]["attributes"][0].update(sensitivity="hidden"),
+     "entities['conformance.sales.Order'].attributes[0].sensitivity"),
+    (lambda m: m["modules"]["conformance.catalog_base"]["extensions"][0]["elements"][0].update(sensitivity="Personal"),
+     "modules['conformance.catalog_base'].extensions[0].elements[0].sensitivity"),
+    (lambda m: m["entities"]["conformance.sales.Order"]["attributes"][3].update(on_delete="drop"),
+     "entities['conformance.sales.Order'].attributes[3].on_delete"),
 ])
 def test_an_invalid_model_is_refused_naming_where(edit, where):
     with pytest.raises(ProtoValidationError) as info:
@@ -545,6 +552,15 @@ def test_composition_from_contributions_reproduces_the_stored_records():
      "entities['conformance.sales.OrderLine'].roles[0]"),
     (lambda m: m["entities"]["conformance.sales.Order"]["attributes"][3].update(participant=True),
      "entities['conformance.sales.Order'].attributes[3]"),
+    # Deferred minor 30: an attribute-only Extension of a relationship type states kind relationship too.
+    (lambda m: m["modules"]["conformance.catalog_sales"]["extensions"].append(
+        {"module": "conformance.catalog_sales", "extends": "conformance.sales.OrderLine",
+         "elements": [{"name": "note", "kind": "field", "value_type": "str"}]}),
+     "modules['conformance.catalog_sales'].extensions[5]"),
+    (lambda m: m["modules"]["conformance.catalog_sales"]["extensions"].append(
+        {"module": "conformance.catalog_sales", "extends": "conformance.sales.OrderLine",
+         "entity": {"kind": "entity", "meaning": "A line"}}),
+     "modules['conformance.catalog_sales'].extensions[5]"),
 ])
 def test_relationship_markers_are_checked(edit, where):
     with pytest.raises(ProtoValidationError) as info:

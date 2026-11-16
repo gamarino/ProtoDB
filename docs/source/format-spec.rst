@@ -1745,7 +1745,10 @@ refs):
   ``0..1`` and ``1..*``: ``cardinality`` is the end at the role's own entity, ``inverse_cardinality`` the end at its
   ``target``. A declaration written as a pair (``many-to-one``, ``one-to-many``, ``one-to-one``, ``many-to-many``)
   is stored as these two. ``binding`` is ``identity`` or ``version``. ``kind`` is ``field``, ``computed`` or
-  ``computed_stored``. ``scope`` is ``attribute``, ``entity``, ``relation`` or ``aggregate``.
+  ``computed_stored``. ``scope`` is ``attribute``, ``entity``, ``relation`` or ``aggregate``. ``sensitivity`` is
+  ``public``, ``internal``, ``personal`` or ``secret``; ``on_delete`` is ``restrict``, ``cascade`` or ``unlink``.
+  A stored value outside its enumeration makes the catalog malformed: a reader **MUST** refuse it, never read
+  it as another value (a damaged ``sensitivity`` would change what is disclosed).
 
 - ``expression`` and ``requires`` are refs to an Expression record; ``ast`` is the tree of the expression
   language, nested ``list`` values whose operator and names are ``str``.

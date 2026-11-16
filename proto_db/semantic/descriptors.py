@@ -44,7 +44,7 @@ from decimal import Decimal
 import msgpack
 
 from .. import resolution
-from ..catalog.model import VALUE_KINDS
+from ..catalog.model import ON_DELETE, SENSITIVITIES, VALUE_KINDS
 from ..core import codec
 from ..core.atom import TYPE_NAME_PATTERN
 from ..errors import ProtoValidationError
@@ -54,10 +54,8 @@ from .expressions import Reader, check_ast, dependencies, evaluate, parse
 __all__ = ["Field", "Enum", "Computed", "Aggregate", "Relation", "RelationTo", "Role", "Invariant", "intent",
            "Certified", "SENSITIVITIES"]
 
-#: The values of ``sensitivity``; ``internal`` when not stated.
-SENSITIVITIES = frozenset({"public", "internal", "personal", "secret"})
-#: The values of ``on_delete`` (catalogued only: the MVP deletes no entity); ``restrict`` when not stated.
-ON_DELETE = frozenset({"restrict", "cascade", "unlink"})
+# SENSITIVITIES (``internal`` when not stated) and ON_DELETE (catalogued only: the MVP deletes no entity;
+# ``restrict`` when not stated) are the catalog model's enumerations, so a reader refuses a stored value outside them.
 #: The values of ``binding``.
 BINDINGS = frozenset({"identity", "version"})
 #: The relation spellings (spec section 5): the end at the declaring entity, then the end at the target.

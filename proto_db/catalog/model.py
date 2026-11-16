@@ -39,7 +39,10 @@ __all__ = ["check_model", "to_atoms", "from_atoms", "canonical_form", "VALUE_KIN
 #: The canonical value kinds a ``value_type`` names (ruling R268).
 VALUE_KINDS = frozenset({"bool", "int", "decimal", "str", "bytes", "date", "time", "datetime", "timedelta",
                          "uuid", "float", "list", "tuple", "map"})
-#: The values of the enumerated text fields.
+#: The values of ``sensitivity`` (``internal`` when not stated) and of ``on_delete`` (``restrict`` when not stated).
+SENSITIVITIES = frozenset({"public", "internal", "personal", "secret"})
+ON_DELETE = frozenset({"restrict", "cascade", "unlink"})
+#: The values of the enumerated text fields: a stored value outside its enumeration is a malformed catalog.
 _ENUMERATIONS = {
     "kind": frozenset({"field", "computed", "computed_stored"}),
     "scope": frozenset({"attribute", "entity", "relation", "aggregate"}),
@@ -47,6 +50,8 @@ _ENUMERATIONS = {
     "cardinality": frozenset({"one", "many", "0..1", "1..*"}),
     "inverse_cardinality": frozenset({"one", "many", "0..1", "1..*"}),
     "value_type": VALUE_KINDS,
+    "sensitivity": SENSITIVITIES,
+    "on_delete": ON_DELETE,
 }
 #: The fields an ``Extension.entity`` map may state, with their value kinds: ``kind`` (``entity`` or
 #: ``relationship``, default ``entity``) and Entity fields, each with the encoding of the Entity field.
@@ -144,6 +149,24 @@ def check_model(model) -> None:
         _check_record(cls, item, path)
         if item["type_name"] != key:
             raise _invalid(path, f"its type_name is {item['type_name']!r}, not its key")
+    _check_relationship_extensions(model["modules"], entities)
+
+
+def _check_relationship_extensions(modules: dict, entities: dict) -> None:
+    """Every Extension of a relationship type states ``kind`` ``relationship``, an attribute-only one included:
+    ``kind`` is structural (format-spec, "Field encodings").  A type is a relationship when its composed entity
+    is a Relationship or when some Extension of it states ``kind`` ``relationship``."""
+    def kind(extension) -> str:
+        return extension.get("entity", {}).get("kind", _a.ENTITY_KIND_DEFAULT)
+    relationships = {name for name, item in entities.items() if "roles" in item}
+    relationships |= {extension["extends"] for module in modules.values()
+                      for extension in module.get("extensions", ()) if kind(extension) == "relationship"}
+    for name, module in modules.items():
+        for i, extension in enumerate(module.get("extensions", ())):
+            if extension["extends"] in relationships and kind(extension) != "relationship":
+                raise _invalid(f"modules[{name!r}].extensions[{i}]",
+                               f"an Extension of the relationship type {extension['extends']!r} states the entity "
+                               f"kind relationship (the kind is structural)")
 
 
 def _check_dictionary(path: str, value, cls, key_field: str) -> None:
