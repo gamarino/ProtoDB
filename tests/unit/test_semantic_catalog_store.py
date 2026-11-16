@@ -544,3 +544,119 @@ def test_a_catalog_holding_modules_the_database_does_not_list_names_them():
             db.run(lambda tr: semantic(tr).catalog())
     finally:
         space.close()
+
+
+# -- fix round 2 ----------------------------------------------------------------------------------------------
+
+def test_overlapping_install_commits_each_keep_their_publish_record():
+    # Re-review I1 (R82): T1 has published L1 (version V+1) and not rebound yet; T2, started on V, records
+    # L2 (V+2) under the root lock and is held there; T3 starts on V+1, whose list is L1, and must resolve.
+    # Events decide the order; the waits only bound a hang.
+    space = _space()
+    try:
+        db = space.new_database("db")
+        _install(db, "acme_sales")
+        registries = space._registries
+        rebind, committing = registries.rebind, registries.committing
+        t1_held, t1_release = threading.Event(), threading.Event()
+        t2_held, t2_release = threading.Event(), threading.Event()
+
+        def gated_rebind(database, names, registry=None, version=None):
+            if "acme_delivery" in names and "semc_01" not in names:
+                t1_held.set()
+                assert t1_release.wait(60)
+            return rebind(database, names, registry, version)
+
+        def gated_committing(database, names, version):
+            committing(database, names, version)
+            if "semc_01" in names:
+                t2_held.set()
+                assert t2_release.wait(60)
+
+        registries.rebind, registries.committing = gated_rebind, gated_committing
+        t2 = db.new_transaction()                            # started on V
+        t2.install_module("semc_01")
+        first = threading.Thread(target=lambda: _install(db, "acme_delivery"))
+        second = threading.Thread(target=t2.commit)
+        first.start()
+        try:
+            assert t1_held.wait(60)                          # T1 published, not rebound
+            second.start()
+            assert t2_held.wait(60)                          # T2 recorded, holding the root lock
+            tr = db.new_transaction()
+            try:
+                assert tr.installed_modules()[-1] == "acme_delivery" and "semc_01" not in tr.installed_modules()
+                assert "delivery_date" in _attributes(Order.describe(tr))
+            finally:
+                tr.abort()
+        finally:
+            t2_release.set()
+            t1_release.set()
+            first.join(60)
+            second.join(60)
+        assert not first.is_alive() and not second.is_alive()
+        # Only the published lists stay recorded, one per install commit.
+        assert registries._committed_lists["db"] == {
+            (1, ("base", "acme_sales")): 1, (2, ("base", "acme_sales", "acme_delivery")): 1,
+            (3, ("base", "acme_sales", "acme_delivery", "semc_01")): 1}
+        assert "semc_01_note" in _attributes(db.run(lambda tr: semantic(tr).describe("acme.core.Company")))
+    finally:
+        space.close()
+
+
+def test_a_registry_build_in_flight_across_a_losing_reload_is_not_stored(monkeypatch):
+    # Re-review minor 1, R243: a registry() build that started before a reload (whose rebind loses to a
+    # newer binding) must not store its pre-reload registry once the reload reset the binding.
+    from proto_db import registry as registry_module
+    from proto_db.transactions import _SpaceRegistries
+    registries = _SpaceRegistries(MAPPING, None)
+    older, newer = ("base", "acme_sales"), ("base", "acme_sales", "acme_delivery")
+    registries.rebind("x", newer, None, 7)
+    before = registry_module.registry_for(newer, mapping=MAPPING, allowed=None)     # the process cache
+    original = registry_module.registry_for
+    built, go = threading.Event(), threading.Event()
+
+    def held(*args, **kwargs):
+        found = original(*args, **kwargs)
+        built.set()
+        assert go.wait(60)
+        return found
+
+    monkeypatch.setattr(registry_module, "registry_for", held)
+    out = {}
+    binding = registries._bound["x"]
+    reader = threading.Thread(target=lambda: out.setdefault("registry", registries.registry("x", binding)))
+    reader.start()
+    try:
+        assert built.wait(60)                                # built the pre-reload registry, not stored yet
+        monkeypatch.setattr(registry_module, "registry_for", original)
+        registries.reload("x", older, 6)                     # loses to version 7: resets the binding
+    finally:
+        go.set()
+        reader.join(60)
+    assert not reader.is_alive()
+    binding = registries._bound["x"]
+    assert binding.registry is not before and out["registry"] is binding.registry
+
+
+def test_a_transaction_that_read_its_snapshot_before_a_rebind_keeps_its_list():
+    # Found by the strengthened concurrency test (gil=1): a transaction reads its snapshot, then binds; an
+    # install commit of this space may publish and rebind in between, so the transaction's list is older
+    # than the bound one.  That list is one this space committed: the transaction gets a binding of its
+    # own, and the database's binding stays on the newer list.  A list this space never committed is
+    # still the mismatch (spec Q2).
+    space = _space()
+    try:
+        db = space.new_database("db")
+        _install(db, "acme_sales")                           # version 1
+        _install(db, "acme_delivery")                        # version 2: rebound
+        registries = space._registries
+        older = ("base", "acme_sales")
+        own = registries.started("db", older, 1)
+        assert own is not None and own.names == older
+        assert registries._bound["db"].names == older + ("acme_delivery",)
+        assert "delivery_date" not in _attributes(compose(registries.registry("db", own))["entities"][
+            "acme.sales.Order"])
+        assert registries.started("db", older + ("semc_01",), 2) is None
+    finally:
+        space.close()

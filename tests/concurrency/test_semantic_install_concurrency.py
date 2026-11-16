@@ -9,7 +9,9 @@ made with ``Transaction.commit`` directly, never retried: an install that confli
 Catches: a semantic catalog that is last-writer-wins instead of the composition of the union of the
 installed modules; a conflict between installs caused by the catalog root; a module's contributions lost
 or composed twice; a deadlock between installs and the root lock.  No sleep decides anything (R82): the
-threads are released by a barrier and every commit is joined.
+threads are released by a barrier and every commit is joined.  Each installer, after its commit, and two
+reader threads, all along, start transactions and resolve through the registry while other installs are
+in flight: none may meet the registry mismatch (between a commit's publish and its rebind).
 """
 import threading
 
@@ -31,6 +33,15 @@ ROUNDS = 3
 pytestmark = [pytest.mark.freethreaded, pytest.mark.timeout(240)]
 
 
+def _resolve(db) -> None:
+    """A new transaction resolves through its registry (the mismatch would raise here)."""
+    tr = db.new_transaction()
+    try:
+        semantic(tr).describe("acme.sales.Order")
+    finally:
+        tr.abort()
+
+
 def _round(directory, modules: tuple) -> None:
     space = ObjectSpace(FileStorage(str(directory)), modules_mapping=MAPPING)
     try:
@@ -47,13 +58,37 @@ def _round(directory, modules: tuple) -> None:
                 tr.set_root_object(f"thread{i}", i)
                 try:
                     tr.commit()
+                    # Other installs may be between their publish and their rebind now: a transaction
+                    # started here is on a list this space committed, and must resolve (review I1).
+                    _resolve(db)
                 except Exception as e:      # recorded: the assertion below names it
                     with lock:
                         errors.append(e)
                     raise
             return body
 
-        elapsed = run_threads([install(i) for i in range(len(modules))])
+        def read():
+            # Transactions started while the installs run: none may meet the registry mismatch.
+            try:
+                while not finished.is_set():
+                    _resolve(db)
+                _resolve(db)
+            except Exception as e:
+                with lock:
+                    errors.append(e)
+                raise
+
+        finished = threading.Event()
+        readers = [threading.Thread(target=read) for _ in range(2)]
+        for reader in readers:
+            reader.start()
+        try:
+            elapsed = run_threads([install(i) for i in range(len(modules))])
+        finally:
+            finished.set()
+            for reader in readers:
+                reader.join(60)
+        assert not any(reader.is_alive() for reader in readers)
         assert errors == []
         tr = db.new_transaction()
         try:
