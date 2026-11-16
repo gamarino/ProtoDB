@@ -602,8 +602,8 @@ def test_semantic_operations_are_atomic_on_a_shared_transaction(db):
 # -- one transaction shared by threads: each call entirely before or after a semantic operation -----------
 
 class _Watched:
-    """A transaction's semantic lock, wrapped so that ``progress`` is set when the thread named ``who`` is
-    about to take it: the test knows that thread reached the lock, and no sleep decides the order."""
+    """A transaction's lock, wrapped so that ``progress`` is set when the thread named ``who`` is about to
+    take it: the test knows that thread reached the lock, and no sleep decides the order."""
 
     def __init__(self, lock, who: str, progress: threading.Event):
         self._lock, self._who, self._progress = lock, who, progress
@@ -626,6 +626,9 @@ class _Watched:
     def release(self):
         self._lock.release()
 
+    def __getattr__(self, name):
+        return getattr(self._lock, name)        # the commit's release around imports (_released)
+
 
 def _order_and_product(db):
     def build(tr):
@@ -638,13 +641,13 @@ def _order_and_product(db):
 def _held_relate(db, monkeypatch, call):
     """Thread A relates a line to an order and a product and is held right after its first cell write;
     thread B runs ``call(tr, order, product)`` meanwhile.  A is released once B has reached the
-    transaction's semantic lock or has finished (a call that never takes the lock finishes in the middle of
+    transaction's lock or has finished (a call that never takes the lock finishes in the middle of
     A's operation).  Returns ``(A's outcome, B's outcome, tr, order, product)``."""
     from proto_db.semantic import entities
     order, product = _order_and_product(db)
     tr = db.new_transaction()
     held, progress = threading.Event(), threading.Event()
-    tr._semantic_lock = _Watched(tr._semantic_lock, "B", progress)
+    tr._lock = _Watched(tr._lock, "B", progress)
     original, writes = entities.Operations._write, []
 
     def write(self, handle, old, new):
@@ -653,7 +656,7 @@ def _held_relate(db, monkeypatch, call):
             writes.append(handle.name)
             if len(writes) == 1:
                 held.set()
-                assert progress.wait(60), "thread B neither reached the semantic lock nor finished"
+                assert progress.wait(60), "thread B neither reached the lock nor finished"
     monkeypatch.setattr(entities.Operations, "_write", write)
     out = {}
 
@@ -720,6 +723,31 @@ def test_a_raw_write_from_another_thread_waits_for_a_semantic_operation(db, monk
     a, before, tr, order, product = _held_relate(db, monkeypatch, write)
     assert isinstance(a, Version)
     assert tr.get_mutable(product.name) is before
+    tr.abort()
+
+
+def test_the_raw_path_takes_one_lock_once(db):
+    """A transaction has one lock, and a raw ``get_mutable`` or ``set_mutable`` takes it once."""
+    db.run(lambda tr: tr.new_mutable("c", 1))
+    tr = db.new_transaction()
+    rlock = type(threading.RLock())
+    assert [name for name, value in vars(tr).items() if isinstance(value, rlock)] == ["_lock"]
+    taken = []
+
+    class Counted:
+        def __init__(self, lock):
+            self._lock = lock
+
+        def __enter__(self):
+            taken.append(1)
+            return self._lock.__enter__()
+
+        def __exit__(self, *exc):
+            return self._lock.__exit__(*exc)
+    tr._lock = Counted(tr._lock)
+    assert tr.get_mutable("c") == 1 and len(taken) == 1
+    tr.set_mutable("c", 2)
+    assert len(taken) == 2
     tr.abort()
 
 

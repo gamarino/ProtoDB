@@ -100,14 +100,14 @@ Free-threading
 Collections, indexes and records are immutable and need no locks. Shared mutable state is guarded by locks:
 the storage write buffer and segment writer, the atom and record caches, the publication of a lazy load, the
 transaction's own bookkeeping, and the space's root reference. ``ObjectSpace`` and ``Database`` are shared
-freely between threads. A ``Transaction`` is meant for one thread at a time; internal locks serialise
+freely between threads. A ``Transaction`` is meant for one thread at a time; its internal lock serialises
 its methods and the semantic operations on it (create, update, link, unlink and relate of
 :mod:`proto_db.semantic`, and the reads of a semantic session over it), so a misuse from several threads
 sees each call happen entirely before or after the others: a commit or an abort from another thread waits
 for a semantic operation in progress, and an operation that waited for a commit fails before its first
-step. Ending a transaction from inside one of its semantic operations on the same thread (from a computed
-attribute, for example) is refused with ``ProtoUserError``. The test suite runs on free-threaded CPython
-3.14t and with the GIL.
+step. Iterating the members of a ``many`` end is many calls, each one atomic, not one. Ending a transaction
+from inside one of its semantic operations on the same thread (from a computed attribute, for example) is
+refused with ``ProtoUserError``. The test suite runs on free-threaded CPython 3.14t and with the GIL.
 
 Interrupts and signal handlers on Python 3.14
 ---------------------------------------------

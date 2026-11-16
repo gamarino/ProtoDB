@@ -51,21 +51,22 @@ Storage (spec section 6)
 
 Atomicity
     A transaction is meant for one thread at a time; a misuse from several threads sees each call happen
-    entirely before or after each semantic operation (``Transaction.semantic_operation``; the locks are
-    described on ``Transaction``):
+    entirely before or after each semantic operation.  The transaction's one lock gives that
+    (``Transaction.semantic_operation``; "Locks" on ``Transaction``):
 
     - every write operation (create, update, link, unlink, relate, with the version bindings inside them)
-      holds the transaction's semantic lock throughout, and checks the transaction is active once it holds
-      it, so an operation that waited for a commit or an abort fails before its first step;
+      holds the lock throughout, and checks the transaction is active once it holds it, so an operation
+      that waited for a commit or an abort fails before its first step;
     - every read of a session over a transaction (get, navigate, query, and a version's attribute, whose
       roles navigate) holds it for the call, so it sees an operation entirely or not at all; a session over
-      a ``Snapshot`` reads an immutable version and takes no lock.  :class:`Members` reads each member's
-      current version as the iteration reaches it, each read on its own;
+      a ``Snapshot`` reads an immutable version and takes no lock;
+    - iterating :class:`Members` is many calls, not one read: each member's current version is read as the
+      iteration reaches it, each read atomic on its own (like iterating any collection another thread
+      writes);
     - the transaction's own methods (``get_mutable``, ``set_mutable`` and the others that read or write its
-      state) take the lock for the call, and ``commit`` and ``abort`` take it for their change of state: a
-      commit from another thread waits for the operation in progress and publishes all of it, and one made
-      from inside an operation on its own thread (a computed attribute, a hook) is refused
-      (``ProtoUserError``).
+      state) hold the lock for the call, and so do ``commit`` and ``abort``: a commit from another thread
+      waits for the operation in progress and publishes all of it, and one made from inside an operation
+      on its own thread (a computed attribute, a hook) is refused (``ProtoUserError``).
 
 Versions and navigation
     The session gives :class:`Version`\\ s: views over a stored record that navigate.  ``version.record`` is
@@ -149,7 +150,7 @@ def _handle_of(value):
 
 
 def _atomic(method):
-    """Run the write operation ``method`` holding its transaction's semantic lock (see "Atomicity")."""
+    """Run the write operation ``method`` holding its transaction's lock (see "Atomicity")."""
     @functools.wraps(method)
     def run(self, *args, **kwargs):
         with self.session._transaction().semantic_operation():
@@ -158,8 +159,8 @@ def _atomic(method):
 
 
 def _consistent(method):
-    """Run the read ``method`` holding the semantic lock of the session's transaction, if the session reads
-    one (a snapshot never changes): see "Atomicity"."""
+    """Run the read ``method`` holding the lock of the session's transaction, if the session reads one (a
+    snapshot never changes): see "Atomicity"."""
     @functools.wraps(method)
     def run(self, *args, **kwargs):
         from ..transactions import Transaction

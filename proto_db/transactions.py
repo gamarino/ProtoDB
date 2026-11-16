@@ -2636,22 +2636,25 @@ class Transaction:
 
     Locks (concurrency model, "Free-threading"): a transaction is meant for one thread at a
     time, and a misuse from several threads sees each call happen entirely before or after the
-    others.  Two per-transaction reentrant locks give that:
+    others.  One reentrant lock per transaction, ``_lock``, gives that:
 
-    - the semantic lock: a semantic operation (:meth:`semantic_operation`) holds it throughout;
-      every public method that reads or writes the transaction's roots, cells, module list,
-      catalog or semantic slot takes it for the call, and :meth:`commit` and :meth:`abort` take
-      it for their change of state only, never across the commit's lock step or its import
-      window (import-time code that uses the transaction from another thread fails fast there,
-      it does not wait);
-    - ``_lock``: the transaction's bookkeeping; the commit holds it while it builds and
-      publishes, and releases it around imports.
+    - every public method that reads or writes the transaction's roots, cells, module list,
+      catalog or semantic slot holds it for the call (``install_module`` for its two steps, never
+      across its imports);
+    - a semantic operation (:meth:`semantic_operation`), and a read of a semantic session over
+      the transaction, holds it throughout: the calls it makes re-enter it;
+    - :meth:`commit` holds it while it builds and publishes, and releases it around its imports
+      (import-time code that uses the transaction from another thread then fails fast: the
+      state is ``committing``).  :meth:`commit` and :meth:`abort` called inside a semantic
+      operation of the same thread are refused, so that release never happens inside one.
 
-    The order is semantic lock, then ``_lock``, then the root lock (and the space's registry
-    lock): nothing takes the semantic lock while it holds one of the others.  A call on a
-    transaction that is not active fails before taking any lock, so a call made under the root
-    lock by a commit's own build (a computed attribute that reads a cell) raises instead of
-    reversing the order.  Replaying intents at commit must keep this order.
+    The order is ``_lock``, then the root lock (and the space's registry lock): nothing takes a
+    transaction's ``_lock`` while it holds the root lock.  A call on a transaction that is not
+    active fails before taking the lock, so a call made under the root lock by a commit's build
+    (a computed attribute that reads a cell, in this thread or in a group-commit leader that
+    builds this transaction) raises instead of reversing the order; resolution under the root
+    lock reads the registry memo the commit built beforehand (:meth:`_prebuild_registries`).
+    Replaying intents at commit must keep this order.
     """
 
     def __init__(self, database: Database):
@@ -2687,10 +2690,8 @@ class Transaction:
         # The field version of each entity a version-bound role binds (proto_db.semantic.entities):
         # cell name -> record; read and written under the lock (semantic_field_version).
         self._semantic_versions: dict = {}
-        # Held throughout by each semantic operation (semantic_operation) and for the call by the public
-        # methods, the commit and the abort: see "Locks" in the class docstring.  _semantic_depth counts the
-        # semantic operations in progress; only the lock's owner changes it.
-        self._semantic_lock = threading.RLock()
+        # The semantic operations in progress (semantic_operation), nested ones included; changed under the
+        # lock only, so a non-zero count seen by the lock's holder is its own (see "Locks").
         self._semantic_depth = 0
         self._committed_version: Optional[int] = None    # the version the last build produced
         self._committed_key: Optional[tuple] = None      # its (label, version), for the rebind
@@ -2779,8 +2780,8 @@ class Transaction:
         (ruling R241); :meth:`installed_modules` and :meth:`catalog_object` read the same state
         without entering the read set."""
         _check_name(name)
-        self._check_active()            # fails before any lock (see "Locks" in the class docstring)
-        with self._semantic_lock, self._lock:
+        self._check_active()            # fails before the lock (see "Locks" in the class docstring)
+        with self._lock:
             self._check_active()
             if name in self._writes:
                 value = self._writes[name]
@@ -2802,8 +2803,8 @@ class Transaction:
         :meth:`Snapshot.pager`).  Refused (``ProtoUserError``) when this transaction has written
         that root: uncommitted data does not exist for anyone else (P2).  The read is recorded."""
         _check_name(root_name)
-        self._check_active()            # fails before any lock (see "Locks" in the class docstring)
-        with self._semantic_lock, self._lock:
+        self._check_active()            # fails before the lock (see "Locks" in the class docstring)
+        with self._lock:
             self._check_active()
             if root_name in self._writes:
                 raise ProtoUserError(f"Root {root_name!r} was written in this transaction; a pager pages a "
@@ -2829,8 +2830,8 @@ class Transaction:
         if not isinstance(replace, bool):
             raise ProtoValidationError("replace must be a bool")
         value = canonical_for(value, f"Root {name!r}")
-        self._check_active()            # fails before any lock (see "Locks" in the class docstring)
-        with self._semantic_lock, self._lock:
+        self._check_active()            # fails before the lock (see "Locks" in the class docstring)
+        with self._lock:
             self._check_active()
             if replace or self._writes.get(name) is _REMOVED:
                 self._replaced.add(name)
@@ -2840,8 +2841,8 @@ class Transaction:
         """Remove root ``name`` at commit (a no-op if it is absent then); a later set of it replaces."""
         _check_name(name)
         _check_not_reserved(name)
-        self._check_active()            # fails before any lock (see "Locks" in the class docstring)
-        with self._semantic_lock, self._lock:
+        self._check_active()            # fails before the lock (see "Locks" in the class docstring)
+        with self._lock:
             self._check_active()
             self._writes[name] = _REMOVED
             self._replaced.add(name)
@@ -2854,8 +2855,8 @@ class Transaction:
         recorded (ABSENT included), so a concurrent creator makes the commit
         conflict; deciding from ``root_names()`` gives no such protection.
         """
-        self._check_active()            # fails before any lock (see "Locks" in the class docstring)
-        with self._semantic_lock, self._lock:
+        self._check_active()            # fails before the lock (see "Locks" in the class docstring)
+        with self._lock:
             self._check_active()
             names = set(self._objects.keys())
             for name, value in self._writes.items():
@@ -2889,8 +2890,8 @@ class Transaction:
         """
         _check_name(name, "mutable")
         value = canonical_for(value, f"Mutable {name!r}")
-        self._check_active()            # fails before any lock (see "Locks" in the class docstring)
-        with self._semantic_lock, self._lock:
+        self._check_active()            # fails before the lock (see "Locks" in the class docstring)
+        with self._lock:
             self._check_active()
             if self._mutable_view(name, record=True) is not _ABSENT:
                 raise ProtoValidationError(f"Mutable {name!r} already exists")
@@ -2905,8 +2906,8 @@ class Transaction:
         makes the commit raise ``ProtoConflictError``.
         """
         _check_name(name, "mutable")
-        self._check_active()            # fails before any lock (see "Locks" in the class docstring)
-        with self._semantic_lock, self._lock:
+        self._check_active()            # fails before the lock (see "Locks" in the class docstring)
+        with self._lock:
             self._check_active()
             value = self._mutable_view(name, record=True)
             return None if value is _ABSENT else value
@@ -2919,23 +2920,22 @@ class Transaction:
         Raises ``ProtoUserError`` if the transaction is not active.
         """
         _check_name(name, "mutable")
-        self._check_active()            # fails before any lock (see "Locks" in the class docstring)
-        with self._semantic_lock, self._lock:
+        self._check_active()            # fails before the lock (see "Locks" in the class docstring)
+        with self._lock:
             self._check_active()
             value = self._mutables.get_at(name, _ABSENT)
         return None if value is _ABSENT else value
 
     @contextlib.contextmanager
     def semantic_operation(self):
-        """Hold the semantic lock for a semantic operation (:mod:`proto_db.semantic.entities`):
+        """Hold the transaction's lock for a semantic operation (:mod:`proto_db.semantic.entities`):
         ``with tr.semantic_operation(): ...``.  Every other call of this transaction, its commit and
         its abort happen entirely before or after the block (see "Locks" in the class docstring).  The
         transaction is checked active once the lock is held, so an operation that waited for a commit
         fails before its first step.  Reentrant: an operation may run others."""
-        self._check_active()
-        with self._semantic_lock:
-            with self._lock:
-                self._check_active()
+        self._check_active()            # fails before the lock (see "Locks" in the class docstring)
+        with self._lock:
+            self._check_active()
             self._semantic_depth += 1
             try:
                 yield
@@ -2943,23 +2943,21 @@ class Transaction:
                 self._semantic_depth -= 1
 
     def _end(self, verb: str) -> None:
-        """The change of state of :meth:`commit` and :meth:`abort`, under the semantic lock and
-        ``_lock``: refused inside a semantic operation of this thread (it would publish or drop half of
-        it); a semantic operation of another thread is waited for."""
-        with self._semantic_lock:
-            if self._semantic_depth:
-                raise ProtoUserError(f"Cannot {verb} the transaction inside one of its semantic operations; "
-                                     f"{verb} after the operation returns")
-            with self._lock:
-                self._check_active()
-                self._state = _COMMITTING if verb == "commit" else _ABORTED
+        """Under the lock: the change of state of :meth:`commit` and :meth:`abort`; refused inside a
+        semantic operation of this thread (it would publish or drop half of it).  A semantic operation
+        of another thread was waited for by taking the lock."""
+        if self._semantic_depth:
+            raise ProtoUserError(f"Cannot {verb} the transaction inside one of its semantic operations; "
+                                 f"{verb} after the operation returns")
+        self._check_active()
+        self._state = _COMMITTING if verb == "commit" else _ABORTED
 
     def semantic_field_version(self, name: str):
         """The field version the semantic layer bound for the entity in cell ``name`` in this transaction
         (``None`` if none); see :mod:`proto_db.semantic.entities`.  Raises ``ProtoUserError`` if the
         transaction is not active."""
-        self._check_active()            # fails before any lock (see "Locks" in the class docstring)
-        with self._semantic_lock, self._lock:
+        self._check_active()            # fails before the lock (see "Locks" in the class docstring)
+        with self._lock:
             self._check_active()
             return self._semantic_versions.get(name)
 
@@ -2967,8 +2965,8 @@ class Transaction:
         """Store ``record`` as the field version of cell ``name`` if the stored one is ``expected``
         (``None``: none stored); return the one stored afterwards (compare-and-set).  Raises
         ``ProtoUserError`` if the transaction is not active."""
-        self._check_active()            # fails before any lock (see "Locks" in the class docstring)
-        with self._semantic_lock, self._lock:
+        self._check_active()            # fails before the lock (see "Locks" in the class docstring)
+        with self._lock:
             self._check_active()
             current = self._semantic_versions.get(name)
             if current is expected:
@@ -2985,8 +2983,8 @@ class Transaction:
         """
         _check_name(name, "mutable")
         value = canonical_for(value, f"Mutable {name!r}")
-        self._check_active()            # fails before any lock (see "Locks" in the class docstring)
-        with self._semantic_lock, self._lock:
+        self._check_active()            # fails before the lock (see "Locks" in the class docstring)
+        with self._lock:
             self._check_active()
             if self._mutable_view(name, record=False) is _ABSENT:
                 raise ProtoValidationError(f"Mutable {name!r} does not exist; create it with new_mutable")
@@ -3001,8 +2999,8 @@ class Transaction:
         concurrent commit makes a blind removal a no-op, not a conflict.
         """
         _check_name(name, "mutable")
-        self._check_active()            # fails before any lock (see "Locks" in the class docstring)
-        with self._semantic_lock, self._lock:
+        self._check_active()            # fails before the lock (see "Locks" in the class docstring)
+        with self._lock:
             self._check_active()
             if self._mutable_view(name, record=False) is _ABSENT:
                 raise ProtoValidationError(f"Mutable {name!r} does not exist")
@@ -3010,8 +3008,8 @@ class Transaction:
 
     def mutable_names(self) -> list:
         """Sorted names of the mutable cells as this transaction sees them (not recorded in the read set)."""
-        self._check_active()            # fails before any lock (see "Locks" in the class docstring)
-        with self._semantic_lock, self._lock:
+        self._check_active()            # fails before the lock (see "Locks" in the class docstring)
+        with self._lock:
             self._check_active()
             names = set(self._mutables.keys())
             for name, value in self._mwrites.items():
@@ -3051,11 +3049,11 @@ class Transaction:
         never makes installs conflict with each other.  Installing is permanent; there is no
         uninstall.
         """
-        self._check_active()            # fails before any lock (see "Locks" in the class docstring)
+        self._check_active()            # fails before the lock (see "Locks" in the class docstring)
         space = self._database.space
         mapping, allowed = space.modules_mapping, space.modules_allowed
         while True:
-            with self._semantic_lock, self._lock:
+            with self._lock:
                 self._check_active()
                 installed = self._installed_names()
             additions, introduced = _registry.install_plan(name, installed, mapping, allowed)
@@ -3085,7 +3083,7 @@ class Transaction:
             # The semantic additions, composed outside every lock: a refused composition (a forbidden
             # change, R282) raises here, so nothing of a refused install stays pending.
             semantic = registry is not None and store.merged_model(stored, registry) is not None
-            with self._semantic_lock, self._lock:
+            with self._lock:
                 self._check_active()
                 if self._installed_names() != installed:
                     continue            # another install of this transaction landed meanwhile: plan again
@@ -3112,8 +3110,8 @@ class Transaction:
         (review M-6), as a :class:`~proto_db.registry.ModuleList`, but it is an ordinary read: it
         enters the read set, and a concurrent install then makes this transaction's commit
         conflict (``ProtoConflictError``; ruling R241).  Use this method to read the list."""
-        self._check_active()            # fails before any lock (see "Locks" in the class docstring)
-        with self._semantic_lock, self._lock:
+        self._check_active()            # fails before the lock (see "Locks" in the class docstring)
+        with self._lock:
             self._check_active()
             return self._installed_names()
 
@@ -3208,8 +3206,8 @@ class Transaction:
         commits another one for the same name first, this commit then conflicts instead of
         leaving the object handed out unreachable from the catalog."""
         _registry._check_name("A registry name", registry_name)
-        self._check_active()            # fails before any lock (see "Locks" in the class docstring)
-        with self._semantic_lock, self._lock:
+        self._check_active()            # fails before the lock (see "Locks" in the class docstring)
+        with self._lock:
             self._check_active()
             pending = self._catalog_new.get(registry_name)
             if pending is not None:
@@ -3243,8 +3241,8 @@ class Transaction:
         if registry_name not in obj._persisted_parents():
             raise ProtoValidationError(
                 f"The catalog object of {registry_name!r} must keep {registry_name!r} among its parents")
-        self._check_active()            # fails before any lock (see "Locks" in the class docstring)
-        with self._semantic_lock, self._lock:
+        self._check_active()            # fails before the lock (see "Locks" in the class docstring)
+        with self._lock:
             self._check_active()
             if registry_name in self._catalog_new:
                 # An update of the object this transaction's own install creates: an update against an
@@ -3427,7 +3425,8 @@ class Transaction:
     def abort(self) -> None:
         """Discard the transaction's writes; publishes nothing.  Waits for a semantic operation in
         progress in another thread; refused (``ProtoUserError``) inside one of this thread."""
-        self._end("abort")
+        with self._lock:
+            self._end("abort")
 
     def commit(self) -> None:
         """Commit the writes (commit protocol in the module docstring).
@@ -3438,8 +3437,8 @@ class Transaction:
         thread, and is refused (``ProtoUserError``, the transaction stays active) inside one of
         this thread.
         """
-        self._end("commit")
         with self._lock:
+            self._end("commit")
             committed = False
             try:
                 self._commit()
