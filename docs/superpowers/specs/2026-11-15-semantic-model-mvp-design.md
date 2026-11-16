@@ -374,7 +374,9 @@ refs):
 - `label` and `help` are a `@map` from a language tag to `str` (a plain string is `{"und": text}`).
 - `examples` is a `@tup` of canonical values. `default` is a canonical value; its absence means no default
   is declared (a declared default of nil is present as nil). `order` is an `int`. `parameters` is a `@tup`
-  of `(name, value_type)` pairs, each a `@tup` of two `str`.
+  of `(name, value_type)` pairs, each a `@tup` of a `str` and a `value_type`: a value kind, an entity type
+  name (a parameter that takes an entity, carried as its cell name), or nil for a parameter whose type is not
+  declared (an explicit "unknown", never guessed). The first writer writes no `effects`.
 - `required`, `indexed`, `ordered`, `enforced` and `deprecated` are `bool`.
 - `cardinality` and `inverse_cardinality` are the two ends of the relation as `str`, one of `one`, `many`,
   `0..1` and `1..*`: `cardinality` is the end at the role's own entity, `inverse_cardinality` the end at its

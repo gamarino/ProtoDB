@@ -956,6 +956,54 @@ def gen_registry_database(manifest):
     manifest["registry_database"] = entry
 
 
+#: The neutral model the catalog vector stores (``proto_db.catalog.model``; spec section 8).
+CATALOG_MODEL = HERE / "catalog_model.json"
+#: The cell names the intent log of the catalog vector names (an order and a product, R260).
+CATALOG_ORDER_CELL = "conformance.sales.Order#" + "0123456789abcdef" * 2
+CATALOG_PRODUCT_CELL = "conformance.sales.Product#" + "fedcba9876543210" * 2
+
+
+def _fill_catalog_first(tx):
+    tx.set_root_object("plain", DBObject(n=1))
+
+
+def _fill_catalog_second(tx):
+    """The catalog of :data:`CATALOG_MODEL` as the root ``__semanticCatalog``.  It is written through the
+    transaction's internal write set, the semantic layer's own path (applications cannot write a ``__``
+    root)."""
+    from proto_db.catalog.atoms import SEMANTIC_CATALOG_ROOT
+    from proto_db.catalog.model import to_atoms
+    tx._writes[SEMANTIC_CATALOG_ROOT] = to_atoms(json.loads(CATALOG_MODEL.read_text()), tx)
+
+
+def _fill_catalog_third(tx):
+    """An intent log: the IntentRecords of this commit, which produces version 3 of the database."""
+    from proto_db.catalog.atoms import INTENT_LOG_ROOT, IntentRecord
+    records = [
+        IntentRecord(intent=("conformance.sales.Order", "add_line"), target=CATALOG_ORDER_CELL,
+                     arguments={"product": CATALOG_PRODUCT_CELL, "quantity": Decimal("2"), "price": Decimal("10.50")},
+                     transaction=3, context=tx),
+        IntentRecord(intent=("conformance.sales.Order", "confirm"), target=CATALOG_ORDER_CELL, arguments={},
+                     transaction=3, context=tx),
+    ]
+    tx._writes[INTENT_LOG_ROOT] = List.from_iterable(records)
+
+
+def gen_catalog_database(manifest):
+    """A space using the format-6 feature ``catalog``: a format-4 segment, then the format-6 segment the
+    catalog's first record opened (R151), holding the records of :data:`CATALOG_MODEL` as
+    ``__semanticCatalog``; a later commit adds an ``__intentLog``.  ``vectors/catalog/canonical.msgpack``
+    is the model's canonical form (ruling R258)."""
+    from proto_db.catalog.model import canonical_form
+    with _Deterministic(0x7000):
+        entry = _write_space("catalog/space", [_fill_catalog_first, _fill_catalog_second, _fill_catalog_third],
+                             segments_expected=2)
+    entry["model"] = CATALOG_MODEL.name
+    entry["canonical"] = _write("catalog/canonical.msgpack", canonical_form(json.loads(CATALOG_MODEL.read_text())))
+    entry["intent_log_version"] = 3
+    manifest["catalog_database"] = entry
+
+
 def gen_legacy_database(manifest):
     """A format-3 space: format-3 segment and root, a DatabaseRoot without ``origin``, a
     key-group and a vector index without ``member_tokens`` (plain KeyNode trees, format-3
@@ -1146,13 +1194,14 @@ def gen_cluster(manifest):
     segs_log = logfile.encode_header(tiered.MANIFEST_KIND) + logfile.encode_frame(seg_uuid.bytes)
     # A root of storage format 5 (a space holding format-5 data): versioned entries (kind 7) in a
     # log of format 3; a reader of log format 2 refuses it at the header, of entry kinds 1-6 at
-    # the entry.
-    root_v5 = fmt.RootRecord(fmt.FORMAT_VERSION, root.segment, root.offset, root.epoch)
+    # the entry.  The version is 5 as written (a later format must not rewrite this log vector).
+    v5 = 5
+    root_v5 = fmt.RootRecord(v5, root.segment, root.offset, root.epoch)
     v5_entries = [
         ("accepted-v5", rootlog._payload(1, 7, root_v5),
-         {"kind": 1, "label": 7, "root": root_desc(root), "version": fmt.FORMAT_VERSION}),
+         {"kind": 1, "label": 7, "root": root_desc(root), "version": v5}),
         ("committed-v5", rootlog._payload(2, 7, root_v5),
-         {"kind": 2, "label": 7, "root": root_desc(root), "version": fmt.FORMAT_VERSION}),
+         {"kind": 2, "label": 7, "root": root_desc(root), "version": v5}),
     ]
     log_v5 = logfile.log_contents(rootlog.LOG_KIND, [p for _, p, _ in v5_entries], rootlog.VERSIONED_LOG_VERSION)
 
@@ -1170,7 +1219,7 @@ def gen_cluster(manifest):
             "log_version": rootlog.VERSIONED_LOG_VERSION, "entry_kind": rootlog.VERSIONED_KIND,
             "entries": [{"name": n, "size": len(p), "fields": f} for n, p, f in v5_entries],
             "loaded": {"accepted": [7, root_desc(root)], "committed": [7, root_desc(root)],
-                       "version": fmt.FORMAT_VERSION},
+                       "version": v5},
         },
         "roots_log_torn": {
             "file": _write("cluster/roots-torn.log", torn), "kind": "ROOT", "valid_end": len(log) - len(last),
@@ -1249,6 +1298,7 @@ def main():
     gen_polyglot_database(manifest)
     gen_parents_database(manifest)
     gen_registry_database(manifest)
+    gen_catalog_database(manifest)
     gen_cluster(manifest)
     MANIFEST.write_text(json.dumps(manifest, indent=1, ensure_ascii=False) + "\n")
     PINS.write_text(pin_lines())

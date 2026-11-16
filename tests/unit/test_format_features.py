@@ -103,16 +103,19 @@ def persistent(request, tmp_path):
 # --- the version table ----------------------------------------------------------------------------
 
 def test_the_parents_feature_is_version_5_and_plain_data_stays_4():
-    assert fmt.FEATURE_VERSIONS == {"parents": 5, "registry": 5}
-    assert fmt.FORMAT_VERSION == 5 and fmt.WRITE_FORMAT_VERSION == 4
-    assert fmt.READABLE_FORMAT_VERSIONS == frozenset({2, 3, 4, 5})
+    assert fmt.FEATURE_VERSIONS == {"parents": 5, "registry": 5, "catalog": 6}
+    assert fmt.FORMAT_VERSION == 6 and fmt.WRITE_FORMAT_VERSION == 4
+    assert fmt.READABLE_FORMAT_VERSIONS == frozenset({2, 3, 4, 5, 6})
     assert fmt.write_version() == 4 and fmt.write_version({"parents"}) == 5
     assert fmt.write_version({"registry"}) == 5
+    assert fmt.write_version({"catalog"}) == 6 and fmt.write_version({"catalog", "parents"}) == 6
 
 
 def test_the_registry_types_of_the_format_are_the_builtin_aliases():
     from proto_db.core.atom import BUILTIN_TYPE_ALIASES, type_tag
     for name, alias in fmt.REGISTRY_TYPES.items():
+        assert BUILTIN_TYPE_ALIASES[alias] == name and type_tag(name) == alias
+    for name, alias in fmt.CATALOG_TYPES.items():
         assert BUILTIN_TYPE_ALIASES[alias] == name and type_tag(name) == alias
 
 
@@ -290,7 +293,7 @@ def test_a_replicated_copy_gets_the_header_version_of_its_segment(tmp_path):
     # it writes the highest version, never a lower one than the segment's.
     late = _peer(tmp_path, store, "l")
     late.apply([r for r in records if r[1] == after.offset and r[0] == after.segment.bytes], root)
-    assert _file_version(tmp_path, "l", after.segment) == 5
+    assert _file_version(tmp_path, "l", after.segment) == fmt.FORMAT_VERSION
     # ... and the first record, arriving later, sets the exact version (here the same).
     late.apply(records, root)
     assert _file_version(tmp_path, "l", after.segment) == 5

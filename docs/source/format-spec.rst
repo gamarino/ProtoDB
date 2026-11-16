@@ -36,9 +36,9 @@ The key words MUST, MUST NOT, SHOULD and MAY are used as in RFC 2119. A section 
      - Value
      - Where it is written
    * - Storage format (``FORMAT_VERSION``)
-     - 5
-     - every segment header and every root record; versions 2 to 5 are read, and 4 is written
-       unless the data uses a feature of 5 (`Format stability`_)
+     - 6
+     - every segment header and every root record; versions 2 to 6 are read, and 4 is written
+       unless the data uses a feature of 5 or 6 (`Format stability`_)
    * - Framed log format (``LOG_FORMAT_VERSION``)
      - 3
      - the header of every framed log file; versions 2 and 3 are read, and 2 is written unless the
@@ -117,7 +117,9 @@ share a directory while only features all of them read are written; ``proto_db``
 revision (``proto_db.storage.format.WRITE_FORMAT_VERSION``) for data that uses no later feature, and
 ``FEATURE_VERSIONS`` lists the version of every feature added later: ``parents`` (an atom whose
 envelope has the key ``"p"``) is version 5, and so is ``registry`` (a record of one of the
-runtime registry's built-in types, aliases 22 and 23, `Registry roots`_).
+runtime registry's built-in types, aliases 22 and 23, `Registry roots`_); ``catalog`` (a record of
+one of the semantic catalog's built-in types, aliases 24 to 34, `Semantic catalog (format 6)`_) is
+version 6.
 
 A segment header is written before the segment's records, so ``proto_db`` opens a new segment
 for a record that needs a later version than the open segment's, and a segment's version is the
@@ -139,7 +141,7 @@ record needs 5; this is conservative (nothing is lost or misread) and accepted.
 **The pinned vectors.** ``tests/conformance/vectors.sha256`` lists the SHA-256 of every file
 under ``tests/conformance/vectors/`` (``<hex digest>  <path>``, one line per file, sorted by path
 in code point order, ``/`` as the separator), then the digest of ``manifest.json``. The SHA-256
-of that list file is ``37b286fd97df098769aee26c222f76d295bf747b1a02f9441e52bd54e1ca1695``. ``test_conformance.py`` checks that the committed files
+of that list file is ``f90a335052c7a833c1bb6c5f7ebc9e14dcfcd4bcf04b4ea24b155e99bce667c9``. ``test_conformance.py`` checks that the committed files
 match the list and that this page states the list's digest. Each vector file is governed by
 the number that covers what it holds: ``vectors/cluster/*.log`` by ``LOG_FORMAT_VERSION``,
 ``vectors/cluster/messages/`` by ``PROTOCOL_VERSION``, every other file by ``FORMAT_VERSION``.
@@ -662,6 +664,39 @@ its alias; readers also accept its name (format 2 wrote names).
    * - 23
      - ``proto_db.registry.Catalog``
      - yes (added in format 5, feature ``registry``)
+   * - 24
+     - ``proto_db.catalog.SemanticCatalog``
+     - yes (added in format 6, feature ``catalog``)
+   * - 25
+     - ``proto_db.catalog.Module``
+     - yes (added in format 6, feature ``catalog``)
+   * - 26
+     - ``proto_db.catalog.Extension``
+     - yes (added in format 6, feature ``catalog``)
+   * - 27
+     - ``proto_db.catalog.Entity``
+     - yes (added in format 6, feature ``catalog``)
+   * - 28
+     - ``proto_db.catalog.Relationship``
+     - yes (added in format 6, feature ``catalog``)
+   * - 29
+     - ``proto_db.catalog.Attribute``
+     - yes (added in format 6, feature ``catalog``)
+   * - 30
+     - ``proto_db.catalog.Role``
+     - yes (added in format 6, feature ``catalog``)
+   * - 31
+     - ``proto_db.catalog.Intent``
+     - yes (added in format 6, feature ``catalog``)
+   * - 32
+     - ``proto_db.catalog.Constraint``
+     - yes (added in format 6, feature ``catalog``)
+   * - 33
+     - ``proto_db.catalog.Expression``
+     - yes (added in format 6, feature ``catalog``)
+   * - 34
+     - ``proto_db.catalog.IntentRecord``
+     - yes (added in format 6, feature ``catalog``)
 
 Lazy loading (implementation-specific, portable)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1569,9 +1604,9 @@ is the library's job and leaves no trace in the format, except the epoch check o
 Semantic catalog (format 6)
 ---------------------------
 
-**Not yet written by any release.** This chapter is normative and specifies the semantic model of
-decisions D63 to D72. Its status is *development branch; no release yet*: the repository's
-development branch is the first writer, and no tagged release has written format 6. A reader
+**Written by the development branch; no release yet.** This chapter is normative and specifies the
+semantic model of decisions D63 to D72. The repository's development branch is the first writer,
+and no tagged release has written format 6. A reader
 that implements it **MUST** read what this chapter specifies, and a writer **MUST** write it
 exactly. Data that uses none of it stays version 4 or 5, byte for byte (S5).
 
@@ -1692,7 +1727,9 @@ refs):
 
 - ``examples`` is a ``@tup`` of canonical values. ``default`` is a canonical value; its absence means no default
   is declared (a declared default of nil is present as nil). ``order`` is an ``int``. ``parameters`` is a ``@tup``
-  of ``(name, value_type)`` pairs, each a ``@tup`` of two ``str``.
+  of ``(name, value_type)`` pairs, each a ``@tup`` of a ``str`` and a ``value_type``: a value kind, an entity type
+  name (a parameter that takes an entity, carried as its cell name), or nil for a parameter whose type is not
+  declared (an explicit "unknown", never guessed). The first writer writes no ``effects``.
 
 - ``required``, ``indexed``, ``ordered``, ``enforced`` and ``deprecated`` are ``bool``.
 
@@ -1756,7 +1793,17 @@ instances through the supertype's declaration.
 replaced by the fields of the record it names, oids and pointers dropped, every Dictionary a
 map sorted by key, the whole encoded canonically (`Canonical values`_). Two implementations
 conform when their canonical forms are equal byte for byte. Record bytes are **not** compared:
-oids and placement differ by writer.
+oids and placement differ by writer. Precisely: the value is a ``@map`` of ``entities``,
+``module_set``, ``modules`` and ``ext`` (when present); a record becomes a ``@map`` of its present
+fields, without those at their default (Omission); a Dictionary becomes a ``@map`` from its keys to
+the records they name; ``label``, ``help``, ``Extension.entity`` and ``ext`` stay ``@map`` values.
+Every such map is sorted by key in code-point order. A
+``@tup`` stays a ``@tup`` and a canonical value (``default``, an item of ``examples``, the ``ast``,
+a value inside ``ext``) is encoded as it is stored. The record types need no tag in the canonical
+form: an item of ``entities`` with ``roles`` is a Relationship, and an element with ``kind`` is an
+Attribute, one with ``target`` a Role, one with ``scope`` a Constraint and any other an Intent
+(their required fields make this unambiguous). The vector ``catalog/canonical.msgpack`` is the
+canonical form of the vector space's catalog (`Conformance vectors`_).
 
 The expression language
 ~~~~~~~~~~~~~~~~~~~~~~~
@@ -2228,6 +2275,12 @@ Every change since format 1 and how a reader of this revision treats data writte
        that atom. A non-canonical text form is refused;
        ``proto_db`` never wrote one. A format-3 reader refuses format-4 data
        (``ProtoNotSupportedError``)
+   * - Format 5 to 6 (D63 to D72; development branch, no release yet)
+     - The feature ``catalog``: eleven built-in types, aliases 24 to 34, for the roots
+       ``__semanticCatalog`` and ``__intentLog`` (`Semantic catalog (format 6)`_). A record of
+       one of them is version 6; data that uses none of them keeps version 4 or 5, byte for byte
+     - Format 2 to 5 segments and roots are read as before. A reader of format 5 refuses a
+       format-6 segment or root (``ProtoNotSupportedError``), never misreads it
 
 The cluster protocol has no compatibility across versions: every node of a cluster runs the
 same protocol version (13 here; the history of versions 6 to 13 is in
@@ -2337,7 +2390,12 @@ JSON description of what every file means, in a language-neutral notation), the 
 - a ``registry`` space using the format-5 feature ``registry``: a format-4 segment, then the
   format-5 segment opened by an install of a module and its dependency, holding the catalog
   objects, the ``ModuleList`` of ``__currentModules`` and the ``Catalog`` of ``__catalog``
-  (`Registry roots`_); its root record is version 5.
+  (`Registry roots`_); its root record is version 5;
+- a ``catalog`` space using the format-6 feature ``catalog``: a format-4 segment, then the format-6
+  segment opened by the catalog's first record, holding the records of every catalog type (the
+  neutral model ``tests/conformance/catalog_model.json`` stored as ``__semanticCatalog``, and an
+  ``__intentLog`` of two IntentRecords), and the catalog's canonical form
+  (``catalog/canonical.msgpack``); its root record is version 6.
 
 ``tests/conformance/vectors.sha256`` pins the vector files (`Format stability`_).
 

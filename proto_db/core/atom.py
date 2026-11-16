@@ -230,6 +230,17 @@ BUILTIN_ATOM_MODULES: dict[str, str] = {
     "proto_db.transactions.DatabaseRoot": "proto_db.transactions",
     "proto_db.registry.ModuleList": "proto_db.registry",
     "proto_db.registry.Catalog": "proto_db.registry",
+    "proto_db.catalog.SemanticCatalog": "proto_db.catalog.atoms",
+    "proto_db.catalog.Module": "proto_db.catalog.atoms",
+    "proto_db.catalog.Extension": "proto_db.catalog.atoms",
+    "proto_db.catalog.Entity": "proto_db.catalog.atoms",
+    "proto_db.catalog.Relationship": "proto_db.catalog.atoms",
+    "proto_db.catalog.Attribute": "proto_db.catalog.atoms",
+    "proto_db.catalog.Role": "proto_db.catalog.atoms",
+    "proto_db.catalog.Intent": "proto_db.catalog.atoms",
+    "proto_db.catalog.Constraint": "proto_db.catalog.atoms",
+    "proto_db.catalog.Expression": "proto_db.catalog.atoms",
+    "proto_db.catalog.IntentRecord": "proto_db.catalog.atoms",
 }
 
 
@@ -260,6 +271,17 @@ BUILTIN_TYPE_ALIASES: tuple[str, ...] = (
     "proto_db.avl.CountedKeyNode",
     "proto_db.registry.ModuleList",
     "proto_db.registry.Catalog",
+    "proto_db.catalog.SemanticCatalog",
+    "proto_db.catalog.Module",
+    "proto_db.catalog.Extension",
+    "proto_db.catalog.Entity",
+    "proto_db.catalog.Relationship",
+    "proto_db.catalog.Attribute",
+    "proto_db.catalog.Role",
+    "proto_db.catalog.Intent",
+    "proto_db.catalog.Constraint",
+    "proto_db.catalog.Expression",
+    "proto_db.catalog.IntentRecord",
 )
 _ALIAS_OF = {name: i for i, name in enumerate(BUILTIN_TYPE_ALIASES)}
 

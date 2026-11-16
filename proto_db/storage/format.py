@@ -48,7 +48,9 @@ SEGMENT_MAGIC = b"PDB2SEG\0"
 #: 5: the feature ``parents``, the atom envelope key ``"p"`` (runtime registry, ruling R151), and the
 #: feature ``registry``, records of the registry's built-in types.  Data that uses neither is still
 #: written as version 4 (:data:`WRITE_FORMAT_VERSION`).
-FORMAT_VERSION = 5
+#: 6: the feature ``catalog``, records of the semantic catalog's built-in types (:data:`CATALOG_TYPES`).
+#: Data that does not use it keeps version 4 or 5.
+FORMAT_VERSION = 6
 #: The version written in every segment header and root record: the lowest version sufficient
 #: for what this revision can write.  It differs from :data:`FORMAT_VERSION` (the highest
 #: version read) once a later revision adds a feature: data that does not use it keeps this
@@ -58,13 +60,22 @@ WRITE_FORMAT_VERSION = 4
 #: The features added after the freeze, each with the format version that introduced it.
 #: ``parents``: an atom whose envelope has the key ``"p"`` (its parents tuple, runtime registry).
 #: ``registry``: a record of one of the runtime registry's built-in types (:data:`REGISTRY_TYPES`).
-FEATURE_VERSIONS: dict = {"parents": 5, "registry": 5}
+#: ``catalog``: a record of one of the semantic catalog's built-in types (:data:`CATALOG_TYPES`).
+FEATURE_VERSIONS: dict = {"parents": 5, "registry": 5, "catalog": 6}
 
 #: The runtime registry's built-in types (``proto_db.registry``): their type names and their
 #: aliases (``proto_db.core.atom.BUILTIN_TYPE_ALIASES``; a test keeps the two in step).  A record
 #: whose type tag is one of them uses the feature ``registry``.
 REGISTRY_TYPES = {"proto_db.registry.ModuleList": 22, "proto_db.registry.Catalog": 23}
-_REGISTRY_TAGS = frozenset(REGISTRY_TYPES) | frozenset(REGISTRY_TYPES.values())
+#: The semantic catalog's built-in types (``proto_db.catalog``): their type names and their aliases
+#: (a test keeps them in step with ``BUILTIN_TYPE_ALIASES``).  A record whose type tag is one of
+#: them uses the feature ``catalog``.
+CATALOG_TYPES = {
+    "proto_db.catalog.SemanticCatalog": 24, "proto_db.catalog.Module": 25, "proto_db.catalog.Extension": 26,
+    "proto_db.catalog.Entity": 27, "proto_db.catalog.Relationship": 28, "proto_db.catalog.Attribute": 29,
+    "proto_db.catalog.Role": 30, "proto_db.catalog.Intent": 31, "proto_db.catalog.Constraint": 32,
+    "proto_db.catalog.Expression": 33, "proto_db.catalog.IntentRecord": 34,
+}
 
 
 def write_version(features=()) -> int:
@@ -79,16 +90,19 @@ def payload_features(payload: dict) -> frozenset:
     segment header from replicated records derives the version from the segment's first record
     (:func:`framed_version`), so the version of a record never depends on anything but its bytes."""
     tag = payload.get("t")
-    registry = type(tag) in (int, str) and tag in _REGISTRY_TAGS
-    if "p" in payload:
-        return _PARENTS_AND_REGISTRY if registry else _PARENTS
-    return _REGISTRY if registry else _NONE
+    used = _TAG_FEATURES.get(tag, _NONE) if type(tag) in (int, str) else _NONE
+    return _WITH_PARENTS[used] if "p" in payload else used
 
 
 _NONE = frozenset()
 _PARENTS = frozenset({"parents"})
 _REGISTRY = frozenset({"registry"})
-_PARENTS_AND_REGISTRY = _PARENTS | _REGISTRY
+_CATALOG = frozenset({"catalog"})
+#: The feature a type tag (alias or name) uses, for the tags of a feature's built-in types.
+_TAG_FEATURES = {tag: feature for types, feature in ((REGISTRY_TYPES, _REGISTRY), (CATALOG_TYPES, _CATALOG))
+                 for name, alias in types.items() for tag in (name, alias)}
+#: A payload's features once its envelope also has parents (the key ``"p"``).
+_WITH_PARENTS = {used: used | _PARENTS for used in (_NONE, _REGISTRY, _CATALOG)}
 
 
 def atom_version(payload: dict, features=frozenset()) -> int:
@@ -148,8 +162,9 @@ def framed_version(data, pos: int = 0) -> int:
 #: Versions this code reads: a format-2 segment still decodes (its references are read by the
 #: codec's format-2 branch), a format-3 one too (its zone datetimes by the codec's wall-clock
 #: branch, its indexes rebuilt at their first change); a root record of any of them is read as
-#: the current version.  A format-5 segment or root is read as such (its features are additive).
-READABLE_FORMAT_VERSIONS = frozenset({2, 3, 4, 5})
+#: the current version.  A format-5 or format-6 segment or root is read as such (their features
+#: are additive).
+READABLE_FORMAT_VERSIONS = frozenset({2, 3, 4, 5, 6})
 _SEGMENT_HEADER = struct.Struct("<8sH16s")
 #: First two bytes of every record header.  ``0xC1`` is the one byte msgpack never emits as a
 #: type byte, so the magic is rare in msgpack payloads (it only marks candidates: the header

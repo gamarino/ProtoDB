@@ -360,9 +360,73 @@ def test_registry_database_contents_through_the_public_api(tmp_path):
         space.close()
 
 
+def test_catalog_database_segments():
+    """A format-4 segment, then the format-6 segment the catalog's first record opened (R151): every
+    record of the catalog's types (feature ``catalog``, aliases 24 to 34) is there, none with parents."""
+    db = MANIFEST["catalog_database"]
+    assert [s["format"] for s in db["segments"]] == [4, 6]
+    for segment in db["segments"]:
+        _check_segment(f"{db['dir']}/{segment['segment']}", segment["records"])
+        assert int.from_bytes(_bytes(f"{db['dir']}/{segment['segment']}")[8:10], "little") == segment["format"]
+        assert all(r["canonical"] for r in segment["records"])
+    first, second = db["segments"]
+    catalog_types = set(fmt.CATALOG_TYPES)
+    assert not any(r.get("type") in catalog_types for r in first["records"])
+    assert second["records"][0]["type"] in catalog_types       # the catalog's first record opened the segment
+    assert {r.get("type") for r in second["records"]} >= catalog_types
+    for record in second["records"]:
+        if record.get("type") in catalog_types:
+            assert record["tag"] == fmt.CATALOG_TYPES[record["type"]] and "parents" not in record
+    root = fmt.decode_root(_bytes(f"{db['dir']}/space.root"))
+    assert root.version == 6 and db["root"]["version"] == 6
+    assert fmt.encode_root(root) == _bytes(f"{db['dir']}/space.root")
+
+
+def test_catalog_database_contents_through_the_public_api(tmp_path):
+    from proto_db.catalog.atoms import intent_log_root, intent_records, semantic_catalog_root
+    from proto_db.catalog.model import from_atoms
+    db = MANIFEST["catalog_database"]
+    work = tmp_path / "db"
+    shutil.copytree(HERE / "vectors" / db["dir"], work)
+    space = ObjectSpace(FileStorage(str(work)))
+    try:
+        assert space.open_database("db").run(describe_database) == db["contents"]
+
+        def check(tx):
+            assert from_atoms(semantic_catalog_root(tx._objects)) == json.loads((HERE / db["model"]).read_text())
+            records = intent_records(intent_log_root(tx._objects))
+            assert [r.intent for r in records] == [("conformance.sales.Order", "add_line"),
+                                                   ("conformance.sales.Order", "confirm")]
+            assert {r.transaction for r in records} == {db["intent_log_version"]} == {tx._db_root.version}
+        space.open_database("db").run(check)
+    finally:
+        space.close()
+
+
+def test_catalog_canonical_form_vector(tmp_path):
+    """The canonical form of the catalog (R258) is the vector's bytes, from the model and from the
+    records stored in the vector space; it decodes to a map of the three catalog fields."""
+    from proto_db.catalog.atoms import semantic_catalog_root
+    from proto_db.catalog.model import canonical_form, from_atoms
+    db = MANIFEST["catalog_database"]
+    expected = _bytes(db["canonical"])
+    assert canonical_form(json.loads((HERE / db["model"]).read_text())) == expected
+    work = tmp_path / "db"
+    shutil.copytree(HERE / "vectors" / db["dir"], work)
+    space = ObjectSpace(FileStorage(str(work)))
+    try:
+        stored = space.open_database("db").run(lambda tx: from_atoms(semantic_catalog_root(tx._objects)))
+    finally:
+        space.close()
+    assert canonical_form(stored) == expected
+    decoded = _decode(expected)
+    assert list(decoded) == ["entities", "module_set", "modules"] and _reencode(decoded) == expected
+
+
 def test_every_persistable_builtin_type_appears():
     seen = {r["type"] for r in MANIFEST["database"]["records"] + MANIFEST["cluster"]["segment"]["records"]}
     seen |= {r["type"] for r in MANIFEST["registry_database"]["segments"][1]["records"]}
+    seen |= {r["type"] for r in MANIFEST["catalog_database"]["segments"][1]["records"]}
     abstract = {"proto_db.collections.IndexedCollection", "proto_db.collections.sets._HashBuckets",
                 "proto_db.indexing.Index", "proto_db.indexing.keyed.KeyGroupIndex", "proto_db.avl._Node"}
     assert set(BUILTIN_TYPE_ALIASES) - abstract <= seen

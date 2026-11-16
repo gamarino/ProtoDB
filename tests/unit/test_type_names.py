@@ -143,9 +143,14 @@ def test_builtin_type_aliases_are_pinned():
         "proto_db.indexing.Index", "proto_db.indexing.keyed.KeyGroupIndex", "proto_db.indexing.EqualityIndex",
         "proto_db.indexing.RangeIndex", "proto_db.indexing.VectorIndex", "proto_db.transactions.SpaceRoot",
         "proto_db.transactions.DatabaseRoot", "proto_db.core.dbobject.DBObject", "proto_db.avl._Node",
-        "proto_db.avl.CountedKeyNode", "proto_db.registry.ModuleList", "proto_db.registry.Catalog")
+        "proto_db.avl.CountedKeyNode", "proto_db.registry.ModuleList", "proto_db.registry.Catalog",
+        "proto_db.catalog.SemanticCatalog", "proto_db.catalog.Module", "proto_db.catalog.Extension",
+        "proto_db.catalog.Entity", "proto_db.catalog.Relationship", "proto_db.catalog.Attribute",
+        "proto_db.catalog.Role", "proto_db.catalog.Intent", "proto_db.catalog.Constraint",
+        "proto_db.catalog.Expression", "proto_db.catalog.IntentRecord")
     assert type_tag("proto_db.avl.CountedKeyNode") == 21
     assert type_tag("proto_db.registry.ModuleList") == 22 and type_tag("proto_db.registry.Catalog") == 23
+    assert type_tag("proto_db.catalog.SemanticCatalog") == 24 and type_tag("proto_db.catalog.IntentRecord") == 34
     assert type_tag("tests.names.Declared") == "tests.names.Declared"
 
 
