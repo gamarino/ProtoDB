@@ -10,6 +10,10 @@ It is an independent oracle, and deliberately duplicates what the semantic layer
   navigation, its queries or its computed attributes;
 - it starts from the order cells, not from the customer's ``orders`` collection, so an order missing from that
   collection still weighs on the customer its ``customer`` role names;
+- it finds the lines from the products' side: every entry of a product's ``order_lines`` end holds a line atom
+  (``member``), whose ``order`` role names its order.  A line atom lives once, so both ends hold the same atom
+  (one atom pointer).  The order's own ``lines`` collection is only compared with that set, never summed, so a
+  line missing from it still weighs, and the difference is reported (attribute ``lines``);
 - it re-states the model's rules here, by hand: a line's amount is ``quantity * price``; an order's total is the
   sum of its lines' amounts; a customer's committed amount is the sum of the totals of its orders whose state is
   not ``cancelled`` (an order with no stored state is ``open``, the declared default); the credit rule is
@@ -26,6 +30,7 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 
 ORDER_TYPE = "acme.sales.Order"
+PRODUCT_TYPE = "acme.catalog.Product"
 CUSTOMER_TYPE = "acme.sales.Customer"
 #: The state that takes an order out of its customer's committed amount (the aggregate's ``where``).
 CANCELLED = "cancelled"
@@ -39,7 +44,9 @@ class VerifierReport:
     lists ``(version, customer cell, committed, limit)`` for every version in which a customer's recomputed
     committed amount is above its limit (``limit`` is ``None`` when absent).  ``aggregate_mismatches`` lists
     ``(version, cell, attribute, recomputed, stored)`` for every version in which a maintained aggregate (a
-    customer's ``committed``, an order's ``total``) differs from the recomputation."""
+    customer's ``committed``, an order's ``total``) differs from the recomputation, and for every order whose
+    ``lines`` collection differs from the lines the products hold for it (``recomputed`` and ``stored`` are then
+    the two counts)."""
 
     versions: int = 0
     violations: list = field(default_factory=list)
@@ -60,18 +67,27 @@ def _cells(entry, type_name: str):
         yield name, entry.get_mutable(name)
 
 
-def _order_total(order) -> Decimal:
-    """The sum of ``quantity * price`` over the order's lines (an order with no lines totals 0)."""
-    total = Decimal(0)
-    for line in order.lines or ():
-        total += line.quantity * line.price
-    return total
+def _lines_by_order(entry) -> dict:
+    """``{order cell: {atom pointer: line}}`` of every line held by a product's ``order_lines`` end."""
+    found = {}
+    for _, product in _cells(entry, PRODUCT_TYPE):
+        for item in product.order_lines or ():
+            line = item.member              # a maintained-key entry ``{member, key}`` (R262)
+            found.setdefault(line.order.name, {})[line.atom_pointer] = line
+    return found
 
 
 def _check_version(entry, report: VerifierReport) -> None:
+    lines = _lines_by_order(entry)
     committed = {}
     for name, order in _cells(entry, ORDER_TYPE):
-        total = _order_total(order)
+        own = lines.get(name, {})
+        total = Decimal(0)
+        for line in own.values():
+            total += line.quantity * line.price
+        listed = {line.atom_pointer for line in order.lines or ()}
+        if listed != set(own):
+            report.aggregate_mismatches.append((entry.version, name, "lines", len(own), len(listed)))
         if order.total != total:
             report.aggregate_mismatches.append((entry.version, name, "total", total, order.total))
         state = order.state if order.state is not None else "open"

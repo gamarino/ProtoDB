@@ -265,3 +265,96 @@ def test_summarize_gives_medians_and_ranges_per_cell(tmp_path):
     assert cell["commit_latency_p50_ms"] == {"median": 2.0, "min": 1.0, "max": 3.0}
     assert cell["commits"] == {"median": 11, "min": 10, "max": 12}
     assert summary["commits_measured"] == ["abc1234"] and summary["all_clean"] is True
+
+
+# -- fix round 1: the lines from the products' side, timings, the read variant ---------------------------------
+
+def test_the_verifier_does_not_trust_the_orders_line_collection(db):
+    """The lines are found from the products' ``order_lines`` ends (each line atom names its order), so a line
+    dropped from the order's own ``lines`` (raw) still weighs, and the difference is reported."""
+    from proto_db.collections.lists import List
+    _, customer, _, order = _world(db)
+    dropped = _raw(db, order, lines=List())
+    report = verify_history(db)
+    assert (dropped, order.name, "lines", 1, 0) in report.aggregate_mismatches
+    assert not any(m[2] == "committed" for m in report.aggregate_mismatches)     # still 50, from the products
+    assert not any(m[2] == "total" for m in report.aggregate_mismatches)
+    assert report.violations == []
+
+
+def test_a_verifier_failure_alone_makes_the_run_unverified(tmp_path, monkeypatch):
+    """With the reconciliation clean, a violation found by the verifier must still fail the run."""
+    real = experiment.verify_history
+
+    def planted(db):
+        report = real(db)
+        report.violations.append((1, "acme.sales.Customer#planted", Decimal("2"), Decimal("1")))
+        return report
+    monkeypatch.setattr(experiment, "verify_history", planted)
+    out = tmp_path / "r.json"
+    status = experiment.main(["--mode", "intents", "--threads", "1", "--orders", "2", "--customers", "1",
+                              "--products", "1", "--workdir", str(tmp_path / "work"), "--out", str(out)])
+    result = json.loads(out.read_text())
+    assert status == 1 and result["verified"] is False
+    assert result["reconciliation"] == [] and result["violations"] == 1
+
+
+def test_check_timings_flags_inconsistent_parts():
+    good = [experiment.CommitTiming(latency=0.010, under_lock=0.004, validate=0.001, replay=0.002)]
+    assert experiment.check_timings(good, wall=1.0) == []
+    for bad in (experiment.CommitTiming(latency=0.003, under_lock=0.004, validate=0.0, replay=0.0),   # wait < 0
+                experiment.CommitTiming(latency=0.010, under_lock=0.004, validate=0.003, replay=0.002),
+                experiment.CommitTiming(latency=0.010, under_lock=0.004, validate=0.0, replay=0.005)):
+        assert experiment.check_timings([bad], wall=1.0), bad
+    assert experiment.check_timings(good * 200, wall=0.5)         # 0.8 s under the lock in a 0.5 s window
+
+
+def _variant_world(db):
+    plan, limits = experiment.make_plan(orders=2, customers=1, products=1, seed=1, limit_fraction=0.75)
+    return plan, db.run(experiment._setup({0: Decimal("1000")}, 1))
+
+
+@pytest.mark.parametrize("reads, conflicts", [("credit-limit", True), ("none", False)])
+def test_the_read_variant_has_a_fine_read_set_that_conflicts(db, reads, conflicts):
+    """``--reads credit-limit``: each order reads its customer's limit, so its fine read set holds
+    ``(customer, credit_limit)``, and a concurrent change of the limit is a conflict.  The default workload
+    reads nothing: its fine read set is empty and the same change commits beside it."""
+    from proto_db.errors import ProtoConflictError
+    plan, world = _variant_world(db)
+    _, customers, _ = world
+    tr = db.new_transaction(intents=True)
+    try:
+        experiment.record_order(tr, world, plan[0], reads=reads)
+        recorded = dict(tr._intent_log._reads)
+        if conflicts:
+            assert (customers[0].name, "credit_limit") in recorded
+        else:
+            assert recorded == {}
+        db.run(lambda other: semantic(other).update(customers[0], credit_limit=Decimal("2000")))
+        if conflicts:
+            with pytest.raises(ProtoConflictError):
+                tr.commit()
+        else:
+            tr.commit()
+    finally:
+        if tr.is_active:
+            tr.abort()
+
+
+@pytest.mark.parametrize("mode", ["direct", "intents"])
+def test_the_command_line_reports_consistent_commit_timings(tmp_path, mode):
+    out = tmp_path / f"{mode}.json"
+    status = experiment.main(["--mode", mode, "--threads", "2", "--orders", "10", "--customers", "2",
+                              "--products", "2", "--reads", "credit-limit", "--workdir", str(tmp_path / "work"),
+                              "--out", str(out)])
+    result = json.loads(out.read_text())
+    assert status == 0, (result["reconciliation"], result["timing_checks"])
+    assert result["reads"] == "credit-limit" and result["timing_checks"] == []
+    timings = result["timings"]
+    for name in ("under_lock_ms", "wait_ms", "validate_ms", "replay_ms"):
+        assert "p50" in timings[name], name
+    assert 0 < timings["lock_occupancy"] <= 1
+    assert timings["samples"] == result["attempts"] - timings["commits_not_reached"]
+    if mode == "direct":
+        assert timings["replay_ms"]["p50"] == 0
+    assert len(result["check"]["load_average"]) == 3 and isinstance(result["check"]["foreign_processes"], list)

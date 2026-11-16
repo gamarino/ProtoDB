@@ -958,13 +958,25 @@ computed attribute of the company or a product. In intent mode those reads recor
 coarsening; finer membership reads come after the MVP), so a workload that made them would measure that
 coarsening rather than the model.
 
+**In intent mode this workload's fine read set is empty.** An order reads nothing through the session. Its commit
+validates only the catalog roots, which no order changes, so its zero conflicts below hold by construction. The
+measurement does not exercise the fine read set, and its 79 ms commit p50 says nothing about the read set's cost.
+The spec's open question about the cost of the fine read set's granularity (section 16) is therefore **not
+answered here**. The harness now has what answers it, for the final integration re-measurement: a variant
+``--reads credit-limit``, in which each order first reads its customer's ``credit_limit`` (a stored field no order
+writes; its fine read set is ``(customer, credit_limit)``, and a concurrent change of that limit is a conflict, as
+a test shows), and per-commit stage timings in both modes (time under the root lock, the reads' validation, the
+replay, and the wait). Neither existed at ``9a8ce75``, so no figure on this page comes from them.
+
 **Every run verifies itself** before it reports a figure. The outcome of every order (committed, refused by the
 credit rule, refused by conflict after the last retry) is reconciled with the final state, read raw: the committed
 orders are exactly the orders stored, with their planned totals; each customer's maintained aggregate equals the
 sum of its committed orders and is within its limit; each refusal by the rule is explained by the final state;
 each retry was a conflict; each commit published one version. Then the history verifier
 (``benchmarks/semantic/history_verifier.py``) walks every version and recomputes each customer's committed amount
-from the order lines, raw, starting from the order cells. It deliberately re-states the model's rules instead of
+from the order lines, raw, starting from the order cells. (At ``9a8ce75`` it summed each order's own ``lines``
+collection; it now finds the lines from the products' ``order_lines`` ends and reports an order whose own
+collection differs.) It deliberately re-states the model's rules instead of
 reusing the code that maintains the aggregates, so that it cannot agree with an error of that code. All 20 runs
 were verified.
 
@@ -980,6 +992,12 @@ intents, GIL off    295 [295-300]    0                0                  105 [10
 intents, GIL on     296 [293-298]    0                0                  104 [102-107]        0
 ==================  ===============  ===============  =================  ===================  ==========
 
+These medians pool the runs started at every load (1-minute load 2.1-15.2). Over the clean runs only (those of
+the cost table below), the medians are: direct, GIL off: 322 committed, 489 conflicts, 34 refused by conflict, 44
+by the rule; direct, GIL on (2 runs): 304 and 314 committed, 672 and 874 conflicts, 51 and 62 refused by
+conflict, 24 and 45 by the rule; intents, GIL off: 295, 0, 0, 105; intents, GIL on (2 runs): 295 and 296
+committed, 0, 0, 104 and 105 by the rule.
+
 Of the 400 orders, intent mode refused none by conflict and conflicted on no attempt. The orders that it refused
 were refused by the credit rule, and no version of any history holds a customer above its limit or a maintained
 aggregate that differs from the lines. Direct mode also never let a customer exceed its limit (0 violations): **the
@@ -992,8 +1010,7 @@ mode refuses fewer orders by the credit rule. The verification counts (refusals 
 violations, 0 mismatches) do not depend on the load. The conflict counts do: they depend on how the threads
 interleave, and the largest (1,173 conflicts, 78 refusals) comes from a run on the loaded machine described below.
 
-Cost, from the runs started with a 1-minute load below 4 and no foreign test or benchmark process (median
-[min-max]):
+Cost, from the runs started with a 1-minute load below 4 (median [min-max]):
 
 ================  ====  ================  ===================  ===================  ================
 Cell              runs  commit p50 (ms)   commit p95 (ms)      orders/s             committed/s
@@ -1005,7 +1022,13 @@ intents, GIL on   2     99.0, 100.1       135.3, 145.5         74.2, 74.7       
 ================  ====  ================  ===================  ===================  ================
 
 Start load (1-minute average) of these runs: direct GIL off 2.07, 3.40, 3.20; intents GIL off 3.13, 3.87, 2.46;
-direct GIL on 3.56, 3.81; intents GIL on 3.54, 3.66. With two runs, both values are given. The remaining cost
+direct GIL on 3.56, 3.81; intents GIL on 3.54, 3.66. With two runs, both values are given. Each figure comes from
+one timed window per run (the 400 orders, ``wall_s``): 5.46-5.49 s direct and 3.57-3.68 s intents with the GIL
+off; 12.0 and 16.7 s direct and 5.36 and 5.39 s intents with it on. That no other session's process ran during
+these runs is not what the driver checked: its process check (``pgrep -af 'pytest|benchmarks'``) could not see a
+protoST job. It rests on the load and the timeline: the 15-minute load before the first run was 2.49, from this
+task's own tests and calibration runs, and the other session's protoBaseST audit started at 09:31, after the
+reboot. Each run now records its load average and a check that includes protoST (``check`` in its JSON). The remaining cost
 cells (GIL off repetitions 4-5, GIL on repetitions 3-5) are **not measured (machine shared; re-measured in the
 final integration runs)**. The driver stopped when the machine rebooted during GIL-on repetition 3. The
 resumed runs started at loads of 4.9-15.2, just after the boot. Afterwards another session's test suite kept the
@@ -1017,10 +1040,13 @@ commits do different work. In direct mode the credit rule is checked by the oper
 commit validates the read set and publishes. In intent mode the commit replays the logged operations on the cells
 current at commit, checks the rule on the result and publishes, under the root lock. With 8 threads, an intent
 commit therefore also waits for the replays queued ahead of it. The p50 of 79 ms (GIL off) includes that wait, and
-it is not a per-commit CPU cost: this experiment does not separate the two. In throughput, the per-commit cost
-pays off: intent mode completed the 400 orders 1.5x faster than direct mode with the GIL off (109 against 73
-orders/s, and 81 against 59 committed orders/s), because no work is retried. With the GIL on, both modes are
-slower, and direct mode loses more: its retries are serialised by the GIL.
+it is not a per-commit CPU cost: the runs at ``9a8ce75`` do not separate the two. In committed orders per second
+(recomputed from the published files, not re-measured), intent mode committed 1.37x as many orders per second as
+direct mode with the GIL off (80.5 against 58.7, medians of 3 runs). With the GIL on it committed 54.9 and 55.1
+orders/s against 18.8 and 25.4 (2 runs each). The two modes do not commit the same orders: direct mode refused
+34-78 valid orders by conflict, and so committed 301-323 against intent mode's 293-300. The orders decided per
+second (400 / window) are in the table, but a refusal by conflict counts as a decision there. Why direct mode
+loses more with the GIL on was not measured.
 
 Reproducing::
 
@@ -1031,7 +1057,9 @@ Reproducing::
     $PY -m benchmarks.semantic.credit_experiment --summarize <files> --out summary.json
 
 The driver alternated mode and GIL mode run by run (``direct``, ``intents``; GIL off, then on; 5 repetitions).
-A run takes about 25 seconds, most of it the history verifier's walk of about 300 versions.
+A run takes about 25 seconds, most of it the history verifier's walk of about 300 versions. The final
+integration re-measurement adds ``--reads credit-limit`` runs of both modes, and reports the stage timings
+(``timings`` in each JSON file) of both variants.
 
 Reproducing
 -----------

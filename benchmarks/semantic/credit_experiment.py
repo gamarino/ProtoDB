@@ -15,6 +15,20 @@ customer's committed amount, a query, ``.record`` or a computed attribute of the
 intent mode those record whole cells, a sound coarsening, and the experiment would measure that coarsening
 instead of the model).
 
+With ``--reads credit-limit`` each order first reads its customer's ``credit_limit`` through the session (a
+stored field of the customer, which no order writes).  In intent mode that read is the order's fine read set,
+``(customer, credit_limit)``, validated at commit; in direct mode it puts the customer's cell in the read set.  The
+default workload (``--reads none``) reads nothing, so in intent mode its fine read set is empty and only the
+catalog roots are validated: its zero conflicts hold by construction, and it does not measure the read set's cost.
+
+Commit timings are taken by harness-only wrappers (:class:`CommitProbe`), the same in both modes, which change
+no behaviour: per commit attempt, the time in ``Transaction._build_root`` (under the root lock), the validation
+of the reads in it (``IntentLog._validate``; ``Transaction._check_mutables`` in direct mode) and the rest of the
+replay (``IntentLog.replay`` minus its validation; 0 in direct mode).  The wait is the commit's latency minus its
+time under the lock; the lock occupancy is the time under the lock summed over the attempts, over the timed
+window.  :func:`check_timings` verifies them (no negative wait, no part larger than its whole, an occupancy of
+at most 1).
+
 The run is self-reporting.  It prints the work it did and verifies it before it reports a figure:
 
 - :func:`reconcile` checks the outcome of every planned order against the final state, independently read: the
@@ -22,6 +36,7 @@ The run is self-reporting.  It prints the work it did and verifies it before it 
   aggregate is the sum of its committed orders and within its limit; a refusal by the credit rule is explained by
   the final state; every retry was a conflict and the counts of attempts match the retry policy; every commit
   published exactly one version;
+- :func:`check_timings` checks the commit timings;
 - :func:`~benchmarks.semantic.history_verifier.verify_history` walks every version of the history and recomputes
   each customer's committed amount from the lines (an independent oracle).
 
@@ -29,7 +44,7 @@ A failed check makes the run unverified: exit status 1, ``"verified": false`` in
 anyway.  Usage, from the root of the tree to measure (a clean ``python -m benchmarks.export`` tree)::
 
     python -m benchmarks.semantic.credit_experiment --mode direct|intents --threads N --orders M \\
-        --customers K --seed S --workdir DIR --out FILE
+        --customers K --seed S [--reads none|credit-limit] --workdir DIR --out FILE
     python -m benchmarks.semantic.credit_experiment --summarize FILE... --out SUMMARY
 
 ``DIR`` must not exist; the space is created in it and left there.  ``--summarize`` gives, per mode and GIL
@@ -44,6 +59,7 @@ import random
 import statistics
 import sys
 import sysconfig
+import threading
 import time
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -51,7 +67,7 @@ from decimal import ROUND_FLOOR, Decimal
 from typing import NamedTuple
 
 from benchmarks.harness import _cpu_model, _git_revision, cpu_frequency_policy, filesystem_of, gil_enabled, \
-    latency_ms, stray_check
+    latency_ms, stray_check, stray_processes
 from benchmarks.semantic.history_verifier import verify_history
 from benchmarks.support import run_threads
 
@@ -62,6 +78,8 @@ ORDER, CUSTOMER, PRODUCT, COMPANY = "acme.sales.Order", "acme.sales.Customer", "
     "acme.core.Company"
 CREDIT_RULE = "committed <= credit_limit"
 STATUSES = ("committed", "constraint", "conflict", "error")
+#: The processes of other sessions that make a timing unpublishable (``pgrep -af`` pattern).
+FOREIGN = "protost|protoST|pytest|benchmarks|rqlited"
 
 
 class PlannedOrder(NamedTuple):
@@ -98,6 +116,94 @@ class FinalState:
     orders: dict
     committed: dict
     versions_added: int = 0
+
+
+@dataclass
+class CommitTiming:
+    """One commit attempt, in seconds: its ``latency`` (around ``Transaction.commit()``), its time
+    ``under_lock`` (in ``Transaction._build_root``), the ``validate`` part of that (the reads' validation) and
+    the ``replay`` part (the intent log's replay without its validation)."""
+
+    latency: float
+    under_lock: float = 0.0
+    validate: float = 0.0
+    replay: float = 0.0
+
+    @property
+    def wait(self) -> float:
+        return self.latency - self.under_lock
+
+
+def check_timings(samples: list, *, wall: float) -> list:
+    """The problems of ``samples`` (:class:`CommitTiming`) taken over a window of ``wall`` seconds."""
+    problems = []
+    for i, t in enumerate(samples):
+        if min(t.latency, t.under_lock, t.validate, t.replay) < 0:
+            problems.append(f"commit {i}: a negative time {t}")
+        if t.under_lock > t.latency:
+            problems.append(f"commit {i}: {t.under_lock:.6f} s under the lock in a commit of {t.latency:.6f} s")
+        if t.validate + t.replay > t.under_lock:
+            problems.append(f"commit {i}: validation {t.validate:.6f} s + replay {t.replay:.6f} s exceed the "
+                            f"{t.under_lock:.6f} s under the lock")
+    occupied = sum(t.under_lock for t in samples)
+    if wall <= 0 or occupied > wall:
+        problems.append(f"{occupied:.4f} s under the root lock in a window of {wall:.4f} s (the lock is held by "
+                        f"one commit at a time)")
+    return problems
+
+
+class CommitProbe:
+    """Harness-only timing of the commit's stages: while installed, wrappers around
+    ``Transaction._build_root``, ``Transaction._check_mutables``, ``IntentLog.replay`` and
+    ``IntentLog._validate`` add their durations to the transaction they work for (a group-commit leader builds
+    other threads' transactions: the time goes to the transaction built).  They call the original and change
+    nothing else.  :meth:`take` gives and forgets one transaction's totals."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._totals = {}
+        self._saved = []
+
+    def _add(self, tr, part: str, seconds: float) -> None:
+        with self._lock:
+            parts = self._totals.setdefault(id(tr), {"under_lock": 0.0, "validate": 0.0, "replay": 0.0})
+            parts[part] += seconds
+
+    def _wrap(self, owner, name: str, part: str, transaction_of) -> None:
+        original = owner.__dict__[name]
+        probe = self
+
+        def timed(self, *args, **kwargs):
+            start = time.perf_counter()
+            try:
+                return original(self, *args, **kwargs)
+            finally:
+                probe._add(transaction_of(self), part, time.perf_counter() - start)
+        timed.__wrapped__ = original
+        self._saved.append((owner, name, original))
+        setattr(owner, name, timed)
+
+    def install(self) -> "CommitProbe":
+        from proto_db.semantic.intents import IntentLog
+        from proto_db.transactions import Transaction
+        self._wrap(Transaction, "_build_root", "under_lock", lambda tr: tr)
+        self._wrap(Transaction, "_check_mutables", "validate", lambda tr: tr)
+        self._wrap(IntentLog, "replay", "replay", lambda log: log._tr)
+        self._wrap(IntentLog, "_validate", "validate", lambda log: log._tr)
+        return self
+
+    def uninstall(self) -> None:
+        for owner, name, original in reversed(self._saved):
+            setattr(owner, name, original)
+        self._saved.clear()
+
+    def take(self, tr, latency: float) -> CommitTiming:
+        with self._lock:
+            parts = self._totals.pop(id(tr), {"under_lock": 0.0, "validate": 0.0, "replay": 0.0})
+        validate = parts["validate"]
+        # IntentLog.replay calls _validate: its replay part is its time without the validation.
+        replay = max(0.0, parts["replay"] - validate) if parts["replay"] else 0.0
+        return CommitTiming(latency, parts["under_lock"], validate, replay)
 
 
 def make_plan(*, orders: int, customers: int, products: int, seed: int, limit_fraction: float) -> tuple:
@@ -190,29 +296,41 @@ def _setup(plan_limits: dict, products: int):
     return setup
 
 
-def _place(db, world: tuple, order: PlannedOrder, *, intents: bool, retries: int, credit: str, latencies: list,
-           attempt_latencies: list) -> Outcome:
-    """Place ``order`` with ``Database.run``; the commit is timed inside ``fn``."""
-    from proto_db.errors import ProtoConflictError, ProtoConstraintError
+READS = ("none", "credit-limit")
+
+
+def record_order(tr, world: tuple, order: PlannedOrder, *, reads: str = "none") -> None:
+    """The order's semantic operations in ``tr``, without the commit: with ``reads="credit-limit"`` it first
+    reads its customer's ``credit_limit`` through the session (the read is recorded whatever the caller does
+    with it; the workload places the order anyway, so both variants decide the same orders)."""
     from proto_db.semantic import semantic
     company, customers, products = world
+    s = semantic(tr)
+    if reads == "credit-limit":
+        s.get(customers[order.customer]).credit_limit
+    created = s.create(ORDER, number=order.number, date=date(2026, 7, 1) + timedelta(days=order.number % 28),
+                       company=company, customer=customers[order.customer])
+    version = s.get(created)
+    for product, quantity, price in order.lines:
+        version.add_line(products[product], quantity, price)
+
+
+def _place(db, world: tuple, order: PlannedOrder, *, intents: bool, retries: int, credit: str, reads: str,
+           probe: CommitProbe, timings: list) -> Outcome:
+    """Place ``order`` with ``Database.run``; each commit attempt is timed inside ``fn`` (``timings``)."""
+    from proto_db.errors import ProtoConflictError, ProtoConstraintError
     counts = {"attempts": 0, "conflicts": 0}
 
     def fn(tr):
         counts["attempts"] += 1
         try:
-            s = semantic(tr)
-            created = s.create(ORDER, number=order.number, date=date(2026, 7, 1) + timedelta(days=order.number % 28),
-                               company=company, customer=customers[order.customer])
-            version = s.get(created)
-            for product, quantity, price in order.lines:
-                version.add_line(products[product], quantity, price)
-            start = time.perf_counter()
+            record_order(tr, world, order, reads=reads)
+            start, committed = time.perf_counter(), False
             try:
                 tr.commit()
+                committed = True
             finally:
-                attempt_latencies.append(time.perf_counter() - start)
-            latencies.append(attempt_latencies[-1])
+                timings.append((probe.take(tr, time.perf_counter() - start), committed))
         except ProtoConflictError:
             counts["conflicts"] += 1
             raise
@@ -269,6 +387,9 @@ def run(args) -> dict:
 
     os.makedirs(args.workdir)
     check = stray_check(args.workdir)
+    # The machine is shared: record the load and every test, benchmark or protoST process of another session.
+    check["load_average"] = list(os.getloadavg())
+    check["foreign_processes"] = stray_processes(FOREIGN)
     plan, limits = make_plan(orders=args.orders, customers=args.customers, products=args.products, seed=args.seed,
                              limit_fraction=args.limit_fraction)
     storage = MemoryStorage() if args.storage == "memory" else \
@@ -281,16 +402,18 @@ def run(args) -> dict:
         db.run(lambda tr: tr.install_module("acme_sales"))
         world = db.run(_setup(limits, args.products))
         before = len(db.history())
-        latencies = [[] for _ in range(args.threads)]
-        attempt_latencies = [[] for _ in range(args.threads)]
-
-        def worker(t: int):
-            def work():
-                return [(o.number, _place(db, world, o, intents=intents, retries=args.retries, credit=credit,
-                                          latencies=latencies[t], attempt_latencies=attempt_latencies[t]))
-                        for o in plan[t::args.threads]]
-            return work
-        wall, results = run_threads([worker(t) for t in range(args.threads)], timeout=args.timeout)
+        timings = [[] for _ in range(args.threads)]
+        probe = CommitProbe().install()
+        try:
+            def worker(t: int):
+                def work():
+                    return [(o.number, _place(db, world, o, intents=intents, retries=args.retries, credit=credit,
+                                              reads=args.reads, probe=probe, timings=timings[t]))
+                            for o in plan[t::args.threads]]
+                return work
+            wall, results = run_threads([worker(t) for t in range(args.threads)], timeout=args.timeout)
+        finally:
+            probe.uninstall()
         outcomes = {number: outcome for result in results for number, outcome in result}
         final = _final_state(db, world)
         final.versions_added = len(db.history()) - before
@@ -301,11 +424,15 @@ def run(args) -> dict:
         space.close()
     problems = reconcile(plan, limits, outcomes, final, retries=args.retries)
     tally = {status: sum(1 for o in outcomes.values() if o.status == status) for status in STATUSES}
-    commits = [x for per in latencies for x in per]
-    attempts = [x for per in attempt_latencies for x in per]
+    samples = [pair for per in timings for pair in per]
+    attempt_timings = [t for t, _ in samples]
+    commits = [t.latency for t, ok in samples if ok]
+    attempts = [t.latency for t in attempt_timings]
+    timing_problems = check_timings(attempt_timings, wall=wall)
+    occupancy = sum(t.under_lock for t in attempt_timings) / wall if wall else None
     source = _git_revision()
     settings = {k: getattr(args, k) for k in ("mode", "threads", "orders", "customers", "products", "seed",
-                                               "retries", "limit_fraction", "storage", "durability")}
+                                               "retries", "limit_fraction", "storage", "durability", "reads")}
     return {
         "experiment": "semantic credit: intents against direct mode",
         "commit": source.get("commit"), "clean": bool(source.get("clean")), "source": source,
@@ -326,12 +453,23 @@ def run(args) -> dict:
                      "aggregate_mismatches": [list(map(str, m)) for m in report.aggregate_mismatches]},
         "commit_latency_ms": latency_ms(commits),
         "commit_attempt_latency_ms": latency_ms(attempts),
+        "timings": {"samples": len(attempt_timings),
+                    "commits_not_reached": sum(o.attempts for o in outcomes.values()) - len(attempt_timings),
+                    "under_lock_ms": latency_ms([t.under_lock for t in attempt_timings]),
+                    "wait_ms": latency_ms([t.wait for t in attempt_timings]),
+                    "validate_ms": latency_ms([t.validate for t in attempt_timings]),
+                    "replay_ms": latency_ms([t.replay for t in attempt_timings]),
+                    "lock_occupancy": round(occupancy, 4) if occupancy is not None else None,
+                    "what": "per commit attempt: under_lock = Transaction._build_root; validate = the reads' "
+                            "validation in it; replay = IntentLog.replay without validation (0 in direct mode); "
+                            "wait = latency - under_lock; lock_occupancy = sum(under_lock) / wall_s"},
+        "timing_checks": timing_problems,
         "wall_s": round(wall, 4),
         "commits_per_s": round(tally["committed"] / wall, 2) if wall else None,
         "orders_per_s": round(len(plan) / wall, 2) if wall else None,
         "versions_added": final.versions_added,
         "reconciliation": problems,
-        "verified": not problems and report.ok,
+        "verified": not problems and not timing_problems and report.ok,
         "environment": environment(args.workdir),
         "check": check,
     }
@@ -344,11 +482,14 @@ def report_lines(result: dict) -> list:
     lines = [
         f"credit experiment at {result['commit']} (clean: {result['clean']}), mode {result['mode']}, "
         f"gil={int(result['gil'])}, {result['threads']} threads, {result['customers']} customers, "
-        f"{result['products']} products, seed {result['seed']}, storage {result['storage']}",
+        f"{result['products']} products, seed {result['seed']}, reads {result['reads']}, storage {result['storage']}",
         f"{result['orders']} orders: {result['attempts']} attempts, {result['commits']} committed, "
         f"{result['conflicts']} conflicts (retries), {result['rejected_by_conflict']} rejected by conflict, "
         f"{result['rejected_by_constraint']} rejected by constraint, {result['errors']} errors",
         f"commit latency p50 {lat['p50']} ms, {tail} ms; {result['commits_per_s']} commits/s over {result['wall_s']} s",
+        f"commit stages (p50): {result['timings']['under_lock_ms']['p50']} ms under the root lock "
+        f"(validation {result['timings']['validate_ms']['p50']}, replay {result['timings']['replay_ms']['p50']}), "
+        f"wait {result['timings']['wait_ms']['p50']} ms; lock occupancy {result['timings']['lock_occupancy']}",
         f"history verifier: {result['verifier']['versions']} versions, {result['violations']} violations, "
         f"{len(result['verifier']['aggregate_mismatches'])} aggregate mismatches",
     ]
@@ -357,6 +498,7 @@ def report_lines(result: dict) -> list:
     else:
         lines.append("NOT verified:")
         lines += [f"   {p}" for p in result["reconciliation"]]
+        lines += [f"   timing: {p}" for p in result["timing_checks"][:10]]
         lines += [f"   violation {v}" for v in result["verifier"]["violations"][:10]]
         lines += [f"   mismatch {m}" for m in result["verifier"]["aggregate_mismatches"][:10]]
     return lines
@@ -415,6 +557,8 @@ def parse_args(argv=None) -> argparse.Namespace:
     parser.add_argument("--retries", type=int, default=10, help="Database.run's retry budget (its default: 10)")
     parser.add_argument("--limit-fraction", type=float, default=0.75,
                         help="each customer's limit as a fraction of the demand the plan places on it")
+    parser.add_argument("--reads", choices=READS, default="none",
+                        help="credit-limit: each order first reads its customer's credit_limit (a fine read set)")
     parser.add_argument("--storage", choices=("file", "memory"), default="file")
     parser.add_argument("--durability", choices=("none", "flush", "fsync"), default="none")
     parser.add_argument("--timeout", type=float, default=1800.0, help="seconds for the threads to finish")
