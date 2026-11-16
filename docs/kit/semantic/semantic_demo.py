@@ -31,7 +31,13 @@ finds the widget among its products.
 Steps 1, 2, 4 and 5 ask through the agent interface: a scripted MCP client (ruling R266: no language model runs
 in the demo) starts the server (``python -m proto_db.agent``) over stdio and prints each tool call and its
 response.  They need the optional extra ``agent`` (the MCP SDK).  The server opens the database's files, so
-the demo closes its own space while the agent asks.  Step 6 arrives with a later task.
+the demo closes its own space while the agent asks.
+
+Step 6: the same questions in another language.  protoBaseST (Smalltalk) reads this database through the format's
+specification and answers step 5's questions through its own accessors.  The step is "external": it runs the
+command in ``PROTOBASEST_STEP6_CMD`` (given ``--path``, ``--database`` and ``--out`` after it) and compares its
+output with the expected one (``python -m proto_db.agent.step6``); without the variable it prints where the
+handoff is (``docs/kit/semantic/protoBaseST-handoff.md``) and counts no check.
 
 The demo checks what it shows.  Each "[check]" line is an assertion that held; a failed check stops the
 demo with exit status 1.  It ends with "every check passed" only when all of them held.
@@ -40,7 +46,9 @@ import argparse
 import asyncio
 import json
 import os
+import shlex
 import shutil
+import subprocess
 import sys
 import sysconfig
 import tempfile
@@ -53,11 +61,8 @@ sys.path.insert(0, REPO)        # the canonical import path of the demo's module
 
 from proto_db import FileStorage, MutableObject, ObjectSpace, ProtoConflictError, ProtoConstraintError  # noqa: E402
 from proto_db.semantic import semantic  # noqa: E402
-
-DATABASE = "acme"
-
-#: Registry module name -> import path of its code (the runtime's modules_mapping).
-MAPPING = {"acme_sales": "docs.kit.semantic.acme_sales", "acme_delivery": "docs.kit.semantic.acme_delivery"}
+from docs.kit.semantic import queries  # noqa: E402
+from docs.kit.semantic.queries import DATABASE, MAPPING  # noqa: E402
 ORDER, LINE = "acme.sales.Order", "acme.sales.OrderLine"
 CHECKS = []
 
@@ -447,17 +452,13 @@ def step_5(path: str, world: dict) -> None:
     to its products); ``world`` is the load's own record, used only to check the answers."""
     say("Where to start: the agent lists the companies, then finds the widget among the company's products.")
     companies, = ask(path, [("list_entities", {"filter": "acme.core.Company"})])
-    [company] = next(e for e in companies["entities"] if e["type_name"] == "acme.core.Company")["cells"]
-    found, = ask(path, [("query", {"tree": {"from": ["via", ["cell", company], "products"],
-                                            "where": ["==", ["attr", "name"], ["const", "widget"]]}})])
-    widget = found["rows"][0]["entity"]["cell"]
+    company = queries.company_cell(companies)
+    found, = ask(path, [("query", {"tree": queries.widget_of(company)})])
+    widget = queries.widget_cell(found)
     check(company == world["company"] and widget == world["widget"],
           "the agent found the company and the widget through the interface, not from the script")
     say()
-    june = ["and", [">=", ["attr", "order", "date"], ["const", {"date": "2026-06-01"}]],
-            ["<=", ["attr", "order", "date"], ["const", {"date": "2026-06-30"}]]]
-    sold_tree = {"from": ["via", ["cell", widget], "order_lines"], "where": june, "select": ["quantity", "price"]}
-    limit_tree = {"from": ["via", ["cell", company], "customers"], "select": ["name", "committed", "credit_limit"]}
+    sold_tree, limit_tree = queries.sold_in_june(widget), queries.customer_limits(company)
     say('Three questions.  For each, the agent first checks that the catalog names its terms.')
     terms_sold, sold, terms_limit, limits, terms_ads = ask(path, [
         ("check_answerable", {"terms": ["product", "quantity", "date"]}),
@@ -505,6 +506,35 @@ def step_5(path: str, world: dict) -> None:
     say('"How much did we spend on advertising?"')
     check(not terms_ads["answerable"] and terms_ads["unmatched"] == ["advertising", "spend"],
           "the catalog names neither 'advertising' nor 'spend': the agent says it cannot answer, and runs no query")
+
+
+# -- step 6 ----------------------------------------------------------------------------------------------------
+
+HANDOFF = os.path.join("docs", "kit", "semantic", "protoBaseST-handoff.md")
+
+
+def step_6(workdir: str, path: str) -> None:
+    """The protoBaseST step: external.  With ``PROTOBASEST_STEP6_CMD`` the demo runs it on this database and
+    checks its output equals the expected one; without it the step says where the handoff is."""
+    command = os.environ.get("PROTOBASEST_STEP6_CMD")
+    if not command:
+        say(f"external: protoBaseST answers step 5's questions from this database's catalog; set PROTOBASEST_STEP6_CMD "
+            f"to run it here.  The handoff, with what to read, implement and not implement: {HANDOFF}")
+        return
+    from proto_db.agent import step6
+    expected, actual = os.path.join(workdir, "step6-expected.json"), os.path.join(workdir, "step6-protobasest.json")
+    step6.write_expected(path, DATABASE, expected)
+    arguments = [*shlex.split(command), "--path", path, "--database", DATABASE, "--out", actual]
+    say(f"   running: {' '.join(arguments)}")
+    done = subprocess.run(arguments, cwd=REPO, capture_output=True, text=True)
+    if done.returncode != 0:
+        raise SystemExit(f"[FAILED] the protoBaseST command exited {done.returncode}:\n{done.stdout}{done.stderr}")
+    with open(expected, encoding="utf-8") as f, open(actual, encoding="utf-8") as g:
+        found = step6.differences(json.load(f), json.load(g))
+    for line in found[:20]:
+        say(f"   differs: {line}")
+    check(not found, "protoBaseST's step-6 output equals the expected output (describe of every entity, the "
+          "rows of the step-6 queries)")
 
 
 def _space(workdir: str) -> ObjectSpace:
@@ -560,6 +590,8 @@ def main(argv=None) -> int:
         step_4_agent(path, refused)
         title("Step 5: questions with verifiable answers")
         step_5(path, world)
+        title("Step 6: the same questions in another language (external)")
+        step_6(workdir, path)
     finally:
         if own:
             shutil.rmtree(workdir, ignore_errors=True)

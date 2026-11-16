@@ -173,6 +173,11 @@ For the cross-implementation round trip (R83a), also run the reverse: write a da
 your implementation, open it with ProtoBase (`ObjectSpace(FileStorage(path))`), and compare; `python -m proto_db.tools.verify <path>`
 does the ProtoBase side in one command (exit 0, and the content dumped in this notation).
 
+Beyond the vectors, `test_catalog_cross_language.py` compares an implementation's step-6 output and
+catalog canonical form with ProtoBase's for one database of the semantic-model demo (environment
+`PROTODB_ST_STEP6_DB`, `PROTODB_ST_STEP6_OUTPUT`, `PROTODB_ST_CANONICAL`; skipped when unset). The
+procedure is `docs/kit/semantic/protoBaseST-handoff.md`.
+
 ## Regenerating
 
 ```

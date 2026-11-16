@@ -44,8 +44,10 @@ def test_the_semantic_demo_runs_and_checks_itself(tmp_path):
                                       "SDK), absent from this interpreter (preflight F30)")
     out = _run([os.path.join(KIT, "semantic", "semantic_demo.py"), "--workdir", str(tmp_path / "demo")], REPO, 300)
     assert out.returncode == 0, f"the demo failed\n--- stdout ---\n{out.stdout}\n--- stderr ---\n{out.stderr}"
-    for step in ("Step 1", "Step 2", "Step 3", "Step 4", "Step 5"):
+    for step in ("Step 1", "Step 2", "Step 3", "Step 4", "Step 5", "Step 6"):
         assert step in out.stdout, f"{step} printed nothing:\n{out.stdout}"
+    assert "external" in out.stdout and "protoBaseST-handoff.md" in out.stdout, \
+        f"step 6 does not say it is external and where the handoff is:\n{out.stdout}"
     assert "every check passed" in out.stdout, out.stdout
     assert out.stdout.count("[check]") >= 12, f"the demo checks too little:\n{out.stdout}"
     assert "by_order_date" in out.stdout, out.stdout
