@@ -1,7 +1,8 @@
 # Semantic model MVP: design
 
-Status: **draft for the maintainer's review** (2026-11-15, revised the same day against the brief's restored code
-examples).
+Status: **approved by the maintainer** (2026-11-15). It was written against the brief's restored code examples,
+and the maintainer's rulings on its section 17 are applied: subclasses supported with minimal limits, `describe`
+takes a snapshot, and every other proposed ruling confirmed as R258-R279.
 
 Sources:
 - the semantic-model brief (2026-11-14, the design of record, "the brief");
@@ -14,8 +15,7 @@ Sources:
     from the registry's `__catalog`);
   - modules are never uninstalled: they evolve, and the database is perennial.
 
-Points marked *(proposal)* are the author's calls. Section 17 collects the ones that need a ruling, including every
-place where this spec changes what the brief's examples wrote.
+Section 17 lists the confirmed rulings (R258-R280); section 17a lists the two subclass items still open.
 
 **Scope rule (the script).** The MVP is a demo script, and only what the script needs is built. Everything else
 in the brief is respected, and nothing built may contradict it: incomplete but coherent, never lame. The catalog
@@ -83,7 +83,7 @@ A mini ERP: a company, customers with a credit limit, products, orders with line
 Closing: two numbers. Conflicts and violations detected in the current (direct) mode against the intent mode,
 and correct answers of an agent with and without the catalog.
 
-**The demo is deterministic** *(R-S9)*: the demo script drives the MCP server with a scripted client and prints
+**The demo is deterministic** *(R266)*: the demo script drives the MCP server with a scripted client and prints
 each tool call and response; no language model runs in the demo. A live agent runs only in the agent experiment.
 
 **Domain.** The brief's type names and declarations are used. The demo's text is in English (the repository's
@@ -92,10 +92,10 @@ language rule), where the brief's examples are in Spanish. Module `acme_sales` d
 | Type | Declaration, after the brief |
 |---|---|
 | `acme.core.Company` | `name`; inverse ends `customers`, `orders`, `products` |
-| `acme.sales.Customer` | brief block 8 plus block 7: `name`, `credit_limit = Field(Decimal, unit="currency:company")`, `orders = Relation("acme.sales.Order", cardinality="one-to-many", inverse="customer")`, `company`, `committed = Aggregate(over="orders", where="state != 'cancelled'", sum="total", maintained=True)`, `__constraints__ = [Invariant("committed <= credit_limit", ...)]` |
+| `acme.sales.Customer` | brief blocks 8 and 7: `name`, `credit_limit`, `company`, `orders` (one-to-many), `committed` (maintained `Aggregate` over `orders`, `where="state != 'cancelled'"`), the credit `Invariant` |
 | `acme.catalog.Product` | `name`, `list_price = Field(Decimal)`, `company`; inverse end `order_lines` |
-| `acme.sales.Order` | brief block 1 plus `date = Field(date)`. The demo writes `total` as `Aggregate(over="lines", sum="amount", maintained=True)` rather than the block's lambda, so it is neutral and maintained (section 4). Intents `add_line` and `confirm` follow brief block 6. |
-| `acme.sales.OrderLine` | brief block 4, `class OrderLine(Relationship)`. The demo writes `amount = Computed("quantity * price")` rather than the block's lambda. |
+| `acme.sales.Order` | brief block 1 plus `date`; `total` written as a maintained `Aggregate(over="lines", sum="amount")` instead of the lambda (neutral, R276); intents `add_line` and `confirm` (block 6) |
+| `acme.sales.OrderLine` | brief block 4; `amount = Computed("quantity * price")` instead of the lambda |
 
 The aggregate's `where` is written `state != 'cancelled'` rather than the brief's `state in ('open','confirmed')`:
 the two are equivalent over the declared enumeration, and `in` is outside the MVP subset (section 7).
@@ -141,7 +141,7 @@ class Order(DBObject):
         return self.with_(state="confirmed")
 ```
 
-**The mapping onto rc4** *(R-S2)*. rc4 accepts every spelling above except as noted. The brief's spelling is kept
+**The mapping onto rc4** *(R259)*. rc4 accepts every spelling above except as noted. The brief's spelling is kept
 for every user-facing declaration, and the mapping is internal:
 - **The entity class.** A `DBObject` subclass with `__type_name__` and at least one semantic element (a
   descriptor, an intent, `__constraints__` or a semantic dunder) is a **semantic class**.
@@ -167,33 +167,70 @@ for every user-facing declaration, and the mapping is internal:
   `module.extends("acme.sales.Order")` with the class body as definitions. The base class `Extension` replaces the
   decorator spelling; the decorator stays valid and equivalent. rc4 refuses container classes with a base, so the
   semantic layer hands the body to the registry through an internal entry point.
-- **`describe()`** keeps the brief's spelling as a class method, `Order.describe(source)`, added only to semantic
-  classes (so `DBObject`'s API and reserved names do not change). *(Change to the brief: it takes a `source`, a
-  transaction or a snapshot, because composition is per database (section 5). Without a source it raises
-  `ProtoUserError` naming the reason.)* It returns neutral data (dicts, lists, strings).
+- **`describe()`** keeps the brief's spelling as a class method, `Order.describe(snapshot)`, added only to semantic
+  classes (so `DBObject`'s API and reserved names do not change). "Describe as a photograph": the argument is a
+  read snapshot, an rc4 `Snapshot` or a `Transaction` (which is one), because composition is per database and
+  per version (section 5). Without a snapshot it raises
+  `ProtoUserError` naming the reason. It returns neutral data (dicts, lists, strings).
 - **Field types** are Python types or `Enum(...)`, mapped to the catalog's `value_type` (section 8): `int`,
   `Decimal`, `str`, `bool`, `bytes`, `float`, `date`, `time`, `datetime`, `timedelta`, `uuid.UUID`.
-  `Enum("open", ...)` gives `value_type` `str` with `values` *(R-S11)*. The MVP catalogues `values` and does not
+  `Enum("open", ...)` gives `value_type` `str` with `values` *(R268)*. The MVP catalogues `values` and does not
   enforce them: enforced attribute constraints are outside the MVP, and the catalog marks this.
 - **Lambdas and text.** `Computed(lambda self: ...)` (blocks 1, 4) is accepted, as a local convenience: non-stored,
   catalogued with `kind` `computed`, no `expression`, and `languages: ["python"]`. Another language describes it
-  but cannot evaluate it (`ProtoNotSupportedError`) *(R-S19)*. A text form (`Computed("quantity * price")`,
+  but cannot evaluate it (`ProtoNotSupportedError`) *(R276)*. A text form (`Computed("quantity * price")`,
   `Invariant("committed <= credit_limit")`, `requires="state == 'open'"`, `where="state != 'cancelled'"`) is
-  parsed into the neutral tree of section 7, which is what is stored *(R-S20)*. A maintained aggregate needs
+  parsed into the neutral tree of section 7, which is what is stored *(R277)*. A maintained aggregate needs
   neutral terms all the way down.
 - **Intents** keep the brief's signature (`def add_line(self, product, quantity, price)`):
   - the effects go through `intent_context()`, which is valid only while the intent runs (outside it,
-    `ProtoUserError`) *(R-S21)*;
+    `ProtoUserError`) *(R278)*;
   - an intent that returns a new version of its receiver (`self.with_(...)`, the rc4 idiom) updates the target;
   - calling an intent on a version obtained from a `SemanticSession` logs and applies it (section 9); on any other
     version, `ProtoUserError`.
 - **Constraints** are written `__constraints__ = [Invariant(text, meaning=..., enforced=..., message=...)]`, an
   entity-level element. A constraint without `name=` is named `invariant_` plus the first 8 hex digits of the
-  SHA-256 of its tree's canonical encoding. That name is deterministic and the same in every language *(R-S22)*.
+  SHA-256 of its tree's canonical encoding. That name is deterministic and the same in every language *(R279)*.
   The scope is inferred: `aggregate` when the expression reads a maintained aggregate, else `entity`.
-- **Inheritance between semantic classes** (the brief: "a subclass adds attributes and constraints") is catalogued
-  through `supertypes` but not built: a semantic class subclassing another semantic class raises
-  `ProtoNotSupportedError` in the MVP. `__validity__` (block 5, D72) raises the same way.
+- **`__validity__`** (block 5, D72) raises `ProtoNotSupportedError`: the `Validity` descriptor is out of the MVP.
+
+### Subclasses (R280)
+
+"A subclass adds attributes and constraints" (the brief). Subclasses are supported with one limit, kept for a
+fundamental reason.
+- **Declaration.** `class RushOrder(Order): __type_name__ = "acme.sales.RushOrder"` (the tests' fixture module
+  `acme_rush`; the demo does not need it) plus its own elements is a semantic class (it inherits semantics, even with no semantic element of its own). Multiple inheritance from
+  several semantic classes is allowed.
+- **Mapping onto D62.** The implicit extension of the subclass's type name declares
+  `parents=(supertype names, in Python base order)`. D62's registry-name parents then put the supertypes after the
+  subtype in the C3 linearization:
+  - an instance resolves its own attributes, then the subtype's chain, then each supertype's chain;
+  - an extension of a supertype, by any module, reaches subtype instances;
+  - `_super()` inside a subtype's intent reaches the supertype's implementation.
+
+  Python's own MRO still gives the subclass the Python members of its bases (the semantic ones were moved out).
+- **Composition.** The composed subtype is the fold of its linearization from the last to the first: the
+  supertypes' composed elements (each with its own modules' contributions), then the subtype's chain.
+  - `supertypes` lists the direct supertypes.
+  - Every inherited element keeps its provenance, and carries `inherited_from` (the type that declared it)
+    *(R281)*.
+  - A subclass may add any element, and may redefine what section 5 lets a module redefine (presentation,
+    meaning, defaults, a computed's expression, `enforced`, an intent's implementation).
+  - With several supertypes, C3 decides which definition comes first, exactly as resolution does. It is never an
+    error.
+- **Substitutability.** A role or relation typed by a supertype accepts subtype instances: `link` and `relate`
+  check that the target's type is the declared type or one of its subtypes (the closure of `supertypes` in the
+  composed catalog). A `via` and a query over such a collection yield instances of every subtype. A predicate on
+  an attribute only a subtype has gives MISSING on the others, so it is false there, which is sound. A query may
+  narrow by type with `"of_type"` (subtypes included). Inherited invariants and maintained aggregates apply to
+  subtype instances. Cells are named by the instance's own type.
+- **The one limit** *(R282)*. A subclass may not change the `kind`, the `value_type` of a stored field, or the
+  `cardinality`, `target` or `binding` of a role it inherits: the same list section 5 refuses to modules. Reason:
+  a role, a query, an aggregate or an invariant typed by the supertype reads and writes every subtype instance
+  through the supertype's declaration. A changed kind or type would break that for data written through the
+  supertype. Narrowing a role's `target` to a subtype would let a write through the supertype store a target the
+  subtype's declaration refuses. These are soundness conditions (Liskov substitutability), not implementation
+  limits.
 
 ## 5. Modules and composition (normative)
 
@@ -210,7 +247,7 @@ The behaviour of modules is D62 as published. This section adds the declarative 
   `cardinality`, `target` or `binding` of a role. Migrations are outside the MVP: such a change is always refused.
 - **Nothing is deleted.** A module never removes another's element; it may mark it `deprecated`. A module is never
   uninstalled. It evolves through a new version or an extending module. The MVP builds no new-version path: code
-  whose contributions differ from the stored ones raises (verification below) *(R-S6)*.
+  whose contributions differ from the stored ones raises (verification below) *(R263)*.
 - **Provenance.** Every composed element lists the module that defined it, then the modules that modified it, in
   load order.
 - **Per database.** Composition depends on the database's installed modules.
@@ -240,7 +277,7 @@ existed gets its contributions at its next `install_module`. Until then the sema
   `proto_db.catalog.Role` records.
 - Role properties: `inverse`, `cardinality`, `ordered`, `index_by` (attribute paths), `binding` (`identity`,
   `version`), `on_delete` (catalogued only; the MVP deletes no entity).
-- **Identity** *(R-S3)*:
+- **Identity** *(R260)*:
   - an entity that changes lives in a mutable cell named `<type name>#<32 hex digits>`, whose value is a record
     of the semantic class;
   - its `MutableObject` handle is the identity reference;
@@ -248,10 +285,10 @@ existed gets its contributions at its next `install_module`. Until then the sema
     it).
 - **Collections at both ends.** A `many` end is an attribute of the entity's version holding a `List` (ordered) or
   a `Set`. A relationship's atom lives once; both ends reference the same atom.
-- **`binding="version"`** *(R-S3)*: the role stores `{"entity": <handle>, "version": <ref>}`. Navigation gives
+- **`binding="version"`** *(R260)*: the role stores `{"entity": <handle>, "version": <ref>}`. Navigation gives
   the version (block 4: the product as sold), and `.entity` reaches the identity. The bound version is the one
   current at commit.
-- **`index_by`** keeps the brief's paths *(R-S5)*:
+- **`index_by`** keeps the brief's paths *(R262)*:
   - A path of the member's own attributes is a `RangeIndex` named `by_<path>` on that end's collection.
   - A path through an identity role (block 4: `index_by=["order.date"]` on `product`) is a **maintained key**,
     since an index key must be a pure function of the indexed element (the extractor contract, D56). The end
@@ -266,7 +303,7 @@ language.
 - `["const", v]`: a canonical value.
 - `["attr", name, ...]`: a path from the current element. Each step but the last is a `one` role or relation. An
   absent step gives MISSING.
-- Arithmetic `["+"|"-"|"*", a, b]` *(R-S7)*:
+- Arithmetic `["+"|"-"|"*", a, b]` *(R264)*:
   - int with int gives int; any decimal gives decimal (exact);
   - MISSING in gives MISSING;
   - bool, float, strings and other kinds raise `ProtoValidationError`;
@@ -279,8 +316,8 @@ language.
   - `term` and `where` are evaluated with each member as the current element;
   - `sum` of nothing is 0.
 - Traversal `["via", origin, role, role...]`: the set reached through each end's own collection. Origins
-  *(R-S8)*: `["self"]`; in queries only, `["root", name]` and `["cell", name]`.
-- **Text form** *(R-S20)*: a Python convenience, parsed into the tree. It covers identifiers and dotted paths
+  *(R265)*: `["self"]`; in queries only, `["root", name]` and `["cell", name]`.
+- **Text form** *(R277)*: a Python convenience, parsed into the tree. It covers identifiers and dotted paths
   (`attr`), literals (`'text'`, integers, decimals), `+ - *`, the six comparisons, `and`/`or`/`not` and
   parentheses. Anything else is `ProtoValidationError` at declaration. The stored tree is the normative form; the
   text is not stored.
@@ -303,7 +340,7 @@ them uses the feature `catalog` and is version 6; data that uses none stays vers
 | `proto_db.catalog.Extension` | `module`, `extends` (type name), `entity` (map of the entity-level elements it contributes), `elements` (tuple of refs to the Attribute, Role, Intent and Constraint records it declares, with the fields it states) |
 | `proto_db.catalog.Entity` | `type_name`, `supertypes`, `meaning`, `label`, `help`, `synonyms`, `key`, `attributes` (refs to Attribute and Role), `intents`, `constraints`, `certification`, `provenance` |
 | `proto_db.catalog.Relationship` | the Entity fields plus `roles` (refs to its Role records, two or more) |
-| `proto_db.catalog.Attribute` | `name`, `kind` (`field`, `computed`, `computed_stored`), `value_type`, `values` (enumeration, R-S11), `required`, `default`, `unit`, `indexed`, `expression` (ref), `languages` (R-S19), `meaning`, `label`, `help`, `group`, `order`, `synonyms`, `examples`, `caveats`, `sensitivity`, `certification`, `deprecated`, `provenance` |
+| `proto_db.catalog.Attribute` | `name`, `inherited_from` (composed subtype entities only, R281), `kind` (`field`, `computed`, `computed_stored`), `value_type`, `values` (enumeration, R268), `required`, `default`, `unit`, `indexed`, `expression` (ref), `languages` (R276), `meaning`, `label`, `help`, `group`, `order`, `synonyms`, `examples`, `caveats`, `sensitivity`, `certification`, `deprecated`, `provenance` |
 | `proto_db.catalog.Role` | the Attribute fields plus `target`, `inverse`, `cardinality`, `inverse_cardinality`, `ordered`, `index_by`, `binding`, `on_delete` |
 | `proto_db.catalog.Intent` | `name`, `meaning`, `parameters` (tuple of `(name, value_type)`), `requires` (ref), `commutes_with`, `effects`, `languages`, `provenance` |
 | `proto_db.catalog.Constraint` | `name`, `scope` (`attribute`, `entity`, `relation`, `aggregate`), `expression` (ref), `enforced`, `meaning`, `message`, `provenance` |
@@ -311,14 +348,14 @@ them uses the feature `catalog` and is version 6; data that uses none stays vers
 | `proto_db.catalog.IntentRecord` | `intent` (`(type name, intent name)`), `target` (handle), `arguments` (map), `transaction` (the database version the commit produced) |
 
 Field rules:
-- `values`, `languages` and `inverse_cardinality` are additions to the brief's field lists (R-S11, R-S19, section
+- `values`, `languages`, `inverse_cardinality` and `inherited_from` are additions to the brief's field lists (R268, R276, section
   5).
-- `label` and `help` are maps from language to text *(R-S10)*:
+- `label` and `help` are maps from language to text *(R267)*:
   - a plain string, as in every example of the brief, declares `{"und": text}` (BCP 47 "undetermined"), since the
     examples carry no language;
   - a dict declares languages explicitly;
   - translations are outside the MVP.
-- `value_type` names a canonical value kind *(R-S11)*: `bool`, `int`, `decimal`, `str`, `bytes`, `date`, `time`,
+- `value_type` names a canonical value kind *(R268)*: `bool`, `int`, `decimal`, `str`, `bytes`, `date`, `time`,
   `datetime`, `timedelta`, `uuid`, `float`, `list`, `tuple`, `map`. Smalltalk's `#integer` and `#decimal` are
   `int` and `decimal`.
 - **Defaults are omitted.** A field at its default is not written. The defaults are: absent text, an empty tuple,
@@ -328,7 +365,7 @@ Field rules:
   interpret it.
 - **Single-language elements.** An intent or computed implemented in one language only carries `languages`.
   Invoking or evaluating it from another language raises `ProtoNotSupportedError`.
-- **Canonical form** *(R-S1)*: the composed catalog expanded into one value (every ref replaced by its record's
+- **Canonical form** *(R258)*: the composed catalog expanded into one value (every ref replaced by its record's
   fields, oids and pointers dropped, Dictionaries as maps sorted by key), encoded canonically. Two implementations
   conform when their canonical forms are equal byte for byte. Record bytes are not compared: oids and placement
   differ by writer.
@@ -339,17 +376,17 @@ Field rules:
 
 ## 9. Intents (one node, behind a flag)
 
-The flag is `Database.new_transaction(intents=True)` or `Database.run(fn, intents=True)` *(R-S12)*. Without it
+The flag is `Database.new_transaction(intents=True)` or `Database.run(fn, intents=True)` *(R269)*. Without it
 nothing changes. A space with a cluster coordinator refuses the flag (`ProtoNotSupportedError`). `semantic(tr)`
 gives a `SemanticSession`, with one API in both modes:
 - in **direct mode**, operations write cells at once, under today's rules;
 - in **intent mode**, operations are logged and replayed.
 
 What an intent transaction records:
-- **Fine read set** *(R-S13)*: every attribute read through the session, as `(cell, attribute) -> exact token`
+- **Fine read set** *(R270)*: every attribute read through the session, as `(cell, attribute) -> exact token`
   (ABSENT included). Reading a collection attribute is one read of that attribute. Reading a product's price
   therefore does not collide with a line added to its `order_lines`.
-- **Condition reads** *(R-S4)*: a traversal or query whose result is used to decide is recorded as the tokens of
+- **Condition reads** *(R261)*: a traversal or query whose result is used to decide is recorded as the tokens of
   every collection it scanned, and validated as such. This is coarse, never wrong. Predicate-precise validation
   is deferred.
 - **Intent log**: each top-level operation in order, either an intent invocation or a primitive (`create`,
@@ -361,7 +398,7 @@ The commit, at the serialized point (the root lock; group-commit rounds build ea
 2. replay the log on the current state, maintaining both ends of every relation, maintained keys and maintained
    aggregates;
 3. check the affected invariants on the combined result (section 10);
-4. publish, writing in `__intentLog` the commit's `IntentRecord`s *(R-S14)*. There is one root value per version;
+4. publish, writing in `__intentLog` the commit's `IntentRecord`s *(R271)*. There is one root value per version;
    history is the chain of versions.
 
 Requirements:
@@ -374,7 +411,7 @@ Requirements:
 
 ## 10. Constraints and invariants
 
-- **Maintained aggregates** *(R-S15)*. An `Aggregate(..., maintained=True)` is catalogued as a `computed_stored`
+- **Maintained aggregates** *(R272)*. An `Aggregate(..., maintained=True)` is catalogued as a `computed_stored`
   attribute with a `sum` or `count` tree.
   - It is stored in the owning entity's version.
   - It is updated by deltas whenever a member is linked, unlinked or changes. The delta comes from the member's
@@ -385,10 +422,10 @@ Requirements:
 - **Cardinality** is enforced at commit for every entity the commit touched.
 - **Enforced invariants** are evaluated after replay on every entity whose operands changed. `enforced=False`
   publishes an invariant for agents only.
-- **Errors with meaning.** A violation raises `ProtoConstraintError` *(R-S16)*. It is a `ProtoValidationError`,
+- **Errors with meaning.** A violation raises `ProtoConstraintError` *(R273)*. It is a `ProtoValidationError`,
   so `Database.run` never retries it.
   - It carries the constraint's `name`, its `meaning`, the rendered `message`, the entity and the values used.
-  - Message placeholders *(R-S22)*: the entity's attribute names; `{entity}`, and the lower-case last component
+  - Message placeholders *(R279)*: the entity's attribute names; `{entity}`, and the lower-case last component
     of its type name (`{customer}`), both rendering the entity's key; and, for an ordering comparison, `{left}`,
     `{right}` and `{excess}` (left minus right). The brief's `{exceso}` is therefore written `{excess}`.
   - A MISSING operand renders as `<missing name>`, and its name is in the values.
@@ -405,10 +442,10 @@ Neutral operations over the catalog and the planner (`proto_db.agent`), served b
 |---|---|---|
 | `list_entities` | optional filter text | type names with `label` and `meaning` |
 | `describe` | type name | the composed entity: attributes, roles, intents, constraints, provenance, certification |
-| `check_answerable` | a list of terms *(R-S17)* | per term its matches (entity, attribute, role) by name, label or synonym (case-folded, exact); the unmatched terms; suggestions by substring, marked as suggestions (S7) |
+| `check_answerable` | a list of terms *(R274)* | per term its matches (entity, attribute, role) by name, label or synonym (case-folded, exact); the unmatched terms; suggestions by substring, marked as suggestions (S7) |
 | `query` | a query tree, optional `as_of` (a version) | rows, `explain()`, the version read, the query, the catalog terms used with their certification |
 
-The query tree is `{"from": <via expression>, "where": <predicate>?, "select": [names]?, "aggregate": ["sum",
+The query tree is `{"from": <via expression>, "of_type": <type name>? (subtypes included), "where": <predicate>?, "select": [names]?, "aggregate": ["sum",
 term] | ["count"]?, "as_of": version?}`.
 
 Rules:
@@ -421,17 +458,16 @@ Rules:
 
 ## 12. Interoperability (step 6; another repository)
 
-protoBaseST reads `__semanticCatalog`, describes entities and runs the step-6 queries through generated accessors,
-with no new opcodes and no writes. Brief block 9 (`Customer class >> descriptors`) is protoBaseST's declaration
-spelling, and must produce the same canonical form as block 8. An entity whose class a process lacks loads as
-`OpaqueAtom` (D59) and stays describable: entity records are typed by `__type_name__` (section 4), so protoBaseST
-sees `acme.sales.Order` records. ProtoBase hands over the vectors, a porting note and an acceptance test.
+protoBaseST reads `__semanticCatalog`, describes entities and runs the step-6 queries through generated accessors:
+no new opcodes, no writes. Brief block 9 is its declaration spelling, and it must reach block 8's canonical form.
+Entity records are typed by `__type_name__`, so a process without the class loads them as `OpaqueAtom` (D59), and
+they stay describable. ProtoBase hands over the vectors, a porting note and an acceptance test.
 
 ## 13. Decisions to record (D63-D72, the brief's order)
 
 | D | Content | MVP |
 |---|---|---|
-| D63 | The class as the entity's descriptor; S1-S7; what is normative; the mapping onto rc4 (section 4) | built |
+| D63 | The class as the entity's descriptor; S1-S7; what is normative; the mapping onto rc4 and subclasses (section 4) | built |
 | D64 | Catalog atom types and their encoding: feature `catalog` of format 6, `__semanticCatalog`, canonical form | built |
 | D65 | Neutral expression language: tree, operators, evaluation with the total order; the Python text form | subset |
 | D66 | Relations: inverse, collections at both ends, relationships with data, `binding`, maintained keys | built |
@@ -444,20 +480,12 @@ sees `acme.sales.Order` records. ProtoBase hands over the vectors, a porting not
 
 ## 14. Out of scope (the list for later)
 
-- Intents in the cluster.
-- Complete validation of condition reads (phantoms).
-- Catalog migrations (refused explicitly).
-- protoST descriptor opcodes; intent writes from Smalltalk.
-- RDF/OWL/SKOS/SHACL export.
-- Relation discovery by vectors; `resolve_terms` by similarity.
-- Enforced entity and attribute constraints in general, including `Enum` values.
-- Label and help translations.
-- `exists`, `all`, `reach`, `valid_at`, `in` and `Validity`.
-- `explain_intent` and `propose`.
-- Module new versions.
-- Inheritance between semantic classes.
-- The D16-style static test that every element has a `meaning`.
-- Entity deletion.
+Intents in the cluster; complete condition-read (phantom) validation; catalog migrations (refused explicitly);
+protoST descriptor opcodes and intent writes from Smalltalk; RDF/OWL/SKOS/SHACL export; relation discovery by
+vectors and `resolve_terms` by similarity; enforced entity and attribute constraints in general (`Enum` values
+included); label and help translations; `exists`, `all`, `reach`, `valid_at`, `in` and `Validity`;
+`explain_intent` and `propose`; module new versions; the D16-style static test that every element has a
+`meaning`; entity deletion.
 
 ## 15. Done criteria
 
@@ -476,57 +504,64 @@ sees `acme.sales.Order` records. ProtoBase hands over the vectors, a porting not
 ## 16. The brief's open questions
 
 - *Maintained aggregates: in the entity or in a commuting structure?* In the entity's version, by deltas at replay
-  (R-S15). Additions do not contend; a reader of the aggregate conflicts, correctly.
-- *Minimal granularity of the fine read set?* `(cell, top-level attribute)` (R-S13); Task 10 measures its cost.
+  (R272). Additions do not contend; a reader of the aggregate conflicts, correctly.
+- *Minimal granularity of the fine read set?* `(cell, top-level attribute)` (R270); Task 10 measures its cost.
 - *Intents with the cluster coordinator?* Out of the MVP (the script); the flag is refused on a clustered space.
 - *Is a catalog migration an intent?* Out of the MVP (the script): such changes are refused explicitly.
 - *Minimal expression subset?* Answered by the script (section 7).
 
-## 17. Proposed rulings (PROPOSED — maintainer to confirm)
+## 17. Rulings (confirmed 2026-11-15)
 
-Once confirmed they are recorded as R258 onwards. Those marked **changes the brief** alter what the brief's
-examples wrote.
-- **R-S1** Cross-language conformance compares the catalog's canonical form, not record bytes.
-- **R-S2** The brief's declarations map onto rc4 (section 4):
+Those marked **changes the brief** alter what the brief's examples wrote; the maintainer accepted them.
+- **R258** Cross-language conformance compares the catalog's canonical form, not record bytes.
+- **R259** The brief's declarations map onto rc4 (section 4):
   - a semantic `DBObject` subclass moves its semantic elements into an implicit extension of `__type_name__`, and
     its instances resolve that name as an implicit last parent;
   - `Extension` with `__extends__` is the decorator's equivalent.
 
-  **Changes the brief:** `describe()` takes a `source` (transaction or snapshot).
-- **R-S3** Identity is a mutable cell `<type name>#<32 hex>` holding a record of the semantic class. A version-bound
+  **Changes the brief:** `describe()` takes a read snapshot (`Snapshot` or `Transaction`), "describe as a
+  photograph" (maintainer).
+- **R260** Identity is a mutable cell `<type name>#<32 hex>` holding a record of the semantic class. A version-bound
   role stores `{"entity", "version"}`.
-- **R-S4** Condition reads are validated by the tokens of the collections they scanned.
-- **R-S5** `index_by` through an identity role (`order.date`) is a maintained key over entry records, re-keyed in
+- **R261** Condition reads are validated by the tokens of the collections they scanned.
+- **R262** `index_by` through an identity role (`order.date`) is a maintained key over entry records, re-keyed in
   the commit that changes the keyed attribute.
-- **R-S6** Module evolution is designed, not built: `Module.version` is written as `"1"`, and differing code
+- **R263** Module evolution is designed, not built: `Module.version` is written as `"1"`, and differing code
   contributions raise.
-- **R-S7** Arithmetic is `+ - *` over int and decimal; division and float are deferred.
-- **R-S8** The expression origins are `self`, and `root` and `cell` in queries.
-- **R-S9** The demo is scripted and deterministic; only the agent experiment runs a language model.
-- **R-S10** `label` and `help` are language maps; the brief's plain strings are stored as `{"und": text}`.
-- **R-S11** `value_type` is the canonical value kinds, mapped from Python types. **Changes the brief's field
+- **R264** Arithmetic is `+ - *` over int and decimal; division and float are deferred.
+- **R265** The expression origins are `self`, and `root` and `cell` in queries.
+- **R266** The demo is scripted and deterministic; only the agent experiment runs a language model.
+- **R267** `label` and `help` are language maps; the brief's plain strings are stored as `{"und": text}`.
+- **R268** `value_type` is the canonical value kinds, mapped from Python types. **Changes the brief's field
   list:** `Enum(...)` adds the Attribute field `values`, catalogued and not enforced in the MVP.
-- **R-S12** The flag is `intents=True` on `new_transaction` and `run`, refused on a clustered space.
-- **R-S13** The fine read set is `(cell, top-level attribute) -> exact token`.
-- **R-S14** `__intentLog` holds the IntentRecords of the version that wrote it.
-- **R-S15** Maintained aggregates live in the owning entity's version, updated by deltas.
-- **R-S16** `ProtoConstraintError` subclasses `ProtoValidationError` and is never retried.
-- **R-S17** `check_answerable` takes terms (exact matches on name, label, synonyms).
-- **R-S18** The concurrency baseline is direct mode under today's rules. The brief expects write skew there, but
+- **R269** The flag is `intents=True` on `new_transaction` and `run`, refused on a clustered space.
+- **R270** The fine read set is `(cell, top-level attribute) -> exact token`.
+- **R271** `__intentLog` holds the IntentRecords of the version that wrote it.
+- **R272** Maintained aggregates live in the owning entity's version, updated by deltas.
+- **R273** `ProtoConstraintError` subclasses `ProtoValidationError` and is never retried.
+- **R274** `check_answerable` takes terms (exact matches on name, label, synonyms).
+- **R275** The concurrency baseline is direct mode under today's rules. The brief expects write skew there, but
   today's read set validates every cell the check reads. The experiment reports what it measures, even zero
   violations in both modes.
-- **R-S19** A lambda `Computed` (blocks 1, 4) is a Python-only local convenience. **Changes the brief's field
+- **R276** A lambda `Computed` (blocks 1, 4) is a Python-only local convenience. **Changes the brief's field
   list:** the Attribute field `languages`. The demo writes neutral forms instead.
-- **R-S20** Text expressions (`"committed <= credit_limit"`, `requires="state == 'open'"`) are a Python surface
+- **R277** Text expressions (`"committed <= credit_limit"`, `requires="state == 'open'"`) are a Python surface
   syntax over the stored tree, limited to the MVP subset.
-- **R-S21** **Changes the brief's example bodies:** an intent keeps its signature and reaches its effects through
+- **R278** **Changes the brief's example bodies:** an intent keeps its signature and reaches its effects through
   `intent_context()`. Returning `self.with_(...)` updates the target.
-- **R-S22** **Changes the brief:** an unnamed `Invariant` gets a name derived from its tree's hash, and message
+- **R279** **Changes the brief:** an unnamed `Invariant` gets a name derived from its tree's hash, and message
   placeholders are attribute names, `{entity}`, the type's short name, `{left}`, `{right}` and `{excess}`.
+- **R280** (maintainer) Subclasses are supported with minimal limits (section 4, "Subclasses").
 
-Conflicts with the brief found while writing (resolved above, flagged for the maintainer):
+### 17a. Subclass items still open (PROPOSED — maintainer to confirm)
+
+- **R281** Inherited elements of a composed subtype carry the new field `inherited_from`.
+- **R282** The one limit kept, for soundness: a subclass cannot change an inherited element's `kind`, stored
+  `value_type`, or a role's `cardinality`, `target` or `binding` (section 4 gives the reason).
+
+Conflicts with the brief found while writing, resolved above:
 - the brief places the catalog in format 5 (superseded by the format-6 ruling);
-- block 4's `index_by=["order.date"]` cannot be a plain index under the pure-extractor contract (R-S5);
+- block 4's `index_by=["order.date"]` cannot be a plain index under the pure-extractor contract (R262);
 - the brief calls the expression tree "the one the planner already uses", but D36's syntax differs (section 7);
 - block 7's `where="state in (...)"` needs `in`, which is outside the script's subset;
-- the brief's validation section expects write skew in the current mode (R-S18).
+- the brief's validation section expects write skew in the current mode (R275).

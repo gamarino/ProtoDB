@@ -63,9 +63,9 @@ sections of `docs/source/format-spec.rst`.
   - End every message with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
   - Work on branch `feat/semantic-mvp`, in worktree `/home/gamarino/Documentos/proyectos/scratch-8.3n/wt-semantic`.
     The base is the head of `fix/dict-merge-and-wal-durability` (2.0.0rc4).
-- **Proposed rulings.** Spec section 17 (R-S1 to R-S22) is pending the maintainer. Implement as written. A ruling
-  that changes on review is applied to the task that owns it, and the change is noted in its report. Confirmed
-  rulings are recorded as R258 onwards.
+- **Rulings.** R258-R280 (spec section 17) are confirmed by the maintainer (2026-11-15). R281 and R282
+  (section 17a) are pending. Implement them as written; if the maintainer changes either, apply the change to the
+  owning task (Task 4) and note it in its report.
 
 ## Review Focus
 
@@ -79,18 +79,24 @@ sections of `docs/source/format-spec.rst`.
    constraint must report a violation that names the missing operand, never a `TypeError` (Task 9).
 5. **Two transactions that install semantic modules concurrently.** Both must land. The stored composition must be
    the composition of the union, never last-writer-wins (Task 5).
+6. **Subtype instances wherever a supertype is expected** (R280). This covers a `RushOrder` linked to a customer's
+   `orders`, counted in its maintained `committed`, bound by the inherited credit invariant, found by a query over
+   `orders`, and changed by an `acme_delivery` extension of `acme.sales.Order`. Each must behave as for an `Order`
+   (Tasks 4, 6 and 9).
 
 ---
 
-### Task 1: Decisions D63-D72, principles S1-S7, and the draft catalog chapter
+### Task 1: Decisions D63-D72, principles S1-S7, and the catalog chapter
 
 **Files:**
 - Modify:
   - `docs/decisions.md`: append D63-D72 in the existing entry format (Context / Decision / rulings), with the
-    contents of spec section 13. D69 and D72 are marked "designed; implementation deferred (MVP scope)".
+    contents of spec section 13 and rulings R258-R282 (one line each, with its reason; R281 and R282 marked
+    pending until the maintainer confirms them). D69 and D72 are marked "designed; implementation deferred (MVP
+    scope)".
   - `docs/design-principles.md`: a section "Semantic model (S1-S7)" after P7, one paragraph each.
   - `docs/source/format-spec.rst`: a new section "Semantic catalog (format 6)" after "Registry roots", holding
-    spec sections 7 and 8 and the `__intentLog` root. Mark it "**Draft: no released writer produces it yet**". It
+    spec sections 7 and 8 and the `__intentLog` root. Mark it "**Not yet written by any release**". It
     is listed in "What is normative".
 - Test: `sphinx-build -W` (as CI).
 
@@ -98,7 +104,7 @@ sections of `docs/source/format-spec.rst`.
 - [ ] Step 2: Run `.venv/bin/python -m sphinx -W -b html docs/source $SCR/html`. Expect a clean build. Run
   `pytest tests/conformance/test_conformance.py -q --basetemp=$SCR/pt`. Expect PASS: the pinned digest is
   unchanged, since no vector changed.
-- [ ] Step 3: Commit "Docs: semantic model decisions D63-D72, principles S1-S7, draft catalog chapter".
+- [ ] Step 3: Commit "Docs: semantic model decisions D63-D72, principles S1-S7, catalog chapter".
 
 ### Task 2: Format 6, the `catalog` feature, catalog atom types and their vectors
 
@@ -117,8 +123,9 @@ sections of `docs/source/format-spec.rst`.
   - `proto_db/catalog/__init__.py`;
   - `proto_db/catalog/atoms.py`: the eleven types, `_Immutable` atoms with `_format_features = {"catalog"}`;
   - `proto_db/catalog/model.py`: the neutral model and its conversions;
-  - `tests/conformance/catalog_model.json`: the neutral model of `conformance.sales.Customer`, `Order` and
-    `OrderLine`, after brief section 8, with two modules `conformance.base` and `conformance.sales`.
+  - `tests/conformance/catalog_model.json`: the neutral model of `conformance.sales.Customer`, `Order`,
+    `OrderLine` and the subtype `RushOrder` (supertype `Order`, one own field `priority`, inherited elements with
+    `inherited_from`, R281), after brief section 8, with two modules `conformance.base` and `conformance.sales`.
 - Test:
   - `tests/unit/test_catalog_atoms.py` (new);
   - `tests/conformance/generate.py` (`gen_catalog_database`) and `test_conformance.py`;
@@ -131,7 +138,7 @@ sections of `docs/source/format-spec.rst`.
     entity}}`, whose items use exactly the field names of spec section 8.
   - `to_atoms(model: dict, context) -> SemanticCatalog`, which writes defaults as absent fields.
   - `from_atoms(catalog: SemanticCatalog) -> dict`.
-  - `canonical_form(model: dict) -> bytes` (R-S1): msgpack of `encode_value` of the expanded model. Maps are
+  - `canonical_form(model: dict) -> bytes` (R258): msgpack of `encode_value` of the expanded model. Maps are
     sorted by key in code-point order and contain no atoms.
   - `proto_db.catalog.atoms.SEMANTIC_CATALOG_ROOT = "__semanticCatalog"`, `INTENT_LOG_ROOT = "__intentLog"`.
   - `Transaction._write_semantic_root(name: str, value) -> None` (internal).
@@ -161,7 +168,7 @@ sections of `docs/source/format-spec.rst`.
   `test_catalog_database_segments`, `test_catalog_database_contents_through_the_public_api` and
   `test_catalog_canonical_form_vector`.
 - [ ] Step 5: Run `python -m tests.conformance.generate`. Update the digest in `format-spec.rst` and the manifest
-  version (`format: 6`). Remove the Task 1 draft mark, and add a "Format history" entry for 6. Run
+  version (`format: 6`). Remove the Task 1 "not yet written" mark, and add a "Format history" entry for 6. Run
   `pytest tests/conformance tests/unit/test_format*.py tests/unit/test_type_names.py tests/unit/test_atom_type_modules.py -q --basetemp=$SCR/pt`
   and `PROTODB_REGEN_VECTORS=1 pytest tests/conformance/test_regeneration.py --basetemp=$SCR/pt`. Expect PASS.
 - [ ] Step 6: Commit "Format 6: the catalog feature and its atom types, with vectors".
@@ -186,7 +193,7 @@ sections of `docs/source/format-spec.rst`.
     `and/or/not` of `[cmp, ["attr", name], ["const", v]]` to `Term`/`And`/`Or`/`Not`; `None` otherwise.
   - `dependencies(ast) -> frozenset[str]`: the attribute names and roles an expression reads from its element.
     Task 6 uses it for maintenance, Task 9 for invariants.
-  - `parse(text: str) -> list` (R-S20), the Python text form of spec section 7. Anything outside the subset (`in`,
+  - `parse(text: str) -> list` (R277), the Python text form of spec section 7. Anything outside the subset (`in`,
     function calls, `/`) raises `ProtoValidationError` naming the column. It is a hand-written tokenizer and
     recursive-descent parser, not `ast.parse`/`eval`: the grammar is the spec's, not Python's.
   - `sum` and `count` take an optional `where` operand.
@@ -205,8 +212,8 @@ sections of `docs/source/format-spec.rst`.
   - `test_each_operator` (parametrized from a local table);
   - `test_int_and_decimal_arithmetic_is_exact`;
   - `test_missing_propagates_and_comparisons_are_false`;
-  - `test_float_and_division_are_refused` (R-S7);
-  - `test_root_and_cell_only_in_queries` (R-S8);
+  - `test_float_and_division_are_refused` (R264);
+  - `test_root_and_cell_only_in_queries` (R265);
   - `test_to_planner_translates_simple_predicates` (`["<", ["attr", "date"], ["const", d]]` gives
     `Term("date", "<", d)`);
   - `test_to_planner_returns_none_for_two_attributes`;
@@ -231,6 +238,9 @@ sections of `docs/source/format-spec.rst`.
   - the demo modules `docs/kit/semantic/acme_sales.py` and `docs/kit/semantic/acme_delivery.py`. They follow spec
     section 3, the brief's blocks 1, 2, 4, 6, 7 and 8, with English text. Tests import them through a
     `modules_mapping`.
+  - `tests/unit/semantic_modules/acme_rush.py` (module `acme_rush`, depends on `acme_sales`): `class
+    RushOrder(Order)` with `__type_name__ = "acme.sales.RushOrder"` and `priority = Field(int)`, the subclass
+    fixture of Review Focus 6 (the demo does not use it);
   - `tests/conformance/catalog_fixture.py`: modules `conformance.base` and `conformance.sales`, declaring the model
     of `catalog_model.json` in the brief's spelling (`class Customer(DBObject)`, block 8).
 - Modify:
@@ -261,10 +271,10 @@ sections of `docs/source/format-spec.rst`.
 - Produces, in `proto_db.semantic`. The brief's spellings are kept exactly where it shows them.
   - `Field(value_type, *, required=False, default=MISSING, unit=None, indexed=False, stored_as=None, **semantic)`.
     `value_type` is a Python type (`int`, `Decimal`, `str`, `bool`, `bytes`, `float`, `date`, `time`, `datetime`,
-    `timedelta`, `uuid.UUID`) or `Enum(*values)`, mapped as in R-S11.
+    `timedelta`, `uuid.UUID`) or `Enum(*values)`, mapped as in R268.
   - `Enum(*values: str)`.
-  - `Computed(expression, *, unit=None, **semantic)`. `expression` is text (parsed, R-S20), a tree, or a callable
-    (Python-only, never stored, R-S19).
+  - `Computed(expression, *, unit=None, **semantic)`. `expression` is text (parsed, R277), a tree, or a callable
+    (Python-only, never stored, R276).
   - `Aggregate(*, over: str, sum: str | None = None, count: bool = False, where: str | list | None = None, maintained: bool = False, unit=None, **semantic)`:
     `["sum", over, ["attr", sum], where]` or `["count", over, where]`; maintained gives `computed_stored`.
   - `Relation(target: str, *, cardinality: str, inverse: str | None = None, ordered=False, index_by=(), binding="identity", on_delete="restrict", **semantic)`.
@@ -275,18 +285,28 @@ sections of `docs/source/format-spec.rst`.
   - `Relationship` (a `DBObject` base class without a type name) and `Extension` (a base class whose subclasses
     declare `__extends__`, and optionally `__parents__` and `__registry_module__`).
   - `Invariant(expression, *, meaning: str, enforced: bool = True, message: str = "", name: str | None = None)`,
-    whose unnamed form is named by R-S22.
+    whose unnamed form is named by R279.
   - `intent(*, meaning: str, requires=None, commutes_with=(), parameters: Mapping[str, str] | None = None)`.
     It returns the same function with `__proto_intent__` set. Parameters are taken from the signature, and their
     types from annotations or `parameters`.
   - `intent_context() -> IntentContext`; outside a running intent it raises `ProtoUserError`.
   - `Certified(by: str, on: str) -> dict`.
-  - `**semantic` keys: `meaning`, `label` (str or dict, R-S10), `help`, `group`, `order`, `synonyms`, `examples`,
+  - `**semantic` keys: `meaning`, `label` (str or dict, R267), `help`, `group`, `order`, `synonyms`, `examples`,
     `caveats`, `sensitivity` (`public`, `internal`, `personal`, `secret`; default `internal`), `certification`,
     `deprecated`, `ext`. An unknown key raises `ProtoValidationError`.
-  - `<SemanticClass>.describe(source) -> dict`, a class method injected into semantic classes only. Without a
-    source it raises `ProtoUserError`. Task 5 makes it read the database's composition; this task's tests use
-    `compose.describe`.
+  - `<SemanticClass>.describe(snapshot: Snapshot | Transaction) -> dict`, a class method injected into semantic
+    classes only. The argument is a read snapshot, and a `Transaction` is one ("describe as a photograph"; R259).
+    Without a snapshot it raises `ProtoUserError`. Task 5 makes it read that snapshot's composition; this task's
+    tests use `compose.describe`.
+- Subclasses (R280-R282, spec section 4 "Subclasses"):
+  - a subclass of a semantic class is a semantic class;
+  - its implicit extension declares `parents=` its semantic bases' type names, in Python base order;
+  - `compose` folds the C3 linearization from the last node to the first, sets `supertypes`, and gives inherited
+    elements `inherited_from`;
+  - `compose.subtypes(model, type_name) -> frozenset[str]` (the closure) and `compose.is_a(model, type_name,
+    supertype) -> bool` are used by Tasks 6, 7 and 9;
+  - a subclass's change of an inherited element's `kind`, stored `value_type`, or a role's `cardinality`, `target`
+    or `binding` raises `ProtoValidationError` naming R282.
 - Produces, in `proto_db.semantic.compose`:
   - `compose(registry: Registry) -> dict`, the model of Task 2. It folds each registry name's chain oldest first,
     applies spec section 5 (restated structural fields must be equal), creates the inverses and records provenance.
@@ -295,7 +315,6 @@ sections of `docs/source/format-spec.rst`.
   - Refusals are `ProtoValidationError` naming module, type, element and field.
 - Class-creation refusals:
   - a semantic class whose Python module declared no registry module, or several without `__registry_module__`;
-  - a semantic subclass of a semantic class (`ProtoNotSupportedError`, spec section 4);
   - `__validity__` (`ProtoNotSupportedError`, D72);
   - a stored `Aggregate` whose terms are not neutral.
 
@@ -313,7 +332,7 @@ sections of `docs/source/format-spec.rst`.
   - `test_restated_structural_field_must_be_equal` (`number = Field(str, ...)` in an extension raises);
   - `test_stored_field_read_does_not_call_the_descriptor` (0 `resolve` calls when the record holds the field);
   - `test_absent_field_resolves_to_its_default_or_none` (`state` gives `"open"`);
-  - `test_text_computed_is_neutral_and_lambda_computed_is_python_only` (R-S19, R-S20);
+  - `test_text_computed_is_neutral_and_lambda_computed_is_python_only` (R276, R277);
   - `test_cardinality_spellings_give_both_ends` (`Order.customer` "many-to-one": end `one`, `Customer.orders`
     `many`);
   - `test_relation_to_agrees_with_the_role` (`Order.lines` and `OrderLine.order`; a disagreeing `ordered` raises);
@@ -323,8 +342,17 @@ sections of `docs/source/format-spec.rst`.
     the test);
   - `test_intent_keeps_the_briefs_signature` (`add_line(self, product, quantity, price)` is catalogued with three
     parameters; `intent_context()` outside an intent raises);
-  - `test_describe_class_method_needs_a_source`;
-  - `test_semantic_subclass_of_a_semantic_class_is_refused`;
+  - `test_describe_class_method_needs_a_snapshot`;
+  - `test_subclass_composes_over_its_superclass` (`RushOrder` has `number`, `lines` and `total` with
+    `inherited_from` `acme.sales.Order` and the supertype's provenance, plus its own `priority`; `supertypes ==
+    ["acme.sales.Order"]`);
+  - `test_supertype_extension_reaches_the_subtype` (with `acme_delivery`, `RushOrder` has `delivery_date` and the
+    redefined `number` label; a `RushOrder` instance resolves both);
+  - `test_subclass_redefines_presentation_and_wins_over_supertype_extensions` (C3: the subtype's chain first);
+  - `test_subclass_intent_super_reaches_the_supertype_implementation`;
+  - `test_multiple_semantic_bases_follow_c3` (a diamond; no error; the order equals `_linearization()`);
+  - `test_subclass_changing_an_inherited_value_type_is_refused` (R282, and the same for `cardinality`, `target`
+    and `binding`);
   - `test_describe_returns_only_neutral_data`;
   - `test_composition_is_independent_of_install_order` (permuted lists: equal `canonical_form`);
   - the central conformance test: `canonical_form(compose(registry of the fixture)) ==` the bytes of
@@ -357,11 +385,12 @@ sections of `docs/source/format-spec.rst`.
     `None` when nothing changes.
   - `semantic(source: Transaction | Snapshot) -> SemanticSession`.
   - `SemanticSession.catalog() -> dict`: the stored model, verified on first use against `compose(registry)`. A
-    difference raises `ProtoValidationError` naming the module and element (R-S6). No stored catalog with installed
+    difference raises `ProtoValidationError` naming the module and element (R263). No stored catalog with installed
     modules raises `ProtoNotSupportedError` ("no semantic catalog; install a module to add it").
   - `SemanticSession.describe(type_name: str) -> dict`.
   - `SemanticSession.list_entities(filter: str | None = None) -> list[dict]` (`type_name`, `label`, `meaning`).
-  - `<SemanticClass>.describe(source)` (Task 4) returns `semantic(source).describe(cls.__type_name__)`.
+  - `<SemanticClass>.describe(snapshot)` (Task 4) returns `semantic(snapshot).describe(cls.__type_name__)`. An
+    as-of `Snapshot` describes that version's composition.
 - Rule: reading `__semanticCatalog` for the session does not enter the read set (as `installed_modules`).
 
 - [ ] Step 1: Write the failing tests:
@@ -373,7 +402,8 @@ sections of `docs/source/format-spec.rst`.
     descriptors, then the semantic modules' code; plain resolution unchanged; `catalog()` raises
     `ProtoNotSupportedError`; after `install_module("acme_delivery")` it works);
   - `test_code_that_differs_from_the_stored_catalog_raises`;
-  - `test_class_describe_reads_the_databases_composition` (`Order.describe(tr)` includes `delivery_date` only in a
+  - `test_class_describe_reads_the_snapshots_composition` (`Order.describe(snapshot)` with a `Snapshot` and with a
+    transaction; it includes `delivery_date` only in a
     database with `acme_delivery`; two databases open in one process differ);
   - `test_as_of_describe_uses_that_versions_catalog` (Review Focus 2: before and after `acme_delivery`);
   - `test_an_extending_module_with_a_forbidden_change_fails_the_install` (nothing pending afterwards);
@@ -401,7 +431,7 @@ sections of `docs/source/format-spec.rst`.
 - Produces `SemanticSession` methods. Direct mode applies them to cells at once, under today's read set and
   conflict rules.
   - `create(type_name: str, **fields) -> MutableObject`. Behaviour:
-    - the cell is named `f"{type_name}#{uuid4().hex}"` (R-S3);
+    - the cell is named `f"{type_name}#{uuid4().hex}"` (R260);
     - the version is an instance of the semantic class registered for `type_name` (D57 lookup); a type with no
       Python class in the process raises `ProtoNotSupportedError`;
     - a missing `required` field raises `ProtoValidationError`;
@@ -410,12 +440,14 @@ sections of `docs/source/format-spec.rst`.
   - `update(handle, **changes) -> None`. Changing a role through `update` is refused; use `link`/`unlink`.
   - `link(source: MutableObject, role: str, target) -> None` and `unlink(...)`. Both ends and every maintained
     aggregate along the inverses are updated.
+  - `link`, `relate` and `create`'s role fields check the target with `compose.is_a`: a subtype instance is
+    accepted where its supertype is declared (R280), and any other type raises `ProtoValidationError`.
   - `relate(type_name: str, **roles_and_fields) -> DBObject`. It creates the relationship atom and adds it to the
     collection at each role's inverse end. A version-bound role stores `{"entity": handle, "version": version}`.
   - `navigate(source, role: str)`: a version (`one`), a collection (`many`: `List` if ordered, else `Set`), or
     for a version-bound role its version. Attribute access on a session version (`order.lines`, `line.product`)
     navigates the same way.
-- `index_by` (R-S5):
+- `index_by` (R262):
   - a member-attribute path is `RangeIndex(f"by_{path}", path)` on the end collection;
   - a path through an identity role (`order.date`) makes the end collection hold entry `DBObject`s
     `{member, key}` indexed by `RangeIndex("by_order_date", "key")`, and `update` of the keyed attribute re-keys
@@ -437,7 +469,11 @@ sections of `docs/source/format-spec.rst`.
     no longer returns that order's lines);
   - `test_order_total_and_customer_committed_are_maintained_by_deltas` (patch the evaluator: no `sum` over a whole
     collection during `relate`);
-  - `test_direct_mode_concurrent_lines_on_one_order_conflict` (today's rule, the baseline of Task 10).
+  - `test_direct_mode_concurrent_lines_on_one_order_conflict` (today's rule, the baseline of Task 10);
+  - `test_role_typed_by_supertype_accepts_a_subtype` (Review Focus 6: a `RushOrder` linked as a customer's order is
+    in `orders`, its lines are maintained, and its total enters `committed`; its cell is named
+    `acme.sales.RushOrder#...`);
+  - `test_link_of_an_unrelated_type_is_refused`.
 - [ ] Step 2: Run the tests. Expect FAIL.
 - [ ] Step 3: Implement the API and the demo's steps 1-3. Step 3's invoice prints each line's bound product
   version.
@@ -459,7 +495,7 @@ The MCP Python SDK is **not installed** in any local venv (`import mcp` fails in
 - Modify:
   - `pyproject.toml`: `agent = ["mcp"]`, pinned to the current release after reading its PyPI page in Step 1;
   - `.github/workflows/tests.yml`: install `.[dev,vectors,parquet,agent]`;
-  - `docs/kit/semantic/semantic_demo.py`: steps 1, 2 and 5 through a scripted MCP stdio client (R-S9), printing
+  - `docs/kit/semantic/semantic_demo.py`: steps 1, 2 and 5 through a scripted MCP stdio client (R266), printing
     each call and response.
 - Test: `tests/unit/test_agent_operations.py` (new, all interpreters); `tests/integration/test_agent_mcp.py` (new,
   `pytest.importorskip("mcp")`).
@@ -470,9 +506,10 @@ The MCP Python SDK is **not installed** in any local venv (`import mcp` fails in
   - `describe(db, type_name: str) -> dict`;
   - `check_answerable(db, terms: list[str]) -> dict`: `{"answerable": bool, "matches": {term: [candidate]},
     "unmatched": [term], "suggestions": {term: [candidate]}}`. A candidate is `{"kind", "type_name", "name",
-    "via"}`. Matches are case-folded and exact on name, label and synonyms; suggestions are by substring (R-S17).
+    "via"}`. Matches are case-folded and exact on name, label and synonyms; suggestions are by substring (R274).
   - `query(db, tree: dict) -> dict`: `{"rows", "explain", "version", "query", "terms"}`. Behaviour:
     - the tree is the spec section 11 form, checked with `check_ast(..., in_query=True)`;
+    - `of_type` keeps the rows whose type is that type or one of its subtypes (`compose.subtypes`);
     - it runs on a `Snapshot` (`Database.snapshot_at`; current, or `as_of`), so `version` is
       `Snapshot.version`;
     - `where` goes through `to_planner`, else a residual;
@@ -494,6 +531,8 @@ The MCP Python SDK is **not installed** in any local venv (`import mcp` fails in
   - `test_product_sales_in_june` (rows, an `explain` naming `by_order_date`, `version` equal to the snapshot's);
   - `test_closest_to_limit` (aggregate over customers);
   - `test_query_as_of_reads_that_version`;
+  - `test_query_over_orders_includes_subtypes_and_of_type_narrows` (Review Focus 6: a `where` on `priority` is
+    false for plain orders; `"of_type": "acme.sales.RushOrder"` keeps only those);
   - `test_personal_attributes_are_omitted`;
   - `test_raw_mode_hides_the_catalog`;
   - `test_mcp_server_lists_the_four_tools_and_answers_describe` (integration, stdio).
@@ -524,20 +563,20 @@ The MCP Python SDK is **not installed** in any local venv (`import mcp` fails in
 - Produces:
   - Calling an intent on a session version (`order.add_line(product, 2, price)`, the brief's signature) goes
     through the invoker of Task 4. It logs the call and runs the implementation through D62 resolution, so
-    `_super()` works, with `intent_context()` bound for the call (R-S21). `SemanticSession.invoke(target, intent,
+    `_super()` works, with `intent_context()` bound for the call (R278). `SemanticSession.invoke(target, intent,
     **arguments)` is the same by name. Calling an intent on a version not obtained from a session raises
     `ProtoUserError`.
   - `IntentContext` (what `intent_context()` returns): `target` (the handle), `create`, `get`, `update`, `link`,
     `unlink`, `relate`. An intent that returns a new version of its receiver (`self.with_(...)`) updates the target.
   - `IntentLog.replay(tr, db_root) -> tuple[Dictionary, Dictionary]` (the new mutables and objects). It runs only
     under the root lock and raises `ProtoConflictError` when a fine read changed.
-  - A UUID for `create` is drawn at record time and logged as an argument (R-S3). Replay draws nothing.
+  - A UUID for `create` is drawn at record time and logged as an argument (R260). Replay draws nothing.
 - Rules:
-  - fine read set entries are `(cell, attribute) -> exact token` (R-S13), recorded by `get(...)` attribute access
+  - fine read set entries are `(cell, attribute) -> exact token` (R270), recorded by `get(...)` attribute access
     through a read-tracking view;
   - condition reads (iterating a collection, a `via`, a session query) record the scanned collections' tokens
-    (R-S4);
-  - `__intentLog` is set to a `List` of `IntentRecord`s of this commit (R-S14), with `transaction` = the new
+    (R261);
+  - `__intentLog` is set to a `List` of `IntentRecord`s of this commit (R271), with `transaction` = the new
     version;
   - the flag is refused with `ProtoNotSupportedError` when `space.coordinator is not None`;
   - a raw `set_mutable` of a cell the log touches raises `ProtoUserError`.
@@ -574,7 +613,7 @@ The MCP Python SDK is **not installed** in any local venv (`import mcp` fails in
 **Files:**
 - Create: `proto_db/semantic/constraints.py`.
 - Modify:
-  - `proto_db/errors.py`: `class ProtoConstraintError(ProtoValidationError)` (R-S16);
+  - `proto_db/errors.py`: `class ProtoConstraintError(ProtoValidationError)` (R273);
   - `proto_db/semantic/intents.py`: check after replay;
   - `proto_db/semantic/entities.py`: the direct-mode check at the operation;
   - `docs/kit/semantic/semantic_demo.py`: step 4. Processes create orders concurrently; one exceeds the limit and
@@ -588,7 +627,7 @@ The MCP Python SDK is **not installed** in any local venv (`import mcp` fails in
   - `ProtoConstraintError.describe() -> dict` (neutral).
   - `check_constraints(model, touched: Mapping[MutableObject, DBObject], reader) -> None`. It checks cardinality
     for every touched entity, and the enforced constraints whose `dependencies` intersect what changed.
-  - The rendered message formats `message` with the placeholders of R-S22: the attribute names, `{entity}` and the
+  - The rendered message formats `message` with the placeholders of R279: the attribute names, `{entity}` and the
     type's lower-case short name (both the entity's key), and `{left}`, `{right}` and `{excess}` for ordering
     comparisons. A MISSING operand renders as `<missing name>`, and its name is in `values`.
 
@@ -596,7 +635,7 @@ The MCP Python SDK is **not installed** in any local venv (`import mcp` fails in
   - `test_concurrent_orders_within_the_limit_both_commit` (limit 100, committed 20, two of 30: both commit,
     committed 80);
   - `test_the_later_order_over_the_limit_fails_with_the_rule` (second of 60: `ProtoConstraintError` whose
-    `constraint` is the R-S22 hash name of `Invariant("committed <= credit_limit")`, with its meaning and the
+    `constraint` is the R279 hash name of `Invariant("committed <= credit_limit")`, with its meaning and the
     message "The order exceeds the credit limit of <customer key> by 10"; nothing of it published);
   - `test_cancelled_orders_leave_the_aggregate` (the aggregate's `where="state != 'cancelled'"`: cancelling gives
     a negative delta);
@@ -604,6 +643,8 @@ The MCP Python SDK is **not installed** in any local venv (`import mcp` fails in
   - `test_only_the_violating_commit_fails_in_a_group_round` (Review Focus 3);
   - `test_missing_credit_limit_names_the_operand` (Review Focus 4);
   - `test_cardinality_one_is_enforced` (an order whose customer is unlinked);
+  - `test_inherited_invariant_binds_subtype_instances` (Review Focus 6: a `RushOrder` that exceeds the limit fails
+    with the same rule);
   - `test_informative_constraint_is_not_enforced` (`enforced=False`);
   - `test_direct_mode_checks_at_the_operation`.
 - [ ] Step 2: Run the tests. Expect FAIL.
@@ -630,7 +671,7 @@ The MCP Python SDK is **not installed** in any local venv (`import mcp` fails in
   limit and with the stored aggregate.
 - Produces `python -m benchmarks.semantic.credit_experiment --mode direct|intents --threads N --orders M --customers K --seed S --out FILE`.
   The JSON has `commit`, `clean`, `mode`, `gil`, attempts, commits, conflicts (retries), rejected by conflict,
-  rejected by constraint, the verifier's violations, and commit latency p50/p95. Baseline (R-S18): direct mode
+  rejected by constraint, the verifier's violations, and commit latency p50/p95. Baseline (R275): direct mode
   with `Database.run` retries.
 
 - [ ] Step 1: Write the failing tests:
