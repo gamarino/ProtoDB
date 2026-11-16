@@ -196,8 +196,9 @@ class SemanticSession:
         :class:`~proto_db.semantic.entities.Members` of a ``many`` end (members, never entries)."""
         return self._operations().navigate(source, role)
 
-    def query(self, tree) -> dict:
+    def query(self, tree, *, members: bool = False) -> dict:
         """Run the query ``tree`` (spec section 11) on the session's version: ``{"rows", "explain", "version",
         "query", "terms"}``.  The session's single query engine (preflight F18): see
-        :mod:`proto_db.semantic.entities`, "The query engine"."""
-        return self._operations().query(tree)
+        :mod:`proto_db.semantic.entities`, "The query engine".  With ``members=True``, a query without an
+        aggregate also answers ``"members"``, the :class:`~proto_db.semantic.entities.Version` each row reads."""
+        return self._operations().query(tree, with_members=members)

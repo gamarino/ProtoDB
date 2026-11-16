@@ -15,16 +15,25 @@ Step 3: relations navigable from both sides.  Orders with several lines are load
 products are reached; from a product, its sales by date through its own index, with no global structure;
 an invoice shows each product as it was when sold.
 
-Steps 1 and 2 print the catalog through the semantic session (``semantic(tr).describe(...)``); the agent
-interface (MCP) that will ask the same questions arrives with a later task, as do steps 4 to 6.
+Step 5: questions with verifiable answers.  "How much of the widget did we sell in June?", "Which customer
+is closest to its limit?" and "How much did we spend on advertising?" (not answerable: the catalog names
+neither term).  Each answer carries the query, its ``explain()`` and the version read.
+
+Steps 1, 2 and 5 ask through the agent interface: a scripted MCP client (ruling R266: no language model runs
+in the demo) starts the server (``python -m proto_db.agent``) over stdio and prints each tool call and its
+response.  They need the optional extra ``agent`` (the MCP SDK).  The server opens the database's files, so
+the demo closes its own space while the agent asks.  Steps 4 and 6 arrive with later tasks.
 
 The demo checks what it shows.  Each "[check]" line is an assertion that held; a failed check stops the
 demo with exit status 1.  It ends with "every check passed" only when all of them held.
 """
 import argparse
+import asyncio
+import json
 import os
 import shutil
 import sys
+import sysconfig
 import tempfile
 from datetime import date
 from decimal import Decimal
@@ -34,6 +43,8 @@ sys.path.insert(0, REPO)        # the canonical import path of the demo's module
 
 from proto_db import FileStorage, ObjectSpace  # noqa: E402
 from proto_db.semantic import semantic  # noqa: E402
+
+DATABASE = "acme"
 
 #: Registry module name -> import path of its code (the runtime's modules_mapping).
 MAPPING = {"acme_sales": "docs.kit.semantic.acme_sales", "acme_delivery": "docs.kit.semantic.acme_delivery"}
@@ -86,55 +97,83 @@ def _print_entity(described: dict) -> None:
         say(f"     {element['name']}{label}: {what}; from {', '.join(element['provenance'])}{meaning}")
 
 
+# -- the agent (a scripted MCP client) -------------------------------------------------------------------------
+
+def _shown(answer) -> str:
+    """A response as printed: its JSON, cut after a few hundred characters (the demo prints what it checks
+    in full below)."""
+    text = json.dumps(answer, ensure_ascii=False)
+    return text if len(text) <= 360 else f"{text[:360]}... ({len(text)} characters)"
+
+
+def ask(path: str, calls: list) -> list:
+    """Start the MCP server on the database at ``path``, make the tool calls ``calls`` (``(tool, arguments)``
+    pairs) in order, print each call and its response, and return the responses (parsed JSON)."""
+    try:
+        from mcp import ClientSession, StdioServerParameters
+        from mcp.client.stdio import stdio_client
+    except ImportError:
+        raise SystemExit("[FAILED] the agent steps need the optional extra 'agent' (the MCP SDK): "
+                         "pip install proto_db[agent]") from None
+    flags = ["-X", "gil=1"] if sysconfig.get_config_var("Py_GIL_DISABLED") and sys._is_gil_enabled() else []
+    mapping = [arg for name, target in MAPPING.items() for arg in ("--mapping", f"{name}={target}")]
+    parameters = StdioServerParameters(command=sys.executable, cwd=REPO, env=dict(os.environ),
+                                       args=[*flags, "-m", "proto_db.agent", "--path", path, "--database", DATABASE,
+                                             *mapping])
+
+    async def run() -> list:
+        answers = []
+        async with stdio_client(parameters) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                for tool, arguments in calls:
+                    say(f"   agent -> {tool}({json.dumps(arguments, ensure_ascii=False)})")
+                    result = await session.call_tool(tool, arguments)
+                    text = result.content[0].text if result.content else ""
+                    if result.isError:
+                        raise SystemExit(f"[FAILED] the agent interface refused {tool}: {text}")
+                    answers.append(json.loads(text))
+                    say(f"   server <- {_shown(answers[-1])}")
+        return answers
+    return asyncio.run(run())
+
+
 # -- step 1 ----------------------------------------------------------------------------------------------------
 
-def step_1(db) -> None:
-    db.run(lambda tr: tr.install_module("acme_sales"))
-    tr = db.new_transaction()
-    try:
-        session = semantic(tr)
-        say("list_entities():")
-        listed = session.list_entities()
-        for entity in listed:
-            say(f"   {entity['type_name']}: {_text(entity['label']) or '-'}, {entity['meaning']}")
-        check({e["type_name"] for e in listed} == {"acme.core.Company", "acme.sales.Customer", "acme.catalog.Product",
-                                                   ORDER, LINE}, "the catalog lists the five entities of acme_sales")
-        say("describe('acme.sales.Order'):")
-        order = session.describe(ORDER)
-        _print_entity(order)
-        check(order["meaning"].startswith("A customer's order"), "an order says what it is")
-        say("describe('acme.sales.OrderLine'):")
-        line = session.describe(LINE)
-        _print_entity(line)
-        check(line["kind"] == "relationship" and {r["name"] for r in line["roles"]} == {"order", "product"},
-              "a line is a relationship between an order and a product")
-        price = _element(line, "price")
-        check("agreed" in price["meaning"] and "not the product's current price" in price["meaning"],
-              "'price' on a line means the agreed price, not the current one")
-        check(_element(line, "product").get("binding") == "version",
-              "a line's product is bound by version: the product as sold")
-    finally:
-        tr.abort()
+def step_1(path: str) -> None:
+    listed, order, line = ask(path, [("list_entities", {}), ("describe", {"type_name": ORDER}),
+                                     ("describe", {"type_name": LINE})])
+    say("the entities:")
+    for entity in listed:
+        say(f"   {entity['type_name']}: {_text(entity['label']) or '-'}, {entity['meaning']}")
+    check({e["type_name"] for e in listed} == {"acme.core.Company", "acme.sales.Customer", "acme.catalog.Product",
+                                               ORDER, LINE}, "the catalog lists the five entities of acme_sales")
+    say("what an order is:")
+    _print_entity(order)
+    check(order["meaning"].startswith("A customer's order"), "an order says what it is")
+    say("what a line is:")
+    _print_entity(line)
+    check(line["kind"] == "relationship" and {r["name"] for r in line["roles"]} == {"order", "product"},
+          "a line is a relationship between an order and a product")
+    price = _element(line, "price")
+    check("agreed" in price["meaning"] and "not the product's current price" in price["meaning"],
+          "'price' on a line means the agreed price, not the current one")
+    check(_element(line, "product").get("binding") == "version",
+          "a line's product is bound by version: the product as sold")
 
 
 # -- step 2 ----------------------------------------------------------------------------------------------------
 
-def step_2(db) -> None:
-    db.run(lambda tr: tr.install_module("acme_delivery"))
-    tr = db.new_transaction()
-    try:
-        order = semantic(tr).describe(ORDER)
-        say("describe('acme.sales.Order') after installing acme_delivery:")
-        _print_entity(order)
-        delivery = _element(order, "delivery_date")
-        check(delivery["provenance"] == ["acme_delivery"], "acme_delivery defined delivery_date")
-        number = _element(order, "number")
-        check(number["provenance"] == ["acme_sales", "acme_delivery"] and _text(number["label"]) == "Order no.",
-              "acme_sales defined number, and acme_delivery redefined its label to 'Order no.'")
-        check(_element(order, "total")["provenance"] == ["acme_sales"], "acme_sales defined total, unmodified")
-        check(set(tr.installed_modules()) >= {"acme_sales", "acme_delivery"}, "both modules are installed")
-    finally:
-        tr.abort()
+def step_2(path: str) -> None:
+    order, = ask(path, [("describe", {"type_name": ORDER})])
+    say("an order, after installing acme_delivery (each element names the modules that defined it):")
+    _print_entity(order)
+    delivery = _element(order, "delivery_date")
+    check(delivery["provenance"] == ["acme_delivery"], "acme_delivery defined delivery_date")
+    number = _element(order, "number")
+    check(number["provenance"] == ["acme_sales", "acme_delivery"] and _text(number["label"]) == "Order no.",
+          "acme_sales defined number, and acme_delivery redefined its label to 'Order no.'")
+    check(_element(order, "total")["provenance"] == ["acme_sales"], "acme_sales defined total, unmodified")
 
 
 # -- step 3 ----------------------------------------------------------------------------------------------------
@@ -188,7 +227,9 @@ def _plan_line(plan) -> str:
     return " <- ".join(out)
 
 
-def step_3(db) -> None:
+def step_3(db) -> dict:
+    """Load the orders and show their relations; return what step 5 asks about: the cells of the widget,
+    the company and the customers (by index), and the version read after the load."""
     world = db.run(_load)
     lines_loaded = sum(len(lines) for *_, lines in ORDERS)
     say(f"loaded {len(ORDERS)} orders with {lines_loaded} lines, for 2 customers and {len(PRODUCTS)} products")
@@ -247,8 +288,95 @@ def step_3(db) -> None:
         customer = order.customer
         check(customer.committed == sum(o.total for o in customer.orders if o.state != "cancelled"),
               "the customer's committed amount is maintained over its orders")
+        return {"widget": widget.name, "company": world["company"].name,
+                "customers": [c.name for c in world["customers"]], "version": s.version()["number"]}
     finally:
         tr.abort()
+
+
+# -- step 5 ----------------------------------------------------------------------------------------------------
+
+def _amount(lines) -> Decimal:
+    return sum((Decimal(quantity) * Decimal(price) for _, quantity, price in lines), Decimal(0))
+
+
+def step_5(path: str, world: dict) -> None:
+    widget, company = world["widget"], world["company"]
+    june = ["and", [">=", ["attr", "order", "date"], ["const", {"date": "2026-06-01"}]],
+            ["<=", ["attr", "order", "date"], ["const", {"date": "2026-06-30"}]]]
+    sold_tree = {"from": ["via", ["cell", widget], "order_lines"], "where": june, "select": ["quantity", "price"]}
+    limit_tree = {"from": ["via", ["cell", company], "customers"], "select": ["name", "committed", "credit_limit"]}
+    say('Three questions.  For each, the agent first checks that the catalog names its terms.')
+    terms_sold, sold, terms_limit, limits, terms_ads = ask(path, [
+        ("check_answerable", {"terms": ["product", "quantity", "date"]}),
+        ("query", {"tree": sold_tree}),
+        ("check_answerable", {"terms": ["customer", "credit_limit", "committed"]}),
+        ("query", {"tree": limit_tree}),
+        ("check_answerable", {"terms": ["advertising", "spend"]})])
+
+    say()
+    say('"How much of the widget did we sell in June?"')
+    check(terms_sold["answerable"], "the catalog names product, quantity and date")
+    units = sum((Decimal(row["values"]["quantity"]) for row in sold["rows"]), Decimal(0))
+    say(f"   query: {json.dumps(sold['query'])}")
+    say(f"   explain: {_plan_line(sold['explain']['plan'])}; on the index: {sold['explain']['indexed'] != []}")
+    say(f"   version read: {sold['version']['number']}")
+    say(f"   answer: {units} units in {len(sold['rows'])} lines")
+    expected = sum((Decimal(q) for _, _, day, lines in ORDERS if day.month == 6 for p, q, _ in lines if p == 0),
+                   Decimal(0))
+    check(units == expected, f"the answer ({units}) is the widget's June quantity, recomputed from the loaded orders")
+    check("by_order_date" in _index_names(sold["explain"]), "the answer's explain names the index by_order_date")
+    check(sold["version"]["number"] == world["version"], "the answer names the version it read")
+
+    say()
+    say('"Which customer is closest to its limit?"')
+    check(terms_limit["answerable"], "the catalog names customer, credit limit and committed")
+    say(f"   query: {json.dumps(limits['query'])}, then the declared post-step argmin(credit_limit - committed)")
+    for row in limits["rows"]:
+        say(f"   {row['entity']['cell']}: {row['values']}")
+    closest = min(limits["rows"],
+                  key=lambda row: Decimal(row["values"]["credit_limit"]) - Decimal(row["values"]["committed"]))
+    left = Decimal(closest["values"]["credit_limit"]) - Decimal(closest["values"]["committed"])
+    say(f"   answer: {closest['entity']['cell']}, {left} below its limit")
+    committed = {}
+    for _, customer, _, lines in ORDERS:
+        committed[customer] = committed.get(customer, Decimal(0)) + _amount(lines)
+    expected = world["customers"][min(committed, key=lambda c: Decimal("100000") - committed[c])]
+    check(closest["entity"]["cell"] == expected, "the answer is the customer with the least credit left, "
+          "recomputed from the loaded orders")
+    withheld = [t for t in limits["terms"] if t.get("withheld")]
+    check(all("name" not in row["values"] for row in limits["rows"])
+          and [(t["name"], t["sensitivity"]) for t in withheld] == [("name", "personal")],
+          "the customer's name is personal: the answer omits it and says so")
+
+    say()
+    say('"How much did we spend on advertising?"')
+    check(not terms_ads["answerable"] and terms_ads["unmatched"] == ["advertising", "spend"],
+          "the catalog names neither 'advertising' nor 'spend': the agent says it cannot answer, and runs no query")
+
+
+def _space(workdir: str) -> ObjectSpace:
+    return ObjectSpace(FileStorage(os.path.join(workdir, "space")), modules_mapping=MAPPING)
+
+
+def _in_space(workdir: str, work):
+    """Run ``work(db)`` in the demo's own space, closed afterwards (the agent's server opens the same files)."""
+    space = _space(workdir)
+    try:
+        return work(space.open_database(DATABASE))
+    finally:
+        space.close()
+
+
+def _install(name: str):
+    def work(db):
+        db.run(lambda tr: tr.install_module(name))
+        tr = db.new_transaction()
+        try:
+            return list(tr.installed_modules())
+        finally:
+            tr.abort()
+    return work
 
 
 def main(argv=None) -> int:
@@ -260,17 +388,23 @@ def main(argv=None) -> int:
     os.makedirs(workdir, exist_ok=True)
     try:
         say("proto_db: the semantic-model demo")
-        space = ObjectSpace(FileStorage(os.path.join(workdir, "space")), modules_mapping=MAPPING)
+        path = os.path.join(workdir, "space")
+        space = _space(workdir)
         try:
-            db = space.new_database("acme")
-            title("Step 1: the database describes itself")
-            step_1(db)
-            title("Step 2: a module extends another")
-            step_2(db)
-            title("Step 3: relations navigable from both sides")
-            step_3(db)
+            space.new_database(DATABASE)
         finally:
             space.close()
+        title("Step 1: the database describes itself")
+        check("acme_sales" in _in_space(workdir, _install("acme_sales")), "acme_sales is installed")
+        step_1(path)
+        title("Step 2: a module extends another")
+        check({"acme_sales", "acme_delivery"} <= set(_in_space(workdir, _install("acme_delivery"))),
+              "both modules are installed")
+        step_2(path)
+        title("Step 3: relations navigable from both sides")
+        world = _in_space(workdir, step_3)
+        title("Step 5: questions with verifiable answers")
+        step_5(path, world)
     finally:
         if own:
             shutil.rmtree(workdir, ignore_errors=True)

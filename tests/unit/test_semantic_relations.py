@@ -1010,3 +1010,62 @@ def test_a_member_attribute_index_and_a_refused_shape(db):
         s.link(maker, "tagged", items[0])
     assert s.navigate(maker, "tagged").collection is None                   # nothing was written
     tr.abort()
+
+
+def test_a_query_from_another_thread_sees_a_semantic_operation_entirely_before_or_after(db, monkeypatch):
+    """A query composes many reads: from the order's cell to its customer's cell, then that customer's
+    orders.  Thread B's query is held after reading the order and before reading its customer, while
+    thread A moves the order to another customer (unlink, then link).  The query holds the transaction for
+    its whole call (``_consistent``), so A waits and B counts the order among its customer's orders; without
+    it A runs in between and B reads the old customer after the move, without the order (Task 6 deferred
+    minor).  B is released once A has finished or is waiting for the lock: no sleep decides the order."""
+    from proto_db.semantic import entities
+
+    def build(tr):
+        s = semantic(tr)
+        company, customer, _ = _world(s)
+        other = s.create("acme.sales.Customer", name="Ann", credit_limit=Decimal("1000"), company=company)
+        return _order(s, company, customer, 1), customer, other
+    order, customer, other = db.run(build)
+    tr = db.new_transaction()
+    between, a_waits_or_done = threading.Event(), threading.Event()
+    tr._lock = _Blocking(tr._lock, "A", a_waits_or_done)
+    original = entities.Operations._reached
+
+    def reached(self, raws):
+        if threading.current_thread().name == "B" and not between.is_set():
+            between.set()
+            assert a_waits_or_done.wait(60), "thread A neither waited for the lock nor finished"
+        return original(self, raws)
+    monkeypatch.setattr(entities.Operations, "_reached", reached)
+    out = {}
+
+    def a():
+        try:
+            assert between.wait(60)
+            s = semantic(tr)
+            s.unlink(order, "customer", customer)
+            s.link(order, "customer", other)
+            out["A"] = "moved"
+        except BaseException as error:              # reported to the test
+            out["A"] = error
+        finally:
+            a_waits_or_done.set()
+
+    def b():
+        try:
+            answer = semantic(tr).query({"from": ["via", ["cell", order.name], "customer", "orders"]})
+            out["B"] = [row.entity for row in answer["rows"]]
+        except BaseException as error:              # reported to the test
+            out["B"] = error
+    threads = [threading.Thread(target=a, name="A"), threading.Thread(target=b, name="B")]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(60)
+    assert not any(thread.is_alive() for thread in threads)
+    monkeypatch.setattr(entities.Operations, "_reached", original)
+    assert out["A"] == "moved"
+    assert out["B"] == [order]
+    assert semantic(tr).navigate(order, "customer").entity == other
+    tr.abort()

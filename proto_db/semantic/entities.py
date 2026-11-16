@@ -89,7 +89,9 @@ The query engine (preflight F17, F18)
     before :func:`~proto_db.semantic.expressions.to_planner` (which stays single-name); over an end of
     records, a conjunct on stored fields.  A conjunct on a field with a catalogued default, a computed
     attribute, a path, or over an end of handles runs as a residual on the members.  ``explain`` says which:
-    ``{"from", "plan", "indexed", "residual"}``.
+    ``{"from", "plan", "indexed", "residual"}``.  With ``members=True`` a query without an aggregate also
+    answers ``"members"``: the version each row reads, row by row (the agent interface names each row's
+    entity and type with it, :mod:`proto_db.agent.operations`).
 """
 from __future__ import annotations
 
@@ -958,7 +960,7 @@ class Operations:
     # -- the query engine (preflight F17, F18) ---------------------------------------------------------
 
     @_consistent
-    def query(self, tree: Mapping) -> dict:
+    def query(self, tree: Mapping, *, with_members: bool = False) -> dict:
         if not isinstance(tree, Mapping):
             raise _invalid(f"A query is a mapping (spec section 11), not {type(tree).__name__}")
         unknown = sorted(set(tree) - _QUERY_KEYS)
@@ -1020,8 +1022,11 @@ class Operations:
         reads = [t for t in (where, aggregate[1] if aggregate and aggregate[0] == "sum" else None) if t is not None]
         reads += [["attr", *name.split(".")] for name in select or ()]
         types = [member_type] if member_type is not None else sorted({type(m).__type_name__ for _, m in members})
-        return {"rows": rows, "explain": explain, "version": version, "query": copy.deepcopy(dict(tree)),
-                "terms": self._terms(used, types, reads)}
+        answer = {"rows": rows, "explain": explain, "version": version, "query": copy.deepcopy(dict(tree)),
+                  "terms": self._terms(used, types, reads)}
+        if with_members and aggregate is None:
+            answer["members"] = [self._row_version(raw, member) for raw, member in members]
+        return answer
 
     def _traverse(self, origin, roles) -> list:
         """The members ``(stored value, record)`` reached from ``origin`` (a ``cell`` or ``root`` origin, or

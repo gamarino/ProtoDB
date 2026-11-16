@@ -35,6 +35,9 @@ vectors = ["numpy"]
 hnsw = ["numpy", "hnswlib"]
 s3 = ["boto3"]
 gcs = ["google-cloud-storage"]
+# The MCP server of the agent interface (proto_db.agent.mcp_server).  The 1.x line is the one tested (1.30.0,
+# 2026-09-07); the 2.x line (2.3.0 current, 2026-10-02) is a new major version not yet tested here.
+agent = ["mcp>=1.30.0,<2"]
 dev = [
   "pytest",
   "pytest-timeout",
