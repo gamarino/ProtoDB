@@ -1911,20 +1911,26 @@ read it as specified.
 * **Cells.** An entity lives in a mutable cell (`Space and database roots`_) named
   ``<type name>#<32 hex digits>``: the catalogued type name, ``#``, and the 32 lowercase hex digits of
   a random UUID drawn when the creation is recorded (a replay never draws it). The cell's value is
-  a record whose type tag is the type name, holding the entity's current version. The cell's
+  a record whose type tag is the type name, without parents (no ``p`` key), holding the entity's
+  current version. A relationship atom is likewise a record without parents. The cell's
   ``MutableObject`` handle is the entity's identity. A relationship atom has no cell: it is an
   immutable record of the relationship's type, stored once, and every end that holds it
   references that one record (one oid).
 * **Fields.** A field is an attribute of the record under its name. A field with a catalogued
   default may be absent; a reader then reads the default.
 * **``one`` ends.** A role or relation of cardinality ``one`` or ``0..1`` is an attribute holding
-  the target's handle, or, for ``binding="version"``, the plain dictionary
-  ``{"entity": handle, "version": record}``, or nil when nothing is linked. A writer **MUST NOT**
+  the target's handle, or, for ``binding="version"``, a **bound reference**: the canonical map
+  ``{"@map": [["entity", {"@mut": name}], ["version", {"@ref": [segment, offset, tag]}]]}``, with
+  the keys in that order, where ``entity`` is the target's handle and ``version`` a nested
+  reference to the bound record (see **Version-bound roles** below), or nil when nothing is linked. A writer **MUST NOT**
   overwrite a linked ``one`` end: linking it again is refused (``ProtoValidationError``, "unlink it
   first"); an unlink then a link, in one transaction, moves it.
 * **``many`` ends.** A cardinality ``many`` or ``1..*`` is an attribute holding a ``List`` when the
-  end is ``ordered`` and a ``Set`` otherwise, absent or nil while it holds nothing. Its members are
-  the targets' handles, or, for an end of a relationship, the atoms themselves. Both ends of an
+  end is ``ordered`` and a ``Set`` otherwise. It is absent or nil until its first link, and then a
+  collection, which is empty again once its last member is unlinked; a reader **MUST** accept all
+  three as an end holding nothing. Its members are the targets' handles, or, for an end of a
+  relationship, the atoms themselves. A link appends the member at the end of an ``ordered`` end;
+  an unlink removes it and keeps the order of the others. Both ends of an
   inverse pair are kept by every link and unlink, in the same transaction.
 * **Indexes of a ``many`` end** (``index_by``, declared on the end or on its inverse ``one`` end).
   A path naming one attribute of the member is a ``RangeIndex`` named ``by_<path>`` with key
@@ -1950,15 +1956,17 @@ read it as specified.
   is not specified by this revision.
 * **Relationships.** A relationship atom is created with every one of its roles and its required
   fields; an atom never changes, so a role it lacks could never be added later.
-* **Version-bound roles** (``binding="version"``). The ``version`` of ``{"entity", "version"}`` is
-  the target's **field version**, current when the operation is applied (in direct mode in the
-  transaction's view, validated by its read set at commit; in intent mode at replay):
+* **Version-bound roles** (``binding="version"``). The ``version`` of a bound reference is the
+  target's **field version**, current when the operation is applied (in direct mode in the
+  transaction's view, validated by its read set at commit; in intent mode at replay). The rule
+  compares the target's fields only (attributes of kind ``field``, by value), never how they were
+  written:
 
-  - while the transaction has not changed the target's fields, the committed record the
-    transaction read;
-  - once it has (the target was created, or a field updated, in that transaction), the first
-    record carrying the current fields (for a creation, the record once the creation has linked its
-    ends), and every later binding of that target in the transaction **MUST** reuse that record.
+  - while the target's fields equal those of the committed record the transaction read, that
+    committed record (so an update to the same value keeps it bound);
+  - otherwise the record in view at the first binding since the fields last changed (for an entity
+    created in the transaction, its record at its first binding), and every later binding of that
+    target in the transaction **MUST** reuse that record while the fields stay equal to it.
 
   Writes to the target's own ends and to its maintained aggregates never start a new bound version,
   and a later change of the target's fields does not move an earlier binding. The record committed

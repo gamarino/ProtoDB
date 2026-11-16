@@ -2664,6 +2664,9 @@ class Transaction:
         # The semantic catalog (proto_db.semantic.store): an install whose list has semantic contributions,
         # or whose snapshot's catalog lacks some of them, merges the catalog at commit.
         self._semantic_pending = False
+        # The field version of each entity a version-bound role binds (proto_db.semantic.entities):
+        # cell name -> record; read and written under the lock (semantic_field_version).
+        self._semantic_versions: dict = {}
         self._committed_version: Optional[int] = None    # the version the last build produced
         self._committed_key: Optional[tuple] = None      # its (label, version), for the rebind
         self._committed_origin: Optional[tuple] = None   # its root's (label, cluster epoch), cluster mode
@@ -2875,6 +2878,38 @@ class Transaction:
             self._check_active()
             value = self._mutable_view(name, record=True)
             return None if value is _ABSENT else value
+
+    def snapshot_mutable(self, name: str):
+        """Return the value of the mutable cell ``name`` in the snapshot this transaction reads (``None`` if
+        absent there): never the transaction's own writes, and not recorded in the read set.
+
+        A caller that needs the read validated at commit reads the cell with :meth:`get_mutable` too.
+        Raises ``ProtoUserError`` if the transaction is not active.
+        """
+        _check_name(name, "mutable")
+        with self._lock:
+            self._check_active()
+            value = self._mutables.get_at(name, _ABSENT)
+        return None if value is _ABSENT else value
+
+    def semantic_field_version(self, name: str):
+        """The field version the semantic layer bound for the entity in cell ``name`` in this transaction
+        (``None`` if none); see :mod:`proto_db.semantic.entities`.  Raises ``ProtoUserError`` if the
+        transaction is not active."""
+        with self._lock:
+            self._check_active()
+            return self._semantic_versions.get(name)
+
+    def set_semantic_field_version(self, name: str, expected, record):
+        """Store ``record`` as the field version of cell ``name`` if the stored one is ``expected``
+        (``None``: none stored); return the one stored afterwards (compare-and-set).  Raises
+        ``ProtoUserError`` if the transaction is not active."""
+        with self._lock:
+            self._check_active()
+            current = self._semantic_versions.get(name)
+            if current is expected:
+                self._semantic_versions[name] = current = record
+            return current
 
     def set_mutable(self, name: str, value) -> None:
         """Set the mutable cell ``name`` to ``value`` at commit; the cell must exist.

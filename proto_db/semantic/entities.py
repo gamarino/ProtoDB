@@ -16,9 +16,10 @@ Storage (spec section 6)
       refused ("unlink it first"); an unlink and a link in one transaction move it.
     - ``binding="version"`` binds the target's **field version**, current when the operation is applied (in
       direct mode the transaction's view, validated by its read set at commit; in intent mode at replay):
-      while the transaction has not changed the target's fields, the committed record it read; once it has
-      (the target was created or updated in it), the first record carrying the current fields, which every
-      later binding in the transaction reuses.  Writes to the target's own ends and maintained aggregates
+      the committed record the transaction read while the target's fields equal it; otherwise the record
+      in view at the first binding since the fields last changed, which every later binding in the
+      transaction reuses while the fields stay equal.  The rule reads the fields only, never how they
+      were written (an update to the same value keeps the committed record bound).  Writes to the target's own ends and maintained aggregates
       never start a new bound version (each line joining ``Product.order_lines`` would otherwise bind a
       record no commit ever holds), and a later field change does not move an earlier binding.  The
       committed record of a target that holds the inverse end can never be bound: it holds the binder, and
@@ -73,9 +74,7 @@ from __future__ import annotations
 
 import contextlib
 import copy
-import threading
 import uuid
-import weakref
 from collections.abc import Mapping
 from typing import NamedTuple
 
@@ -98,10 +97,6 @@ __all__ = ["Version", "Members", "Operations", "Schema"]
 
 #: The end cardinalities that hold one target; the others hold a collection.
 _SINGLE = frozenset({"one", "0..1"})
-#: Per transaction, the field version of each entity a version-bound role has bound or a semantic create or
-#: update has written: ``{transaction: {cell name: record}}`` (see "Storage", ``binding="version"``).
-_FIELD_VERSIONS: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
-_FIELD_VERSIONS_LOCK = threading.Lock()
 #: The keys of a query tree (spec section 11).
 _QUERY_KEYS = frozenset({"from", "of_type", "where", "select", "aggregate", "as_of"})
 
@@ -493,39 +488,22 @@ class Operations:
         return all(values_equal(_stored_step(one, name), _stored_step(other, name))
                    for name, element in self.schema.elements(type_name).items() if _kind(element) == "field")
 
-    def _field_versions(self) -> dict:
-        tr = self.session._transaction()
-        with _FIELD_VERSIONS_LOCK:
-            memo = _FIELD_VERSIONS.get(tr)
-            if memo is None:
-                memo = _FIELD_VERSIONS[tr] = {}
-            return memo
-
-    def _fields_written(self, handle: MutableObject) -> None:
-        """A create or an update wrote ``handle``'s fields: its record now is its field version."""
-        record = self.source.get_mutable(handle.name)
-        memo = self._field_versions()
-        with _FIELD_VERSIONS_LOCK:
-            memo[handle.name] = record
-
     def _bound(self, handle: MutableObject, record, type_name: str) -> dict:
         """The value a version-bound role stores for ``handle``, whose record in the transaction's view is
-        ``record`` (read, so it is in the read set): ``{"entity", "version"}`` with its field version (see
-        "Storage")."""
+        ``record`` (read with ``get_mutable``, so the read set validates the committed record at commit):
+        ``{"entity", "version"}`` with its field version (see "Storage").  The rule is history-free: the
+        committed record while the fields equal it; otherwise the record kept for the transaction while the
+        fields equal it; otherwise ``record``, kept from now on."""
         tr = self.session._transaction()
-        memo = self._field_versions()
-        with _FIELD_VERSIONS_LOCK:
-            known = memo.get(handle.name)
-        if known is None or not self._same_fields(type_name, known, record):
-            with tr._lock:
-                read = tr._mutables.get_at(handle.name, None)         # the committed record it read
-            if read is not None and self._same_fields(type_name, read, record):
-                known = read
-            else:
-                known = record              # fields written outside create and update: the first record seen
-            with _FIELD_VERSIONS_LOCK:
-                memo[handle.name] = known
-        return {"entity": handle, "version": known}
+        committed = tr.snapshot_mutable(handle.name)
+        if committed is not None and self._same_fields(type_name, committed, record):
+            return {"entity": handle, "version": committed}
+        while True:
+            kept = tr.semantic_field_version(handle.name)
+            if kept is not None and self._same_fields(type_name, kept, record):
+                return {"entity": handle, "version": kept}
+            if tr.set_semantic_field_version(handle.name, kept, record) is record:
+                return {"entity": handle, "version": record}
 
     # -- reading ----------------------------------------------------------------------------------------
 
@@ -786,7 +764,6 @@ class Operations:
         handle = tr.new_mutable(f"{type_name}#{uuid.uuid4().hex}", record)
         for element, (target, _, _) in links:
             self._apply_link(handle, element, target)
-        self._fields_written(handle)                # its field version: the record as created and linked
         return handle
 
     def update(self, handle, changes: Mapping) -> None:
@@ -821,7 +798,6 @@ class Operations:
                     if owner is not None:
                         rekeys.append((owner, info, raw, old_key, new_key))
         self._write(handle, old, new)
-        self._fields_written(handle)
         for owner, info, raw, old_key, new_key in rekeys:
             self._rekey(owner, info, raw, old_key, new_key)
 

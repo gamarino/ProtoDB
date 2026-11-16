@@ -302,6 +302,51 @@ def test_relate_then_update_keeps_the_old_price(db):
     tr.abort()
 
 
+def test_an_update_to_the_same_value_keeps_the_committed_record_bound(db):
+    """The binding rule is history-free: equal fields bind the committed record, whatever wrote them."""
+    def build(tr):
+        s = semantic(tr)
+        company, customer, product = _world(s)
+        return _order(s, company, customer, 1), product
+    order, product = db.run(build)
+    tr = db.new_transaction()
+    committed = semantic(tr).get(product).oid
+    tr.abort()
+    def sell(tr):
+        s = semantic(tr)
+        s.update(product, list_price=Decimal("10"))
+        _line(s, order, product, "1")
+        _line(s, order, product, "2")
+    db.run(sell)
+    tr = db.new_transaction()
+    s = semantic(tr)
+    assert [line.product.oid for line in s.navigate(order, "lines")] == [committed, committed]
+    tr.abort()
+
+
+def test_a_raw_write_of_fields_binds_the_record_seen_at_the_first_binding(db):
+    def build(tr):
+        s = semantic(tr)
+        company, customer, product = _world(s)
+        return _order(s, company, customer, 1), product
+    order, product = db.run(build)
+    def sell(tr):
+        s = semantic(tr)
+        tr.set_mutable(product.name, tr.get_mutable(product.name).with_(list_price=Decimal("15")))
+        _line(s, order, product, "1")
+        _line(s, order, product, "2")
+        tr.set_mutable(product.name, tr.get_mutable(product.name).with_(list_price=Decimal("10")))
+        _line(s, order, product, "3")                       # back to the committed fields
+    db.run(sell)
+    tr = db.new_transaction()
+    s = semantic(tr)
+    bound = [line.product for line in s.navigate(order, "lines")]
+    assert [v.list_price for v in bound] == [Decimal("15"), Decimal("15"), Decimal("10")]
+    assert bound[0].oid == bound[1].oid and len(bound[0].order_lines) == 0
+    assert len(bound[2].order_lines) == 0                   # the committed record, before any line
+    tr.abort()
+
+
 def test_sales_by_order_date_use_the_index(db):
     def build(tr):
         s = semantic(tr)
