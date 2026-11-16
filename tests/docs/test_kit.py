@@ -7,6 +7,7 @@
   ``make_exercise.py`` plants (a planted bug that the test does not catch proves nothing).
 """
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -44,14 +45,42 @@ def test_the_semantic_demo_runs_and_checks_itself(tmp_path):
                                       "SDK), absent from this interpreter (preflight F30)")
     out = _run([os.path.join(KIT, "semantic", "semantic_demo.py"), "--workdir", str(tmp_path / "demo")], REPO, 300)
     assert out.returncode == 0, f"the demo failed\n--- stdout ---\n{out.stdout}\n--- stderr ---\n{out.stderr}"
-    for step in ("Step 1", "Step 2", "Step 3", "Step 4", "Step 5", "Step 6"):
-        assert step in out.stdout, f"{step} printed nothing:\n{out.stdout}"
+    # The six headings, as the demo prints them (underlined), in order, each followed by what its step printed.
+    lines = out.stdout.splitlines()
+    headings = _semantic_step_headings()
+    at = [i for i, (line, following) in enumerate(zip(lines, lines[1:]))
+          if line in headings and following == "=" * len(line)]
+    assert [lines[i] for i in at] == headings, f"the step headings are not all printed, in order:\n{out.stdout}"
+    for heading, start, end in zip(headings, at, at[1:] + [len(lines)]):
+        assert any(line.strip() for line in lines[start + 2:end]), f"{heading} printed nothing:\n{out.stdout}"
     assert "external" in out.stdout and "protoBaseST-handoff.md" in out.stdout, \
         f"step 6 does not say it is external and where the handoff is:\n{out.stdout}"
     assert "every check passed" in out.stdout, out.stdout
     assert out.stdout.count("[check]") >= 12, f"the demo checks too little:\n{out.stdout}"
     assert "by_order_date" in out.stdout, out.stdout
     assert out.stdout.count("agent -> ") >= 9, f"the agent steps make too few tool calls:\n{out.stdout}"
+
+
+def _semantic_step_headings() -> list:
+    """The six step headings the semantic demo prints, in order, read from its source."""
+    with open(os.path.join(KIT, "semantic", "semantic_demo.py"), encoding="utf-8") as f:
+        headings = re.findall(r'title\("(Step \d: [^"]+)"\)', f.read())
+    assert [h.split(":")[0] for h in headings] == [f"Step {n}" for n in range(1, 7)], headings
+    return headings
+
+
+def test_the_semantic_demo_readme_names_every_step_and_existing_code():
+    """The demo README (spec section 15: one page, what each step shows and where to look in the code) has a
+    section per step, headed as the demo prints it, and every repository path it names exists."""
+    with open(os.path.join(KIT, "semantic", "README.md"), encoding="utf-8") as f:
+        readme = f.read()
+    for heading in _semantic_step_headings():
+        assert f"## {heading}" in readme, f"the README has no section {heading!r}"
+    paths = set(re.findall(r"`((?:proto_db|docs|benchmarks|tests)/[^`:\s]+)`", readme))
+    assert len(paths) >= 12, f"the README points at too little code: {sorted(paths)}"
+    missing = sorted(p for p in paths if not os.path.exists(os.path.join(REPO, p)))
+    assert not missing, f"the README names paths that do not exist: {missing}"
+    assert len(readme.split()) <= 1200, "the README is meant to be one page"
 
 
 @pytest.mark.timeout(300)

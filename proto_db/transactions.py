@@ -90,7 +90,7 @@ Mutable cells (D11, D35)
     and records that in the read set, so two concurrent creators conflict;
     ``set_mutable`` requires the cell to exist, and a blind set of a cell removed by a
     concurrent commit is a conflict (it never resurrects the cell).  A
-    :class:`~proto_db.core.dbobject.MutableObject` handle names a cell and resolves it
+    :class:`~proto_db.values.MutableObject` handle names a cell and resolves it
     through a transaction.
 
 Intent transactions (spec section 9, R269; Task 8)

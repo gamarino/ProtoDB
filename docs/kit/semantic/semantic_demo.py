@@ -561,6 +561,26 @@ def _install(name: str):
     return work
 
 
+def build_database(workdir: str) -> dict:
+    """Build the demo's database in ``workdir`` (its space is ``workdir/space``) without the agent steps: install
+    both modules, then steps 3 and 4, which are the demo's only writes, so the database holds what the full demo
+    leaves.  Checks and prints as the demo does; returns step 3's record, which step 4 updated.  The agent
+    experiment (``benchmarks/semantic/agent_experiment.py``) asks its questions of this database; it needs no
+    MCP SDK."""
+    os.makedirs(workdir, exist_ok=True)
+    space = _space(workdir)
+    try:
+        space.new_database(DATABASE)
+    finally:
+        space.close()
+    check({"acme_sales", "acme_delivery"} <= set(_in_space(workdir, _install("acme_sales"))
+                                                 + _in_space(workdir, _install("acme_delivery"))),
+          "both modules are installed")
+    world = _in_space(workdir, step_3)
+    _in_space(workdir, lambda db: step_4(db, world))
+    return world
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--workdir", help="directory for the demo's files (default: a temporary directory, removed)")
