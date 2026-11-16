@@ -190,8 +190,15 @@ A mismatch is an error (Q2)
     later lineage orders after the one it replaced: concurrent installs never move it back, and a transaction
     on an earlier version gets a binding of its own. ``reload_registry`` always rebinds it to the list it
     reloads (unless an install of the space bound a newer version meanwhile, which it then reloads), also to a
-    version below the bound one: the explicit recovery after a cluster failover beyond the failure model. The
-    adopted lists are never pruned; they are bounded by the space's installs and reloads.
+    version below the bound one: the explicit recovery after a cluster failover beyond the failure model. A
+    space without a coordinator gives every root label 0, cluster labels included, so a cluster's storage
+    opened locally orders its versions alone and its own installs move the binding. In cluster mode, when a
+    transaction on an earlier version finds the node's committed root ordered below the root the binding came
+    from (``force_rejoin()`` on a survivor forgot that root), the binding belongs to a lineage the node no longer
+    follows: the database binds to the transaction's list if its snapshot is that committed root, and is
+    otherwise marked stale, so a loaded object resolved outside any block raises the mismatch until
+    ``reload_registry``. The adopted lists are never pruned; they are bounded by the space's installs and
+    reloads.
 
 **The invariant behind the caches: what a cache entry is keyed by never changes.** The linearization of a
 tuple of saved parents is cached by the parents' pointers and the registry. A record at a pointer never

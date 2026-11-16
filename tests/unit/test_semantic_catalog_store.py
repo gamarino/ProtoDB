@@ -493,7 +493,7 @@ def test_a_reload_that_finds_a_newer_binding_reloads_the_newer_list():
     older, newer = ("base", "acme_sales"), ("base", "acme_sales", "acme_delivery")
     registries.rebind("x", newer, None, (0, 7))
     before = registries.registry("x", registries._bound["x"])
-    reads = iter([(older, (0, 6)), (newer, (0, 7))])
+    reads = iter([(older, (0, 6), None), (newer, (0, 7), None)])
     registries.reload("x", lambda: next(reads))
     binding = registries._bound["x"]
     assert binding.names == newer and binding.key == (0, 7)
@@ -562,11 +562,11 @@ def test_overlapping_install_commits_each_keep_their_publish_record():
         t1_held, t1_release = threading.Event(), threading.Event()
         t2_held, t2_release = threading.Event(), threading.Event()
 
-        def gated_rebind(database, names, registry=None, key=None):
+        def gated_rebind(database, names, *args, **kwargs):
             if "acme_delivery" in names and "semc_01" not in names:
                 t1_held.set()
                 assert t1_release.wait(60)
-            return rebind(database, names, registry, key)
+            return rebind(database, names, *args, **kwargs)
 
         def gated_committing(database, names):
             committing(database, names)
@@ -633,7 +633,7 @@ def test_a_registry_build_in_flight_across_a_losing_reload_is_not_stored(monkeyp
     try:
         assert built.wait(60)                                # built the pre-reload registry, not stored yet
         monkeypatch.setattr(registry_module, "registry_for", original)
-        reads = iter([(older, (0, 6)), (newer, (0, 7))])
+        reads = iter([(older, (0, 6), None), (newer, (0, 7), None)])
         registries.reload("x", lambda: next(reads))
     finally:
         go.set()
@@ -702,11 +702,11 @@ def _read_then_bind_after_an_install(tmp_path, mode: str) -> dict:
         started = registries.started
         read, go = threading.Event(), threading.Event()
 
-        def gated(database, names, version=None):
+        def gated(database, names, *args):
             if threading.current_thread().name == "A":
                 read.set()
                 assert go.wait(60)
-            return started(database, names, version)
+            return started(database, names, *args)
 
         registries.started = gated
         out = {}
@@ -874,7 +874,7 @@ def _move_to_lineage(space, base_pointer, term):
     pointer = context.save(SpaceRoot(databases=base.databases, context=context, cluster=stamp, previous=base))
     storage.flush()
     with storage.root_lock():
-        storage.publish_root(pointer, current.epoch)
+        return storage.publish_root(pointer, current.epoch)
 
 
 def _lost_lineage(space):
@@ -887,26 +887,6 @@ def _lost_lineage(space):
     _install(db, "semc_01")                                  # version 3
     assert space._registries._bound["db"].names[-1] == "semc_01"
     return db, base
-
-
-def test_a_database_moved_to_a_later_lineage_binds_its_adopted_list():
-    # Re-review 3, failover beyond the failure model: the database is back at version 1 (list L, which this
-    # space committed) on a later lineage.  A transaction on L binds the database to it, and a loaded object
-    # resolved outside any block never resolves with the lost lineage's registry.
-    space = _space()
-    try:
-        db, base = _lost_lineage(space)
-        _move_to_lineage(space, base, _LATER_LINEAGE)
-        tr = db.new_transaction()
-        try:
-            assert tr.installed_modules() == ("base", "acme_sales")
-            assert "delivery_date" not in _attributes(Order.describe(tr))
-        finally:
-            tr.abort()
-        assert space._registries._bound["db"].names == ("base", "acme_sales")
-        assert tuple(space._registries.fallback().key) == ("base", "acme_sales")
-    finally:
-        space.close()
 
 
 def test_a_database_moved_to_a_later_lineage_on_a_list_never_adopted_mismatches_until_reloaded(tmp_path):
@@ -988,5 +968,252 @@ def test_a_reload_that_read_before_an_own_install_published_ends_on_the_newest_l
         found = registries.registry("db", binding)
         assert found is not registry_module.registry_for(newest, mapping=MAPPING, allowed=None)
         assert registries.fallback() is found
+    finally:
+        space.close()
+
+
+# -- fix round 5: label 0 without a coordinator; a binding whose root the node no longer follows ------------
+
+def test_a_space_without_a_coordinator_over_a_cluster_labelled_root_follows_its_own_install(tmp_path):
+    # Re-review 4, ``probe_label_drop.py``: a cluster's storage opened without a coordinator.  Its current
+    # root carries a cluster label; a local commit writes an unlabelled root.  Outside cluster mode the label
+    # is 0 for every root, so the space's own install moves the binding forward.
+    path = tmp_path / "s"
+    space = _space(path)
+    try:
+        _install(space.new_database("db"), "acme_sales")                           # version 1
+        _move_to_lineage(space, space.storage.read_root().pointer, 5)               # the cluster's root
+    finally:
+        space.close()
+    space = _space(path)
+    try:
+        db = space.open_database("db")
+        registries = space._registries
+        db.run(lambda tr: tr.installed_modules())                                   # binds the list at version 1
+        assert registries._bound["db"].key == (0, 1)
+        _install(db, "acme_delivery")                                              # a local commit: version 2
+        newest = ("base", "acme_sales", "acme_delivery")
+        assert registries._bound["db"].names == newest and registries._bound["db"].key == (0, 2)
+        db.run(lambda tr: tr.installed_modules())
+        assert tuple(registries.fallback().key) == newest
+        space.reload_registry("db")
+        assert registries._bound["db"].key == (0, 2)
+    finally:
+        space.close()
+
+
+class _NodeRoot:
+    """The read side of a cluster coordinator for a space of node ``n1``: the committed root it knows,
+    ``(label, RootRecord)``, which the test sets.  ``force_rejoin()`` on a survivor drops the committed root
+    it knows to a root that orders below it (coordinator.py, ``force_rejoin``; tests/unit/
+    test_cluster_rejoin_records.py, Y3), and the space then starts its snapshots from there; the stand-in
+    makes that step a plain assignment, so no timing decides it.  The roots are real space roots of the
+    storage (``_cluster_roots``); nothing is committed through it."""
+
+    node_id = "n1"
+    needs_confirmation = False
+    persister = None
+
+    def __init__(self, root):
+        self.root = root
+
+    def attach(self, tier):
+        pass
+
+    def detach(self, tier):
+        pass
+
+    def known_root(self):
+        return True, self.root[1]
+
+    def current_root(self):
+        return True, self.root[1]
+
+    def committed_root(self):
+        label, record = self.root
+        return True, record, label, None, 0.0, 0
+
+
+def _cluster_roots(path) -> dict:
+    """Labelled space roots of ``db`` in the storage at ``path``, by name, as ``(label, RootRecord)``:
+    ``r1`` (label 10, version 1: base, acme_sales), ``r1b`` (label 11, the same version), ``lost`` (label 20,
+    version 3: with acme_delivery and semc_01), ``later`` (label 30, version 1 again: a later lineage) and
+    ``other`` (label 31, version 2 of a branch from version 1 that installed semc_02)."""
+    space = _space(path)
+    try:
+        db = space.new_database("db")
+        _install(db, "acme_sales")
+        v1 = _snapshot_pointer(db)
+        _install(db, "acme_delivery")
+        _install(db, "semc_01")
+        v3 = _snapshot_pointer(db)
+        roots = {"r1": (10, _move_to_lineage(space, v1, 10)), "r1b": (11, _move_to_lineage(space, v1, 11)),
+                 "lost": (20, _move_to_lineage(space, v3, 20)), "later": (30, _move_to_lineage(space, v1, 30))}
+        _install(db, "semc_02")                              # on version 1 again: a branch
+        roots["other"] = (31, _move_to_lineage(space, space.storage.read_root().pointer, 31))
+        return roots
+    finally:
+        space.close()
+
+
+def _node_space(path, root):
+    node = _NodeRoot(root)
+    return ObjectSpace(FileStorage(str(path)), modules_mapping=MAPPING, coordinator=node), node
+
+
+L1 = ("base", "acme_sales")
+LOST = ("base", "acme_sales", "acme_delivery", "semc_01")
+
+
+def _bound_to_the_lost_root(path):
+    """A node space bound at r1 (adopting L1), then bound to the lost root's list by reload_registry."""
+    roots = _cluster_roots(path)
+    space, node = _node_space(path, roots["r1"])
+    db = space.open_database("db")
+    db.run(lambda tr: tr.installed_modules())                # first start: L1 at (10, 1)
+    node.root = roots["lost"]
+    space.reload_registry("db")                              # LOST at (20, 3), adopted
+    assert space._registries._bound["db"].names == LOST
+    return roots, space, node, db
+
+
+def test_a_database_moved_to_a_later_lineage_binds_its_adopted_list(tmp_path):
+    # Re-review 3 (refound): the database is back at version 1 (L1, adopted) on a later lineage.  A transaction
+    # on L1 binds the database to it; a loaded object resolved outside any block never uses the lost list.
+    roots, space, node, db = _bound_to_the_lost_root(tmp_path / "s")
+    try:
+        node.root = roots["later"]
+        tr = db.new_transaction()
+        try:
+            assert tr.installed_modules() == L1 and "delivery_date" not in _attributes(Order.describe(tr))
+        finally:
+            tr.abort()
+        assert space._registries._bound["db"].names == L1
+        assert tuple(space._registries.fallback().key) == L1
+    finally:
+        space.close()
+
+
+def test_a_force_rejoin_survivor_rebinds_to_the_root_it_now_follows(tmp_path):
+    # Re-review 4 residual: force_rejoin() on a survivor drops its committed root to r1, which orders below
+    # the lost root the binding came from.  A transaction on r1 (L1, adopted, an older key) finds the node's
+    # committed root below the binding's root, and its snapshot is that root: the database binds to L1.
+    roots, space, node, db = _bound_to_the_lost_root(tmp_path / "s")
+    try:
+        node.root = roots["r1"]                              # force_rejoin(): the lost root is forgotten
+        tr = db.new_transaction()
+        try:
+            assert tr.installed_modules() == L1 and "delivery_date" not in _attributes(Order.describe(tr))
+        finally:
+            tr.abort()
+        assert space._registries._bound["db"].names == L1
+        assert tuple(space._registries.fallback().key) == L1
+    finally:
+        space.close()
+
+
+def _read_then_move(space, node, db, read_root, then_root) -> dict:
+    """Transaction A reads its snapshot at ``read_root``; the node's committed root becomes ``then_root``;
+    then A binds.  Events decide the order."""
+    registries = space._registries
+    started = registries.started
+    read, go = threading.Event(), threading.Event()
+
+    def gated(database, names, *args):
+        if threading.current_thread().name == "A":
+            read.set()
+            assert go.wait(60)
+        return started(database, names, *args)
+
+    registries.started = gated
+    out = {}
+
+    def a():
+        tr = db.new_transaction()
+        try:
+            out["listed"] = tr.installed_modules()
+            out["attributes"] = _attributes(Order.describe(tr))
+        except Exception as e:      # recorded: the assertion names it
+            out["error"] = e
+        finally:
+            tr.abort()
+
+    node.root = read_root
+    thread = threading.Thread(target=a, name="A")
+    thread.start()
+    try:
+        assert read.wait(60)
+        node.root = then_root
+    finally:
+        go.set()
+        thread.join(60)
+    registries.started = started
+    assert not thread.is_alive()
+    return out
+
+
+def test_a_survivor_transaction_on_another_root_marks_the_database_stale_until_reloaded(tmp_path):
+    # As above, but the transaction's snapshot (r1) is not the node's committed root (r1b) when it binds:
+    # the binding's root is no longer followed and the transaction cannot rebind it, so a loaded object
+    # outside any block raises the mismatch instead of resolving with the lost list; reload_registry clears it.
+    roots, space, node, db = _bound_to_the_lost_root(tmp_path / "s")
+    try:
+        out = _read_then_move(space, node, db, roots["r1"], roots["r1b"])
+        assert "error" not in out, out.get("error")
+        assert out["listed"] == L1 and "delivery_date" not in out["attributes"]
+        assert space._registries._bound["db"].names == LOST
+        with pytest.raises(ProtoValidationError, match="no automatic rebuild"):
+            space._registries.fallback()
+        space.reload_registry("db")
+        assert tuple(space._registries.fallback().key) == L1
+    finally:
+        space.close()
+
+
+def test_inside_the_failure_model_an_older_snapshot_changes_nothing(tmp_path):
+    # The private-binding branch inside the model: A read r1, then the database was rebound to a newer root
+    # the node still follows.  A keeps its list; the database's binding and the fallback are unchanged.
+    path = tmp_path / "s"
+    roots = _cluster_roots(path)
+    space, node = _node_space(path, roots["r1"])
+    try:
+        db = space.open_database("db")
+        db.run(lambda tr: tr.installed_modules())            # L1 at (10, 1)
+        registries = space._registries
+        started = registries.started
+        read, go = threading.Event(), threading.Event()
+
+        def gated(database, names, *args):
+            if threading.current_thread().name == "A":
+                read.set()
+                assert go.wait(60)
+            return started(database, names, *args)
+
+        registries.started = gated
+        out = {}
+
+        def a():
+            tr = db.new_transaction()
+            try:
+                out["attributes"] = _attributes(Order.describe(tr))
+            except Exception as e:      # recorded: the assertion names it
+                out["error"] = e
+            finally:
+                tr.abort()
+
+        thread = threading.Thread(target=a, name="A")
+        thread.start()
+        try:
+            assert read.wait(60)                             # A read r1
+            node.root = roots["lost"]
+            space.reload_registry("db")                      # LOST at (20, 3), the root the node follows
+        finally:
+            go.set()
+            thread.join(60)
+        assert not thread.is_alive()
+        assert "error" not in out, out.get("error")
+        assert "delivery_date" not in out["attributes"]
+        assert registries._bound["db"].names == LOST and "db" not in registries._stale
+        assert tuple(registries.fallback().key) == LOST
     finally:
         space.close()

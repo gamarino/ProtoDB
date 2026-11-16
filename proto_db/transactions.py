@@ -764,21 +764,41 @@ class _Binding:
     ``seq`` orders the bindings of a space (the most recent is the highest); ``key`` is the
     ``(label, version)`` of the database version whose list it is (``None`` when unknown): the
     order of the cluster's roots (:func:`proto_db.cluster.rootlog.compare_roots`; label ``0``
-    outside cluster mode), in which a later lineage orders after the one it replaced."""
+    outside cluster mode), in which a later lineage orders after the one it replaced; ``origin``
+    is the ``(label, cluster epoch)`` of the space root it came from, in cluster mode (``None``
+    otherwise), compared with the node's committed root (see :meth:`_SpaceRegistries.started`)."""
 
-    __slots__ = ("names", "registry", "seq", "key")
+    __slots__ = ("names", "registry", "seq", "key", "origin")
 
-    def __init__(self, names: tuple, registry, seq: int, key: Optional[tuple] = None):
+    def __init__(self, names: tuple, registry, seq: int, key: Optional[tuple] = None,
+                 origin: Optional[tuple] = None):
         self.names = names
         self.registry = registry
         self.seq = seq
         self.key = key
+        self.origin = origin
 
 
-def _root_label(space: Optional["SpaceRoot"]) -> int:
-    """The label of a space root: the term of the cluster lease that committed it, ``0`` for a root
-    committed outside cluster mode (as :func:`proto_db.cluster.persister.cluster_fields`)."""
-    return (space.cluster_term or 0) if space is not None else 0
+def _root_order(space: Optional["SpaceRoot"], record, clustered: bool) -> tuple:
+    """``(label, origin)`` of the space root ``space`` at ``record``: the label is the term of the
+    cluster lease that committed it (as :func:`proto_db.cluster.persister.cluster_fields`) and the
+    origin ``(label, cluster epoch)``, in cluster mode.  Outside cluster mode the label is ``0`` for
+    every root and there is no origin: a space without a coordinator orders its versions alone (a
+    cluster's storage opened locally keeps the labels of its cluster roots, while a local commit
+    writes an unlabelled root)."""
+    if not clustered or space is None:
+        return 0, None
+    label = space.cluster_term or 0
+    return label, (label, record.epoch if record is not None else 0)
+
+
+def _committed_origin(coordinator) -> Optional[tuple]:
+    """``(label, epoch)`` of the committed root ``coordinator`` knows (in memory), ``None`` when it
+    knows none."""
+    known, record, label = coordinator.committed_root()[:3]
+    if not known:
+        return None
+    return label, record.epoch if record is not None else 0
 
 
 def _orders_after(key: Optional[tuple], other: Optional[tuple]) -> bool:
@@ -836,14 +856,16 @@ class _SpaceRegistries:
     The database's binding
         What a loaded object resolved outside any block uses (:meth:`fallback`).  It moves only
         forward in the order of the database's versions, ``(label, version)`` (the cluster's root
-        order, in which a later lineage orders after the one it replaced; label ``0`` outside
-        cluster mode), so concurrent installs of the space never move it back: a transaction on
+        order, in which a later lineage orders after the one it replaced; label ``0`` for every
+        root in a space without a coordinator), so concurrent installs of the space never move it back: a transaction on
         an adopted list of a later version moves it, one on an earlier version gets a binding of
         its own.  An install commit's rebind moves it to the list committed.
         :meth:`ObjectSpace.reload_registry` always rebinds it (see :meth:`reload`), also to a
         version that orders below the bound one: the explicit recovery after a failover beyond
-        the failure model.  As-of reads (snapshots, history, pagers) never bind, rebind or take
-        part in the fallback (ruling R196).
+        the failure model.  In cluster mode a binding whose root orders above the node's
+        committed root (``force_rejoin()`` on a survivor) is replaced or marked stale by the next
+        transaction on an earlier version (see :meth:`started`).  As-of reads (snapshots, history,
+        pagers) never bind, rebind or take part in the fallback (ruling R196).
 
     Who decides (ruling R201)
         The registry is decided by the code doing the resolving, never by load order or cache
@@ -876,6 +898,8 @@ class _SpaceRegistries:
         # registries of a database reloaded in this space, built fresh for it (ruling R243).
         self._reloaded: dict = {}
         self._adopted: dict = {}        # database name -> {module names}: the adopted lists
+        # In cluster mode: () -> the (label, epoch) of the committed root the node knows, or None.
+        self.committed_origin: Optional[Callable[[], Optional[tuple]]] = None
         self._pending: dict = {}        # database name -> {module names: count}: install builds in flight
 
     def build(self, database: str, names: tuple):
@@ -921,7 +945,7 @@ class _SpaceRegistries:
 
     def reload(self, database: str, read: Callable[[], tuple]):
         """``ObjectSpace.reload_registry``: ``read()`` gives the module list of the database's current
-        version and that version's key; a fresh registry of that list is built, every registry of the
+        version, that version's key and its root's origin; a fresh registry of that list is built, every registry of the
         database cached before is dropped (ruling R243), and the database is rebound to the new one.
 
         It rebinds whatever the bound version, with one exception that keeps it from moving the
@@ -932,7 +956,7 @@ class _SpaceRegistries:
         beyond its failure model), and this explicit rebuild is what recovers from it.  The new
         binding is a new object, so a registry built before the reload is never stored in it.  Nothing
         changes when a build fails."""
-        names, key = read()
+        names, key, origin = read()
         observed = None             # a binding that ordered after the version read, read again since
         while True:
             registry = self.build_fresh(database, names) if names else None
@@ -940,10 +964,10 @@ class _SpaceRegistries:
                 bound = self._bound.get(database)
                 if bound is None or bound is observed or not _orders_after(bound.key, key):
                     self._reloaded[database] = {names: registry} if names else {}
-                    self._bind(database, names, registry, key)
+                    self._bind(database, names, registry, key, origin)
                     return registry
                 observed = bound
-            names, key = read()
+            names, key, origin = read()
             if not _orders_after(observed.key, key):
                 observed = None     # the newer version is current now: reload it, no exception
 
@@ -956,39 +980,57 @@ class _SpaceRegistries:
         except ProtoNotSupportedError as e:
             raise ProtoNotSupportedError(f"Database {database!r} lists modules this process cannot load: {e}") from e
 
-    def _bind(self, database: str, names: tuple, registry, key: Optional[tuple]) -> _Binding:
+    def _bind(self, database: str, names: tuple, registry, key: Optional[tuple],
+              origin: Optional[tuple] = None) -> _Binding:
         """Under ``_lock``: bind ``database`` to ``names`` (a list this space adopts), the list of its
-        version ``key``."""
+        version ``key`` in the space root ``origin``."""
         self._adopted.setdefault(database, set()).add(names)
         self._seq += 1
-        binding = self._bound[database] = _Binding(names, registry, self._seq, key)
+        binding = self._bound[database] = _Binding(names, registry, self._seq, key, origin)
         self._stale.pop(database, None)
         self._generation += 1
         return binding
 
-    def started(self, database: str, names: tuple, key: Optional[tuple] = None) -> Optional[_Binding]:
+    def started(self, database: str, names: tuple, key: Optional[tuple] = None,
+                origin: Optional[tuple] = None) -> Optional[_Binding]:
         """A transaction of ``database`` starts on the list ``names`` of the database's version
-        ``key`` (``(label, version)``): binds the database when it is not bound yet; returns the
-        binding the transaction keeps, else ``None`` (a mismatch, recorded for the fallback).
+        ``key`` (``(label, version)``), in the space root ``origin`` (cluster mode): binds the
+        database when it is not bound yet; returns the binding the transaction keeps, else ``None``
+        (a mismatch, recorded for the fallback).
 
         A list this space adopted (see the class docstring), or one an install commit of this space
         is publishing (:meth:`committing`), is never a mismatch, whatever its version and whatever
         the order of that commit's publish, its rebind and this call (R82).  When its version orders
         after the bound one, the database is bound to it; otherwise the transaction gets a binding
-        of its own for its list and the database's binding is unchanged.  Never imports."""
+        of its own for its list.  Then, in cluster mode, the database's binding is unchanged while
+        the node's committed root orders at or after the root the binding came from (always, inside
+        the failure model).  Below it (``force_rejoin()`` on a survivor dropped that root), the
+        binding is of a lineage the node no longer follows: the database binds to this list when
+        the transaction's snapshot is the committed root, and is marked stale otherwise, so a loaded
+        object resolved outside any block raises the mismatch until ``reload_registry``.  Never
+        imports."""
         binding = self._bound.get(database)
         if binding is not None and binding.names == names:
             return binding
         with self._lock:
             binding = self._bound.get(database)
             if binding is None:
-                return self._bind(database, names, None, key)
+                return self._bind(database, names, None, key, origin)
             if binding.names == names:
                 return binding
             if names in self._adopted.get(database, ()) or names in self._pending.get(database, ()):
                 if _orders_after(key, binding.key):
-                    return self._bind(database, names, None, key)
-                return _Binding(names, None, 0, key)
+                    return self._bind(database, names, None, key, origin)
+                committed = self.committed_origin
+                if committed is not None and binding.origin is not None:
+                    current = committed()       # the coordinator's lock is a leaf: never takes ours
+                    if current is not None and current < binding.origin:
+                        if origin == current:
+                            return self._bind(database, names, None, key, origin)
+                        if self._stale.get(database) != names:
+                            self._stale[database] = names
+                            self._generation += 1
+                return _Binding(names, None, 0, key, origin)
             if self._stale.get(database) != names:
                 self._stale[database] = names
                 self._generation += 1
@@ -1006,11 +1048,12 @@ class _SpaceRegistries:
                 self._generation += 1
             return binding.registry
 
-    def bound_for(self, database: str, names: tuple, key: Optional[tuple] = None):
+    def bound_for(self, database: str, names: tuple, key: Optional[tuple] = None,
+                  origin: Optional[tuple] = None):
         """The registry of ``database`` for a transaction on the list ``names`` (of the database's
         version ``key``) that kept no binding: the mismatch error when the database is bound to
         another list (see :meth:`started`)."""
-        binding = self.started(database, names, key)
+        binding = self.started(database, names, key, origin)
         if binding is None:
             raise _mismatch(database, self._bound[database].names, names)
         return self.registry(database, binding)
@@ -1041,7 +1084,8 @@ class _SpaceRegistries:
             if published is not None:
                 self._adopted.setdefault(database, set()).add(published)
 
-    def rebind(self, database: str, names: tuple, registry=None, key: Optional[tuple] = None) -> bool:
+    def rebind(self, database: str, names: tuple, registry=None, key: Optional[tuple] = None,
+               origin: Optional[tuple] = None) -> bool:
         """After a commit of this space that installed modules: adopt ``names``, the list of the
         database's version ``key``, and bind the database to it (its registry, or ``None`` to build
         it on need) when that version orders after the bound one.  The commits of one space finish
@@ -1052,7 +1096,7 @@ class _SpaceRegistries:
             bound = self._bound.get(database)
             if bound is not None and not _orders_after(key, bound.key):
                 return False
-            self._bind(database, names, registry, key)
+            self._bind(database, names, registry, key, origin)
             return True
 
 
@@ -2126,6 +2170,8 @@ class ObjectSpace:
         self._storage = storage
         self._atoms = _AtomCache(storage, atom_cache_entries) if atom_cache_entries else None
         self._registries = _SpaceRegistries(self._modules_mapping, self._modules_allowed)
+        if coordinator is not None:
+            self._registries.committed_origin = functools.partial(_committed_origin, coordinator)
         if self._atoms is not None:
             self._atoms._space_registries = self._registries
         self._query_cache = QueryCache(query_cache_bytes, self._space_load)
@@ -2210,13 +2256,15 @@ class ObjectSpace:
         self._check_open()
 
         def read() -> tuple:
-            space = _load_space(_SpaceContext(self._storage), self._read_storage_root())
+            record = self._read_storage_root()
+            space = _load_space(_SpaceContext(self._storage), record)
             root = None if space is None else space.databases.get_at(database_name)
             if root is None:
                 raise ProtoValidationError(f"Database {database_name!r} does not exist")
             names = _registry.listed_modules(root.objects)
             _registry.forget_failure(names, self._modules_mapping)
-            return names, (_root_label(space), root.version)
+            label, origin = _root_order(space, record, self._coordinator is not None)
+            return names, (label, root.version), origin
 
         return self._registries.reload(database_name, read)
 
@@ -2618,6 +2666,7 @@ class Transaction:
         self._semantic_pending = False
         self._committed_version: Optional[int] = None    # the version the last build produced
         self._committed_key: Optional[tuple] = None      # its (label, version), for the rebind
+        self._committed_origin: Optional[tuple] = None   # its root's (label, cluster epoch), cluster mode
         self._recorded: list = []           # the list of each build that installs (committing)
         self._own_modules: tuple = ()           # the list this transaction's installs saw (snapshot + pending)
         self._import_needed: Optional[tuple] = None     # set by a build that needs imports (I-1)
@@ -2633,9 +2682,12 @@ class Transaction:
         # first resolution through the registry); nothing is imported here.
         listed = _listed_modules(self._objects)
         self._listed = () if listed is None else listed
-        self._snapshot_key = (_root_label(self._snapshot_space), self._db_root.version)
+        label, self._snapshot_origin = _root_order(self._snapshot_space, record,
+                                                   database.space._coordinator is not None)
+        self._snapshot_key = (label, self._db_root.version)
         self._binding = (None if listed is None else
-                         self._space_registries.started(database.name, listed, self._snapshot_key))
+                         self._space_registries.started(database.name, listed, self._snapshot_key,
+                                                        self._snapshot_origin))
         # (number of installs, registry): the registry once resolved; the snapshot's list is fixed
         # for the transaction's life, so only its own installs change it (review Important 3).
         self._registry_memo: Optional[tuple] = None
@@ -2999,7 +3051,7 @@ class Transaction:
         elif self._binding is not None and self._binding.names == names:
             found = registries.registry(name, self._binding)
         else:
-            found = registries.bound_for(name, names, self._snapshot_key)
+            found = registries.bound_for(name, names, self._snapshot_key, self._snapshot_origin)
         self._registry_memo = (installs, found)
         return found
 
@@ -3335,7 +3387,7 @@ class Transaction:
                     # This space installed: it binds the database to the list it committed (the
                     # merged one), built on need, so it never mismatches itself (spec 14 item 4).
                     space._registries.rebind(self._database.name, self._committed_modules,
-                                             key=self._committed_key)
+                                             key=self._committed_key, origin=self._committed_origin)
         finally:
             if self._recorded:
                 # Published and rebound, or failed: no build is pending any more; the published one
@@ -3404,6 +3456,7 @@ class Transaction:
                 mutables = mutables.remove_at(name)
         self._committed_version = db_root.version + 1
         self._committed_key = (stamp.term if stamp is not None else 0, self._committed_version)
+        self._committed_origin = (stamp.term, stamp.epoch) if stamp is not None else None
         if self._installs:
             # Before the publish: a transaction of this space that starts on this list before the
             # commit's rebind binds to it (review I1).
