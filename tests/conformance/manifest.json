@@ -33815,6 +33815,4843 @@
   "canonical": "catalog/canonical.msgpack",
   "intent_log_version": 3
  },
+ "expressions": [
+  {
+   "id": "const",
+   "ast": [
+    "const",
+    {
+     "int": "5"
+    }
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "d",
+      {
+       "decimal": "1.50"
+      }
+     ],
+     [
+      "f",
+      {
+       "float": "0x1.8000000000000p+0"
+      }
+     ],
+     [
+      "flag",
+      {
+       "bool": true
+      }
+     ],
+     [
+      "i",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "j",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "nil",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "off",
+      {
+       "bool": false
+      }
+     ],
+     [
+      "s",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "int": "5"
+   }
+  },
+  {
+   "id": "attr",
+   "ast": [
+    "attr",
+    "s"
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "d",
+      {
+       "decimal": "1.50"
+      }
+     ],
+     [
+      "f",
+      {
+       "float": "0x1.8000000000000p+0"
+      }
+     ],
+     [
+      "flag",
+      {
+       "bool": true
+      }
+     ],
+     [
+      "i",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "j",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "nil",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "off",
+      {
+       "bool": false
+      }
+     ],
+     [
+      "s",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "str": "open"
+   }
+  },
+  {
+   "id": "attr-absent-is-missing",
+   "ast": [
+    "attr",
+    "credit_limit"
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "d",
+      {
+       "decimal": "1.50"
+      }
+     ],
+     [
+      "f",
+      {
+       "float": "0x1.8000000000000p+0"
+      }
+     ],
+     [
+      "flag",
+      {
+       "bool": true
+      }
+     ],
+     [
+      "i",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "j",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "nil",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "off",
+      {
+       "bool": false
+      }
+     ],
+     [
+      "s",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "missing": true
+   }
+  },
+  {
+   "id": "attr-absent-reads-the-default",
+   "ast": [
+    "attr",
+    "credit_limit"
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "d",
+      {
+       "decimal": "1.50"
+      }
+     ],
+     [
+      "f",
+      {
+       "float": "0x1.8000000000000p+0"
+      }
+     ],
+     [
+      "flag",
+      {
+       "bool": true
+      }
+     ],
+     [
+      "i",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "j",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "nil",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "off",
+      {
+       "bool": false
+      }
+     ],
+     [
+      "s",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "defaults": [
+    [
+     "credit_limit",
+     {
+      "decimal": "100"
+     }
+    ]
+   ],
+   "expected": {
+    "decimal": "100"
+   }
+  },
+  {
+   "id": "attr-stored-wins-over-the-default",
+   "ast": [
+    "attr",
+    "s"
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "d",
+      {
+       "decimal": "1.50"
+      }
+     ],
+     [
+      "f",
+      {
+       "float": "0x1.8000000000000p+0"
+      }
+     ],
+     [
+      "flag",
+      {
+       "bool": true
+      }
+     ],
+     [
+      "i",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "j",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "nil",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "off",
+      {
+       "bool": false
+      }
+     ],
+     [
+      "s",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "defaults": [
+    [
+     "s",
+     {
+      "str": "closed"
+     }
+    ]
+   ],
+   "expected": {
+    "str": "open"
+   }
+  },
+  {
+   "id": "attr-stored-nil-is-a-value",
+   "ast": [
+    "attr",
+    "nil"
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "d",
+      {
+       "decimal": "1.50"
+      }
+     ],
+     [
+      "f",
+      {
+       "float": "0x1.8000000000000p+0"
+      }
+     ],
+     [
+      "flag",
+      {
+       "bool": true
+      }
+     ],
+     [
+      "i",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "j",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "nil",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "off",
+      {
+       "bool": false
+      }
+     ],
+     [
+      "s",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "defaults": [
+    [
+     "nil",
+     {
+      "int": "3"
+     }
+    ]
+   ],
+   "expected": {
+    "nil": null
+   }
+  },
+  {
+   "id": "attr-path-through-a-handle",
+   "ast": [
+    "attr",
+    "product",
+    "price"
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "product",
+      {
+       "mutable": "conformance.sales.Product#fedcba9876543210fedcba9876543210"
+      }
+     ],
+     [
+      "quantity",
+      {
+       "int": "2"
+      }
+     ]
+    ]
+   },
+   "cells": [
+    [
+     "conformance.sales.Order#0123456789abcdef0123456789abcdef",
+     {
+      "object": "proto_db.core.dbobject.DBObject",
+      "attrs": [
+       [
+        "lines",
+        {
+         "collection": "proto_db.collections.List",
+         "elements": [
+          {
+           "object": "proto_db.core.dbobject.DBObject",
+           "attrs": [
+            [
+             "product",
+             {
+              "mutable": "conformance.sales.Product#fedcba9876543210fedcba9876543210"
+             }
+            ],
+            [
+             "quantity",
+             {
+              "int": "2"
+             }
+            ]
+           ]
+          }
+         ]
+        }
+       ],
+       [
+        "state",
+        {
+         "str": "open"
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     "conformance.sales.Product#fedcba9876543210fedcba9876543210",
+     {
+      "object": "proto_db.core.dbobject.DBObject",
+      "attrs": [
+       [
+        "price",
+        {
+         "decimal": "10.50"
+        }
+       ],
+       [
+        "sku",
+        {
+         "str": "p1"
+        }
+       ]
+      ]
+     }
+    ]
+   ],
+   "expected": {
+    "decimal": "10.50"
+   }
+  },
+  {
+   "id": "attr-path-absent-step",
+   "ast": [
+    "attr",
+    "product",
+    "price"
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "d",
+      {
+       "decimal": "1.50"
+      }
+     ],
+     [
+      "f",
+      {
+       "float": "0x1.8000000000000p+0"
+      }
+     ],
+     [
+      "flag",
+      {
+       "bool": true
+      }
+     ],
+     [
+      "i",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "j",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "nil",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "off",
+      {
+       "bool": false
+      }
+     ],
+     [
+      "s",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "missing": true
+   }
+  },
+  {
+   "id": "plus-int",
+   "ast": [
+    "+",
+    [
+     "attr",
+     "i"
+    ],
+    [
+     "attr",
+     "j"
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "d",
+      {
+       "decimal": "1.50"
+      }
+     ],
+     [
+      "f",
+      {
+       "float": "0x1.8000000000000p+0"
+      }
+     ],
+     [
+      "flag",
+      {
+       "bool": true
+      }
+     ],
+     [
+      "i",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "j",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "nil",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "off",
+      {
+       "bool": false
+      }
+     ],
+     [
+      "s",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "int": "9"
+   }
+  },
+  {
+   "id": "minus-int",
+   "ast": [
+    "-",
+    [
+     "attr",
+     "j"
+    ],
+    [
+     "attr",
+     "i"
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "d",
+      {
+       "decimal": "1.50"
+      }
+     ],
+     [
+      "f",
+      {
+       "float": "0x1.8000000000000p+0"
+      }
+     ],
+     [
+      "flag",
+      {
+       "bool": true
+      }
+     ],
+     [
+      "i",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "j",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "nil",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "off",
+      {
+       "bool": false
+      }
+     ],
+     [
+      "s",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "int": "-5"
+   }
+  },
+  {
+   "id": "times-int",
+   "ast": [
+    "*",
+    [
+     "attr",
+     "i"
+    ],
+    [
+     "attr",
+     "j"
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "d",
+      {
+       "decimal": "1.50"
+      }
+     ],
+     [
+      "f",
+      {
+       "float": "0x1.8000000000000p+0"
+      }
+     ],
+     [
+      "flag",
+      {
+       "bool": true
+      }
+     ],
+     [
+      "i",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "j",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "nil",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "off",
+      {
+       "bool": false
+      }
+     ],
+     [
+      "s",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "int": "14"
+   }
+  },
+  {
+   "id": "plus-int-decimal",
+   "ast": [
+    "+",
+    [
+     "attr",
+     "i"
+    ],
+    [
+     "attr",
+     "d"
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "d",
+      {
+       "decimal": "1.50"
+      }
+     ],
+     [
+      "f",
+      {
+       "float": "0x1.8000000000000p+0"
+      }
+     ],
+     [
+      "flag",
+      {
+       "bool": true
+      }
+     ],
+     [
+      "i",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "j",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "nil",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "off",
+      {
+       "bool": false
+      }
+     ],
+     [
+      "s",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "decimal": "8.50"
+   }
+  },
+  {
+   "id": "times-decimal-int",
+   "ast": [
+    "*",
+    [
+     "attr",
+     "d"
+    ],
+    [
+     "attr",
+     "i"
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "d",
+      {
+       "decimal": "1.50"
+      }
+     ],
+     [
+      "f",
+      {
+       "float": "0x1.8000000000000p+0"
+      }
+     ],
+     [
+      "flag",
+      {
+       "bool": true
+      }
+     ],
+     [
+      "i",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "j",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "nil",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "off",
+      {
+       "bool": false
+      }
+     ],
+     [
+      "s",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "decimal": "10.50"
+   }
+  },
+  {
+   "id": "minus-decimal-decimal",
+   "ast": [
+    "-",
+    [
+     "const",
+     {
+      "decimal": "0.3"
+     }
+    ],
+    [
+     "const",
+     {
+      "decimal": "0.10"
+     }
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "d",
+      {
+       "decimal": "1.50"
+      }
+     ],
+     [
+      "f",
+      {
+       "float": "0x1.8000000000000p+0"
+      }
+     ],
+     [
+      "flag",
+      {
+       "bool": true
+      }
+     ],
+     [
+      "i",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "j",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "nil",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "off",
+      {
+       "bool": false
+      }
+     ],
+     [
+      "s",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "decimal": "0.20"
+   }
+  },
+  {
+   "id": "decimal-arithmetic-is-exact",
+   "ast": [
+    "*",
+    [
+     "const",
+     {
+      "decimal": "12345678901234567890.123456789012345678901"
+     }
+    ],
+    [
+     "const",
+     {
+      "decimal": "12345678901234567890.123456789012345678901"
+     }
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "d",
+      {
+       "decimal": "1.50"
+      }
+     ],
+     [
+      "f",
+      {
+       "float": "0x1.8000000000000p+0"
+      }
+     ],
+     [
+      "flag",
+      {
+       "bool": true
+      }
+     ],
+     [
+      "i",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "j",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "nil",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "off",
+      {
+       "bool": false
+      }
+     ],
+     [
+      "s",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "decimal": "152415787532388367504953515625666819450.078036934056089014530437433565526596567801"
+   }
+  },
+  {
+   "id": "plus-missing",
+   "ast": [
+    "+",
+    [
+     "attr",
+     "absent"
+    ],
+    [
+     "attr",
+     "i"
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "d",
+      {
+       "decimal": "1.50"
+      }
+     ],
+     [
+      "f",
+      {
+       "float": "0x1.8000000000000p+0"
+      }
+     ],
+     [
+      "flag",
+      {
+       "bool": true
+      }
+     ],
+     [
+      "i",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "j",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "nil",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "off",
+      {
+       "bool": false
+      }
+     ],
+     [
+      "s",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "missing": true
+   }
+  },
+  {
+   "id": "times-decimal-missing",
+   "ast": [
+    "*",
+    [
+     "attr",
+     "d"
+    ],
+    [
+     "attr",
+     "absent"
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "d",
+      {
+       "decimal": "1.50"
+      }
+     ],
+     [
+      "f",
+      {
+       "float": "0x1.8000000000000p+0"
+      }
+     ],
+     [
+      "flag",
+      {
+       "bool": true
+      }
+     ],
+     [
+      "i",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "j",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "nil",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "off",
+      {
+       "bool": false
+      }
+     ],
+     [
+      "s",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "missing": true
+   }
+  },
+  {
+   "id": "eq",
+   "ast": [
+    "==",
+    [
+     "attr",
+     "s"
+    ],
+    [
+     "const",
+     {
+      "str": "open"
+     }
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "d",
+      {
+       "decimal": "1.50"
+      }
+     ],
+     [
+      "f",
+      {
+       "float": "0x1.8000000000000p+0"
+      }
+     ],
+     [
+      "flag",
+      {
+       "bool": true
+      }
+     ],
+     [
+      "i",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "j",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "nil",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "off",
+      {
+       "bool": false
+      }
+     ],
+     [
+      "s",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "bool": true
+   }
+  },
+  {
+   "id": "eq-int-decimal",
+   "ast": [
+    "==",
+    [
+     "attr",
+     "i"
+    ],
+    [
+     "const",
+     {
+      "decimal": "7.0"
+     }
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "d",
+      {
+       "decimal": "1.50"
+      }
+     ],
+     [
+      "f",
+      {
+       "float": "0x1.8000000000000p+0"
+      }
+     ],
+     [
+      "flag",
+      {
+       "bool": true
+      }
+     ],
+     [
+      "i",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "j",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "nil",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "off",
+      {
+       "bool": false
+      }
+     ],
+     [
+      "s",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "bool": true
+   }
+  },
+  {
+   "id": "eq-bool-int",
+   "ast": [
+    "==",
+    [
+     "attr",
+     "flag"
+    ],
+    [
+     "const",
+     {
+      "int": "1"
+     }
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "d",
+      {
+       "decimal": "1.50"
+      }
+     ],
+     [
+      "f",
+      {
+       "float": "0x1.8000000000000p+0"
+      }
+     ],
+     [
+      "flag",
+      {
+       "bool": true
+      }
+     ],
+     [
+      "i",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "j",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "nil",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "off",
+      {
+       "bool": false
+      }
+     ],
+     [
+      "s",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "bool": false
+   }
+  },
+  {
+   "id": "eq-nil",
+   "ast": [
+    "==",
+    [
+     "attr",
+     "nil"
+    ],
+    [
+     "const",
+     {
+      "nil": null
+     }
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "d",
+      {
+       "decimal": "1.50"
+      }
+     ],
+     [
+      "f",
+      {
+       "float": "0x1.8000000000000p+0"
+      }
+     ],
+     [
+      "flag",
+      {
+       "bool": true
+      }
+     ],
+     [
+      "i",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "j",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "nil",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "off",
+      {
+       "bool": false
+      }
+     ],
+     [
+      "s",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "bool": true
+   }
+  },
+  {
+   "id": "ne",
+   "ast": [
+    "!=",
+    [
+     "attr",
+     "s"
+    ],
+    [
+     "const",
+     {
+      "str": "closed"
+     }
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "d",
+      {
+       "decimal": "1.50"
+      }
+     ],
+     [
+      "f",
+      {
+       "float": "0x1.8000000000000p+0"
+      }
+     ],
+     [
+      "flag",
+      {
+       "bool": true
+      }
+     ],
+     [
+      "i",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "j",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "nil",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "off",
+      {
+       "bool": false
+      }
+     ],
+     [
+      "s",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "bool": true
+   }
+  },
+  {
+   "id": "lt",
+   "ast": [
+    "<",
+    [
+     "attr",
+     "j"
+    ],
+    [
+     "attr",
+     "i"
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "d",
+      {
+       "decimal": "1.50"
+      }
+     ],
+     [
+      "f",
+      {
+       "float": "0x1.8000000000000p+0"
+      }
+     ],
+     [
+      "flag",
+      {
+       "bool": true
+      }
+     ],
+     [
+      "i",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "j",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "nil",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "off",
+      {
+       "bool": false
+      }
+     ],
+     [
+      "s",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "bool": true
+   }
+  },
+  {
+   "id": "le",
+   "ast": [
+    "<=",
+    [
+     "attr",
+     "d"
+    ],
+    [
+     "const",
+     {
+      "decimal": "1.5"
+     }
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "d",
+      {
+       "decimal": "1.50"
+      }
+     ],
+     [
+      "f",
+      {
+       "float": "0x1.8000000000000p+0"
+      }
+     ],
+     [
+      "flag",
+      {
+       "bool": true
+      }
+     ],
+     [
+      "i",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "j",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "nil",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "off",
+      {
+       "bool": false
+      }
+     ],
+     [
+      "s",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "bool": true
+   }
+  },
+  {
+   "id": "gt",
+   "ast": [
+    ">",
+    [
+     "attr",
+     "j"
+    ],
+    [
+     "attr",
+     "i"
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "d",
+      {
+       "decimal": "1.50"
+      }
+     ],
+     [
+      "f",
+      {
+       "float": "0x1.8000000000000p+0"
+      }
+     ],
+     [
+      "flag",
+      {
+       "bool": true
+      }
+     ],
+     [
+      "i",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "j",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "nil",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "off",
+      {
+       "bool": false
+      }
+     ],
+     [
+      "s",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "bool": false
+   }
+  },
+  {
+   "id": "ge",
+   "ast": [
+    ">=",
+    [
+     "attr",
+     "i"
+    ],
+    [
+     "const",
+     {
+      "int": "8"
+     }
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "d",
+      {
+       "decimal": "1.50"
+      }
+     ],
+     [
+      "f",
+      {
+       "float": "0x1.8000000000000p+0"
+      }
+     ],
+     [
+      "flag",
+      {
+       "bool": true
+      }
+     ],
+     [
+      "i",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "j",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "nil",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "off",
+      {
+       "bool": false
+      }
+     ],
+     [
+      "s",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "bool": false
+   }
+  },
+  {
+   "id": "lt-across-type-ranks",
+   "ast": [
+    "<",
+    [
+     "attr",
+     "s"
+    ],
+    [
+     "const",
+     {
+      "int": "10"
+     }
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "d",
+      {
+       "decimal": "1.50"
+      }
+     ],
+     [
+      "f",
+      {
+       "float": "0x1.8000000000000p+0"
+      }
+     ],
+     [
+      "flag",
+      {
+       "bool": true
+      }
+     ],
+     [
+      "i",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "j",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "nil",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "off",
+      {
+       "bool": false
+      }
+     ],
+     [
+      "s",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "bool": false
+   }
+  },
+  {
+   "id": "eq-missing",
+   "ast": [
+    "==",
+    [
+     "attr",
+     "absent"
+    ],
+    [
+     "const",
+     {
+      "int": "1"
+     }
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "d",
+      {
+       "decimal": "1.50"
+      }
+     ],
+     [
+      "f",
+      {
+       "float": "0x1.8000000000000p+0"
+      }
+     ],
+     [
+      "flag",
+      {
+       "bool": true
+      }
+     ],
+     [
+      "i",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "j",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "nil",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "off",
+      {
+       "bool": false
+      }
+     ],
+     [
+      "s",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "bool": false
+   }
+  },
+  {
+   "id": "ne-missing",
+   "ast": [
+    "!=",
+    [
+     "attr",
+     "absent"
+    ],
+    [
+     "const",
+     {
+      "int": "1"
+     }
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "d",
+      {
+       "decimal": "1.50"
+      }
+     ],
+     [
+      "f",
+      {
+       "float": "0x1.8000000000000p+0"
+      }
+     ],
+     [
+      "flag",
+      {
+       "bool": true
+      }
+     ],
+     [
+      "i",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "j",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "nil",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "off",
+      {
+       "bool": false
+      }
+     ],
+     [
+      "s",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "bool": false
+   }
+  },
+  {
+   "id": "lt-missing",
+   "ast": [
+    "<",
+    [
+     "const",
+     {
+      "int": "1"
+     }
+    ],
+    [
+     "attr",
+     "absent"
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "d",
+      {
+       "decimal": "1.50"
+      }
+     ],
+     [
+      "f",
+      {
+       "float": "0x1.8000000000000p+0"
+      }
+     ],
+     [
+      "flag",
+      {
+       "bool": true
+      }
+     ],
+     [
+      "i",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "j",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "nil",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "off",
+      {
+       "bool": false
+      }
+     ],
+     [
+      "s",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "bool": false
+   }
+  },
+  {
+   "id": "and",
+   "ast": [
+    "and",
+    [
+     "attr",
+     "flag"
+    ],
+    [
+     "<",
+     [
+      "attr",
+      "j"
+     ],
+     [
+      "attr",
+      "i"
+     ]
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "d",
+      {
+       "decimal": "1.50"
+      }
+     ],
+     [
+      "f",
+      {
+       "float": "0x1.8000000000000p+0"
+      }
+     ],
+     [
+      "flag",
+      {
+       "bool": true
+      }
+     ],
+     [
+      "i",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "j",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "nil",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "off",
+      {
+       "bool": false
+      }
+     ],
+     [
+      "s",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "bool": true
+   }
+  },
+  {
+   "id": "or",
+   "ast": [
+    "or",
+    [
+     "attr",
+     "off"
+    ],
+    [
+     "==",
+     [
+      "attr",
+      "i"
+     ],
+     [
+      "const",
+      {
+       "int": "8"
+      }
+     ]
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "d",
+      {
+       "decimal": "1.50"
+      }
+     ],
+     [
+      "f",
+      {
+       "float": "0x1.8000000000000p+0"
+      }
+     ],
+     [
+      "flag",
+      {
+       "bool": true
+      }
+     ],
+     [
+      "i",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "j",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "nil",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "off",
+      {
+       "bool": false
+      }
+     ],
+     [
+      "s",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "bool": false
+   }
+  },
+  {
+   "id": "not",
+   "ast": [
+    "not",
+    [
+     "attr",
+     "off"
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "d",
+      {
+       "decimal": "1.50"
+      }
+     ],
+     [
+      "f",
+      {
+       "float": "0x1.8000000000000p+0"
+      }
+     ],
+     [
+      "flag",
+      {
+       "bool": true
+      }
+     ],
+     [
+      "i",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "j",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "nil",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "off",
+      {
+       "bool": false
+      }
+     ],
+     [
+      "s",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "bool": true
+   }
+  },
+  {
+   "id": "and-missing-is-false",
+   "ast": [
+    "and",
+    [
+     "const",
+     {
+      "bool": true
+     }
+    ],
+    [
+     "attr",
+     "absent"
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "d",
+      {
+       "decimal": "1.50"
+      }
+     ],
+     [
+      "f",
+      {
+       "float": "0x1.8000000000000p+0"
+      }
+     ],
+     [
+      "flag",
+      {
+       "bool": true
+      }
+     ],
+     [
+      "i",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "j",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "nil",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "off",
+      {
+       "bool": false
+      }
+     ],
+     [
+      "s",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "bool": false
+   }
+  },
+  {
+   "id": "or-missing-is-false",
+   "ast": [
+    "or",
+    [
+     "attr",
+     "absent"
+    ],
+    [
+     "attr",
+     "off"
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "d",
+      {
+       "decimal": "1.50"
+      }
+     ],
+     [
+      "f",
+      {
+       "float": "0x1.8000000000000p+0"
+      }
+     ],
+     [
+      "flag",
+      {
+       "bool": true
+      }
+     ],
+     [
+      "i",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "j",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "nil",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "off",
+      {
+       "bool": false
+      }
+     ],
+     [
+      "s",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "bool": false
+   }
+  },
+  {
+   "id": "not-missing-is-true",
+   "ast": [
+    "not",
+    [
+     "attr",
+     "absent"
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "d",
+      {
+       "decimal": "1.50"
+      }
+     ],
+     [
+      "f",
+      {
+       "float": "0x1.8000000000000p+0"
+      }
+     ],
+     [
+      "flag",
+      {
+       "bool": true
+      }
+     ],
+     [
+      "i",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "j",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "nil",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "off",
+      {
+       "bool": false
+      }
+     ],
+     [
+      "s",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "bool": true
+   }
+  },
+  {
+   "id": "and-stops-at-the-first-false",
+   "ast": [
+    "and",
+    [
+     "attr",
+     "off"
+    ],
+    [
+     "attr",
+     "i"
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "d",
+      {
+       "decimal": "1.50"
+      }
+     ],
+     [
+      "f",
+      {
+       "float": "0x1.8000000000000p+0"
+      }
+     ],
+     [
+      "flag",
+      {
+       "bool": true
+      }
+     ],
+     [
+      "i",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "j",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "nil",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "off",
+      {
+       "bool": false
+      }
+     ],
+     [
+      "s",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "bool": false
+   }
+  },
+  {
+   "id": "or-stops-at-the-first-true",
+   "ast": [
+    "or",
+    [
+     "attr",
+     "flag"
+    ],
+    [
+     "attr",
+     "i"
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "d",
+      {
+       "decimal": "1.50"
+      }
+     ],
+     [
+      "f",
+      {
+       "float": "0x1.8000000000000p+0"
+      }
+     ],
+     [
+      "flag",
+      {
+       "bool": true
+      }
+     ],
+     [
+      "i",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "j",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "nil",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "off",
+      {
+       "bool": false
+      }
+     ],
+     [
+      "s",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "bool": true
+   }
+  },
+  {
+   "id": "and-non-boolean-refused",
+   "ast": [
+    "and",
+    [
+     "attr",
+     "flag"
+    ],
+    [
+     "attr",
+     "i"
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "d",
+      {
+       "decimal": "1.50"
+      }
+     ],
+     [
+      "f",
+      {
+       "float": "0x1.8000000000000p+0"
+      }
+     ],
+     [
+      "flag",
+      {
+       "bool": true
+      }
+     ],
+     [
+      "i",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "j",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "nil",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "off",
+      {
+       "bool": false
+      }
+     ],
+     [
+      "s",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "error": "validation"
+   }
+  },
+  {
+   "id": "not-non-boolean-refused",
+   "ast": [
+    "not",
+    [
+     "attr",
+     "s"
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "d",
+      {
+       "decimal": "1.50"
+      }
+     ],
+     [
+      "f",
+      {
+       "float": "0x1.8000000000000p+0"
+      }
+     ],
+     [
+      "flag",
+      {
+       "bool": true
+      }
+     ],
+     [
+      "i",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "j",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "nil",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "off",
+      {
+       "bool": false
+      }
+     ],
+     [
+      "s",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "error": "validation"
+   }
+  },
+  {
+   "id": "sum",
+   "ast": [
+    "sum",
+    "lines",
+    [
+     "attr",
+     "quantity"
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "lines",
+      {
+       "collection": "proto_db.collections.List",
+       "elements": [
+        {
+         "object": "proto_db.core.dbobject.DBObject",
+         "attrs": [
+          [
+           "price",
+           {
+            "decimal": "2.50"
+           }
+          ],
+          [
+           "quantity",
+           {
+            "int": "2"
+           }
+          ],
+          [
+           "state",
+           {
+            "str": "open"
+           }
+          ]
+         ]
+        },
+        {
+         "object": "proto_db.core.dbobject.DBObject",
+         "attrs": [
+          [
+           "price",
+           {
+            "decimal": "4"
+           }
+          ],
+          [
+           "quantity",
+           {
+            "int": "1"
+           }
+          ],
+          [
+           "state",
+           {
+            "str": "cancelled"
+           }
+          ]
+         ]
+        },
+        {
+         "object": "proto_db.core.dbobject.DBObject",
+         "attrs": [
+          [
+           "price",
+           {
+            "decimal": "1.25"
+           }
+          ],
+          [
+           "state",
+           {
+            "str": "open"
+           }
+          ]
+         ]
+        }
+       ]
+      }
+     ],
+     [
+      "state",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "int": "3"
+   }
+  },
+  {
+   "id": "sum-of-products",
+   "ast": [
+    "sum",
+    "lines",
+    [
+     "*",
+     [
+      "attr",
+      "quantity"
+     ],
+     [
+      "attr",
+      "price"
+     ]
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "lines",
+      {
+       "collection": "proto_db.collections.List",
+       "elements": [
+        {
+         "object": "proto_db.core.dbobject.DBObject",
+         "attrs": [
+          [
+           "price",
+           {
+            "decimal": "2.50"
+           }
+          ],
+          [
+           "quantity",
+           {
+            "int": "2"
+           }
+          ],
+          [
+           "state",
+           {
+            "str": "open"
+           }
+          ]
+         ]
+        },
+        {
+         "object": "proto_db.core.dbobject.DBObject",
+         "attrs": [
+          [
+           "price",
+           {
+            "decimal": "4"
+           }
+          ],
+          [
+           "quantity",
+           {
+            "int": "1"
+           }
+          ],
+          [
+           "state",
+           {
+            "str": "cancelled"
+           }
+          ]
+         ]
+        },
+        {
+         "object": "proto_db.core.dbobject.DBObject",
+         "attrs": [
+          [
+           "price",
+           {
+            "decimal": "1.25"
+           }
+          ],
+          [
+           "state",
+           {
+            "str": "open"
+           }
+          ]
+         ]
+        }
+       ]
+      }
+     ],
+     [
+      "state",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "decimal": "9.00"
+   }
+  },
+  {
+   "id": "sum-of-nothing-is-int-0",
+   "ast": [
+    "sum",
+    "lines",
+    [
+     "*",
+     [
+      "attr",
+      "quantity"
+     ],
+     [
+      "attr",
+      "price"
+     ]
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "name",
+      {
+       "str": "ACME"
+      }
+     ],
+     [
+      "orders",
+      {
+       "collection": "proto_db.collections.List",
+       "elements": [
+        {
+         "object": "proto_db.core.dbobject.DBObject",
+         "attrs": [
+          [
+           "lines",
+           {
+            "collection": "proto_db.collections.List",
+            "elements": [
+             {
+              "object": "proto_db.core.dbobject.DBObject",
+              "attrs": [
+               [
+                "price",
+                {
+                 "decimal": "2.50"
+                }
+               ],
+               [
+                "quantity",
+                {
+                 "int": "2"
+                }
+               ],
+               [
+                "state",
+                {
+                 "str": "open"
+                }
+               ]
+              ]
+             },
+             {
+              "object": "proto_db.core.dbobject.DBObject",
+              "attrs": [
+               [
+                "price",
+                {
+                 "decimal": "4"
+                }
+               ],
+               [
+                "quantity",
+                {
+                 "int": "1"
+                }
+               ],
+               [
+                "state",
+                {
+                 "str": "cancelled"
+                }
+               ]
+              ]
+             },
+             {
+              "object": "proto_db.core.dbobject.DBObject",
+              "attrs": [
+               [
+                "price",
+                {
+                 "decimal": "1.25"
+                }
+               ],
+               [
+                "state",
+                {
+                 "str": "open"
+                }
+               ]
+              ]
+             }
+            ]
+           }
+          ],
+          [
+           "state",
+           {
+            "str": "open"
+           }
+          ]
+         ]
+        },
+        {
+         "object": "proto_db.core.dbobject.DBObject",
+         "attrs": [
+          [
+           "lines",
+           {
+            "collection": "proto_db.collections.List",
+            "elements": [
+             {
+              "object": "proto_db.core.dbobject.DBObject",
+              "attrs": [
+               [
+                "price",
+                {
+                 "decimal": "1"
+                }
+               ],
+               [
+                "quantity",
+                {
+                 "int": "5"
+                }
+               ]
+              ]
+             }
+            ]
+           }
+          ],
+          [
+           "state",
+           {
+            "str": "open"
+           }
+          ]
+         ]
+        },
+        {
+         "object": "proto_db.core.dbobject.DBObject",
+         "attrs": [
+          [
+           "state",
+           {
+            "str": "open"
+           }
+          ]
+         ]
+        }
+       ]
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "int": "0"
+   }
+  },
+  {
+   "id": "sum-where",
+   "ast": [
+    "sum",
+    "lines",
+    [
+     "*",
+     [
+      "attr",
+      "quantity"
+     ],
+     [
+      "attr",
+      "price"
+     ]
+    ],
+    [
+     "==",
+     [
+      "attr",
+      "state"
+     ],
+     [
+      "const",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "lines",
+      {
+       "collection": "proto_db.collections.List",
+       "elements": [
+        {
+         "object": "proto_db.core.dbobject.DBObject",
+         "attrs": [
+          [
+           "price",
+           {
+            "decimal": "2.50"
+           }
+          ],
+          [
+           "quantity",
+           {
+            "int": "2"
+           }
+          ],
+          [
+           "state",
+           {
+            "str": "open"
+           }
+          ]
+         ]
+        },
+        {
+         "object": "proto_db.core.dbobject.DBObject",
+         "attrs": [
+          [
+           "price",
+           {
+            "decimal": "4"
+           }
+          ],
+          [
+           "quantity",
+           {
+            "int": "1"
+           }
+          ],
+          [
+           "state",
+           {
+            "str": "cancelled"
+           }
+          ]
+         ]
+        },
+        {
+         "object": "proto_db.core.dbobject.DBObject",
+         "attrs": [
+          [
+           "price",
+           {
+            "decimal": "1.25"
+           }
+          ],
+          [
+           "state",
+           {
+            "str": "open"
+           }
+          ]
+         ]
+        }
+       ]
+      }
+     ],
+     [
+      "state",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "decimal": "5.00"
+   }
+  },
+  {
+   "id": "count",
+   "ast": [
+    "count",
+    "lines"
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "lines",
+      {
+       "collection": "proto_db.collections.List",
+       "elements": [
+        {
+         "object": "proto_db.core.dbobject.DBObject",
+         "attrs": [
+          [
+           "price",
+           {
+            "decimal": "2.50"
+           }
+          ],
+          [
+           "quantity",
+           {
+            "int": "2"
+           }
+          ],
+          [
+           "state",
+           {
+            "str": "open"
+           }
+          ]
+         ]
+        },
+        {
+         "object": "proto_db.core.dbobject.DBObject",
+         "attrs": [
+          [
+           "price",
+           {
+            "decimal": "4"
+           }
+          ],
+          [
+           "quantity",
+           {
+            "int": "1"
+           }
+          ],
+          [
+           "state",
+           {
+            "str": "cancelled"
+           }
+          ]
+         ]
+        },
+        {
+         "object": "proto_db.core.dbobject.DBObject",
+         "attrs": [
+          [
+           "price",
+           {
+            "decimal": "1.25"
+           }
+          ],
+          [
+           "state",
+           {
+            "str": "open"
+           }
+          ]
+         ]
+        }
+       ]
+      }
+     ],
+     [
+      "state",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "int": "3"
+   }
+  },
+  {
+   "id": "count-where",
+   "ast": [
+    "count",
+    "lines",
+    [
+     "!=",
+     [
+      "attr",
+      "state"
+     ],
+     [
+      "const",
+      {
+       "str": "cancelled"
+      }
+     ]
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "lines",
+      {
+       "collection": "proto_db.collections.List",
+       "elements": [
+        {
+         "object": "proto_db.core.dbobject.DBObject",
+         "attrs": [
+          [
+           "price",
+           {
+            "decimal": "2.50"
+           }
+          ],
+          [
+           "quantity",
+           {
+            "int": "2"
+           }
+          ],
+          [
+           "state",
+           {
+            "str": "open"
+           }
+          ]
+         ]
+        },
+        {
+         "object": "proto_db.core.dbobject.DBObject",
+         "attrs": [
+          [
+           "price",
+           {
+            "decimal": "4"
+           }
+          ],
+          [
+           "quantity",
+           {
+            "int": "1"
+           }
+          ],
+          [
+           "state",
+           {
+            "str": "cancelled"
+           }
+          ]
+         ]
+        },
+        {
+         "object": "proto_db.core.dbobject.DBObject",
+         "attrs": [
+          [
+           "price",
+           {
+            "decimal": "1.25"
+           }
+          ],
+          [
+           "state",
+           {
+            "str": "open"
+           }
+          ]
+         ]
+        }
+       ]
+      }
+     ],
+     [
+      "state",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "int": "2"
+   }
+  },
+  {
+   "id": "count-of-nothing-is-int-0",
+   "ast": [
+    "count",
+    "lines"
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "d",
+      {
+       "decimal": "1.50"
+      }
+     ],
+     [
+      "f",
+      {
+       "float": "0x1.8000000000000p+0"
+      }
+     ],
+     [
+      "flag",
+      {
+       "bool": true
+      }
+     ],
+     [
+      "i",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "j",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "nil",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "off",
+      {
+       "bool": false
+      }
+     ],
+     [
+      "s",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "int": "0"
+   }
+  },
+  {
+   "id": "via-two-hops",
+   "ast": [
+    "via",
+    [
+     "self"
+    ],
+    "orders",
+    "lines"
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "name",
+      {
+       "str": "ACME"
+      }
+     ],
+     [
+      "orders",
+      {
+       "collection": "proto_db.collections.List",
+       "elements": [
+        {
+         "object": "proto_db.core.dbobject.DBObject",
+         "attrs": [
+          [
+           "lines",
+           {
+            "collection": "proto_db.collections.List",
+            "elements": [
+             {
+              "object": "proto_db.core.dbobject.DBObject",
+              "attrs": [
+               [
+                "price",
+                {
+                 "decimal": "2.50"
+                }
+               ],
+               [
+                "quantity",
+                {
+                 "int": "2"
+                }
+               ],
+               [
+                "state",
+                {
+                 "str": "open"
+                }
+               ]
+              ]
+             },
+             {
+              "object": "proto_db.core.dbobject.DBObject",
+              "attrs": [
+               [
+                "price",
+                {
+                 "decimal": "4"
+                }
+               ],
+               [
+                "quantity",
+                {
+                 "int": "1"
+                }
+               ],
+               [
+                "state",
+                {
+                 "str": "cancelled"
+                }
+               ]
+              ]
+             },
+             {
+              "object": "proto_db.core.dbobject.DBObject",
+              "attrs": [
+               [
+                "price",
+                {
+                 "decimal": "1.25"
+                }
+               ],
+               [
+                "state",
+                {
+                 "str": "open"
+                }
+               ]
+              ]
+             }
+            ]
+           }
+          ],
+          [
+           "state",
+           {
+            "str": "open"
+           }
+          ]
+         ]
+        },
+        {
+         "object": "proto_db.core.dbobject.DBObject",
+         "attrs": [
+          [
+           "lines",
+           {
+            "collection": "proto_db.collections.List",
+            "elements": [
+             {
+              "object": "proto_db.core.dbobject.DBObject",
+              "attrs": [
+               [
+                "price",
+                {
+                 "decimal": "1"
+                }
+               ],
+               [
+                "quantity",
+                {
+                 "int": "5"
+                }
+               ]
+              ]
+             }
+            ]
+           }
+          ],
+          [
+           "state",
+           {
+            "str": "open"
+           }
+          ]
+         ]
+        },
+        {
+         "object": "proto_db.core.dbobject.DBObject",
+         "attrs": [
+          [
+           "state",
+           {
+            "str": "open"
+           }
+          ]
+         ]
+        }
+       ]
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "tuple": [
+     {
+      "object": "proto_db.core.dbobject.DBObject",
+      "attrs": [
+       [
+        "price",
+        {
+         "decimal": "2.50"
+        }
+       ],
+       [
+        "quantity",
+        {
+         "int": "2"
+        }
+       ],
+       [
+        "state",
+        {
+         "str": "open"
+        }
+       ]
+      ]
+     },
+     {
+      "object": "proto_db.core.dbobject.DBObject",
+      "attrs": [
+       [
+        "price",
+        {
+         "decimal": "4"
+        }
+       ],
+       [
+        "quantity",
+        {
+         "int": "1"
+        }
+       ],
+       [
+        "state",
+        {
+         "str": "cancelled"
+        }
+       ]
+      ]
+     },
+     {
+      "object": "proto_db.core.dbobject.DBObject",
+      "attrs": [
+       [
+        "price",
+        {
+         "decimal": "1.25"
+        }
+       ],
+       [
+        "state",
+        {
+         "str": "open"
+        }
+       ]
+      ]
+     },
+     {
+      "object": "proto_db.core.dbobject.DBObject",
+      "attrs": [
+       [
+        "price",
+        {
+         "decimal": "1"
+        }
+       ],
+       [
+        "quantity",
+        {
+         "int": "5"
+        }
+       ]
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "id": "sum-over-via-two-hops",
+   "ast": [
+    "sum",
+    [
+     "via",
+     [
+      "self"
+     ],
+     "orders",
+     "lines"
+    ],
+    [
+     "*",
+     [
+      "attr",
+      "quantity"
+     ],
+     [
+      "attr",
+      "price"
+     ]
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "name",
+      {
+       "str": "ACME"
+      }
+     ],
+     [
+      "orders",
+      {
+       "collection": "proto_db.collections.List",
+       "elements": [
+        {
+         "object": "proto_db.core.dbobject.DBObject",
+         "attrs": [
+          [
+           "lines",
+           {
+            "collection": "proto_db.collections.List",
+            "elements": [
+             {
+              "object": "proto_db.core.dbobject.DBObject",
+              "attrs": [
+               [
+                "price",
+                {
+                 "decimal": "2.50"
+                }
+               ],
+               [
+                "quantity",
+                {
+                 "int": "2"
+                }
+               ],
+               [
+                "state",
+                {
+                 "str": "open"
+                }
+               ]
+              ]
+             },
+             {
+              "object": "proto_db.core.dbobject.DBObject",
+              "attrs": [
+               [
+                "price",
+                {
+                 "decimal": "4"
+                }
+               ],
+               [
+                "quantity",
+                {
+                 "int": "1"
+                }
+               ],
+               [
+                "state",
+                {
+                 "str": "cancelled"
+                }
+               ]
+              ]
+             },
+             {
+              "object": "proto_db.core.dbobject.DBObject",
+              "attrs": [
+               [
+                "price",
+                {
+                 "decimal": "1.25"
+                }
+               ],
+               [
+                "state",
+                {
+                 "str": "open"
+                }
+               ]
+              ]
+             }
+            ]
+           }
+          ],
+          [
+           "state",
+           {
+            "str": "open"
+           }
+          ]
+         ]
+        },
+        {
+         "object": "proto_db.core.dbobject.DBObject",
+         "attrs": [
+          [
+           "lines",
+           {
+            "collection": "proto_db.collections.List",
+            "elements": [
+             {
+              "object": "proto_db.core.dbobject.DBObject",
+              "attrs": [
+               [
+                "price",
+                {
+                 "decimal": "1"
+                }
+               ],
+               [
+                "quantity",
+                {
+                 "int": "5"
+                }
+               ]
+              ]
+             }
+            ]
+           }
+          ],
+          [
+           "state",
+           {
+            "str": "open"
+           }
+          ]
+         ]
+        },
+        {
+         "object": "proto_db.core.dbobject.DBObject",
+         "attrs": [
+          [
+           "state",
+           {
+            "str": "open"
+           }
+          ]
+         ]
+        }
+       ]
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "decimal": "14.00"
+   }
+  },
+  {
+   "id": "via-three-hops-through-handles",
+   "ast": [
+    "via",
+    [
+     "self"
+    ],
+    "orders",
+    "lines",
+    "product"
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "name",
+      {
+       "str": "ACME"
+      }
+     ],
+     [
+      "orders",
+      {
+       "collection": "proto_db.collections.List",
+       "elements": [
+        {
+         "mutable": "conformance.sales.Order#0123456789abcdef0123456789abcdef"
+        }
+       ]
+      }
+     ]
+    ]
+   },
+   "cells": [
+    [
+     "conformance.sales.Order#0123456789abcdef0123456789abcdef",
+     {
+      "object": "proto_db.core.dbobject.DBObject",
+      "attrs": [
+       [
+        "lines",
+        {
+         "collection": "proto_db.collections.List",
+         "elements": [
+          {
+           "object": "proto_db.core.dbobject.DBObject",
+           "attrs": [
+            [
+             "product",
+             {
+              "mutable": "conformance.sales.Product#fedcba9876543210fedcba9876543210"
+             }
+            ],
+            [
+             "quantity",
+             {
+              "int": "2"
+             }
+            ]
+           ]
+          }
+         ]
+        }
+       ],
+       [
+        "state",
+        {
+         "str": "open"
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     "conformance.sales.Product#fedcba9876543210fedcba9876543210",
+     {
+      "object": "proto_db.core.dbobject.DBObject",
+      "attrs": [
+       [
+        "price",
+        {
+         "decimal": "10.50"
+        }
+       ],
+       [
+        "sku",
+        {
+         "str": "p1"
+        }
+       ]
+      ]
+     }
+    ]
+   ],
+   "expected": {
+    "tuple": [
+     {
+      "object": "proto_db.core.dbobject.DBObject",
+      "attrs": [
+       [
+        "price",
+        {
+         "decimal": "10.50"
+        }
+       ],
+       [
+        "sku",
+        {
+         "str": "p1"
+        }
+       ]
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "id": "plus-float-refused",
+   "ast": [
+    "+",
+    [
+     "attr",
+     "f"
+    ],
+    [
+     "const",
+     {
+      "int": "1"
+     }
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "d",
+      {
+       "decimal": "1.50"
+      }
+     ],
+     [
+      "f",
+      {
+       "float": "0x1.8000000000000p+0"
+      }
+     ],
+     [
+      "flag",
+      {
+       "bool": true
+      }
+     ],
+     [
+      "i",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "j",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "nil",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "off",
+      {
+       "bool": false
+      }
+     ],
+     [
+      "s",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "error": "validation"
+   }
+  },
+  {
+   "id": "times-float-refused",
+   "ast": [
+    "*",
+    [
+     "attr",
+     "d"
+    ],
+    [
+     "const",
+     {
+      "float": "0x1.0000000000000p-1"
+     }
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "d",
+      {
+       "decimal": "1.50"
+      }
+     ],
+     [
+      "f",
+      {
+       "float": "0x1.8000000000000p+0"
+      }
+     ],
+     [
+      "flag",
+      {
+       "bool": true
+      }
+     ],
+     [
+      "i",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "j",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "nil",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "off",
+      {
+       "bool": false
+      }
+     ],
+     [
+      "s",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "error": "validation"
+   }
+  },
+  {
+   "id": "plus-bool-refused",
+   "ast": [
+    "+",
+    [
+     "attr",
+     "flag"
+    ],
+    [
+     "const",
+     {
+      "int": "1"
+     }
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "d",
+      {
+       "decimal": "1.50"
+      }
+     ],
+     [
+      "f",
+      {
+       "float": "0x1.8000000000000p+0"
+      }
+     ],
+     [
+      "flag",
+      {
+       "bool": true
+      }
+     ],
+     [
+      "i",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "j",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "nil",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "off",
+      {
+       "bool": false
+      }
+     ],
+     [
+      "s",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "error": "validation"
+   }
+  },
+  {
+   "id": "plus-str-refused",
+   "ast": [
+    "+",
+    [
+     "attr",
+     "s"
+    ],
+    [
+     "const",
+     {
+      "str": "x"
+     }
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "d",
+      {
+       "decimal": "1.50"
+      }
+     ],
+     [
+      "f",
+      {
+       "float": "0x1.8000000000000p+0"
+      }
+     ],
+     [
+      "flag",
+      {
+       "bool": true
+      }
+     ],
+     [
+      "i",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "j",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "nil",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "off",
+      {
+       "bool": false
+      }
+     ],
+     [
+      "s",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "error": "validation"
+   }
+  },
+  {
+   "id": "plus-nil-refused",
+   "ast": [
+    "+",
+    [
+     "attr",
+     "nil"
+    ],
+    [
+     "const",
+     {
+      "int": "1"
+     }
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "d",
+      {
+       "decimal": "1.50"
+      }
+     ],
+     [
+      "f",
+      {
+       "float": "0x1.8000000000000p+0"
+      }
+     ],
+     [
+      "flag",
+      {
+       "bool": true
+      }
+     ],
+     [
+      "i",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "j",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "nil",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "off",
+      {
+       "bool": false
+      }
+     ],
+     [
+      "s",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "error": "validation"
+   }
+  },
+  {
+   "id": "division-refused",
+   "ast": [
+    "/",
+    [
+     "attr",
+     "i"
+    ],
+    [
+     "const",
+     {
+      "int": "2"
+     }
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "d",
+      {
+       "decimal": "1.50"
+      }
+     ],
+     [
+      "f",
+      {
+       "float": "0x1.8000000000000p+0"
+      }
+     ],
+     [
+      "flag",
+      {
+       "bool": true
+      }
+     ],
+     [
+      "i",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "j",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "nil",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "off",
+      {
+       "bool": false
+      }
+     ],
+     [
+      "s",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "error": "validation"
+   }
+  },
+  {
+   "id": "root-outside-a-query-refused",
+   "ast": [
+    "count",
+    [
+     "via",
+     [
+      "root",
+      "orders"
+     ],
+     "lines"
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "d",
+      {
+       "decimal": "1.50"
+      }
+     ],
+     [
+      "f",
+      {
+       "float": "0x1.8000000000000p+0"
+      }
+     ],
+     [
+      "flag",
+      {
+       "bool": true
+      }
+     ],
+     [
+      "i",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "j",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "nil",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "off",
+      {
+       "bool": false
+      }
+     ],
+     [
+      "s",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "error": "validation"
+   }
+  },
+  {
+   "id": "cell-outside-a-query-refused",
+   "ast": [
+    "count",
+    [
+     "via",
+     [
+      "cell",
+      "conformance.sales.Order#0123456789abcdef0123456789abcdef"
+     ],
+     "lines"
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "d",
+      {
+       "decimal": "1.50"
+      }
+     ],
+     [
+      "f",
+      {
+       "float": "0x1.8000000000000p+0"
+      }
+     ],
+     [
+      "flag",
+      {
+       "bool": true
+      }
+     ],
+     [
+      "i",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "j",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "nil",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "off",
+      {
+       "bool": false
+      }
+     ],
+     [
+      "s",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "error": "validation"
+   }
+  },
+  {
+   "id": "unknown-operator-refused",
+   "ast": [
+    "concat",
+    [
+     "attr",
+     "s"
+    ],
+    [
+     "const",
+     {
+      "str": "x"
+     }
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "d",
+      {
+       "decimal": "1.50"
+      }
+     ],
+     [
+      "f",
+      {
+       "float": "0x1.8000000000000p+0"
+      }
+     ],
+     [
+      "flag",
+      {
+       "bool": true
+      }
+     ],
+     [
+      "i",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "j",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "nil",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "off",
+      {
+       "bool": false
+      }
+     ],
+     [
+      "s",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "error": "validation"
+   }
+  },
+  {
+   "id": "reserved-operator-not-supported",
+   "ast": [
+    "in",
+    [
+     "attr",
+     "s"
+    ],
+    [
+     "const",
+     {
+      "tuple": [
+       {
+        "str": "open"
+       },
+       {
+        "str": "closed"
+       }
+      ]
+     }
+    ]
+   ],
+   "element": {
+    "object": "proto_db.core.dbobject.DBObject",
+    "attrs": [
+     [
+      "d",
+      {
+       "decimal": "1.50"
+      }
+     ],
+     [
+      "f",
+      {
+       "float": "0x1.8000000000000p+0"
+      }
+     ],
+     [
+      "flag",
+      {
+       "bool": true
+      }
+     ],
+     [
+      "i",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "j",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "nil",
+      {
+       "nil": null
+      }
+     ],
+     [
+      "off",
+      {
+       "bool": false
+      }
+     ],
+     [
+      "s",
+      {
+       "str": "open"
+      }
+     ]
+    ]
+   },
+   "expected": {
+    "error": "not_supported"
+   }
+  }
+ ],
  "cluster": {
   "segment": {
    "file": "cluster/5eed0000000040008000000000002002.seg",

@@ -21,6 +21,7 @@ from proto_db.cluster.protocol import ClusterProtocolError
 from proto_db.errors import ProtoCorruptionError, ProtoNotSupportedError, ProtoValidationError
 from proto_db.storage import cloud, format as fmt, logfile, tiered
 from proto_db.storage.file import FileStorage
+from proto_db.tools import notation
 from proto_db.transactions import ObjectSpace
 from tests.conformance import typed
 from tests.conformance.generate import describe_database, saved_pointer, stub
@@ -421,6 +422,38 @@ def test_catalog_canonical_form_vector(tmp_path):
     assert canonical_form(stored) == expected
     decoded = _decode(expected)
     assert list(decoded) == ["entities", "module_set", "modules"] and _reencode(decoded) == expected
+
+
+# -- the expression language (format spec, "The expression language") ---------------------------
+
+@pytest.mark.parametrize("vector", MANIFEST["expressions"], ids=lambda v: v["id"])
+def test_expression_vector(vector):
+    """README step 14: the tree, checked outside a query and evaluated on the described element with the
+    vector's cells and defaults, gives the expected value (its exact description: a decimal keeps its
+    exponent) or error; the descriptions of the tree and the element are exact round trips."""
+    from tests.conformance.generate import evaluate_vector
+    ast = typed.build_ast(vector["ast"])
+    assert typed.describe_ast(ast) == vector["ast"]
+    element = typed.build_object(vector["element"])
+    assert notation.describe_object(element) == vector["element"]
+    cells = {name: typed.build_object(desc) for name, desc in vector.get("cells", [])}
+    defaults = {name: typed.build(desc) for name, desc in vector.get("defaults", [])}
+    assert evaluate_vector(ast, element, cells, defaults) == vector["expected"]
+
+
+def test_expression_vectors_cover_every_operator():
+    """Every operator of the language appears in a vector, and the refusals the chapter names do."""
+    from proto_db.semantic.expressions import ARITHMETIC, COMPARISONS
+    seen, stack = set(), [v["ast"] for v in MANIFEST["expressions"]]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, list) and node and isinstance(node[0], str):
+            seen.add(node[0])
+            stack.extend(node[1:] if node[0] != "const" else [])
+    assert ARITHMETIC | COMPARISONS | {"const", "attr", "and", "or", "not", "sum", "count", "via", "self", "root",
+                                       "cell"} <= seen
+    errors = {v["expected"].get("error") for v in MANIFEST["expressions"]}
+    assert {"validation", "not_supported"} <= errors
 
 
 def test_every_persistable_builtin_type_appears():

@@ -141,7 +141,7 @@ record needs 5; this is conservative (nothing is lost or misread) and accepted.
 **The pinned vectors.** ``tests/conformance/vectors.sha256`` lists the SHA-256 of every file
 under ``tests/conformance/vectors/`` (``<hex digest>  <path>``, one line per file, sorted by path
 in code point order, ``/`` as the separator), then the digest of ``manifest.json``. The SHA-256
-of that list file is ``be5e221c99cbb69138ce2970172a7a3b4605fc80fd03fed6089366a726766097``. ``test_conformance.py`` checks that the committed files
+of that list file is ``215d3921821cc6d477952d76ea3007266942eb15c17bab73c990c3465f324ae9``. ``test_conformance.py`` checks that the committed files
 match the list and that this page states the list's digest. Each vector file is governed by
 the number that covers what it holds: ``vectors/cluster/*.log`` by ``LOG_FORMAT_VERSION``,
 ``vectors/cluster/messages/`` by ``PROTOCOL_VERSION``, every other file by ``FORMAT_VERSION``.
@@ -2412,7 +2412,13 @@ JSON description of what every file means, in a language-neutral notation), the 
   segment opened by the catalog's first record, holding the records of every catalog type (the
   neutral model ``tests/conformance/catalog_model.json`` stored as ``__semanticCatalog``, and an
   ``__intentLog`` of two IntentRecords), and the catalog's canonical form
-  (``catalog/canonical.msgpack``); its root record is version 6.
+  (``catalog/canonical.msgpack``); its root record is version 6;
+- the evaluation of the expression language (`The expression language`_; manifest key
+  ``expressions``): each operator, int and decimal arithmetic (exact), MISSING through arithmetic,
+  comparison and logic, absent values and catalogued defaults, ``sum`` and ``count`` (of no members,
+  with a ``where``), ``via`` over several hops and through identity handles, and the refusals (a
+  float, a bool, a string or nil in arithmetic, division, ``root`` and ``cell`` outside a query, an
+  unknown operator, a reserved one). These vectors are manifest entries only, with no file.
 
 ``tests/conformance/vectors.sha256`` pins the vector files (`Format stability`_).
 

@@ -154,6 +154,19 @@ A reader passes when, for every entry of `manifest.json`:
     them. The file `canonical` is the catalog's canonical form (format spec, "Composition and the
     canonical form"): computing it from the model, and from the stored records, must give its bytes.
 
+14. `expressions`: the evaluation vectors of the expression language (format spec, "The expression
+    language"); they are manifest entries, with no file. Each entry has an `id`, an `ast` (the tree as
+    JSON arrays, its operators and names as JSON strings, the operand of every `const` node as a value
+    description), an `element` (a stored-object description of an unsaved record: `object` records of
+    `proto_db.core.dbobject.DBObject`, `collection` Lists, values) and `expected`. It may have `cells`,
+    `[cell name, record]` pairs: what the identity handles (`mutable`) it holds designate, read through
+    the reader; and `defaults`, `[attribute, value]` pairs: the catalogued defaults of the element's
+    own type (the other records of the entry have none). Check the tree as outside a query, then
+    evaluate it on the element: the result must be `expected` exactly (a value description, a decimal
+    with its exponent; a `via` gives a `tuple` of the members reached, in first-reached order), or the
+    refusal `{"error": "validation"}` (ProtoValidationError) or `{"error": "not_supported"}`
+    (ProtoNotSupportedError, a reserved operator), whether the check or the evaluation raises it.
+
 For the cross-implementation round trip (R83a), also run the reverse: write a database with
 your implementation, open it with ProtoBase (`ObjectSpace(FileStorage(path))`), and compare; `python -m proto_db.tools.verify <path>`
 does the ProtoBase side in one command (exit 0, and the content dumped in this notation).

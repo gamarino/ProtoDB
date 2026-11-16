@@ -1004,6 +1004,143 @@ def gen_catalog_database(manifest):
     manifest["catalog_database"] = entry
 
 
+def _expression_cases() -> list:
+    """``(id, ast, element, extra)`` of the expression vectors; ``extra`` may hold ``cells`` (cell name ->
+    record, what identity handles designate) and ``defaults`` (attribute -> the catalogued default of
+    the element's type)."""
+    def attr(*names):
+        return ["attr", *names]
+
+    def const(value):
+        return ["const", value]
+
+    record = DBObject(i=7, j=2, d=Decimal("1.50"), s="open", flag=True, off=False, nil=None, f=1.5)
+    lines = [DBObject(quantity=2, price=Decimal("2.50"), state="open"),
+             DBObject(quantity=1, price=Decimal("4"), state="cancelled"),
+             DBObject(price=Decimal("1.25"), state="open")]
+    order = DBObject(state="open", lines=List.from_iterable(lines))
+    customer = DBObject(name="ACME", orders=List.from_iterable([
+        order, DBObject(state="open", lines=List.from_iterable([DBObject(quantity=5, price=Decimal("1"))])),
+        DBObject(state="open")]))
+    product_cell = "conformance.sales.Product#" + "fedcba9876543210" * 2
+    order_cell = "conformance.sales.Order#" + "0123456789abcdef" * 2
+    product = DBObject(sku="p1", price=Decimal("10.50"))
+    handled_line = DBObject(quantity=2, product=MutableObject(product_cell))
+    handled_order = DBObject(state="open", lines=List.from_iterable([handled_line]))
+    handled_customer = DBObject(name="ACME", orders=List.from_iterable([MutableObject(order_cell)]))
+    with_handles = {"cells": {product_cell: product, order_cell: handled_order}}
+    big = Decimal("12345678901234567890.123456789012345678901")
+    amount = ["*", attr("quantity"), attr("price")]
+    via_lines = ["via", ["self"], "orders", "lines"]
+    return [
+        ("const", const(5), record, {}),
+        ("attr", attr("s"), record, {}),
+        ("attr-absent-is-missing", attr("credit_limit"), record, {}),
+        ("attr-absent-reads-the-default", attr("credit_limit"), record, {"defaults": {"credit_limit": Decimal("100")}}),
+        ("attr-stored-wins-over-the-default", attr("s"), record, {"defaults": {"s": "closed"}}),
+        ("attr-stored-nil-is-a-value", attr("nil"), record, {"defaults": {"nil": 3}}),
+        ("attr-path-through-a-handle", attr("product", "price"), handled_line, with_handles),
+        ("attr-path-absent-step", attr("product", "price"), record, {}),
+        ("plus-int", ["+", attr("i"), attr("j")], record, {}),
+        ("minus-int", ["-", attr("j"), attr("i")], record, {}),
+        ("times-int", ["*", attr("i"), attr("j")], record, {}),
+        ("plus-int-decimal", ["+", attr("i"), attr("d")], record, {}),
+        ("times-decimal-int", ["*", attr("d"), attr("i")], record, {}),
+        ("minus-decimal-decimal", ["-", const(Decimal("0.3")), const(Decimal("0.10"))], record, {}),
+        ("decimal-arithmetic-is-exact", ["*", const(big), const(big)], record, {}),
+        ("plus-missing", ["+", attr("absent"), attr("i")], record, {}),
+        ("times-decimal-missing", ["*", attr("d"), attr("absent")], record, {}),
+        ("eq", ["==", attr("s"), const("open")], record, {}),
+        ("eq-int-decimal", ["==", attr("i"), const(Decimal("7.0"))], record, {}),
+        ("eq-bool-int", ["==", attr("flag"), const(1)], record, {}),
+        ("eq-nil", ["==", attr("nil"), const(None)], record, {}),
+        ("ne", ["!=", attr("s"), const("closed")], record, {}),
+        ("lt", ["<", attr("j"), attr("i")], record, {}),
+        ("le", ["<=", attr("d"), const(Decimal("1.5"))], record, {}),
+        ("gt", [">", attr("j"), attr("i")], record, {}),
+        ("ge", [">=", attr("i"), const(8)], record, {}),
+        ("lt-across-type-ranks", ["<", attr("s"), const(10)], record, {}),
+        ("eq-missing", ["==", attr("absent"), const(1)], record, {}),
+        ("ne-missing", ["!=", attr("absent"), const(1)], record, {}),
+        ("lt-missing", ["<", const(1), attr("absent")], record, {}),
+        ("and", ["and", attr("flag"), ["<", attr("j"), attr("i")]], record, {}),
+        ("or", ["or", attr("off"), ["==", attr("i"), const(8)]], record, {}),
+        ("not", ["not", attr("off")], record, {}),
+        ("and-missing-is-false", ["and", const(True), attr("absent")], record, {}),
+        ("or-missing-is-false", ["or", attr("absent"), attr("off")], record, {}),
+        ("not-missing-is-true", ["not", attr("absent")], record, {}),
+        ("and-stops-at-the-first-false", ["and", attr("off"), attr("i")], record, {}),
+        ("or-stops-at-the-first-true", ["or", attr("flag"), attr("i")], record, {}),
+        ("and-non-boolean-refused", ["and", attr("flag"), attr("i")], record, {}),
+        ("not-non-boolean-refused", ["not", attr("s")], record, {}),
+        ("sum", ["sum", "lines", attr("quantity")], order, {}),
+        ("sum-of-products", ["sum", "lines", amount], order, {}),
+        ("sum-of-nothing-is-int-0", ["sum", "lines", amount], customer, {}),
+        ("sum-where", ["sum", "lines", amount, ["==", attr("state"), const("open")]], order, {}),
+        ("count", ["count", "lines"], order, {}),
+        ("count-where", ["count", "lines", ["!=", attr("state"), const("cancelled")]], order, {}),
+        ("count-of-nothing-is-int-0", ["count", "lines"], record, {}),
+        ("via-two-hops", via_lines, customer, {}),
+        ("sum-over-via-two-hops", ["sum", via_lines, amount], customer, {}),
+        ("via-three-hops-through-handles", ["via", ["self"], "orders", "lines", "product"], handled_customer,
+         with_handles),
+        ("plus-float-refused", ["+", attr("f"), const(1)], record, {}),
+        ("times-float-refused", ["*", attr("d"), const(0.5)], record, {}),
+        ("plus-bool-refused", ["+", attr("flag"), const(1)], record, {}),
+        ("plus-str-refused", ["+", attr("s"), const("x")], record, {}),
+        ("plus-nil-refused", ["+", attr("nil"), const(1)], record, {}),
+        ("division-refused", ["/", attr("i"), const(2)], record, {}),
+        ("root-outside-a-query-refused", ["count", ["via", ["root", "orders"], "lines"]], record, {}),
+        ("cell-outside-a-query-refused", ["count", ["via", ["cell", order_cell], "lines"]], record, {}),
+        ("unknown-operator-refused", ["concat", attr("s"), const("x")], record, {}),
+        ("reserved-operator-not-supported", ["in", attr("s"), const(("open", "closed"))], record, {}),
+    ]
+
+
+def _vector_reader(element, cells: dict, defaults: dict):
+    """The reader of an expression vector: its ``cells``, and the ``defaults`` of its element's type."""
+    from proto_db.semantic.expressions import Reader
+
+    class VectorReader(Reader):
+        def cell(self, name):
+            return cells.get(name)
+
+        def default(self, record, name):
+            return defaults.get(name, MISSING) if record is element else MISSING
+
+    return VectorReader()
+
+
+def evaluate_vector(ast, element, cells: dict, defaults: dict):
+    """What an expression vector expects: ``check_ast`` (outside a query), then ``evaluate`` on its element
+    with its reader; the result's description, or ``{"error": ...}``."""
+    from proto_db.errors import ProtoNotSupportedError
+    from proto_db.semantic.expressions import check_ast, evaluate
+    try:
+        check_ast(ast)
+        return notation.describe_object(evaluate(ast, element, reader=_vector_reader(element, cells, defaults)))
+    except ProtoNotSupportedError:
+        return {"error": "not_supported"}
+    except ProtoValidationError:
+        return {"error": "validation"}
+
+
+def gen_expressions(manifest):
+    """The evaluation vectors of the expression language (spec section 7; format spec, "The expression
+    language"): each tree, the element it is evaluated on, and the expected value or error."""
+    out = []
+    for name, ast, element, extra in _expression_cases():
+        cells, defaults = extra.get("cells", {}), extra.get("defaults", {})
+        entry = {"id": name, "ast": typed.describe_ast(ast), "element": notation.describe_object(element)}
+        if cells:
+            entry["cells"] = [[cell, notation.describe_object(value)] for cell, value in sorted(cells.items())]
+        if defaults:
+            entry["defaults"] = [[attribute, notation.describe(value)] for attribute, value in sorted(defaults.items())]
+        entry["expected"] = evaluate_vector(ast, element, cells, defaults)
+        out.append(entry)
+    manifest["expressions"] = out
+
+
 def gen_legacy_database(manifest):
     """A format-3 space: format-3 segment and root, a DatabaseRoot without ``origin``, a
     key-group and a vector index without ``member_tokens`` (plain KeyNode trees, format-3
@@ -1299,6 +1436,7 @@ def main():
     gen_parents_database(manifest)
     gen_registry_database(manifest)
     gen_catalog_database(manifest)
+    gen_expressions(manifest)
     gen_cluster(manifest)
     MANIFEST.write_text(json.dumps(manifest, indent=1, ensure_ascii=False) + "\n")
     PINS.write_text(pin_lines())

@@ -14,7 +14,10 @@ past 2**53), floats C99 hexadecimal strings (``float.hex``: exact, with ``"nan"`
 ``"-inf"``), bytes and UUIDs lowercase hexadecimal.
 
 :func:`build` turns a value description into the Python value; :func:`describe` does the
-reverse.  :func:`describe_raw` describes plain msgpack data.
+reverse.  :func:`describe_raw` describes plain msgpack data.  :func:`build_object` builds an
+unsaved stored-object description (``{"object": ...}``, ``{"collection": ...}``), and
+:func:`describe_ast` / :func:`build_ast` give an expression tree in the manifest (spec section 7):
+its operators and names as JSON strings, each ``const`` operand as a value description.
 """
 from __future__ import annotations
 
@@ -23,11 +26,13 @@ from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
+from proto_db.collections.lists import List
 from proto_db.core.atom import AtomPointer
+from proto_db.core.dbobject import DBObject
 from proto_db.tools import notation
 from proto_db.values import MISSING, FrozenDict, FrozenList, MutableObject
 
-__all__ = ["build", "describe", "describe_raw", "RefTarget"]
+__all__ = ["build", "describe", "describe_raw", "RefTarget", "build_object", "describe_ast", "build_ast"]
 
 
 
@@ -131,3 +136,43 @@ def describe_raw(data):
     if t is dict:
         return {"mpmap": [[describe_raw(k), describe_raw(v)] for k, v in data.items()]}
     raise TypeError(f"no raw description for {t.__name__}")
+
+
+def build_object(desc):
+    """The unsaved object a stored-object description stands for (the ``expressions`` vectors): a
+    ``proto_db.core.dbobject.DBObject`` record, a ``proto_db.collections.List``, or containers and
+    values whose items may be either, built bottom-up."""
+    if "object" in desc:
+        if desc["object"] != DBObject.__type_name__:
+            raise ValueError(f"the expression vectors hold plain records only, not {desc['object']!r}")
+        return DBObject(**{name: build_object(value) for name, value in desc["attrs"]})
+    if "collection" in desc:
+        if desc["collection"] != List.__type_name__:
+            raise ValueError(f"the expression vectors hold Lists only, not {desc['collection']!r}")
+        return List.from_iterable(build_object(e) for e in desc["elements"])
+    (kind, body), = desc.items()
+    if kind in ("list", "tuple"):
+        items = [build_object(v) for v in body]
+        return items if kind == "list" else tuple(items)
+    if kind == "map":
+        return {build_object(k): build_object(v) for k, v in body}
+    return build(desc)
+
+
+def describe_ast(ast):
+    """An expression tree in the manifest's form: lists as JSON arrays, operators and names as JSON
+    strings, the operand of every ``const`` node as its value description."""
+    if isinstance(ast, list):
+        if len(ast) == 2 and ast[0] == "const":
+            return ["const", notation.describe(ast[1])]
+        return [describe_ast(item) for item in ast]
+    return ast
+
+
+def build_ast(desc):
+    """The expression tree :func:`describe_ast` described."""
+    if isinstance(desc, list):
+        if len(desc) == 2 and desc[0] == "const":
+            return ["const", build(desc[1])]
+        return [build_ast(item) for item in desc]
+    return desc
