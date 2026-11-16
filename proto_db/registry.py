@@ -197,7 +197,7 @@ from collections.abc import Container, Mapping
 from .collections.base import _Immutable
 from .collections.dictionaries import Dictionary
 from .core.atom import RESERVED_NAMES, Atom, PersistenceContext
-from .core.dbobject import SEMANTIC_DUNDERS
+from .core.dbobject import _DEFERRED_DUNDERS, SEMANTIC_DUNDERS, deferred_dunder_refusal
 from .errors import (ProtoConflictError, ProtoCorruptionError, ProtoDBError, ProtoNotSupportedError, ProtoUserError,
                      ProtoValidationError)
 from . import resolution as _resolution
@@ -395,6 +395,9 @@ class ModuleHandle:
                                  semantic)
             with _LOCK:
                 self._declared.append(declared)
+            if any(kind == METHOD and _is_intent(value) for kind, value in definitions.values()):
+                from .semantic.classes import _accepted
+                _accepted(definitions)      # names the intents, now that the declaration is accepted
             return cls
 
         return decorate
@@ -411,6 +414,15 @@ class ModuleHandle:
         preflight F35): it must be the Python module that declared this registry module, as for
         :meth:`extends`.  The registry name, the parents and every definition name are checked as
         :meth:`extends` checks them."""
+        registry_name, parents = self._check_extension(registry_name, definitions, parents, source=source)
+        declared = _Declared(registry_name, parents, types.MappingProxyType(dict(definitions)), qualname,
+                             types.MappingProxyType(dict(semantic)))
+        with _LOCK:
+            self._declared.append(declared)
+
+    def _check_extension(self, registry_name: str, definitions, parents: tuple = (), *, source: str) -> tuple:
+        """The checks of :meth:`_extend_with`, which changes nothing: ``(registry_name, parents)``
+        checked, or ``ProtoValidationError``."""
         registry_name, parents = self._checked_target(registry_name, parents)
         if source != self.source:
             raise ProtoValidationError(
@@ -421,10 +433,7 @@ class ModuleHandle:
         api = _api_names()
         for name in definitions:
             _check_definition_name(where, name, api)
-        declared = _Declared(registry_name, parents, types.MappingProxyType(dict(definitions)), qualname,
-                             types.MappingProxyType(dict(semantic)))
-        with _LOCK:
-            self._declared.append(declared)
+        return registry_name, parents
 
     def _checked_target(self, registry_name, parents) -> tuple:
         """``(registry_name, parents)`` checked for an extension of this module."""
@@ -463,6 +472,8 @@ class ModuleHandle:
             if name in SEMANTIC_DUNDERS:
                 semantic[name] = value
                 continue
+            if name in _DEFERRED_DUNDERS:
+                raise deferred_dunder_refusal(where, name)
             here = _check_definition_name(where, name, api)
             definitions[name] = _definition(here, value)
         if semantic or any(kind == DESCRIPTOR or (kind == METHOD and _is_intent(value))

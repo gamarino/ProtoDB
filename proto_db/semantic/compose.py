@@ -50,11 +50,11 @@ from __future__ import annotations
 import copy
 from collections.abc import Mapping
 
+from ..catalog.atoms import FIELD_DEFAULTS
 from ..catalog.model import check_model
 from ..errors import ProtoValidationError
 from ..registry import DESCRIPTOR, METHOD, Registry, _is_intent, _load_order
 from .descriptors import Aggregate
-from .expressions import dependencies
 
 __all__ = ["module_contributions", "compose", "compose_modules", "describe", "subtypes", "is_a", "index_paths",
            "linearization"]
@@ -73,8 +73,7 @@ _FREE_ENTITY = frozenset({"meaning", "label", "help", "synonyms", "certification
 _DUNDER_FIELDS = (("__meaning__", "meaning"), ("__label__", "label"), ("__help__", "help"),
                   ("__synonyms__", "synonyms"), ("__key__", "key"), ("__certification__", "certification"))
 #: The fields omitted at their default (format spec, "Omission"): absent means this value.
-_DEFAULTS = {"required": False, "indexed": False, "ordered": False, "deprecated": False, "enforced": True,
-             "participant": False, "sensitivity": "internal", "binding": "identity"}
+_DEFAULTS = FIELD_DEFAULTS
 #: A field an element does not state and that has no default.
 _UNSTATED = object()
 
@@ -375,8 +374,10 @@ def _create_inverses(owns: dict, lins: Mapping) -> None:
             target.elements[inverse] = created
 
 
-def _compose_type(type_name: str, owns: Mapping, lins: Mapping) -> dict:
-    """The composed entity of ``type_name``: the fold of its linearization, last node first."""
+def _compose_type(type_name: str, owns: Mapping, lins: Mapping, rank: Mapping) -> dict:
+    """The composed entity of ``type_name``: the fold of its linearization, last node first.  Every
+    element's provenance lists its contributors in load order (``rank``: module -> position), whatever
+    the fold order (format spec, "Composition and the canonical form")."""
     elements: dict = {}
     constraints: dict = {}
     key, key_from = None, None
@@ -405,6 +406,8 @@ def _compose_type(type_name: str, owns: Mapping, lins: Mapping) -> dict:
                     # ``found`` came from a node after this one: a subtype redefines an inherited element.
                     _merge(found, item, module=item["provenance"][-1], type_name=node, subtype=True,
                            contributors=item["provenance"])
+    for item in list(elements.values()) + list(constraints.values()):
+        item["provenance"].sort(key=lambda module: (rank[module], module))
     entity = {"type_name": type_name}
     if own.entity.get("supertypes"):
         entity["supertypes"] = list(own.entity["supertypes"])
@@ -485,14 +488,60 @@ def _check_aggregates(entities: Mapping) -> None:
             over = elements.get(tree[1])
             if over is None or _element_type(over) != "role":
                 raise _invalid(f"{where}: {tree[1]!r} is not a role of {type_name!r}")
-            member = entities.get(over["target"], {})
-            declared = {e["name"]: e for e in member.get("attributes", []) + member.get("roles", [])}
-            for operand in tree[2:]:
-                for name in sorted(dependencies(operand)):
-                    found = declared.get(name)
-                    if found is not None and found.get("kind") == "computed" and "expression" not in found:
-                        raise _invalid(f"{where}: its terms are neutral all the way down, and "
-                                       f"{over['target']!r}.{name} is a Python-only computed attribute (R276)")
+            found = _python_only_read(entities, type_name, tree, set())
+            if found is not None:
+                raise _invalid(f"{where}: its terms are neutral all the way down (R276), and it reads, through "
+                               f"{' -> '.join(found[:-1])}, {found[-1]}, a Python-only computed attribute")
+
+
+def _declared(entity: Mapping, name: str):
+    return next((e for e in entity.get("attributes", []) + entity.get("roles", []) if e["name"] == name), None)
+
+
+def _python_only_read(entities: Mapping, type_name: str, tree, seen: set):
+    """The path of reads from the tree ``tree`` of an element of ``type_name`` to a Python-only computed
+    attribute, through computed attributes and aggregates of any depth and across roles, or ``None``
+    (spec section 4: a maintained aggregate reads neutral terms all the way down).  Each element is
+    followed once."""
+    stack = [(tree, type_name)]
+    while stack:
+        node, owner = stack.pop()
+        op = node[0]
+        if op == "attr":
+            found = _python_only_path(entities, owner, list(node[1:]), seen)
+            if found is not None:
+                return found
+        elif op in ("sum", "count"):
+            over = node[1]
+            if isinstance(over, str):
+                role = _declared(entities.get(owner, {}), over)
+                member = role.get("target") if role is not None else None
+                if member is not None:
+                    stack.extend((operand, member) for operand in node[2:])
+            # A via from a root or a cell reads stored values only.
+        elif op not in ("const", "root", "via", "cell", "self"):
+            stack.extend((child, owner) for child in node[1:] if isinstance(child, list))
+    return None
+
+
+def _python_only_path(entities: Mapping, owner: str, path: list, seen: set):
+    for step in path:
+        element = _declared(entities.get(owner, {}), step)
+        if element is None:
+            return None
+        here = f"{owner!r}.{step}"
+        if element.get("kind") in ("computed", "computed_stored"):
+            if "expression" not in element:
+                return [here]
+            if (owner, step) in seen:
+                return None
+            seen.add((owner, step))
+            below = _python_only_read(entities, owner, element["expression"]["ast"], seen)
+            return None if below is None else [here, *below]
+        if "target" not in element:
+            return None
+        owner = element["target"]           # a role: the next step reads its target
+    return None
 
 
 def compose_modules(modules: Mapping) -> dict:
@@ -510,7 +559,8 @@ def compose_modules(modules: Mapping) -> dict:
     cache: dict = {}
     lins = {name: _c3(name, owns, cache) for name in owns}
     _create_inverses(owns, lins)
-    entities = {name: _compose_type(name, owns, lins) for name in sorted(owns, key=lambda n: owns[n].first)}
+    rank = {module: position for position, module in enumerate(order)}
+    entities = {name: _compose_type(name, owns, lins, rank) for name in sorted(owns, key=lambda n: owns[n].first)}
     _check_agreement(entities, owns)
     _check_aggregates(entities)
     model = {"module_set": list(names), "modules": {name: copy.deepcopy(dict(modules[name])) for name in names},

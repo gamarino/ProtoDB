@@ -19,6 +19,8 @@ MAPPING = {
     "acme_diamond": f"{_PACKAGE}.acme_diamond",
     "acme_disagree": f"{_PACKAGE}.acme_disagree",
     "acme_lambda_total": f"{_PACKAGE}.acme_lambda_total",
+    "acme_reads": f"{_PACKAGE}.acme_reads",
+    "acme_deep_python": f"{_PACKAGE}.acme_deep_python",
     **{f"r282_{field}": f"{_PACKAGE}.acme_r282" for field in ("value_type", "cardinality", "target", "binding",
                                                                "kind")},
 }

@@ -26,7 +26,7 @@ from proto_db.core.atom import type_tag
 from proto_db.core.dbobject import DBObject
 from proto_db.errors import ProtoNotSupportedError, ProtoUserError, ProtoValidationError
 from proto_db.registry import DESCRIPTOR, METHOD, Registry, using
-from proto_db.semantic import IntentContext, intent_context
+from proto_db.semantic import IntentContext, Relationship, intent_context
 from proto_db.semantic.classes import _invoke
 from proto_db.semantic.descriptors import Field
 from proto_db.storage.file import FileStorage
@@ -108,10 +108,23 @@ def test_a_class_without_semantic_elements_is_untouched(tmp_path):
     assert _plain_workload(tmp_path / "space") == _PLAIN_DIGEST_ON_THE_BASE
 
 
+class PlainLink(Relationship):
+    """A subclass of ``Relationship`` with no semantic element: a plain class, untouched."""
+
+    __type_name__ = "tests.semantic.PlainLink"
+    weight = 1
+
+    def heavier(self):
+        return self.weight + 1
+
+
 def test_a_plain_subclass_of_relationship_is_untouched():
-    from proto_db.semantic import Relationship
-    assert Relationship._implicit_parent is None
-    assert Relationship(a=1).b is None
+    keys = sorted(k for k in PlainLink.__dict__ if k not in ("__firstlineno__", "__static_attributes__", "__doc__"))
+    assert keys == ["__module__", "__type_name__", "_custom_restore", "_legacy_attrs", "_legacy_held",
+                    "_type_name_declared", "heavier", "weight"]
+    assert PlainLink._implicit_parent is None and "describe" not in PlainLink.__dict__
+    link = PlainLink(a=1)
+    assert link.weight == 1 and link.heavier() == 2 and link.b is None and link.a == 1
 
 
 # -- records ------------------------------------------------------------------------------------------
@@ -181,6 +194,45 @@ def test_absent_field_resolves_to_its_default_or_none():
         assert order.total == 0                         # a sum over no lines
         line = OrderLine(quantity=Decimal("2"), price=Decimal("1.25"))
         assert line.amount == Decimal("2.50")
+
+
+# -- the expression reader follows F15 (review I1, I2) -------------------------------------------------
+
+def _reads():
+    from tests.unit.semantic_modules import acme_reads
+    return acme_reads, Registry.build(("base", "acme_reads"), mapping=MAPPING)
+
+
+def test_a_computed_reads_an_rc4_data_default():
+    module, registry = _reads()
+    with using(registry):
+        thing = module.Thing(a=1)
+        assert thing.rate == 3
+        assert thing.plus_rate == 4                     # the expression reads what resolution reads
+        assert thing.plus_b == 11                       # a Field default, as before
+        assert module.Thing(a=1, rate=5).plus_rate == 6     # the stored value first
+
+
+def test_a_computed_reading_another_computed_sees_missing():
+    from proto_db.semantic.descriptors import RegistryReader
+    from proto_db.values import MISSING
+    module, registry = _reads()
+    with using(registry):
+        empty = module.Thing()
+        reader = RegistryReader()
+        assert reader.default(empty, "twice") is MISSING        # never the public read's None
+        assert reader.default(empty, "a") is MISSING
+        assert reader.default(empty, "b") == 10 and reader.default(empty, "rate") == 3
+        assert empty.chained is None and empty.direct is None and empty.twice is None   # None only at o.name
+        assert module.Thing(a=2).chained == 5
+
+
+def test_a_sum_over_members_whose_computed_term_is_missing_skips_them():
+    from proto_db.collections.lists import List
+    module, registry = _reads()
+    with using(registry):
+        holder = module.Holder(things=List.from_iterable([module.Thing(a=1), module.Thing(), module.Thing(a=4)]))
+        assert holder.total == 10 and holder.count == 3
 
 
 def test_an_absent_field_needs_the_registry():
@@ -382,6 +434,10 @@ def test_validity_is_not_supported():
     with pytest.raises(ProtoNotSupportedError, match="D72"):
         _declare("tests_semantic_validity_ext", _HEADER + "m = module('sem_validity_ext')\n"
                  "class P(Extension):\n    __extends__ = 'acme.refused.Priced'\n    __validity__ = 'x'\n")
+    # The decorator spelling refuses it alike (review M1).
+    with pytest.raises(ProtoNotSupportedError, match="D72"):
+        _declare("tests_semantic_validity_dec", _HEADER + "m = module('sem_validity_dec')\n"
+                 "@m.extends('acme.refused.Priced')\nclass P:\n    __validity__ = 'x'\n")
 
 
 def test_a_role_outside_a_relationship_is_refused():
@@ -431,3 +487,46 @@ def test_the_decorator_keeps_its_refusals():
             handle.extends("acme.x.T")(type("C", (), {name: 1}))
     accepted = handle.extends("acme.x.T")(type("C", (), {"__meaning__": "A thing", "n": Field(int)}))
     assert accepted.__name__ == "C"
+
+
+# -- a refused declaration leaves nothing behind (review M4, M5) ------------------------------------
+
+_SHARED_INTENT = ("from proto_db.semantic import intent\n"
+                  "@intent(meaning='Close it')\ndef close(self):\n    return self.with_(closed=True)\n")
+
+
+def test_a_refused_semantic_class_changes_nothing_and_is_never_registered():
+    from proto_db.core import atom
+    registered = []
+    real = atom.register_atom_class
+
+    def recording(cls):
+        registered.append(cls.__type_name__)
+        return real(cls)
+
+    with mock.patch.object(atom, "register_atom_class", recording):
+        with pytest.raises(ProtoValidationError, match="Relationship"):
+            _declare("tests_semantic_refused_m4", _HEADER + _SHARED_INTENT + "m = module('sem_refused_m4')\n"
+                     "class R(DBObject):\n    __type_name__ = 'acme.refused.M4'\n    finish = close\n"
+                     "    other = Role('acme.refused.S')\n")
+    assert "acme.refused.M4" not in registered          # checked before registration: no window
+    with pytest.raises(Exception):
+        atom.Atom._class_for("acme.refused.M4")
+
+
+def test_a_refused_declaration_does_not_name_its_intents():
+    # The intent function of a refused declaration is not marked with the refused name: a later, correct
+    # declaration may use it under another name.
+    for refused in ("class R(DBObject):\n    __type_name__ = 'acme.refused.M4b'\n    finish = close\n"
+                    "    other = Role('acme.refused.S')\n",
+                    "class E(Extension):\n    __extends__ = 'base'\n    __parents__ = ('acme.x.P',)\n"
+                    "    finish = close\n"):         # refused by the registry, after the semantic checks
+        namespace = {"__name__": "tests_semantic_m4b"}
+        exec(compile(_HEADER + _SHARED_INTENT + "m = module('sem_m4b')\n", "<m4b>", "exec"), namespace)
+        with pytest.raises(ProtoValidationError):
+            exec(compile(refused, "<m4b>", "exec"), namespace)
+        assert namespace["close"].__proto_intent__.name is None
+        assert not namespace["m"]._declared
+        exec(compile("class Ok(Extension):\n    __extends__ = 'acme.refused.M4b'\n    close = close\n",
+                     "<m4b>", "exec"), namespace)
+        assert namespace["close"].__proto_intent__.name == "close"

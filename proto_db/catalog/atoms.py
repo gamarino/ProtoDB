@@ -75,7 +75,7 @@ NAME_PAIR = "name_pair"
 COLLECTION_KINDS = frozenset({NAMES, ELEMENTS, LANGUAGE_MAP, VALUES, PARAMETERS, ENTITY_MAP, EXT, MAP})
 #: The fields that have a default other than "absent" or "empty" ("Omission").
 FIELD_DEFAULTS = {"required": False, "indexed": False, "ordered": False, "deprecated": False, "enforced": True,
-                  "participant": False, "sensitivity": "internal", "binding": "identity"}
+                  "participant": False, "sensitivity": "internal", "binding": "identity", "on_delete": "restrict"}
 #: The kind of the type an Extension contributes to, ``Extension.entity["kind"]``, and its default.
 ENTITY_KINDS = frozenset({"entity", "relationship"})
 ENTITY_KIND_DEFAULT = "entity"

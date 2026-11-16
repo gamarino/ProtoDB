@@ -5,8 +5,9 @@ Semantic classes
     A ``DBObject`` subclass with a declared ``__type_name__`` whose body holds a semantic element (a
     descriptor of :mod:`proto_db.semantic.descriptors`, an intent, ``__constraints__`` or another
     semantic dunder, :data:`~proto_db.core.dbobject.SEMANTIC_DUNDERS`), or one of whose bases is a
-    semantic class (R280), is a **semantic class**.  ``DBObject.__init_subclass__`` hands it, once
-    created, to :func:`semantic_class`:
+    semantic class (R280), is a **semantic class**.  ``DBObject`` checks it whole with
+    :func:`prepare_semantic_class` before its type name is registered (a refused declaration registers
+    and changes nothing), then applies it with :func:`apply_semantic_class`:
 
     - its semantic elements leave the Python class and become an implicit D62 extension of the
       registry name ``__type_name__``, declared by the registry module its Python module declared
@@ -49,13 +50,13 @@ from collections.abc import Mapping
 
 from .. import registry as _registry
 from .. import resolution
-from ..core.dbobject import _DEFERRED_DUNDERS, SEMANTIC_DUNDERS, DBObject
+from ..core.dbobject import _DEFERRED_DUNDERS, SEMANTIC_DUNDERS, DBObject, deferred_dunder_refusal
 from ..errors import ProtoNotSupportedError, ProtoUserError, ProtoValidationError
 from ..values import values_equal
 from .descriptors import Invariant, Role, _names, _text, language_map
 
-__all__ = ["Extension", "Relationship", "IntentContext", "IntentInvoker", "intent_context", "semantic_class",
-           "bind_intent"]
+__all__ = ["Extension", "Relationship", "IntentContext", "IntentInvoker", "intent_context",
+           "prepare_semantic_class", "apply_semantic_class", "bind_intent"]
 
 #: Class-body names that configure a declaration and are not elements.
 _CONFIG = frozenset({"__type_name__", "__type_aliases__", "__registry_module__"})
@@ -98,8 +99,9 @@ def _check_semantic(where: str, semantic: Mapping) -> dict:
 
 
 def _check_elements(where: str, definitions: Mapping) -> bool:
-    """Check that each descriptor and intent of ``definitions`` is named by its definition name (an
-    intent's name is recorded on its declaration); return whether a participant role is among them."""
+    """Check that each descriptor and intent of ``definitions`` is named by its definition name; return
+    whether a participant role is among them.  It changes nothing: :func:`_name_intents` records the
+    intents' names once the declaration is accepted."""
     participant = False
     for name, (kind, value) in definitions.items():
         if kind == _registry.DESCRIPTOR:
@@ -113,8 +115,14 @@ def _check_elements(where: str, definitions: Mapping) -> bool:
             if named is not None and named != name:
                 raise ProtoValidationError(f"{where}: the intent function {value.__qualname__!r} is declared as "
                                            f"{named!r} and as {name!r}")
-            spec.name = name
     return participant
+
+
+def _name_intents(definitions: Mapping) -> None:
+    """Record on each intent of the accepted declaration ``definitions`` its definition name."""
+    for name, (kind, value) in definitions.items():
+        if kind == _registry.METHOD and _registry._is_intent(value):
+            value.__proto_intent__.name = name
 
 
 def _check_decorated(where: str, registry_name: str, definitions: Mapping, semantic: Mapping) -> dict:
@@ -125,6 +133,11 @@ def _check_decorated(where: str, registry_name: str, definitions: Mapping, seman
     if _check_elements(where, definitions):
         out["kind"] = "relationship"
     return out
+
+
+def _accepted(definitions: Mapping) -> None:
+    """The decorator spelling's declaration was accepted (``ModuleHandle.extends``)."""
+    _name_intents(definitions)
 
 
 # -- semantic classes --------------------------------------------------------------------------------
@@ -159,9 +172,10 @@ def _is_element(value) -> bool:
         type(value) is types.FunctionType and _registry._is_intent(value))
 
 
-def semantic_class(cls) -> None:
-    """Make the new ``DBObject`` subclass ``cls`` a semantic class (see the module docstring); called
-    by ``DBObject.__init_subclass__``.  Everything is checked before anything changes."""
+def prepare_semantic_class(cls) -> tuple:
+    """Check the new ``DBObject`` subclass ``cls`` as a semantic class (see the module docstring) and
+    return the plan :func:`apply_semantic_class` carries out.  Called by ``DBObject`` before the class's
+    type name is registered; it changes nothing, so a refusal leaves nothing behind."""
     where = f"Semantic class {cls.__qualname__} (Python module {cls.__module__!r})"
     if not cls._type_name_declared:
         raise ProtoValidationError(
@@ -170,9 +184,7 @@ def semantic_class(cls) -> None:
     type_name = cls.__dict__["__type_name__"]
     for name in _DEFERRED_DUNDERS:
         if name in cls.__dict__:
-            raise ProtoNotSupportedError(
-                f"{where}: {name} declares the Validity descriptor (valid time, D72), which is designed and "
-                f"deferred: it is not part of the MVP")
+            raise deferred_dunder_refusal(where, name)
     handle = _registry_module(cls, where)
     definitions, semantic, moved = {}, {}, []
     for name, value in cls.__dict__.items():
@@ -195,7 +207,16 @@ def semantic_class(cls) -> None:
                        if getattr(base, "_implicit_parent", None) is not None)
     if supertypes:
         semantic["supertypes"] = supertypes
+    handle._check_extension(type_name, definitions, supertypes, source=cls.__module__)
+    return handle, type_name, definitions, semantic, supertypes, tuple(moved)
+
+
+def apply_semantic_class(cls, plan: tuple) -> None:
+    """Carry out the checked plan of :func:`prepare_semantic_class`: declare the extension, move the
+    elements out of the class, and give it its implicit parent and ``describe``."""
+    handle, type_name, definitions, semantic, supertypes, moved = plan
     handle._extend_with(type_name, definitions, semantic, cls.__qualname__, supertypes, source=cls.__module__)
+    _name_intents(definitions)
     for name in moved:
         delattr(cls, name)
     cls._implicit_parent = type_name
@@ -254,13 +275,12 @@ def _extension_class(cls) -> None:
             semantic[name] = value
             continue
         if name in _DEFERRED_DUNDERS:
-            raise ProtoNotSupportedError(
-                f"{where}: {name} declares the Validity descriptor (valid time, D72), which is designed and "
-                f"deferred: it is not part of the MVP")
+            raise deferred_dunder_refusal(where, name)
         here = _registry._check_definition_name(where, name, api)
         definitions[name] = _registry._definition(here, value)
     semantic = _check_decorated(where, extends, definitions, semantic)
     handle._extend_with(extends, definitions, semantic, cls.__qualname__, parents, source=cls.__module__)
+    _name_intents(definitions)
 
 
 # -- intents -----------------------------------------------------------------------------------------

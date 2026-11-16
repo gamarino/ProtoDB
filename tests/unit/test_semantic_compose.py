@@ -184,7 +184,7 @@ def test_subclass_redefines_presentation_and_wins_over_supertype_extensions():
     assert element(entities["acme.sales.Order"], "number")["label"] == {"und": "Late no."}
     number = element(entities["acme.sales.ExpressOrder"], "number")
     assert number["label"] == {"und": "Express no."} and number["inherited_from"] == "acme.sales.Order"
-    assert number["provenance"] == ["acme_sales", "acme_zlate", "acme_express"]
+    assert number["provenance"] == ["acme_sales", "acme_express", "acme_zlate"]     # load order (format spec)
     assert number["required"] is True                                       # the subtype omits it: unchanged
     confirm = element(entities["acme.sales.ExpressOrder"], "confirm")
     assert confirm["meaning"].startswith("Confirm the express order")
@@ -256,12 +256,45 @@ def test_the_composed_model_round_trips_through_the_records():
     assert compose_modules(model["modules"]) == model
 
 
-def test_composition_is_independent_of_install_order():
+def test_composition_is_independent_of_the_order_of_the_contributions():
+    # compose_modules receives the Module items as a mapping: every insertion order composes alike, as
+    # the load order is derived from the names and the depends alone.
     names = ("acme_delivery", "acme_rush", "acme_express", "acme_zlate")
-    forms = {canonical_form(compose(Registry.build(("base", "acme_sales") + order, mapping=MAPPING)))
-             for order in itertools.permutations(names)}
-    assert len(forms) == 1
-    # And from the contributions in any order of the mapping.
     model = compose(build(*names))
-    reversed_modules = dict(reversed(list(model["modules"].items())))
-    assert canonical_form(compose_modules(reversed_modules)) == canonical_form(model)
+    expected = canonical_form(model)
+    items = list(model["modules"].items())
+    forms = {canonical_form(compose_modules(dict(order))) for order in itertools.permutations(items)}
+    assert forms == {expected}
+
+
+def test_provenance_follows_the_load_order_not_the_fold_order():
+    # A subtype's redefinition folds after the supertype's extensions (C3) but lists its module where it
+    # loads (format spec, "Composition"): acme_express (subtype) loads before acme_zlate (supertype).
+    registry = build("acme_express", "acme_zlate")
+    model = compose(registry)
+    order = list(registry.key)
+    assert order.index("acme_express") < order.index("acme_zlate")
+    for entity in model["entities"].values():
+        for item in entity.get("attributes", []) + entity.get("roles", []) + entity.get("intents", []) + \
+                entity.get("constraints", []):
+            assert item["provenance"] == sorted(item["provenance"], key=order.index), (entity["type_name"], item)
+
+
+def test_a_maintained_aggregate_over_a_transitively_python_only_computed_is_refused():
+    # Review I3: via_via reads via_py, which reads the Python-only py.
+    with pytest.raises(ProtoValidationError, match="neutral all the way down") as raised:
+        compose(Registry.build(("base", "acme_deep_python"), mapping=MAPPING))
+    assert "'acme.deep.Thing'.py" in str(raised.value) and "via_via" in str(raised.value)
+
+
+def test_on_delete_restrict_is_the_omitted_default():
+    # Review M2: the brief's default, stated or not, has one canonical form and is never written.
+    import copy
+    model = compose(build())
+    stated = copy.deepcopy(model)
+    product = element(stated["entities"]["acme.sales.OrderLine"], "product")
+    product["on_delete"] = "restrict"
+    assert canonical_form(stated) == canonical_form(model)
+    assert from_atoms(to_atoms(stated, None)) == model
+    product["on_delete"] = "cascade"
+    assert canonical_form(stated) != canonical_form(model)

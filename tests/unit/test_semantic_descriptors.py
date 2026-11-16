@@ -125,10 +125,13 @@ def test_role_and_relation_to_are_the_two_ends_of_a_relationship_role():
     assert named(Role("acme.sales.Order", inverse="lines", ordered=True), "order") == {
         "name": "order", "target": "acme.sales.Order", "inverse": "lines", "cardinality": "one",
         "inverse_cardinality": "many", "participant": True, "ordered": True}
-    assert named(Role("acme.catalog.Product", index_by=["order.date"], binding="version", on_delete="restrict"),
+    assert named(Role("acme.catalog.Product", index_by=["order.date"], binding="version", on_delete="cascade"),
                  "product") == {"name": "product", "target": "acme.catalog.Product", "cardinality": "one",
                                 "participant": True, "index_by": ["order.date"], "binding": "version",
-                                "on_delete": "restrict"}
+                                "on_delete": "cascade"}
+    # restrict is the default (format spec, "Omission"): stated or not, the same item (review M2).
+    assert named(Role("acme.x.T", on_delete="restrict")) == named(Role("acme.x.T")) == {
+        "name": "x", "target": "acme.x.T", "cardinality": "one", "participant": True}
     assert named(RelationTo("acme.sales.OrderLine", role="order", ordered=True), "lines") == {
         "name": "lines", "target": "acme.sales.OrderLine", "inverse": "order", "cardinality": "many",
         "inverse_cardinality": "one", "ordered": True}
@@ -158,7 +161,8 @@ def test_invariant_without_a_name_gets_the_hash_name():
     assert invariant.name == "invariant_9d9f212a"
     assert invariant_name(["<=", ["attr", "committed"], ["attr", "credit_limit"]]) == "invariant_9d9f212a"
     assert Invariant(["<=", ["attr", "committed"], ["attr", "credit_limit"]], meaning="m").name == "invariant_9d9f212a"
-    assert Invariant("a < b", meaning="m").name == "invariant_" + invariant_name(["<", ["attr", "a"], ["attr", "b"]])[-8:]
+    assert Invariant("a < b", meaning="m").name == "invariant_e1b7ed08"
+    assert Invariant("a <= b", meaning="m").name != Invariant("a < b", meaning="m").name
     named_one = Invariant("committed <= credit_limit", meaning="m", name="credit_limit_respected", enforced=False,
                           message="Over by {excess}")
     assert named_one.element("aggregate") == {
@@ -200,8 +204,23 @@ def test_intent_keeps_the_briefs_signature():
 def test_refused_intents():
     with pytest.raises(ProtoValidationError, match="meaning"):
         intent(meaning="")
-    with pytest.raises(ProtoValidationError, match="named"):
-        intent(meaning="m")(lambda self, *rest: None)
+    with pytest.raises(ProtoValidationError, match="lambda"):
+        intent(meaning="m")(lambda self: None)
+
+    def rest(self, *rest):
+        return None
+    with pytest.raises(ProtoValidationError, match="'rest'"):
+        intent(meaning="m")(rest)
+
+    def extra(self, **extra):
+        return None
+    with pytest.raises(ProtoValidationError, match="'extra'"):
+        intent(meaning="m")(extra)
+
+    def positional(self, x, /):
+        return None
+    with pytest.raises(ProtoValidationError, match="'x'"):
+        intent(meaning="m")(positional)
     with pytest.raises(ProtoValidationError, match="does not have"):
         @intent(meaning="m", parameters={"other": "int"})
         def f(self, x):

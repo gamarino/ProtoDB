@@ -60,7 +60,7 @@ def _rich() -> dict:
                  "provenance": ["m1", "m2"], "ext": {"z": 1, "a": [1, (2,)]}}
     role = {"name": "r", "inherited_from": "t.x.Base", "target": "t.x.T", "inverse": "back",
             "cardinality": "0..1", "inverse_cardinality": "1..*", "ordered": True, "index_by": ["d.e"],
-            "binding": "version", "on_delete": "restrict", "required": True, "indexed": True,
+            "binding": "version", "on_delete": "cascade", "required": True, "indexed": True,
             "languages": ["python"], "meaning": "R", "label": {"und": "R"}, "help": {"und": "H"}, "group": "g",
             "order": 3, "synonyms": ["rr"], "examples": ["e"], "caveats": "c", "sensitivity": "public",
             "certification": "proposed", "deprecated": True, "provenance": ["m1"], "ext": {"k": "v"}}

@@ -666,7 +666,14 @@ class Atom:
         else:
             cls.__type_name__ = f"{cls.__module__}.{cls.__qualname__}"     # legacy read name only
         cls._type_name_declared = declared
+        cls._before_registration()
         register_atom_class(cls)
+
+    @classmethod
+    def _before_registration(cls) -> None:
+        """Called on a new subclass just before it is registered under its type name: a subclass's
+        checks that may refuse the class run here, so that a refused class is never resolvable by
+        its type name, not even for an instant (free threading).  It must not change anything."""
 
     def __init__(self, *, context: PersistenceContext | None = None):
         _check_context(context)

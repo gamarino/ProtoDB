@@ -209,9 +209,12 @@ _EVALUATING: contextvars.ContextVar = contextvars.ContextVar("proto_db_semantic_
 
 
 class RegistryReader(Reader):
-    """What a descriptor's evaluation reads beyond the element: a missing attribute's declared value
-    along the element's registry chain (an object parent's attribute, a ``Field`` default, a computed's
-    value), and cells through the element's transaction or the running reader."""
+    """What a descriptor's evaluation reads beyond the element (spec section 7, preflight F15): for an
+    attribute the element does not hold, the first declaration along its chain that gives a value -- an
+    object parent's attribute, an rc4 data default, a ``Field`` default, a computed attribute's value --
+    else MISSING; and cells through the element's transaction or the running reader.  It reads the
+    descriptors' raw values (:meth:`_Descriptor.value`), never the user-facing read, which answers
+    ``None`` for MISSING."""
 
     def __init__(self, source=None):
         self._source = source
@@ -224,17 +227,14 @@ class RegistryReader(Reader):
 
     def default(self, element, name: str):
         for kind, value in resolution.definitions(element, name):
-            if kind == "own":
-                return value
+            if kind in ("own", "data"):
+                return value                # an object parent's attribute; an rc4 data default
             if kind != "descriptor":
-                return MISSING
-            if isinstance(value, Field):
-                if value.default is MISSING:
-                    continue
-                return value.default
-            if isinstance(value, (Computed, Aggregate)):
-                return value.resolve(element)
-            return MISSING
+                return MISSING              # a method is behaviour, not a value an expression reads
+            found = value.value(element)
+            if found is resolution.UNDECLARED:
+                continue                    # a Field without a default: the lookup goes on
+            return found
         return MISSING
 
 
@@ -275,9 +275,17 @@ class _Descriptor:
     def _fields(self) -> dict:
         raise NotImplementedError
 
-    def resolve(self, receiver):
-        """What resolution answers for ``receiver``, which does not hold the attribute."""
+    def value(self, receiver):
+        """The declared value of the attribute for ``receiver``, which does not hold it, as expressions
+        read it: MISSING when there is none, :data:`resolution.UNDECLARED` when this declaration states
+        nothing and the lookup goes on along the chain."""
         raise NotImplementedError
+
+    def resolve(self, receiver):
+        """What the user-facing read answers for ``receiver``, which does not hold the attribute:
+        :meth:`value`, with ``None`` for MISSING."""
+        found = self.value(receiver)
+        return None if found is MISSING else found
 
     def __repr__(self) -> str:
         return f"<{type(self).__name__} {self.name!r}>"
@@ -342,7 +350,7 @@ class Field(_Descriptor):
             out["indexed"] = True
         return out
 
-    def resolve(self, receiver):
+    def value(self, receiver):
         return resolution.UNDECLARED if self.default is MISSING else self.default
 
 
@@ -369,7 +377,7 @@ class Computed(_Descriptor):
             out["unit"] = self.unit
         return out
 
-    def resolve(self, receiver):
+    def value(self, receiver):
         if self.function is not None:
             return self.function(receiver)
         return _evaluate_guarded(self.tree, receiver, self.name)
@@ -386,7 +394,7 @@ def _evaluate_guarded(tree, receiver, name):
         value = evaluate(tree, receiver, reader=_reader_for(receiver))
     finally:
         _EVALUATING.reset(token)
-    return None if value is MISSING else value
+    return value
 
 
 class Aggregate(_Descriptor):
@@ -425,7 +433,7 @@ class Aggregate(_Descriptor):
             out["unit"] = self.unit
         return out
 
-    def resolve(self, receiver):
+    def value(self, receiver):
         return _evaluate_guarded(self.tree, receiver, self.name)
 
 
@@ -448,7 +456,7 @@ class _End(_Descriptor):
         if binding not in BINDINGS:
             raise _invalid(f"{where}, binding", f"{binding!r} is not one of {sorted(BINDINGS)}")
         self.binding = binding
-        if on_delete is not None and on_delete not in ON_DELETE:
+        if on_delete not in ON_DELETE:
             raise _invalid(f"{where}, on_delete", f"{on_delete!r} is not one of {sorted(ON_DELETE)}")
         self.on_delete = on_delete
 
@@ -467,14 +475,14 @@ class _End(_Descriptor):
             out["index_by"] = list(self.index_by)
         if self.binding != "identity":
             out["binding"] = self.binding
-        if self.on_delete is not None:
+        if self.on_delete != "restrict":                # the default is omitted ("Omission")
             out["on_delete"] = self.on_delete
         return out
 
-    def resolve(self, receiver):
+    def value(self, receiver):
         # Nothing is linked: a stored role is an own attribute, found before this descriptor.  The
         # session navigates stored roles (Task 6).
-        return None
+        return MISSING
 
 
 def _type_name(where: str, target) -> str:
@@ -491,7 +499,7 @@ def _type_name(where: str, target) -> str:
 
 class Relation(_End):
     """A simple link without data: ``Relation(target, *, cardinality, inverse=None, ordered=False,
-    index_by=(), binding="identity", on_delete=None, **semantic)`` (``on_delete`` is ``restrict`` when
+    index_by=(), binding="identity", on_delete="restrict", **semantic)`` (``on_delete`` is ``restrict`` when
     not stated).  ``cardinality`` is a relation spelling (``many-to-one``, ``one-to-many``,
     ``one-to-one``, ``many-to-many``), stored as its two ends, or an end spelling (``one``, ``many``,
     ``0..1``, ``1..*``) for a relation without an inverse: the inverse end's cardinality would be
@@ -500,7 +508,7 @@ class Relation(_End):
     participant = False
 
     def __init__(self, target: str, *, cardinality: str, inverse: str | None = None, ordered: bool = False,
-                 index_by=(), binding: str = "identity", on_delete: str | None = None, **semantic):
+                 index_by=(), binding: str = "identity", on_delete: str = "restrict", **semantic):
         super().__init__(semantic)
         self._role(target, inverse, ordered, index_by, binding, on_delete)
         where = f"{self._where()}, cardinality"
@@ -518,14 +526,14 @@ class Relation(_End):
 
 class Role(_End):
     """A role of a relationship (Chen): ``Role(target, *, inverse=None, ordered=False, index_by=(),
-    binding="identity", on_delete=None, **semantic)``.  It is ``one`` at its end; its inverse, when
+    binding="identity", on_delete="restrict", **semantic)``.  It is ``one`` at its end; its inverse, when
     named, is a ``many`` end on the target holding the relationship's atoms."""
 
     participant = True
     cardinality = "one"
 
     def __init__(self, target: str, *, inverse: str | None = None, ordered: bool = False, index_by=(),
-                 binding: str = "identity", on_delete: str | None = None, **semantic):
+                 binding: str = "identity", on_delete: str = "restrict", **semantic):
         super().__init__(semantic)
         self._role(target, inverse, ordered, index_by, binding, on_delete)
         self.inverse_cardinality = "many" if self.inverse is not None else None
@@ -542,7 +550,7 @@ class RelationTo(_End):
 
     def __init__(self, target, *, role: str, ordered: bool = False, **semantic):
         super().__init__(semantic)
-        self._role(target, _text(f"{self._where()}, role", role), ordered, (), "identity", None)
+        self._role(target, _text(f"{self._where()}, role", role), ordered, (), "identity", "restrict")
 
 
 # -- constraints ---------------------------------------------------------------------------------------

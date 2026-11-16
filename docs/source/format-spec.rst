@@ -1674,7 +1674,9 @@ parents (no ``p``).
    * - ``proto_db.catalog.Constraint``
      - ``name``; ``inherited_from``; ``scope`` (``attribute``, ``entity``, ``relation`` or ``aggregate``);
        ``expression`` (a ref to an Expression); ``enforced``; ``meaning``; ``message``;
-       ``provenance``.
+       ``provenance``. A constraint declared without a name **MUST** be named ``invariant_`` followed by
+       the first 8 lower-case hex digits of the SHA-256 of the MessagePack bytes of its tree's canonical
+       encoding (`Canonical values`_), so that every language gives it the same name (R279).
    * - ``proto_db.catalog.Expression``
      - ``ast``: the tree of `The expression language`_.
    * - ``proto_db.catalog.IntentRecord``
@@ -1770,8 +1772,8 @@ refs):
 
 - **Omission.** Defaults are omitted, in the records and in the canonical form: absent text, an empty ``@tup``
   or ``@map``, ``required`` false, ``indexed`` false, ``enforced`` true, ``sensitivity`` ``internal``, ``binding``
-  ``identity``, ``ordered`` false, ``participant`` false, ``deprecated`` false and, in ``Extension.entity``,
-  ``kind`` ``entity``. A field whose value is a map of such fields (``Extension.entity``) is at its default
+  ``identity``, ``on_delete`` ``restrict``, ``ordered`` false, ``participant`` false, ``deprecated`` false and,
+  in ``Extension.entity``, ``kind`` ``entity``. A field whose value is a map of such fields (``Extension.entity``) is at its default
   when they all are. A writer writes no field at its default; a reader
   that meets one accepts it and its canonical form omits it. Every other optional field is written when it is
   declared.

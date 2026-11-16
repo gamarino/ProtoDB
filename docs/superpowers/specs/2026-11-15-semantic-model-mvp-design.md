@@ -279,7 +279,8 @@ existed gets its contributions at its next `install_module`. Until then the sema
   (the inverse end of a relationship's role, declared on the other entity). All are catalogued as
   `proto_db.catalog.Role` records.
 - Role properties: `inverse`, `cardinality`, `ordered`, `index_by` (attribute paths), `binding` (`identity`,
-  `version`), `on_delete` (catalogued only; the MVP deletes no entity).
+  `version`), `on_delete` (`restrict`, `cascade` or `unlink`; `restrict` when unstated, and omitted at that
+  default; catalogued only, the MVP deletes no entity).
 - **Identity** *(R260)*:
   - an entity that changes lives in a mutable cell named `<type name>#<32 hex digits>`, whose value is a record
     of the semantic class;
@@ -415,7 +416,8 @@ refs):
   `expression`: a role is stored and holds entities, not a value of a kind.
 - **Omission.** Defaults are omitted, in the records and in the canonical form: absent text, an empty `@tup`
   or `@map`, `required` false, `indexed` false, `enforced` true, `sensitivity` `internal`, `binding`
-  `identity`, `ordered` false, `participant` false, `deprecated` false and `Extension.entity`'s `kind`
+  `identity`, `on_delete` `restrict`, `ordered` false, `participant` false, `deprecated` false and
+  `Extension.entity`'s `kind`
   `entity`; a map of such fields is at its default when they all are. A writer writes no field at its default; a reader
   that meets one accepts it and its canonical form omits it. Every other optional field is written when it is
   declared.

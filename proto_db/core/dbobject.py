@@ -29,8 +29,10 @@ attributes.
 Semantic classes (spec section 4, :mod:`proto_db.semantic.classes`): a subclass whose body holds a
 semantic element -- a semantic descriptor (``Field``, ``Computed``, ``Relation``, ...), an intent,
 one of :data:`SEMANTIC_DUNDERS` or ``__validity__`` -- or one of whose bases is a semantic class is
-handed, once created, to :func:`proto_db.semantic.classes.semantic_class`, which moves its semantic
-elements into the registry.  Its instances resolve its ``__type_name__`` as an implicit last parent
+checked whole by :func:`proto_db.semantic.classes.prepare_semantic_class` before its type name is
+registered (a refused class registers nothing), then handed to
+:func:`~proto_db.semantic.classes.apply_semantic_class`, which moves its semantic elements into the
+registry.  Its instances resolve its ``__type_name__`` as an implicit last parent
 (``_implicit_parent``), never persisted.  Every other subclass is untouched.
 
 ``list`` and ``dict`` values are stored as ``FrozenList`` and ``FrozenDict``
@@ -45,7 +47,9 @@ gives versions of a record a shared entity identity (D18).  The class is defined
 from __future__ import annotations
 
 import sys
+import threading
 import types
+import weakref
 
 from .. import resolution
 from ..errors import ProtoAttributeNameError, ProtoUserError, ProtoValidationError
@@ -61,6 +65,25 @@ SEMANTIC_DUNDERS = frozenset({"__meaning__", "__label__", "__help__", "__synonym
 #: A semantic dunder the MVP refuses (D72): its presence still makes the class semantic, so the
 #: semantic layer names the refusal.
 _DEFERRED_DUNDERS = frozenset({"__validity__"})
+
+
+def deferred_dunder_refusal(where: str, name: str) -> Exception:
+    """The refusal of the deferred semantic dunder ``name`` in a declaration, the same in every spelling
+    (a semantic class, an ``Extension`` subclass, the ``extends`` decorator)."""
+    from ..errors import ProtoNotSupportedError
+    return ProtoNotSupportedError(
+        f"{where}: {name} declares the Validity descriptor (valid time, D72), which is designed and deferred: "
+        f"it is not part of the MVP")
+
+#: The checked declaration of each semantic class being created, from its check (before its type name is
+#: registered) to its application (after): keyed by the class, within the one ``class`` statement.
+_PREPARED: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
+_PREPARED_LOCK = threading.Lock()
+
+
+def _take_prepared(cls):
+    with _PREPARED_LOCK:
+        return _PREPARED.pop(cls, None)
 
 _osa = object.__setattr__
 
@@ -109,6 +132,21 @@ def _checked_parents(parents) -> tuple:
     return tuple(parents)
 
 
+def _is_semantic(cls) -> bool:
+    """Whether the new subclass ``cls`` is a semantic class (spec section 4, R280, preflight F2): one
+    of its bases is one, or its own body holds a semantic element.  Only the class's own namespace
+    and its bases are read."""
+    if any(getattr(base, "_implicit_parent", None) is not None for base in cls.__bases__):
+        return True
+    for name, value in cls.__dict__.items():
+        if name in SEMANTIC_DUNDERS or name in _DEFERRED_DUNDERS:
+            return True
+        if getattr(type(value), "__proto_descriptor__", False) or (
+                type(value) is types.FunctionType and value.__dict__.get("__proto_intent__") is not None):
+            return True
+    return False
+
+
 class DBObject(Atom):
     """Immutable record of named canonical values, with optional parents.
 
@@ -130,15 +168,31 @@ class DBObject(Atom):
     _implicit_parent = None
 
     def __init_subclass__(cls, **kwargs):
-        super().__init_subclass__(**kwargs)
+        try:
+            super().__init_subclass__(**kwargs)     # checks, then registers the type name (F39)
+        except BaseException:
+            _take_prepared(cls)
+            raise
+        plan = _take_prepared(cls)
+        if plan is None:
+            return
+        from ..semantic.classes import apply_semantic_class
+        try:
+            apply_semantic_class(cls, plan)
+        except BaseException:
+            _forget_atom_class(cls)     # not reached unless the module was reloaded meanwhile
+            raise
+
+    @classmethod
+    def _before_registration(cls) -> None:
+        """A semantic class is checked whole (:func:`proto_db.semantic.classes.prepare_semantic_class`)
+        before its type name is registered: a refused declaration registers nothing and changes nothing."""
         if not _is_semantic(cls):
             return
-        from ..semantic.classes import semantic_class
-        try:
-            semantic_class(cls)
-        except BaseException:
-            _forget_atom_class(cls)     # the class does not exist: its type name stays free
-            raise
+        from ..semantic.classes import prepare_semantic_class
+        plan = prepare_semantic_class(cls)
+        with _PREPARED_LOCK:
+            _PREPARED[cls] = plan
     #: Fields that format-4 records may hold under the names of the parents API (ruling R157):
     #: they load and are carried over by ``with_``, but no new value is ever written under them.
     _legacy_fields = {"parents": "_legacy_parents", "with_parents": "_legacy_with_parents"}
@@ -370,21 +424,6 @@ class DBObject(Atom):
         if parents:
             fields.insert(0, f"parents={parents!r}")
         return f"{type(self).__name__}({', '.join(fields)})"
-
-
-def _is_semantic(cls) -> bool:
-    """Whether the new subclass ``cls`` is a semantic class (spec section 4, R280, preflight F2): one
-    of its bases is one, or its own body holds a semantic element.  Only the class's own namespace
-    and its bases are read."""
-    if any(getattr(base, "_implicit_parent", None) is not None for base in cls.__bases__):
-        return True
-    for name, value in cls.__dict__.items():
-        if name in SEMANTIC_DUNDERS or name in _DEFERRED_DUNDERS:
-            return True
-        if getattr(type(value), "__proto_descriptor__", False) or (
-                type(value) is types.FunctionType and value.__dict__.get("__proto_intent__") is not None):
-            return True
-    return False
 
 
 #: What :meth:`DBObject._item_kind` answers.
