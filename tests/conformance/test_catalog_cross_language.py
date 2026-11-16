@@ -87,6 +87,8 @@ def test_step6_expected_output_is_complete(world, tmp_path):
         assert answer["rows"], name
         # Only what the format specification defines is compared: no planner output, no terms.
         assert set(answer) == {"query", "rows", "version"}, name
+        # The version's number is the database root's version; its ref is Python's private token.
+        assert set(answer["version"]) == {"number"} and isinstance(answer["version"]["number"], int), name
 
 
 def test_step6_canonical_form_is_the_catalogs(world, tmp_path):

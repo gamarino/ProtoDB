@@ -4,7 +4,7 @@
 opens the database read-only in effect (it only reads) and writes, as JSON with sorted keys and two-space
 indentation (the agent interface's ``to_json`` form), ``{"describe": {type name: description}, "queries":
 {name: {"query", "rows", "version"}}}``: ``describe`` of every entity the catalog lists, and the answers
-(the query, its rows and the version read; no ``explain``, no ``terms``) of the named queries of
+(the query, its rows and the number of the version read; no ``explain``, ``terms`` or version ``ref``) of the named queries of
 ``docs/kit/semantic/queries.py`` (``STEP6``), their starting cells found through ``list_entities``.  With
 ``--canonical`` it also writes the canonical form of the catalog (format spec, "Composition and the canonical
 form").  Two runs over one database give identical bytes: protoBaseST's output for the same database must be
@@ -51,9 +51,11 @@ def expected(db) -> dict:
     cells = {"company": kit.company_cell(list_entities(db, kit.COMPANY))}
     for name, tree in kit.STEP6.items():
         answer = query(db, from_json(tree(cells)))
-        # Only what the format specification defines is compared: the query, its rows and the version read.
-        # ``explain`` (the planner's plan and estimates) and ``terms`` belong to the implementation.
-        out["queries"][name] = {key: answer[key] for key in ("query", "rows", "version")}
+        # Only what the format specification defines is compared: the query, its rows and the number of the
+        # version read.  ``explain`` (the planner's plan and estimates), ``terms`` and the version's ``ref``
+        # (a pager token) belong to the implementation.
+        out["queries"][name] = {"query": answer["query"], "rows": answer["rows"],
+                                "version": {"number": answer["version"]["number"]}}
         if name == "widget":
             cells["widget"] = kit.widget_cell(answer)
     return out

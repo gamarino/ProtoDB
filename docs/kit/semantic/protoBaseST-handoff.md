@@ -41,13 +41,31 @@ form"; the bytes to match are in `tests/conformance/vectors/catalog/canonical.ms
 - **Reading the catalog types** (`proto_db.catalog.SemanticCatalog` to `IntentRecord`) from a format-6
   database, and the composition of the modules' contributions in load order.
 - **The canonical form** of the catalog, byte for byte.
-- **`describe`** of every entity, in the `to_json` form the agent operations return.
+- **`describe`** of every entity: a JSON object of the composed entity (attributes, roles, constraints,
+  provenance; expression trees as nested arrays, language maps as objects, the forms below for values).
 - **The step-6 queries** (`widget`, `sold_in_june`, `customer_limits` in `queries.py`) through accessors
   generated from the catalog: starting cells found through the catalog (`list_entities` lists, per type, its
   cells, paged by `limit` and the `next` token), never hard-coded. Each answer has `query`, `rows` and
-  `version`, in the shape the agent operations give (`operations.py`). The planner is not part of the
-  comparison: `explain` (plans, index statistics, cost estimates) and `terms` are implementation output the
-  format does not define, so they are neither written nor compared.
+  `version`; `explain` (plans, index statistics, cost estimates), `terms` and the version's `ref` (a pager
+  token) are Python's own output, which the format does not define, so they are neither written nor compared.
+  What is compared is:
+  - `version`: `{"number": n}`, the version number of the database root that was read (an integer);
+  - `query`: the tree that was asked, as `queries.py` gives it (copied through unchanged);
+  - `rows`: one object per row, `{"entity", "type_name", "values"}`. `entity` is `{"cell": name}` (the entity's
+    mutable cell, `<type>#<32 hex>`) or `null` for a relationship atom, which has no cell; `type_name` is the
+    stored type; `values` maps each selected path, or, without `select`, each catalogued attribute and `one`
+    role the type has and is allowed to show, to its JSON form. A value the element does not have is left out.
+    The JSON forms: a decimal is its decimal text as a string (`"771.00"`: the exponent is kept, so `"2.00"`
+    is not `"2"`); an integer or boolean is a JSON number or boolean; text is a string; a date, time or
+    datetime is its ISO 8601 text; bytes are `{"bytes": base64}`; a role designating an entity is `{"cell":
+    name}`; a version-bound role is `{"entity": {"cell": name}, "version": {"type_name": T, "values": {...}}}`
+    with the bound record's own values in these forms; a record held inside another is `{"record": type name}`
+    and a collection is `{"collection": "list" | "set", "count": n}`. Customer names are personal and never
+    appear in rows (`describe` lists them with their sensitivity);
+  - the **order** of `rows` is the order the traversal reaches the members: a `many` end that is a Set is
+    walked in the collection's iteration order, a KeyNode tree by `hash_key` (format spec, "Hash keys" and the
+    collections chapter), so rows over a Set (`customer_limits`, `widget`) are not in cell-name order; an
+    ordered end (a List) is walked in its stored order.
 - Reading entities as "Entity data" specifies: cells named `<type>#<32 hex>`, records without parents, bound
   references `{entity, version}`, absent and nil ends read as empty, defaults read when a field is absent,
   maintained values compared by value.
@@ -65,7 +83,7 @@ The expected output is produced by Python:
 
     python -m proto_db.agent.step6 --path SPACE_DIR --database acme --out expected.json [--canonical canonical.msgpack]
 
-It holds `{"describe": {type name: description}, "queries": {name: {"query", "rows", "version"}}}` as UTF-8
+It holds `{"describe": {type name: description}, "queries": {name: {"query", "rows", "version": {"number"}}}}` as UTF-8
 JSON. Python writes it with sorted keys, two-space indentation and one final newline, for humans to read; that
 formatting is **not** compared. The comparison is of the parsed data: the same keys, the same values with the
 same JSON types (a decimal is a string, `1` is not `1.0`) and the same array order. protoBaseST writes any
@@ -77,7 +95,7 @@ Acceptance, in this order:
 1. every catalog vector passes in protoBaseST (`tests/conformance/README.md`, steps 13 and 14, plus the
    earlier steps its reader depends on);
 2. the cross-language tests pass with protoBaseST's outputs (what they compare: `describe` of every entity, the
-   step-6 queries' `query`, `rows` and `version`, and the canonical form's bytes), from the repository root:
+   step-6 queries' `query`, `rows` and `version.number`, and the canonical form's bytes), from the repository root:
 
        PROTODB_ST_STEP6_DB=DIR/space PROTODB_ST_STEP6_OUTPUT=st-step6.json PROTODB_ST_CANONICAL=st-canonical.msgpack \
          python -m pytest tests/conformance/test_catalog_cross_language.py
