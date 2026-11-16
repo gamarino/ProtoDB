@@ -8,10 +8,16 @@ server's name, instructions and tool descriptions are the same in both modes.
 
 The MCP SDK is the optional extra ``agent`` (``pip install proto_db[agent]``); it is imported when the
 server is built, never when :mod:`proto_db.agent` is imported.
+
+The operator's log (``logging.getLogger("proto_db.agent")``) keeps the original messages the agent is not
+told, which may hold stored data.  :func:`serve` never lets it reach the server's stderr, which the MCP client
+(the agent's host) collects: the logger does not propagate to the root logger (whose handlers FastMCP sets
+up on stderr), and it writes to the file ``log`` names, or nowhere when ``log`` is ``None``.
 """
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Mapping
 
 from . import operations
@@ -79,15 +85,37 @@ def build_server(db, *, raw: bool = False):
     return server
 
 
-def serve(path: str, database: str, *, mapping: Mapping[str, str] | None = None, raw: bool = False) -> None:
+def _operator_log(log: str | None) -> logging.Handler:
+    """Route the operator's log of a served server to the file ``log`` (appended), or nowhere for ``None``,
+    and never to the root logger's handlers (see the module docstring).  Returns the handler it added."""
+    logger = logging.getLogger("proto_db.agent")
+    if log is None:
+        handler: logging.Handler = logging.NullHandler()
+    else:
+        handler = logging.FileHandler(log, encoding="utf-8")
+        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+        logger.setLevel(logging.WARNING)
+    logger.addHandler(handler)
+    logger.propagate = False
+    return handler
+
+
+def serve(path: str, database: str, *, mapping: Mapping[str, str] | None = None, raw: bool = False,
+          log: str | None = None) -> None:
     """Serve the database ``database`` of the file space at ``path`` over stdio until the client closes it.
-    ``mapping`` is the space's ``modules_mapping`` (registry module name -> import path of its code)."""
+    ``mapping`` is the space's ``modules_mapping`` (registry module name -> import path of its code); ``log``
+    the file the operator's log is appended to (``None``: the log is discarded; never the server's stderr)."""
     from ..storage.file import FileStorage
     from ..transactions import ObjectSpace
 
-    space = ObjectSpace(FileStorage(path), modules_mapping=dict(mapping) if mapping else None)
+    handler = _operator_log(log)
     try:
-        server = build_server(space.open_database(database), raw=raw)
-        server.run("stdio")
+        space = ObjectSpace(FileStorage(path), modules_mapping=dict(mapping) if mapping else None)
+        try:
+            server = build_server(space.open_database(database), raw=raw)
+            server.run("stdio")
+        finally:
+            space.close()
     finally:
-        space.close()
+        logging.getLogger("proto_db.agent").removeHandler(handler)
+        handler.close()

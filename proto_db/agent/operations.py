@@ -67,7 +67,8 @@ Sensitivity (spec section 11; ``describe`` lists every attribute, ``query`` omit
       the stored catalog, whose message quotes stored catalog values), keeps its type, so a client knows the store is
       damaged or unavailable, but its message is replaced by one that names only the operation and the kind
       (a corruption's message may preview the stored bytes), raised ``from None``; the original exception is
-      logged at ERROR.  Both logs go to ``logging.getLogger("proto_db.agent")``, the operator's side.
+      logged at ERROR.  Both logs go to ``logging.getLogger("proto_db.agent")``, the operator's side (the MCP
+      server keeps it off its stderr, :mod:`proto_db.agent.mcp_server`).
 
 Raw mode (``raw=True``; the agent experiment's control group)
     The catalog is not reported.  :func:`list_entities` lists the names of the roots (reserved ``__`` roots
@@ -125,6 +126,7 @@ WITHHELD = frozenset({"personal", "secret"})
 _TYPED = ("decimal", "date", "time", "datetime", "bytes", "cell")
 #: The operator's log: what the agent is not told (see "Sensitivity").
 _LOG = logging.getLogger("proto_db.agent")
+_LOG.addHandler(logging.NullHandler())      # a library's logger: the application decides where it goes
 
 
 def _boundary(operation: str):

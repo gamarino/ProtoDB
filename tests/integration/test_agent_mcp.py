@@ -138,3 +138,34 @@ def test_both_modes_present_the_same_server_to_the_agent(tmp_path):
     raw = asyncio.run(_what_the_agent_sees(path, "--raw"))
     assert catalog[0] == "proto_db" and len(catalog[2]) == 4
     assert raw == catalog
+
+
+async def _describe_over_stdio(path: str, errlog, *extra: str) -> str:
+    async with stdio_client(_parameters(path, *extra), errlog=errlog) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            answer = await session.call_tool("describe", {"type_name": "acme.sales.Order"})
+    return answer.content[0].text
+
+
+@pytest.mark.parametrize("log", [False, True])
+def test_the_operators_log_never_reaches_the_servers_stderr(tmp_path, log):
+    """Final review M4: the operator's log ('proto_db.agent', which keeps original messages) goes nowhere by
+    default and to the file ``--log`` names; never to the server's stderr, which the MCP client collects."""
+    path = str(tmp_path / "space")
+    space = ObjectSpace(FileStorage(path), modules_mapping=MAPPING)
+    try:
+        db = space.new_database("acme")
+        db.run(lambda tr: tr.install_module("acme_sales"))
+    finally:
+        space.close()
+    # A server whose code for acme_sales differs from the stored catalog: describe fails and is logged.
+    rc4 = "tests.unit.semantic_modules.rc4_acme_sales"
+    extra = ["--mapping", f"acme_sales={rc4}"] + (["--log", str(tmp_path / "operator.log")] if log else [])
+    stderr = tmp_path / "stderr.txt"
+    with open(stderr, "w", encoding="utf-8") as errlog:
+        answer = asyncio.run(_describe_over_stdio(path, errlog, *extra))
+    assert "ProtoValidationError" in answer and "acme.sales" not in answer
+    assert "could not open the semantic catalog" not in stderr.read_text(encoding="utf-8")
+    if log:
+        assert "could not open the semantic catalog" in (tmp_path / "operator.log").read_text(encoding="utf-8")
