@@ -166,7 +166,7 @@ from _weakref import _remove_dead_weakref
 from collections.abc import Mapping
 from typing import Any, Callable, Iterator, Optional
 
-from .catalog.atoms import INTENT_LOG_ROOT
+from .catalog.atoms import INTENT_LOG_ROOT, SEMANTIC_CATALOG_ROOT
 from .collections.base import ConcurrentOptimized, _Immutable
 from .collections.dictionaries import Dictionary, RepeatedKeysDictionary
 from .collections.hash_dictionaries import HashDictionary
@@ -217,6 +217,9 @@ def _utc_now() -> datetime.datetime:
 
 #: The registry's roots (:mod:`proto_db.registry`).
 _REGISTRY_ROOTS = frozenset({_registry.MODULES_ROOT, _registry.CATALOG_ROOT})
+#: The roots a semantic operation's checks depend on: the module list, the registry catalog and the semantic
+#: catalog.  A transaction that wrote through the semantic session reads them (final review I2).
+_SEMANTIC_CATALOG_ROOTS = (_registry.MODULES_ROOT, _registry.CATALOG_ROOT, SEMANTIC_CATALOG_ROOT)
 
 #: Lock steps a commit runs at most when each one finds modules to import first (review I-1).  Each
 #: retry has strictly more of the merged list imported, so only installs committed concurrently
@@ -3091,7 +3094,10 @@ class Transaction:
         The outermost operation is all or nothing in the transaction: when its block raises, every cell
         write and field-version binding it made is undone (its reads stay in the read set), and when it
         returns, the cells it wrote join those whose constraints the commit checks
-        (:meth:`semantic_changes`, :mod:`proto_db.semantic.constraints`).  The undo log is made by the
+        (:meth:`semantic_changes`, :mod:`proto_db.semantic.constraints`).  The first operation that writes
+        also enters the catalog roots (``__currentModules``, ``__catalog``, ``__semanticCatalog``) in the read
+        set: its writes were checked against this version's catalog, so a concurrent install makes the commit
+        conflict and a retry checks them against the new one, as an intent-mode commit does.  The undo log is made by the
         operation's first write, so an operation that only reads allocates nothing.
 
         Only the outermost operation is undone: a nested operation that fails inside it is not undone by
@@ -3110,6 +3116,7 @@ class Transaction:
                 yield top
                 if top and self._semantic_undo is not None:
                     self._semantic_touched.update(dict.fromkeys(self._semantic_undo.cells))
+                    self._read_catalog_roots()
             except BaseException:
                 if top and self._semantic_undo is not None:
                     self._undo_semantic_operation()
@@ -3118,6 +3125,12 @@ class Transaction:
                 self._semantic_depth = depth        # restored exactly, whatever interrupted the block
                 if top:
                     self._semantic_undo = None
+
+    def _read_catalog_roots(self) -> None:
+        """Under the lock: enter the catalog roots in the read set (see :meth:`semantic_operation`)."""
+        for name in _SEMANTIC_CATALOG_ROOTS:
+            if name not in self._reads:
+                self._reads[name] = _token(self._objects.get_at(name, _ABSENT))
 
     def _note_undo(self, name: str) -> None:
         """Under the lock, inside a top-level semantic operation: remember the cell ``name`` as it was

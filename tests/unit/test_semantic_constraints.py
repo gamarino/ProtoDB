@@ -453,3 +453,40 @@ def test_a_session_read_allocates_no_undo_log(db, monkeypatch):
     s.update(world["bob"], credit_limit=Decimal("200"))
     assert made == [1]                                      # the first write of an operation makes it
     tr.abort()
+
+
+# -- final review I2: a direct-mode semantic write conflicts with a concurrent catalog change ----------------
+
+def test_a_direct_write_conflicts_with_a_concurrent_install_that_adds_an_invariant(db):
+    """T1 updates Bob's credit limit to 900 in direct mode on a version without ``acme_credit_cap``; T2
+    installs it (``credit_limit <= 500``, enforced) and commits first.  T1's write was checked against a
+    catalog that is no longer current, so its commit conflicts, as an intent-mode commit does; the retry
+    checks the new invariant.  No committed version violates an invariant its own catalog enforces."""
+    world = _world(db)
+    t1 = db.new_transaction()
+    semantic(t1).update(world["bob"], credit_limit=Decimal("900"))
+    db.run(lambda tr: tr.install_module("acme_credit_cap"))
+    with pytest.raises(ProtoConflictError):
+        t1.commit()
+    attempts = []
+
+    def retried(tr):
+        attempts.append(1)
+        semantic(tr).update(world["bob"], credit_limit=Decimal("900"))
+    with pytest.raises(ProtoConstraintError):
+        db.run(retried)
+    assert len(attempts) == 1
+    check = db.new_transaction()
+    assert semantic(check).get(world["bob"]).record.credit_limit == Decimal("100")
+    check.abort()
+
+
+def test_a_direct_read_only_transaction_does_not_conflict_with_an_install(db):
+    """Only a semantic write enters the catalog roots in the read set: a transaction that only reads
+    through the session commits across a concurrent install."""
+    world = _world(db)
+    t1 = db.new_transaction()
+    assert semantic(t1).get(world["bob"]).record.credit_limit == Decimal("100")
+    t1.set_root_object("note", "read only")
+    db.run(lambda tr: tr.install_module("acme_credit_cap"))
+    t1.commit()
