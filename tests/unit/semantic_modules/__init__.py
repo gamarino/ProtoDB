@@ -26,4 +26,8 @@ MAPPING = {
     "acme_x_foo": f"{_PACKAGE}.acme_x_foo",
     **{f"r282_{field}": f"{_PACKAGE}.acme_r282" for field in ("value_type", "cardinality", "target", "binding",
                                                                "kind")},
+    **{f"semc_0{i}": f"{_PACKAGE}.semc_0{i}" for i in range(1, 9)},
 }
+#: The mapping of a writer whose code for ``acme_sales`` declares no semantic element (a database written
+#: before the semantic layer existed, Review Focus 1); used in a process of its own.
+RC4_MAPPING = {"acme_sales": f"{_PACKAGE}.rc4_acme_sales"}

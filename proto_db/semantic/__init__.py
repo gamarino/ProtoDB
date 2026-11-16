@@ -6,12 +6,15 @@
   ``Aggregate``, ``Relation``, ``RelationTo``, ``Role``, ``Invariant``, ``intent`` and ``Certified``;
 - :mod:`proto_db.semantic.classes` maps them onto the rc4 registry: semantic ``DBObject`` classes,
   ``Extension``, ``Relationship`` and the intent invoker (``intent_context``);
-- :mod:`proto_db.semantic.compose` composes the catalog from the modules' contributions.
+- :mod:`proto_db.semantic.compose` composes the catalog from the modules' contributions;
+- :mod:`proto_db.semantic.store` is the catalog in the database: written at install, verified on use;
+- :mod:`proto_db.semantic.session` is the semantic session (``semantic(transaction or snapshot)``).
 
 The names below are the user-facing API, in the brief's spellings.
 """
 from .classes import Extension, IntentContext, Relationship, intent_context
 from .descriptors import Aggregate, Certified, Computed, Enum, Field, Invariant, Relation, RelationTo, Role, intent
+from .session import SemanticSession, semantic
 
-__all__ = ["Field", "Enum", "Computed", "Aggregate", "Relation", "RelationTo", "Role", "Relationship", "Extension",
-           "Invariant", "intent", "intent_context", "IntentContext", "Certified"]
+__all__ = ["semantic", "SemanticSession", "Field", "Enum", "Computed", "Aggregate", "Relation", "RelationTo", "Role",
+           "Relationship", "Extension", "Invariant", "intent", "intent_context", "IntentContext", "Certified"]

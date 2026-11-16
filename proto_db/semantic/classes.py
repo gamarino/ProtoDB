@@ -51,7 +51,7 @@ from collections.abc import Mapping
 from .. import registry as _registry
 from .. import resolution
 from ..core.dbobject import _DEFERRED_DUNDERS, SEMANTIC_DUNDERS, DBObject, deferred_dunder_refusal
-from ..errors import ProtoNotSupportedError, ProtoUserError, ProtoValidationError
+from ..errors import ProtoUserError, ProtoValidationError
 from ..values import values_equal
 from .descriptors import Invariant, Role, _names, _text, language_map
 
@@ -229,19 +229,15 @@ def apply_semantic_class(cls, plan: tuple) -> None:
 def _describe(cls, snapshot=None) -> dict:
     """``<SemanticClass>.describe(snapshot)``: the composed entity of this class's type in the read
     snapshot ``snapshot`` (a ``Snapshot`` or a ``Transaction``; "describe as a photograph", R259), as
-    neutral data.  Without a snapshot, ``ProtoUserError``."""
+    neutral data: ``semantic(snapshot).describe(type_name)``, so an as-of ``Snapshot`` describes that
+    version's catalog.  Without a snapshot, ``ProtoUserError``."""
     from ..transactions import Snapshot, Transaction
     if not isinstance(snapshot, (Snapshot, Transaction)):
         raise ProtoUserError(
             f"{cls.__qualname__}.describe() takes a read snapshot (a Snapshot or a Transaction): the composition of "
             f"a type is per database and per version, so there is no description without one")
-    registry = snapshot.registry
-    if registry is None:
-        raise ProtoNotSupportedError(
-            f"{cls.__qualname__}.describe(): the database lists no modules, so no semantic catalog describes "
-            f"{cls.__type_name__!r}")
-    from .compose import compose, describe
-    return describe(compose(registry), cls.__type_name__)
+    from .session import semantic
+    return semantic(snapshot).describe(cls.__type_name__)
 
 
 # -- Extension ---------------------------------------------------------------------------------------

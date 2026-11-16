@@ -49,11 +49,16 @@ The registry roots (runtime registry)
     global, ``CloudStorage`` across processes, can still lose the root's compare-and-swap like
     any commit, ``ProtoConflictError``; ``Database.run`` retries it.)  No module is imported
     under the root lock: a build that needs one publishes nothing, the commit imports outside
-    the lock and runs the lock step again.  A catalog update (``set_catalog_object``) replaces
-    one entry under normal conflict rules.  Every commit path builds its root here (:meth:`Transaction._build_root`): a
-    commit alone, a group-commit round (each build on the root the previous one produced) and
-    a round under the cluster lease (each build on the committed base).  Applications cannot
-    write nor remove a ``__`` root.
+    the lock and runs the lock step again.  The semantic catalog (``__semanticCatalog``,
+    :mod:`proto_db.semantic.store`) merges the same way, in the same lock step: the Module items
+    it lacks are added for the committed list and its entities recomposed from that list's
+    registry, so concurrent installs give the composition of the union; a database none of whose
+    modules makes a semantic declaration gets no catalog (its records stay format 4 or 5).  A
+    catalog update (``set_catalog_object``) replaces one entry under normal conflict rules.
+    Every commit path builds its root here (:meth:`Transaction._build_root`): a commit alone, a
+    group-commit round (each build on the root the previous one produced) and a round under the
+    cluster lease (each build on the committed base).  Applications cannot write nor remove a
+    ``__`` root.
 
 The registry of a database (runtime registry, Task 8)
     A transaction resolves through :attr:`Transaction.registry`: the registry of its snapshot's
@@ -224,6 +229,13 @@ class _released:
     def __exit__(self, *exc):
         self.lock._acquire_restore(self.saved)
         return False
+
+
+def _semantic_store():
+    """:mod:`proto_db.semantic.store`, imported on first use (it imports the semantic layer, which
+    imports this module)."""
+    from .semantic import store
+    return store
 
 
 def _check_not_reserved(name: str) -> None:
@@ -747,14 +759,16 @@ def _mismatch(database: str, bound: tuple, listed: tuple) -> ProtoValidationErro
 
 class _Binding:
     """The module list one database is bound to in one space, and its registry once built;
-    ``seq`` orders the bindings of a space (the most recent is the highest)."""
+    ``seq`` orders the bindings of a space (the most recent is the highest); ``version`` is the
+    database version whose list it is, when a commit or a reload bound it (``None`` otherwise)."""
 
-    __slots__ = ("names", "registry", "seq")
+    __slots__ = ("names", "registry", "seq", "version")
 
-    def __init__(self, names: tuple, registry, seq: int):
+    def __init__(self, names: tuple, registry, seq: int, version: Optional[int] = None):
         self.names = names
         self.registry = registry
         self.seq = seq
+        self.version = version
 
 
 def _not_nested(reader) -> ProtoUserError:
@@ -868,14 +882,14 @@ class _SpaceRegistries:
         with self._lock:
             return own.setdefault(names, built)
 
-    def reload(self, database: str, names: tuple):
+    def reload(self, database: str, names: tuple, version: Optional[int] = None):
         """``ObjectSpace.reload_registry``: a fresh registry of ``names`` for ``database``; every
         registry of the database cached before is dropped (ruling R243), and the database is
         rebound to the new one.  Nothing changes when the build fails."""
         registry = self.build_fresh(database, names) if names else None
         with self._lock:
             self._reloaded[database] = {names: registry} if names else {}
-        self.rebind(database, names, registry)
+        self.rebind(database, names, registry, version)
         return registry
 
     def build_fresh(self, database: str, names: tuple):
@@ -886,10 +900,10 @@ class _SpaceRegistries:
         except ProtoNotSupportedError as e:
             raise ProtoNotSupportedError(f"Database {database!r} lists modules this process cannot load: {e}") from e
 
-    def _new_binding(self, database: str, names: tuple, registry) -> _Binding:
+    def _new_binding(self, database: str, names: tuple, registry, version: Optional[int] = None) -> _Binding:
         """Under ``_lock``: bind ``database``."""
         self._seq += 1
-        binding = self._bound[database] = _Binding(names, registry, self._seq)
+        binding = self._bound[database] = _Binding(names, registry, self._seq, version)
         self._generation += 1
         return binding
 
@@ -933,11 +947,17 @@ class _SpaceRegistries:
             raise _mismatch(database, self._bound[database].names, names)
         return self.registry(database, binding)
 
-    def rebind(self, database: str, names: tuple, registry=None) -> None:
-        """Bind ``database`` to ``names`` (its registry, or ``None`` to build it on need): after a
-        commit of this space that installed modules, and by ``reload_registry``.  Never fails."""
+    def rebind(self, database: str, names: tuple, registry=None, version: Optional[int] = None) -> None:
+        """Bind ``database`` to ``names`` (its registry, or ``None`` to build it on need), the list of
+        the database's version ``version``: after a commit of this space that installed modules, and
+        by ``reload_registry``.  The commits of one space finish in any order (each thread rebinds
+        after its own publish), so a rebind for a version older than the bound one changes nothing:
+        the binding always ends on the newest list, whichever thread rebinds last.  Never fails."""
         with self._lock:
-            self._new_binding(database, names, registry)
+            bound = self._bound.get(database)
+            if version is not None and bound is not None and bound.version is not None and bound.version > version:
+                return
+            self._new_binding(database, names, registry, version)
             self._stale.pop(database, None)
 
     def fallback(self):
@@ -2091,7 +2111,7 @@ class ObjectSpace:
         root = Database(self, database_name)._root_in(_SpaceContext(self._storage), self._read_storage_root())
         names = _registry.listed_modules(root.objects)
         _registry.forget_failure(names, self._modules_mapping)
-        return self._registries.reload(database_name, names)
+        return self._registries.reload(database_name, names, root.version)
 
     @property
     def coordinator(self):
@@ -2485,6 +2505,10 @@ class Transaction:
         self._catalog_given: set = set()
         self._catalog_updates: dict = {}    # registry name -> (snapshot entry's pointer, new version)
         self._validated_modules: Optional[tuple] = None
+        self._validated_registry: Optional[_registry.Registry] = None   # the registry of _validated_modules
+        # The semantic catalog (proto_db.semantic.store): an install whose list has semantic contributions,
+        # or whose snapshot's catalog lacks some of them, merges the catalog at commit.
+        self._semantic_pending = False
         self._own_modules: tuple = ()           # the list this transaction's installs saw (snapshot + pending)
         self._import_needed: Optional[tuple] = None     # set by a build that needs imports (I-1)
         record = database.space._snapshot_record()
@@ -2746,6 +2770,13 @@ class Transaction:
         module that cannot be imported ``ProtoNotSupportedError``; nothing of a refused install
         stays pending.  Installing an installed module adds only what it lacks (idempotent).
 
+        It also collects the semantic additions (spec section 5): the list's contributions are
+        composed with the snapshot's semantic catalog here, outside every lock, so a refused
+        composition (a change R282 forbids, a structural redefinition) raises ``ProtoValidationError``
+        with nothing pending; at commit the catalog merges add-if-absent (see the module docstring).
+        A catalog that lacks contributions of the installed list (a database written before the
+        semantic layer) gets them at the next install, of any module.
+
         The imports run without the transaction's lock held (review M-5): a module's import-time
         code may use this transaction from another thread.  At commit the list and the catalog
         merge add-if-absent against the current root (see :mod:`proto_db.registry`): the merge
@@ -2762,8 +2793,12 @@ class Transaction:
             candidate = installed + tuple(module for module, _ in additions)
             imported = (name,) + tuple(module for module, _ in additions)
             if additions:
-                _registry.registry_for(candidate, mapping=mapping, allowed=allowed)
+                registry = _registry.registry_for(candidate, mapping=mapping, allowed=allowed)
                 imported += candidate
+            else:
+                # Nothing to add to the list; the catalog may still lack the list's contributions (a
+                # database whose modules were installed before the semantic layer, spec section 5).
+                registry = _registry.registry_for(installed, mapping=mapping, allowed=allowed)
             # Only the modules this call imported (review NB-1): import_module waited for any other
             # thread's import of them, so one still being imported is this thread's own, whose
             # declarations so far are not the module's.  A module this call did not import may be
@@ -2773,6 +2808,10 @@ class Transaction:
                 raise ProtoUserError(
                     f"Module(s) {', '.join(map(repr, unfinished))} are still being imported by this thread: "
                     f"a module's import-time code cannot install itself or a module that needs it (review N-3)")
+            # The semantic additions, composed outside every lock: a refused composition (a forbidden
+            # change, R282) raises here, so nothing of a refused install stays pending.
+            store = _semantic_store()
+            semantic = store.merged_model(store.read_stored(self._objects)[0], registry) is not None
             with self._lock:
                 self._check_active()
                 if self._installed_names() != installed:
@@ -2787,7 +2826,10 @@ class Transaction:
                     self._catalog_new[rn] = DBObject(context=self, parents=(rn,))
                 if additions:
                     self._validated_modules = candidate
+                    self._validated_registry = registry
                     self._own_modules = candidate
+                if semantic:
+                    self._semantic_pending = True
                 return
 
     def installed_modules(self) -> tuple:
@@ -2943,7 +2985,7 @@ class Transaction:
             self._catalog_updates[registry_name] = (existing.atom_pointer, obj)
 
     def _registry_pending(self) -> bool:
-        return bool(self._installs or self._catalog_new or self._catalog_updates)
+        return bool(self._installs or self._catalog_new or self._catalog_updates or self._semantic_pending)
 
     def _registry_view(self, name: str):
         """The registry root ``name`` as this transaction sees it: the snapshot's with this
@@ -2973,24 +3015,59 @@ class Transaction:
         self._committed_modules = committed.names() if committed is not None else ()
         if merged is not None:
             names = merged.names()
-            if names != self._validated_modules:
-                space = self._database.space
-                try:
-                    _registry.Registry.build(names, mapping=space.modules_mapping, allowed=space.modules_allowed,
-                                             imports=False)
-                except _registry.ModulesNotImported:
-                    self._import_needed = names
-                    return None
-                except ProtoDBError as e:
-                    raise self._union_conflict(names, e) from e
-                self._validated_modules = names
+            if names != self._validated_modules and self._commit_registry(names) is None:
+                return None
             objects = objects.set_at(_registry.MODULES_ROOT, merged)
         catalog = _registry.registry_root(current_objects, _registry.CATALOG_ROOT, _registry.Catalog)
         merged_catalog = _registry.merged_catalog(catalog, self._catalog_new, self._catalog_given, self,
                                                   self._catalog_updates)
         if merged_catalog is not None:
             objects = objects.set_at(_registry.CATALOG_ROOT, merged_catalog)
+        if self._installs or self._semantic_pending:
+            objects = self._merged_semantic_catalog(objects, current_objects)
         return objects
+
+    def _merged_semantic_catalog(self, objects: Dictionary, current_objects: Dictionary) -> Optional[Dictionary]:
+        """Under the root lock, after the module list merged: ``objects`` with the semantic catalog of
+        ``current_objects`` (the one current at commit, never through the read set) merged add-if-absent
+        for the committed list, the entities recomposed from the registry of that list
+        (:func:`proto_db.semantic.store.merged_semantic_catalog`); no import.  A database with no catalog
+        whose list contributes nothing gets none (its records stay format 4 or 5).  A union whose
+        composition fails is refused like a union that does not build (review N-4).  ``None`` when the
+        registry needs modules this process has not fully imported (see :meth:`_merged_registry`)."""
+        from .catalog.atoms import SEMANTIC_CATALOG_ROOT, semantic_catalog_root
+        current = semantic_catalog_root(current_objects)
+        if current is None and not self._semantic_pending:
+            return objects
+        names = self._committed_modules
+        registry = self._commit_registry(names)
+        if registry is None:
+            return None
+        try:
+            merged = _semantic_store().merged_semantic_catalog(current, registry, self)
+        except ProtoValidationError as e:
+            raise self._union_conflict(names, e) from e
+        return objects if merged is None else objects.set_at(SEMANTIC_CATALOG_ROOT, merged)
+
+    def _commit_registry(self, names: tuple) -> Optional[_registry.Registry]:
+        """Under the root lock: the registry of the module list ``names``, built without importing when
+        it is not the one already validated; ``None`` (with ``_import_needed`` set) when it needs modules
+        this process has not fully imported."""
+        registry = self._validated_registry
+        if registry is not None and set(registry.key) == set(names):
+            return registry
+        space = self._database.space
+        try:
+            registry = _registry.Registry.build(names, mapping=space.modules_mapping, allowed=space.modules_allowed,
+                                                imports=False)
+        except _registry.ModulesNotImported:
+            self._import_needed = names
+            return None
+        except ProtoDBError as e:
+            raise self._union_conflict(names, e) from e
+        self._validated_modules = names
+        self._validated_registry = registry
+        return registry
 
     def _import_for_commit(self, names: tuple) -> None:
         """Outside the root lock and the transaction's lock: build the registry of ``names`` (the
@@ -3001,8 +3078,9 @@ class Transaction:
         and ``install_module`` then states the real refusal); this transaction's own list,
         ``ProtoUserError``, or the build's own error."""
         space = self._database.space
+        registry = None
         try:
-            _registry.Registry.build(names, mapping=space.modules_mapping, allowed=space.modules_allowed)
+            registry = _registry.Registry.build(names, mapping=space.modules_mapping, allowed=space.modules_allowed)
         except _registry.ModulesBeingImported as e:
             unfinished = e.names
         except ProtoDBError as e:
@@ -3020,6 +3098,7 @@ class Transaction:
                 f"Module(s) {', '.join(map(repr, unfinished))} of this transaction's list are still being imported "
                 f"by this thread: a module's import-time code cannot commit an install whose list needs it")
         self._validated_modules = names
+        self._validated_registry = registry
 
     def _union_conflict(self, names: tuple, error: ProtoDBError) -> ProtoDBError:
         """The error for a merged list ``names`` whose build raised ``error``: the list this
@@ -3131,7 +3210,8 @@ class Transaction:
             if self._installs:
                 # This space installed: it binds the database to the list it committed (the
                 # merged one), built on need, so it never mismatches itself (spec 14 item 4).
-                space._registries.rebind(self._database.name, self._committed_modules)
+                space._registries.rebind(self._database.name, self._committed_modules,
+                                         version=self._committed_version)
 
     def _scoped_build_root(self, current, stamp: Optional[_ClusterStamp] = None) -> AtomPointer:
         """:meth:`_build_root` with this transaction as the reader (review I1, ruling R201): what
@@ -3191,8 +3271,9 @@ class Transaction:
                 mutables = mutables.set_at(name, value)
             elif mutables.has(name):
                 mutables = mutables.remove_at(name)
+        self._committed_version = db_root.version + 1
         new_root = DatabaseRoot(objects=objects, mutables=mutables, previous=db_root,
-                                version=db_root.version + 1,
+                                version=self._committed_version,
                                 committed_at=max(_utc_now(), db_root.committed_at), origin=db_root.origin,
                                 context=self)
         new_space = _new_space_root(space.databases.set_at(self._database.name, new_root), self, stamp, space)
