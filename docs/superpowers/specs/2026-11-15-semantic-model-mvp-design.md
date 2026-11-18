@@ -568,8 +568,10 @@ Rules:
     term) whose two evaluated operands are both present (neither MISSING nor nil) and orderable, and have
     different D28 type ranks, raises `ProtoValidationError` naming the operator and the two kinds (int and
     decimal are one rank, the number), never a value. A comparison with MISSING or nil keeps D28's semantics. A
-    comparison the planner answers through an index is held to the same rule: each element of the collection is
-    evaluated against it as the planner reads it, so whether a query is refused never depends on its plan.
+    comparison the planner answers through an index is held to the same rule: it is checked against every element
+    of the collection. On a collection that mixes kinds, a query can therefore be refused under an index plan and
+    answered under a scan whose `and`/`or` never reaches the mixed element; each outcome is a correct answer or a
+    refusal, never a silent empty one.
   - A `["root", name]` or `["cell", name]` origin anywhere in the query that does not exist in the version read
     (with `as_of`, the version it names) raises `ProtoValidationError` naming the origin and saying that version.
     The catalog declares no roots, so existence in the version read is the rule; an existing empty root answers
