@@ -124,6 +124,7 @@ from decimal import Decimal, InvalidOperation
 
 from ..collections.lists import List
 from ..collections.sets import Set
+from ..core.atom import OpaqueAtom
 from ..core.dbobject import DBObject
 from ..catalog.atoms import SEMANTIC_CATALOG_ROOT, semantic_catalog_value
 from ..errors import ProtoCorruptionError, ProtoUserError, ProtoValidationError
@@ -208,9 +209,9 @@ def to_json(value):
         return [to_json(item) for item in value]
     if isinstance(value, (List, Set)):
         return [to_json(item) for item in value.elements()]
-    if isinstance(value, DBObject) and is_atom(value):
+    if _is_record(value):
         return {"type_name": getattr(type(value), "__type_name__", None),
-                "values": {name: to_json(item) for name, item in value._own.items()}}
+                "values": {name: to_json(item) for name, item in _own(value).items()}}
     raise ProtoValidationError(f"{type(value).__name__} has no JSON form")
 
 
@@ -257,14 +258,25 @@ def _flat(value):
         return {"entity": {"cell": value["entity"].name}, "version": {"record": _stored_type(value["version"])}}
     if isinstance(value, (List, Set)):
         return {"collection": "list" if isinstance(value, List) else "set", "count": value.count}
-    if isinstance(value, DBObject) and is_atom(value):
+    if _is_record(value):
         return {"record": _stored_type(value)}
     return to_json(value)
 
 
+def _is_record(value) -> bool:
+    """Whether ``value`` is a stored record: a :class:`DBObject`, or an :class:`OpaqueAtom` when this process
+    has no class for its type (the raw server never imports the model's code)."""
+    return isinstance(value, (DBObject, OpaqueAtom)) and is_atom(value)
+
+
 def _own(record) -> Mapping:
-    """The stored attributes of ``record``: a record's own fields; a stored collection (an atom too) has none."""
-    return record._own if isinstance(record, DBObject) else {}
+    """The stored attributes of ``record``: a record's own fields (an opaque record's stored fields); a stored
+    collection (an atom too) has none."""
+    if isinstance(record, DBObject):
+        return record._own
+    if isinstance(record, OpaqueAtom):
+        return record._state()
+    return {}
 
 
 def _value(value, policy: "_Strictest"):
@@ -654,8 +666,8 @@ def _stored_description(snapshot, type_name: str) -> dict:
         if _stored_type(record) == type_name:
             cells += 1
             take(record)
-        if isinstance(record, DBObject) and is_atom(record):
-            for value in record._own.values():
+        if _is_record(record):
+            for value in _own(record).values():
                 if isinstance(value, (List, Set)):
                     for element in value.elements():
                         element = unwrap_entry(element)
@@ -718,8 +730,8 @@ def _vocabulary(snapshot, model: Mapping | None) -> list:
         for name in _names(snapshot, "cell", None):
             record = snapshot.get_mutable(name)
             names = types.setdefault(_stored_type(record), set())
-            if isinstance(record, DBObject) and is_atom(record):
-                names.update(record._own.keys())
+            if _is_record(record):
+                names.update(_own(record).keys())
         for type_name, names in sorted(types.items()):
             out.append(({"kind": "entity", "type_name": type_name, "name": None},
                         [("stored", type_name), ("stored", type_name.rsplit(".", 1)[-1])]))

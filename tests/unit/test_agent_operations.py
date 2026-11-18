@@ -1341,3 +1341,53 @@ def test_an_undeclared_attribute_holding_a_handle_stays_withheld_not_refused(mod
         if reader is not None:
             reader.close()
         space.close()
+
+
+_RAW_READER = r"""
+import json, sys
+from proto_db import FileStorage, ObjectSpace
+from proto_db.agent import operations
+from proto_db.core.atom import OpaqueAtom
+# The raw server's process: the space opened with the mapping, the model's code never imported.
+space = ObjectSpace(FileStorage(sys.argv[1]), modules_mapping=json.loads(sys.argv[2]))
+try:
+    db = space.open_database(sys.argv[3])
+    cells = operations.list_entities(db, raw=True)["cells"]
+    order = next(name for name in cells if name.startswith("acme.sales.Order#"))
+    record = operations._snapshot(db).get_mutable(order)
+    company = next(name for name in cells if name.startswith("acme.core.Company#"))
+    rows = operations.query(db, {"from": ["via", ["cell", company], "orders"]}, raw=True)["rows"]
+    print(json.dumps({"opaque": isinstance(record, OpaqueAtom),
+                      "describe": operations.describe(db, "acme.sales.Order", raw=True),
+                      "row": rows[0]["values"],
+                      "customers": [row["values"] for row in operations.query(
+                          db, {"from": ["via", ["cell", company], "customers"]}, raw=True)["rows"]],
+                      "customer": operations.describe(db, "acme.sales.Customer", raw=True),
+                      "answerable": operations.check_answerable(db, ["total"], raw=True)}))
+finally:
+    space.close()
+"""
+
+
+def test_raw_mode_reads_the_stored_fields_without_the_models_code(tmp_path):
+    """The raw server never imports the model's code, so its records load as opaque atoms: their stored
+    fields are still what raw mode describes, returns and matches (the agent experiment's control arm)."""
+    import os
+    import subprocess
+    import sys
+    from benchmarks.semantic import agent_experiment
+    from docs.kit.semantic import queries
+    path = agent_experiment.build_database(str(tmp_path / "work"))
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    done = subprocess.run([sys.executable, "-c", _RAW_READER, path, json.dumps(queries.MAPPING), queries.DATABASE],
+                          capture_output=True, text=True, timeout=120, cwd=root,
+                          env={**os.environ, "PYTHONPATH": root})
+    assert done.returncode == 0, done.stderr
+    seen = json.loads(done.stdout.splitlines()[-1])
+    assert seen["opaque"]                                   # the case under test: no class in that process
+    assert {"number", "date", "customer", "lines", "total"} <= set(seen["describe"]["attributes"])
+    assert {"number", "date", "total"} <= set(seen["row"])
+    assert "stored" in json.dumps(seen["answerable"])
+    # The stored catalog's sensitivity still holds for opaque records: the personal name is never returned.
+    assert seen["customers"] and all("credit_limit" in row and "name" not in row for row in seen["customers"])
+    assert "name" in seen["customer"]["attributes"]          # listed by name (as in catalog mode), never its value
