@@ -1,0 +1,3640 @@
+{
+ "schema": 1,
+ "mode": "full",
+ "environment": {
+  "timestamp": "2026-11-18T11:46:52+00:00",
+  "cpu_model": "AMD Ryzen 5 5500U with Radeon Graphics",
+  "cpu_count": 12,
+  "cpu_affinity": 12,
+  "cpu_frequency": {
+   "governor": "powersave",
+   "driver": "amd-pstate-epp",
+   "energy_performance_preference": "balance_power",
+   "boost": "1"
+  },
+  "platform": "Linux-7.0.0-43-generic-x86_64-desconocido-with-glibc2.43",
+  "python": "3.14.6",
+  "python_implementation": "CPython",
+  "free_threaded_build": true,
+  "gil_enabled": false,
+  "xoptions": {
+   "gil": "0"
+  },
+  "proto_db": "2.0.0rc4",
+  "git": {
+   "commit": "6b0697a",
+   "commit_full": "6b0697a0bd44136613882c206fbb7b0c90039e6b",
+   "dirty": false,
+   "clean": true,
+   "source": "git archive export",
+   "changed": [],
+   "missing": [],
+   "added": []
+  },
+  "sqlite": "3.53.1",
+  "numpy": "2.5.4",
+  "hnswlib": "0.8.0",
+  "workdir": "/home/gamarino/Documentos/proyectos/scratch-8.3n/m8-raw-path/cwork-6b0697a-c1",
+  "workdir_fs": "zfs",
+  "rqlite": null
+ },
+ "check": {
+  "stray_processes": [],
+  "checked_at": "2026-11-18T08:46:52-0300",
+  "workdir_free_bytes": 1027291086848
+ },
+ "options": {
+  "threads": [
+   1,
+   2,
+   4,
+   8,
+   16
+  ],
+  "repeat": 5,
+  "warmup": 1,
+  "params": {}
+ },
+ "total_s": 853.9922614239913,
+ "results": {
+  "inventory": {
+   "status": "ok",
+   "work": {
+    "sites": 28,
+    "objects": 95645,
+    "fan_out": "10 equipment/site, 10 cards/equipment, 8-48 ports/card, links on about half the ports",
+    "durability": "ProtoDB fsync, SQLite FULL",
+    "model_count_s": 0.06,
+    "atom_cache_entries": "default",
+    "mean path length (ports)": 30.4,
+    "bulk change: sites, equipment": [
+     2,
+     20
+    ]
+   },
+   "checksum": [
+    28,
+    280,
+    2800,
+    78523,
+    14014
+   ],
+   "expected": [
+    28,
+    280,
+    2800,
+    78523,
+    14014
+   ],
+   "checks": [
+    {
+     "name": "protodb objects == model",
+     "ok": true,
+     "detail": "(28, 280, 2800, 78523, 14014) vs 95645"
+    },
+    {
+     "name": "sqlite3 rows == model",
+     "ok": true,
+     "detail": "(28, 280, 2800, 78523, 14014) vs (28, 280, 2800, 78523, 14014)"
+    },
+    {
+     "name": "sqlite3 audit rows == changes made",
+     "ok": true,
+     "detail": "120"
+    }
+   ],
+   "timings": {
+    "protodb build (one commit per site)": {
+     "unit": "s",
+     "better": "lower",
+     "per": 95645,
+     "samples": [
+      46.16686427706736
+     ],
+     "n": 1,
+     "median": 46.16686427706736,
+     "p95": null,
+     "min": 46.16686427706736,
+     "max": 46.16686427706736,
+     "mean": 46.16686427706736,
+     "tail_label": "max",
+     "tail": 46.16686427706736,
+     "per_op_us": 482.6897828121424,
+     "per_op_us_tail": 482.6897828121424
+    },
+    "sqlite3 build (one transaction per site)": {
+     "unit": "s",
+     "better": "lower",
+     "per": 95645,
+     "samples": [
+      0.28748008399270475
+     ],
+     "n": 1,
+     "median": 0.28748008399270475,
+     "p95": null,
+     "min": 0.28748008399270475,
+     "max": 0.28748008399270475,
+     "mean": 0.28748008399270475,
+     "tail_label": "max",
+     "tail": 0.28748008399270475,
+     "per_op_us": 3.005699032805737,
+     "per_op_us_tail": 3.005699032805737
+    },
+    "protodb point lookup of a port (warm)": {
+     "unit": "s",
+     "better": "lower",
+     "per": 100,
+     "samples": [
+      0.007058217976009473,
+      0.007055563008179888,
+      0.006803367024986073,
+      0.006756642978871241,
+      0.00666382399504073
+     ],
+     "n": 5,
+     "median": 0.006803367024986073,
+     "p95": null,
+     "min": 0.00666382399504073,
+     "max": 0.007058217976009473,
+     "mean": 0.006867522996617481,
+     "tail_label": "max",
+     "tail": 0.007058217976009473,
+     "per_op_us": 68.03367024986073,
+     "per_op_us_tail": 70.58217976009473
+    },
+    "sqlite3 point lookup of a port (warm)": {
+     "unit": "s",
+     "better": "lower",
+     "per": 100,
+     "samples": [
+      0.0005031359905842692,
+      0.00047003099462017417,
+      0.0004573199839796871,
+      0.0004498469934333116,
+      0.0004529890138655901
+     ],
+     "n": 5,
+     "median": 0.0004573199839796871,
+     "p95": null,
+     "min": 0.0004498469934333116,
+     "max": 0.0005031359905842692,
+     "mean": 0.00046666459529660643,
+     "tail_label": "max",
+     "tail": 0.0005031359905842692,
+     "per_op_us": 4.573199839796871,
+     "per_op_us_tail": 5.031359905842692
+    },
+    "protodb equipment at a site (warm)": {
+     "unit": "s",
+     "better": "lower",
+     "per": 100,
+     "samples": [
+      0.016551585984416306,
+      0.01660313000320457,
+      0.015824260015506297,
+      0.016214881994528696,
+      0.018439392995787784
+     ],
+     "n": 5,
+     "median": 0.016551585984416306,
+     "p95": null,
+     "min": 0.015824260015506297,
+     "max": 0.018439392995787784,
+     "mean": 0.01672665019868873,
+     "tail_label": "max",
+     "tail": 0.018439392995787784,
+     "per_op_us": 165.51585984416306,
+     "per_op_us_tail": 184.39392995787784
+    },
+    "sqlite3 equipment at a site (warm)": {
+     "unit": "s",
+     "better": "lower",
+     "per": 100,
+     "samples": [
+      0.0009886720217764378,
+      0.0008202139870263636,
+      0.0007884369988460094,
+      0.0007618980016559362,
+      0.0007765640038996935
+     ],
+     "n": 5,
+     "median": 0.0007884369988460094,
+     "p95": null,
+     "min": 0.0007618980016559362,
+     "max": 0.0009886720217764378,
+     "mean": 0.0008271570026408881,
+     "tail_label": "max",
+     "tail": 0.0009886720217764378,
+     "per_op_us": 7.884369988460094,
+     "per_op_us_tail": 9.886720217764378
+    },
+    "protodb ports at a site (3 levels / 3-way join) (warm)": {
+     "unit": "s",
+     "better": "lower",
+     "per": 5,
+     "samples": [
+      0.0698796390206553,
+      0.06791368097765371,
+      0.07000849500764161,
+      0.07157559099141508,
+      0.07164655000087805
+     ],
+     "n": 5,
+     "median": 0.07000849500764161,
+     "p95": null,
+     "min": 0.06791368097765371,
+     "max": 0.07164655000087805,
+     "mean": 0.07020479119964876,
+     "tail_label": "max",
+     "tail": 0.07164655000087805,
+     "per_op_us": 14001.699001528323,
+     "per_op_us_tail": 14329.31000017561
+    },
+    "sqlite3 ports at a site (3 levels / 3-way join) (warm)": {
+     "unit": "s",
+     "better": "lower",
+     "per": 5,
+     "samples": [
+      0.004708621010649949,
+      0.0044506979756988585,
+      0.004555390012683347,
+      0.0044208759791217744,
+      0.004219244001433253
+     ],
+     "n": 5,
+     "median": 0.0044506979756988585,
+     "p95": null,
+     "min": 0.004219244001433253,
+     "max": 0.004708621010649949,
+     "mean": 0.0044709657959174365,
+     "tail_label": "max",
+     "tail": 0.004708621010649949,
+     "per_op_us": 890.1395951397717,
+     "per_op_us_tail": 941.7242021299899
+    },
+    "protodb path trace (warm)": {
+     "unit": "s",
+     "better": "lower",
+     "per": 20,
+     "samples": [
+      0.011398704984458163,
+      0.008359707018826157,
+      0.007960425020428374,
+      0.007778208993840963,
+      0.008039904991164804
+     ],
+     "n": 5,
+     "median": 0.008039904991164804,
+     "p95": null,
+     "min": 0.007778208993840963,
+     "max": 0.011398704984458163,
+     "mean": 0.008707390201743692,
+     "tail_label": "max",
+     "tail": 0.011398704984458163,
+     "per_op_us": 401.9952495582402,
+     "per_op_us_tail": 569.9352492229082
+    },
+    "sqlite3 path trace (warm)": {
+     "unit": "s",
+     "better": "lower",
+     "per": 20,
+     "samples": [
+      0.0009682079835329205,
+      0.0008947349851951003,
+      0.001022125012241304,
+      0.0010326009942218661,
+      0.0008887290023267269
+     ],
+     "n": 5,
+     "median": 0.0009682079835329205,
+     "p95": null,
+     "min": 0.0008887290023267269,
+     "max": 0.0010326009942218661,
+     "mean": 0.0009612795955035835,
+     "tail_label": "max",
+     "tail": 0.0010326009942218661,
+     "per_op_us": 48.410399176646024,
+     "per_op_us_tail": 51.63004971109331
+    },
+    "protodb point lookup, cold (first request of a new instance)": {
+     "unit": "s",
+     "better": "lower",
+     "per": 1,
+     "samples": [
+      0.0030132270185276866,
+      0.0029425469983834773,
+      0.0028642550169024616,
+      0.002815854997606948,
+      0.0028104079829063267
+     ],
+     "n": 5,
+     "median": 0.0028642550169024616,
+     "p95": null,
+     "min": 0.0028104079829063267,
+     "max": 0.0030132270185276866,
+     "mean": 0.00288925840286538,
+     "tail_label": "max",
+     "tail": 0.0030132270185276866,
+     "per_op_us": 2864.2550169024616,
+     "per_op_us_tail": 3013.2270185276866
+    },
+    "sqlite3 point lookup, cold (first request of a new instance)": {
+     "unit": "s",
+     "better": "lower",
+     "per": 1,
+     "samples": [
+      0.00023431700537912548,
+      0.00020225998014211655,
+      0.00019443698693066835,
+      0.00018927000928670168,
+      0.00018619699403643608
+     ],
+     "n": 5,
+     "median": 0.00019443698693066835,
+     "p95": null,
+     "min": 0.00018619699403643608,
+     "max": 0.00023431700537912548,
+     "mean": 0.00020129619515500962,
+     "tail_label": "max",
+     "tail": 0.00023431700537912548,
+     "per_op_us": 194.43698693066835,
+     "per_op_us_tail": 234.31700537912548
+    },
+    "protodb equipment at a site, cold (first request of a new instance)": {
+     "unit": "s",
+     "better": "lower",
+     "per": 1,
+     "samples": [
+      0.0032709410006646067,
+      0.0032959440140984952,
+      0.0032318989979103208,
+      0.0034940829791594297,
+      0.0031121220090426505
+     ],
+     "n": 5,
+     "median": 0.0032709410006646067,
+     "p95": null,
+     "min": 0.0031121220090426505,
+     "max": 0.0034940829791594297,
+     "mean": 0.0032809978001751006,
+     "tail_label": "max",
+     "tail": 0.0034940829791594297,
+     "per_op_us": 3270.9410006646067,
+     "per_op_us_tail": 3494.0829791594297
+    },
+    "sqlite3 equipment at a site, cold (first request of a new instance)": {
+     "unit": "s",
+     "better": "lower",
+     "per": 1,
+     "samples": [
+      0.000212946004467085,
+      0.0001973009784705937,
+      0.00019583399989642203,
+      0.0001923420059029013,
+      0.0002023989800363779
+     ],
+     "n": 5,
+     "median": 0.0001973009784705937,
+     "p95": null,
+     "min": 0.0001923420059029013,
+     "max": 0.000212946004467085,
+     "mean": 0.000200164393754676,
+     "tail_label": "max",
+     "tail": 0.000212946004467085,
+     "per_op_us": 197.3009784705937,
+     "per_op_us_tail": 212.946004467085
+    },
+    "protodb path trace, cold (first request of a new instance)": {
+     "unit": "s",
+     "better": "lower",
+     "per": 1,
+     "samples": [
+      0.03415916897938587,
+      0.033216801995877177,
+      0.037545906990999356,
+      0.039188571012346074,
+      0.03887267899699509
+     ],
+     "n": 5,
+     "median": 0.037545906990999356,
+     "p95": null,
+     "min": 0.033216801995877177,
+     "max": 0.039188571012346074,
+     "mean": 0.03659662559512071,
+     "tail_label": "max",
+     "tail": 0.039188571012346074,
+     "per_op_us": 37545.906990999356,
+     "per_op_us_tail": 39188.571012346074
+    },
+    "sqlite3 path trace, cold (first request of a new instance)": {
+     "unit": "s",
+     "better": "lower",
+     "per": 1,
+     "samples": [
+      0.0009237189951818436,
+      0.0009454399987589568,
+      0.0007943039818201214,
+      0.0008480809920001775,
+      0.0012268300051800907
+     ],
+     "n": 5,
+     "median": 0.0009237189951818436,
+     "p95": null,
+     "min": 0.0007943039818201214,
+     "max": 0.0012268300051800907,
+     "mean": 0.000947674794588238,
+     "tail_label": "max",
+     "tail": 0.0012268300051800907,
+     "per_op_us": 923.7189951818436,
+     "per_op_us_tail": 1226.8300051800907
+    },
+    "protodb bulk status change of one region (one commit)": {
+     "unit": "s",
+     "better": "lower",
+     "per": 20,
+     "samples": [
+      0.01934872302808799,
+      0.02064539401908405,
+      0.01911727001424879,
+      0.01777743801358156,
+      0.017405183985829353
+     ],
+     "n": 5,
+     "median": 0.01911727001424879,
+     "p95": null,
+     "min": 0.017405183985829353,
+     "max": 0.02064539401908405,
+     "mean": 0.01885880181216635,
+     "tail_label": "max",
+     "tail": 0.02064539401908405,
+     "per_op_us": 955.8635007124394,
+     "per_op_us_tail": 1032.2697009542026
+    },
+    "protodb as-of: region status before the last change": {
+     "unit": "s",
+     "better": "lower",
+     "per": 20,
+     "samples": [
+      0.00023382800281979144,
+      0.00020135199883952737,
+      0.00019541601068340242,
+      0.0001933210005518049,
+      0.00020679898443631828
+     ],
+     "n": 5,
+     "median": 0.00020135199883952737,
+     "p95": null,
+     "min": 0.0001933210005518049,
+     "max": 0.00023382800281979144,
+     "mean": 0.0002061431994661689,
+     "tail_label": "max",
+     "tail": 0.00023382800281979144,
+     "per_op_us": 10.067599941976368,
+     "per_op_us_tail": 11.691400140989572
+    },
+    "sqlite3 bulk status change of one region (one commit)": {
+     "unit": "s",
+     "better": "lower",
+     "per": 20,
+     "samples": [
+      0.002467767015332356,
+      0.001578201015945524,
+      0.0015357380034402013,
+      0.0014788859989494085,
+      0.0024377350055146962
+     ],
+     "n": 5,
+     "median": 0.001578201015945524,
+     "p95": null,
+     "min": 0.0014788859989494085,
+     "max": 0.002467767015332356,
+     "mean": 0.0018996654078364372,
+     "tail_label": "max",
+     "tail": 0.002467767015332356,
+     "per_op_us": 78.9100507972762,
+     "per_op_us_tail": 123.3883507666178
+    },
+    "sqlite3 as-of: region status before the last change": {
+     "unit": "s",
+     "better": "lower",
+     "per": 20,
+     "samples": [
+      6.481198943220079e-05,
+      5.57329913135618e-05,
+      5.2938994485884905e-05,
+      5.20319736097008e-05,
+      5.2799994591623545e-05
+     ],
+     "n": 5,
+     "median": 5.2938994485884905e-05,
+     "p95": null,
+     "min": 5.20319736097008e-05,
+     "max": 6.481198943220079e-05,
+     "mean": 5.566318868659437e-05,
+     "tail_label": "max",
+     "tail": 6.481198943220079e-05,
+     "per_op_us": 2.6469497242942452,
+     "per_op_us_tail": 3.2405994716100395
+    }
+   },
+   "metrics": {
+    "build commits/s": {
+     "protodb": 0.61,
+     "sqlite3": 97.4
+    },
+    "build objects/s": {
+     "protodb": 2072,
+     "sqlite3": 332701
+    },
+    "after build: peak RSS kB (both systems, one process)": 146176,
+    "after build: atom cache": {
+     "hits": 445894,
+     "misses": 24,
+     "entries": 50000,
+     "capacity": 50000,
+     "loads": 26,
+     "saved": 278837,
+     "unloads": 228863,
+     "read_unloads": 19,
+     "identity_map": 50260
+    },
+    "on-disk bytes (allocated, apparent)": {
+     "protodb": [
+      14597120,
+      40463210
+     ],
+     "sqlite3": [
+      1725440,
+      2965504
+     ]
+    },
+    "bytes per object (allocated, apparent)": {
+     "protodb": [
+      152.6,
+      423.1
+     ],
+     "sqlite3": [
+      18.0,
+      31.0
+     ]
+    },
+    "on-disk bytes after the bulk changes (allocated)": {
+     "protodb": 15010816,
+     "sqlite3": 1725440
+    },
+    "end: peak RSS kB (both systems, one process)": 169264,
+    "end: atom cache": {
+     "hits": 459533,
+     "misses": 32484,
+     "entries": 50000,
+     "capacity": 50000,
+     "loads": 24726,
+     "saved": 279359,
+     "unloads": 254085,
+     "read_unloads": 24719,
+     "identity_map": 58082
+    }
+   },
+   "notes": [
+    "cold = a new storage instance or connection (empty in-process caches); the OS page cache and the ZFS ARC are not dropped, which needs root"
+   ],
+   "params": {
+    "objects": 100000,
+    "requests": 100,
+    "path_requests": 20
+   },
+   "elapsed_s": 60.151484008994885,
+   "gil_before": false,
+   "gil_after": false
+  },
+  "cold_open": {
+   "status": "ok",
+   "work": {
+    "rows": 20000,
+    "history_commits": 500,
+    "random_lookups": 2000
+   },
+   "checksum": [
+    20000,
+    199990000
+   ],
+   "expected": [
+    20000,
+    199990000
+   ],
+   "checks": [
+    {
+     "name": "first read after open",
+     "ok": true,
+     "detail": ""
+    },
+    {
+     "name": "lookups id sum",
+     "ok": true,
+     "detail": "19664963 != 19664963"
+    },
+    {
+     "name": "cold walk count and id sum",
+     "ok": true,
+     "detail": "(20000, 199990000) != (20000, 199990000)"
+    },
+    {
+     "name": "warm walk count and id sum",
+     "ok": true,
+     "detail": "(20000, 199990000) != (20000, 199990000)"
+    },
+    {
+     "name": "timed cold walk count and id sum",
+     "ok": true,
+     "detail": "(20000, 199990000) != (20000, 199990000)"
+    },
+    {
+     "name": "timed warm walk count and id sum",
+     "ok": true,
+     "detail": "(20000, 199990000) != (20000, 199990000)"
+    },
+    {
+     "name": "reopened local tier serves the committed counter",
+     "ok": true,
+     "detail": "500 != 500"
+    }
+   ],
+   "timings": {
+    "open + first read": {
+     "unit": "s",
+     "better": "lower",
+     "per": 1,
+     "samples": [
+      0.0020147769828327,
+      0.0020223199971951544,
+      0.0020586370083037764,
+      0.002200274000642821,
+      0.002122052013874054
+     ],
+     "n": 5,
+     "median": 0.0020586370083037764,
+     "p95": null,
+     "min": 0.0020147769828327,
+     "max": 0.002200274000642821,
+     "mean": 0.0020836120005697013,
+     "tail_label": "max",
+     "tail": 0.002200274000642821,
+     "per_op_us": 2058.6370083037764,
+     "per_op_us_tail": 2200.274000642821
+    },
+    "cold walk (new storage instance)": {
+     "unit": "s",
+     "better": "lower",
+     "per": 20000,
+     "samples": [
+      2.2024027800071053,
+      2.0747693330049515,
+      2.2163704500126187,
+      2.091223565977998,
+      2.0965024839970283
+     ],
+     "n": 5,
+     "median": 2.0965024839970283,
+     "p95": null,
+     "min": 2.0747693330049515,
+     "max": 2.2163704500126187,
+     "mean": 2.1362537225999403,
+     "tail_label": "max",
+     "tail": 2.2163704500126187,
+     "per_op_us": 104.82512419985142,
+     "per_op_us_tail": 110.81852250063093
+    },
+    "warm walk (new transaction, warm page cache)": {
+     "unit": "s",
+     "better": "lower",
+     "per": 20000,
+     "samples": [
+      0.01732715399703011,
+      0.017107153980759904,
+      0.016695930011337623,
+      0.016457632009405643,
+      0.016514272982021794
+     ],
+     "n": 5,
+     "median": 0.016695930011337623,
+     "p95": null,
+     "min": 0.016457632009405643,
+     "max": 0.01732715399703011,
+     "mean": 0.016820428596111013,
+     "tail_label": "max",
+     "tail": 0.01732715399703011,
+     "per_op_us": 0.8347965005668812,
+     "per_op_us_tail": 0.8663576998515055
+    },
+    "random get_at, new transaction per batch": {
+     "unit": "s",
+     "better": "lower",
+     "per": 2000,
+     "samples": [
+      0.010934179998002946,
+      0.010324467002646998,
+      0.010746866988483816,
+      0.010534270986681804,
+      0.010504238976864144
+     ],
+     "n": 5,
+     "median": 0.010534270986681804,
+     "p95": null,
+     "min": 0.010324467002646998,
+     "max": 0.010934179998002946,
+     "mean": 0.010608804790535942,
+     "tail_label": "max",
+     "tail": 0.010934179998002946,
+     "per_op_us": 5.267135493340902,
+     "per_op_us_tail": 5.467089999001473
+    },
+    "TieredStorage reopen (log + segment scan), 500 commits": {
+     "unit": "s",
+     "better": "lower",
+     "per": 1,
+     "samples": [
+      0.00584430099115707,
+      0.0035198509867768735,
+      0.004432743997313082,
+      0.004655816010199487,
+      0.004770914005348459
+     ],
+     "n": 5,
+     "median": 0.004655816010199487,
+     "p95": null,
+     "min": 0.0035198509867768735,
+     "max": 0.00584430099115707,
+     "mean": 0.004644725198158994,
+     "tail_label": "max",
+     "tail": 0.00584430099115707,
+     "per_op_us": 4655.816010199487,
+     "per_op_us_tail": 5844.30099115707
+    }
+   },
+   "metrics": {
+    "page cache hit rate": {
+     "cold walk": 0.9961,
+     "warm walk": 0.0
+    },
+    "page cache hit rate, random lookups": 0.0,
+    "page cache reads per lookup": 0.0
+   },
+   "notes": [],
+   "params": {
+    "n": 20000,
+    "commits": 500,
+    "lookups": 2000
+   },
+   "elapsed_s": 45.44511505999253,
+   "gil_before": false,
+   "gil_after": false
+  },
+  "query_cache": {
+   "status": "ok",
+   "work": {
+    "sizes": [
+     100000,
+     1000000
+    ],
+    "span": 20000,
+    "plan_A@100000": "Filter <- IndexRange",
+    "plan_B@100000": "Filter <- IndexOrderedScan",
+    "plan_A@1000000": "Filter <- IndexRange",
+    "plan_B@1000000": "Filter <- IndexOrderedScan"
+   },
+   "checksum": [
+    [
+     10026,
+     503917031
+    ],
+    [
+     1000,
+     49957000,
+     [
+      54307,
+      69807,
+      20207,
+      75307,
+      70807
+     ]
+    ],
+    [
+     10063,
+     5024867444
+    ]
+   ],
+   "expected": [
+    [
+     10026,
+     503917031
+    ],
+    [
+     1000,
+     49957000,
+     [
+      54307,
+      69807,
+      20207,
+      75307,
+      70807
+     ]
+    ],
+    [
+     10063,
+     5024867444
+    ]
+   ],
+   "checks": [
+    {
+     "name": "N=100000: query A is cacheable",
+     "ok": true,
+     "detail": "{'key': '9a4a0e898e7b289f38d27836712c8b1c', 'cached': False}"
+    },
+    {
+     "name": "N=100000 A range+filter: protodb no cache rows",
+     "ok": true,
+     "detail": "(10026, 503917031) != (10026, 503917031)"
+    },
+    {
+     "name": "N=100000 A range+filter: protodb cache miss rows",
+     "ok": true,
+     "detail": "(10026, 503917031) != (10026, 503917031)"
+    },
+    {
+     "name": "N=100000 A range+filter: protodb cache hit rows",
+     "ok": true,
+     "detail": "(10026, 503917031) != (10026, 503917031)"
+    },
+    {
+     "name": "N=100000 A range+filter: sqlite3 (re-executes) rows",
+     "ok": true,
+     "detail": "(10026, 503917031) != (10026, 503917031)"
+    },
+    {
+     "name": "N=100000 A range+filter: the hits were hits",
+     "ok": true,
+     "detail": "{'hits': 6, 'misses': 6, 'entries': 1, 'bytes': 5005207, 'capacity': 67108864, 'admissions': 6, 'evictions': 0, 'uncacheable': 0, 'refused': 0}"
+    },
+    {
+     "name": "N=100000 B filter ordered by k: protodb no cache rows",
+     "ok": true,
+     "detail": "(1000, 49957000, [54307, 69807, 20207, 75307, 70807]) != (1000, 49957000, [54307, 69807, 20207, 75307, 70807])"
+    },
+    {
+     "name": "N=100000 B filter ordered by k: protodb cache miss rows",
+     "ok": true,
+     "detail": "(1000, 49957000, [54307, 69807, 20207, 75307, 70807]) != (1000, 49957000, [54307, 69807, 20207, 75307, 70807])"
+    },
+    {
+     "name": "N=100000 B filter ordered by k: protodb cache hit rows",
+     "ok": true,
+     "detail": "(1000, 49957000, [54307, 69807, 20207, 75307, 70807]) != (1000, 49957000, [54307, 69807, 20207, 75307, 70807])"
+    },
+    {
+     "name": "N=100000 B filter ordered by k: sqlite3 (re-executes) rows",
+     "ok": true,
+     "detail": "(1000, 49957000, [54307, 69807, 20207, 75307, 70807]) != (1000, 49957000, [54307, 69807, 20207, 75307, 70807])"
+    },
+    {
+     "name": "N=100000 B filter ordered by k: the hits were hits",
+     "ok": true,
+     "detail": "{'hits': 13, 'misses': 12, 'entries': 1, 'bytes': 501134, 'capacity': 67108864, 'admissions': 12, 'evictions': 0, 'uncacheable': 0, 'refused': 0}"
+    },
+    {
+     "name": "N=1000000: query A is cacheable",
+     "ok": true,
+     "detail": "{'key': 'bb4fb1750a1aa443eb49c33773031d08', 'cached': False}"
+    },
+    {
+     "name": "N=1000000 A range+filter: protodb no cache rows",
+     "ok": true,
+     "detail": "(10063, 5024867444) != (10063, 5024867444)"
+    },
+    {
+     "name": "N=1000000 A range+filter: protodb cache miss rows",
+     "ok": true,
+     "detail": "(10063, 5024867444) != (10063, 5024867444)"
+    },
+    {
+     "name": "N=1000000 A range+filter: protodb cache hit rows",
+     "ok": true,
+     "detail": "(10063, 5024867444) != (10063, 5024867444)"
+    },
+    {
+     "name": "N=1000000 A range+filter: sqlite3 (re-executes) rows",
+     "ok": true,
+     "detail": "(10063, 5024867444) != (10063, 5024867444)"
+    },
+    {
+     "name": "N=1000000 A range+filter: the hits were hits",
+     "ok": true,
+     "detail": "{'hits': 6, 'misses': 6, 'entries': 1, 'bytes': 5023674, 'capacity': 67108864, 'admissions': 6, 'evictions': 0, 'uncacheable': 0, 'refused': 0}"
+    }
+   ],
+   "timings": {
+    "N=100000 A range+filter: protodb no cache": {
+     "unit": "s",
+     "better": "lower",
+     "per": 1,
+     "samples": [
+      0.09210118401097134,
+      0.08524901000782847,
+      0.08082548799575306,
+      0.08127295898157172,
+      0.08137234300374985
+     ],
+     "n": 5,
+     "median": 0.08137234300374985,
+     "p95": null,
+     "min": 0.08082548799575306,
+     "max": 0.09210118401097134,
+     "mean": 0.08416419679997489,
+     "tail_label": "max",
+     "tail": 0.09210118401097134,
+     "per_op_us": 81372.34300374985,
+     "per_op_us_tail": 92101.18401097134
+    },
+    "N=100000 A range+filter: protodb cache miss": {
+     "unit": "s",
+     "better": "lower",
+     "per": 1,
+     "samples": [
+      0.14764722099062055,
+      0.1436799009970855,
+      0.1526860420126468,
+      0.15970611100783572,
+      0.1446543899946846
+     ],
+     "n": 5,
+     "median": 0.14764722099062055,
+     "p95": null,
+     "min": 0.1436799009970855,
+     "max": 0.15970611100783572,
+     "mean": 0.14967473300057463,
+     "tail_label": "max",
+     "tail": 0.15970611100783572,
+     "per_op_us": 147647.22099062055,
+     "per_op_us_tail": 159706.11100783572
+    },
+    "N=100000 A range+filter: protodb cache hit": {
+     "unit": "s",
+     "better": "lower",
+     "per": 1,
+     "samples": [
+      0.004416747018694878,
+      0.004429318010807037,
+      0.004465356003493071,
+      0.004610415984643623,
+      0.006265299016376957
+     ],
+     "n": 5,
+     "median": 0.004465356003493071,
+     "p95": null,
+     "min": 0.004416747018694878,
+     "max": 0.006265299016376957,
+     "mean": 0.004837427206803113,
+     "tail_label": "max",
+     "tail": 0.006265299016376957,
+     "per_op_us": 4465.356003493071,
+     "per_op_us_tail": 6265.299016376957
+    },
+    "N=100000 A range+filter: sqlite3 (re-executes)": {
+     "unit": "s",
+     "better": "lower",
+     "per": 1,
+     "samples": [
+      0.014305468008387834,
+      0.012044853996485472,
+      0.013349204993573949,
+      0.014045171003090218,
+      0.012454749987227842
+     ],
+     "n": 5,
+     "median": 0.013349204993573949,
+     "p95": null,
+     "min": 0.012044853996485472,
+     "max": 0.014305468008387834,
+     "mean": 0.013239889597753064,
+     "tail_label": "max",
+     "tail": 0.014305468008387834,
+     "per_op_us": 13349.204993573949,
+     "per_op_us_tail": 14305.468008387834
+    },
+    "N=100000 B filter ordered by k: protodb no cache": {
+     "unit": "s",
+     "better": "lower",
+     "per": 1,
+     "samples": [
+      15.481149469007505,
+      19.541576357005397,
+      17.36693229500088,
+      16.32156594999833,
+      15.75071557398769
+     ],
+     "n": 5,
+     "median": 16.32156594999833,
+     "p95": null,
+     "min": 15.481149469007505,
+     "max": 19.541576357005397,
+     "mean": 16.89238792899996,
+     "tail_label": "max",
+     "tail": 19.541576357005397,
+     "per_op_us": 16321565.94999833,
+     "per_op_us_tail": 19541576.357005395
+    },
+    "N=100000 B filter ordered by k: protodb cache miss": {
+     "unit": "s",
+     "better": "lower",
+     "per": 1,
+     "samples": [
+      15.723993192979833,
+      15.501882545999251,
+      15.984762317006243,
+      15.624132370983716,
+      15.832569054997293
+     ],
+     "n": 5,
+     "median": 15.723993192979833,
+     "p95": null,
+     "min": 15.501882545999251,
+     "max": 15.984762317006243,
+     "mean": 15.733467896393268,
+     "tail_label": "max",
+     "tail": 15.984762317006243,
+     "per_op_us": 15723993.192979833,
+     "per_op_us_tail": 15984762.317006243
+    },
+    "N=100000 B filter ordered by k: protodb cache hit": {
+     "unit": "s",
+     "better": "lower",
+     "per": 1,
+     "samples": [
+      0.00066230000811629,
+      0.0004838579916395247,
+      0.0004332230018917471,
+      0.0005220599996391684,
+      0.00048134298413060606
+     ],
+     "n": 5,
+     "median": 0.0004838579916395247,
+     "p95": null,
+     "min": 0.0004332230018917471,
+     "max": 0.00066230000811629,
+     "mean": 0.0005165567970834672,
+     "tail_label": "max",
+     "tail": 0.00066230000811629,
+     "per_op_us": 483.8579916395247,
+     "per_op_us_tail": 662.30000811629
+    },
+    "N=100000 B filter ordered by k: sqlite3 (re-executes)": {
+     "unit": "s",
+     "better": "lower",
+     "per": 1,
+     "samples": [
+      0.036172511987388134,
+      0.03686770799686201,
+      0.03764706099173054,
+      0.03665294699021615,
+      0.03790232999017462
+     ],
+     "n": 5,
+     "median": 0.03686770799686201,
+     "p95": null,
+     "min": 0.036172511987388134,
+     "max": 0.03790232999017462,
+     "mean": 0.03704851159127429,
+     "tail_label": "max",
+     "tail": 0.03790232999017462,
+     "per_op_us": 36867.70799686201,
+     "per_op_us_tail": 37902.32999017462
+    },
+    "N=1000000 A range+filter: protodb no cache": {
+     "unit": "s",
+     "better": "lower",
+     "per": 1,
+     "samples": [
+      0.08608508299221285,
+      0.08763770898804069,
+      0.08946697300416417,
+      0.10062700998969376,
+      0.09012577999965288
+     ],
+     "n": 5,
+     "median": 0.08946697300416417,
+     "p95": null,
+     "min": 0.08608508299221285,
+     "max": 0.10062700998969376,
+     "mean": 0.09078851099475287,
+     "tail_label": "max",
+     "tail": 0.10062700998969376,
+     "per_op_us": 89466.97300416417,
+     "per_op_us_tail": 100627.00998969376
+    },
+    "N=1000000 A range+filter: protodb cache miss": {
+     "unit": "s",
+     "better": "lower",
+     "per": 1,
+     "samples": [
+      0.15395378600805998,
+      0.16027275199303403,
+      0.14786620100494474,
+      0.14902122499188408,
+      0.1494142880255822
+     ],
+     "n": 5,
+     "median": 0.1494142880255822,
+     "p95": null,
+     "min": 0.14786620100494474,
+     "max": 0.16027275199303403,
+     "mean": 0.152105650404701,
+     "tail_label": "max",
+     "tail": 0.16027275199303403,
+     "per_op_us": 149414.2880255822,
+     "per_op_us_tail": 160272.75199303403
+    },
+    "N=1000000 A range+filter: protodb cache hit": {
+     "unit": "s",
+     "better": "lower",
+     "per": 1,
+     "samples": [
+      0.004732258006697521,
+      0.004921106999972835,
+      0.00484037198475562,
+      0.005019932024879381,
+      0.004864815011387691
+     ],
+     "n": 5,
+     "median": 0.004864815011387691,
+     "p95": null,
+     "min": 0.004732258006697521,
+     "max": 0.005019932024879381,
+     "mean": 0.0048756968055386095,
+     "tail_label": "max",
+     "tail": 0.005019932024879381,
+     "per_op_us": 4864.815011387691,
+     "per_op_us_tail": 5019.932024879381
+    },
+    "N=1000000 A range+filter: sqlite3 (re-executes)": {
+     "unit": "s",
+     "better": "lower",
+     "per": 1,
+     "samples": [
+      0.12009618899901398,
+      0.12524958600988612,
+      0.1256307760195341,
+      0.12253753599361517,
+      0.11661812700913288
+     ],
+     "n": 5,
+     "median": 0.12253753599361517,
+     "p95": null,
+     "min": 0.11661812700913288,
+     "max": 0.1256307760195341,
+     "mean": 0.12202644280623645,
+     "tail_label": "max",
+     "tail": 0.1256307760195341,
+     "per_op_us": 122537.53599361517,
+     "per_op_us_tail": 125630.7760195341
+    }
+   },
+   "metrics": {
+    "cache_stats": {
+     "100000": {
+      "hits": 14,
+      "misses": 12,
+      "entries": 1,
+      "bytes": 501134,
+      "capacity": 67108864,
+      "admissions": 12,
+      "evictions": 0,
+      "uncacheable": 0,
+      "refused": 0
+     },
+     "1000000": {
+      "hits": 7,
+      "misses": 6,
+      "entries": 1,
+      "bytes": 5023674,
+      "capacity": 67108864,
+      "admissions": 6,
+      "evictions": 0,
+      "uncacheable": 0,
+      "refused": 0
+     }
+    }
+   },
+   "notes": [],
+   "params": {
+    "sizes": [
+     100000,
+     1000000
+    ],
+    "span": 20000,
+    "b_max": 100000
+   },
+   "elapsed_s": 580.622262438992,
+   "gil_before": false,
+   "gil_after": false
+  },
+  "cluster_cache": {
+   "status": "ok",
+   "work": {
+    "members": 3,
+    "catalog": 20000,
+    "products": 5000,
+    "categories": 100,
+    "writers": 4,
+    "readers": 2,
+    "seconds": 3.0,
+    "cells": 5,
+    "rqlite_levels": "pending (no rqlited binary)"
+   },
+   "checksum": {
+    "protodb, point reads, atom cache on": true,
+    "protodb, point reads, atom cache small": true,
+    "protodb, point reads, atom cache off": true,
+    "protodb, query reads, query cache on": true,
+    "protodb, query reads, query cache off": true
+   },
+   "expected": {
+    "protodb, point reads, atom cache on": true,
+    "protodb, point reads, atom cache small": true,
+    "protodb, point reads, atom cache off": true,
+    "protodb, query reads, query cache on": true,
+    "protodb, query reads, query cache off": true
+   },
+   "checks": [
+    {
+     "name": "protodb, point reads, atom cache on: every read right, final catalog exact, reads crossed new versions",
+     "ok": true,
+     "detail": "{\"ok\": true, \"bad_reads\": 0, \"final_catalog_ok\": true, \"thread_errors\": [[], [], []], \"versions_seen_by_reader_node\": [[1, 193], [1, 193]]}; {\"ok\": true, \"bad_reads\": 0, \"final_catalog_ok\": true, \"thread_errors\": [[], [], []], \"versions_seen_by_reader_node\": [[1, 200], [1, 200]]}"
+    },
+    {
+     "name": "protodb, point reads, atom cache small: every read right, final catalog exact, reads crossed new versions",
+     "ok": true,
+     "detail": "{\"ok\": true, \"bad_reads\": 0, \"final_catalog_ok\": true, \"thread_errors\": [[], [], []], \"versions_seen_by_reader_node\": [[1, 143], [1, 142]]}; {\"ok\": true, \"bad_reads\": 0, \"final_catalog_ok\": true, \"thread_errors\": [[], [], []], \"versions_seen_by_reader_node\": [[1, 175], [1, 175]]}"
+    },
+    {
+     "name": "protodb, point reads, atom cache off: every read right, final catalog exact, reads crossed new versions",
+     "ok": true,
+     "detail": "{\"ok\": true, \"bad_reads\": 0, \"final_catalog_ok\": true, \"thread_errors\": [[], [], []], \"versions_seen_by_reader_node\": [[1, 150], [1, 150]]}; {\"ok\": true, \"bad_reads\": 0, \"final_catalog_ok\": true, \"thread_errors\": [[], [], []], \"versions_seen_by_reader_node\": [[1, 136], [1, 135]]}"
+    },
+    {
+     "name": "protodb, query reads, query cache on: every read right, final catalog exact, reads crossed new versions",
+     "ok": true,
+     "detail": "{\"ok\": true, \"bad_reads\": 0, \"final_catalog_ok\": true, \"thread_errors\": [[], [], []], \"versions_seen_by_reader_node\": [[1, 207], [1, 207]]}; {\"ok\": true, \"bad_reads\": 0, \"final_catalog_ok\": true, \"thread_errors\": [[], [], []], \"versions_seen_by_reader_node\": [[1, 206], [1, 205]]}"
+    },
+    {
+     "name": "protodb, query reads, query cache off: every read right, final catalog exact, reads crossed new versions",
+     "ok": true,
+     "detail": "{\"ok\": true, \"bad_reads\": 0, \"final_catalog_ok\": true, \"thread_errors\": [[], [], []], \"versions_seen_by_reader_node\": [[1, 201], [1, 200]]}; {\"ok\": true, \"bad_reads\": 0, \"final_catalog_ok\": true, \"thread_errors\": [[], [], []], \"versions_seen_by_reader_node\": [[1, 173], [1, 173]]}"
+    }
+   ],
+   "timings": {
+    "protodb, point reads, atom cache on: reads/s": {
+     "unit": "reads/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      42065.99099683252,
+      43073.10536043077
+     ],
+     "n": 2,
+     "median": 42569.548178631645,
+     "p95": null,
+     "min": 42065.99099683252,
+     "max": 43073.10536043077,
+     "mean": 42569.548178631645,
+     "tail_label": "min",
+     "tail": 42065.99099683252
+    },
+    "protodb, point reads, atom cache small: reads/s": {
+     "unit": "reads/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      4011.9174758440236,
+      4328.593733058529
+     ],
+     "n": 2,
+     "median": 4170.255604451277,
+     "p95": null,
+     "min": 4011.9174758440236,
+     "max": 4328.593733058529,
+     "mean": 4170.255604451277,
+     "tail_label": "min",
+     "tail": 4011.9174758440236
+    },
+    "protodb, point reads, atom cache off: reads/s": {
+     "unit": "reads/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      1761.4146979451964,
+      1662.099784813237
+     ],
+     "n": 2,
+     "median": 1711.7572413792168,
+     "p95": null,
+     "min": 1662.099784813237,
+     "max": 1761.4146979451964,
+     "mean": 1711.7572413792168,
+     "tail_label": "min",
+     "tail": 1662.099784813237
+    },
+    "protodb, query reads, query cache on: reads/s": {
+     "unit": "reads/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      4880.397097974176,
+      4892.178972167402
+     ],
+     "n": 2,
+     "median": 4886.288035070789,
+     "p95": null,
+     "min": 4880.397097974176,
+     "max": 4892.178972167402,
+     "mean": 4886.288035070789,
+     "tail_label": "min",
+     "tail": 4880.397097974176
+    },
+    "protodb, query reads, query cache off: reads/s": {
+     "unit": "reads/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      4115.912813676028,
+      4095.6936223654698
+     ],
+     "n": 2,
+     "median": 4105.803218020749,
+     "p95": null,
+     "min": 4095.6936223654698,
+     "max": 4115.912813676028,
+     "mean": 4105.803218020749,
+     "tail_label": "min",
+     "tail": 4095.6936223654698
+    }
+   },
+   "metrics": {
+    "protodb, point reads, atom cache on: runs": [
+     {
+      "system": "protodb",
+      "read": "point",
+      "atom_cache": "on",
+      "query_cache": "on",
+      "ok": true,
+      "final_catalog_ok": true,
+      "bad_reads": 0,
+      "thread_errors": [
+       [],
+       [],
+       []
+      ],
+      "commits": 196,
+      "commit_rate": 64.41524750329181,
+      "commit_p50_ms": 19.78,
+      "reads": 126406,
+      "read_rate": 42065.99099683252,
+      "read_p50_us": 63,
+      "read_p99_us": 517,
+      "versions_seen_by_reader_node": [
+       [
+        1,
+        193
+       ],
+       [
+        1,
+        193
+       ]
+      ],
+      "versions_advanced": true,
+      "decodes_per_read": 0.08,
+      "decodes_by_reader_node": [
+       5091,
+       5051
+      ],
+      "new_versions_by_reader_node": [
+       192,
+       192
+      ],
+      "decodes_per_new_version": 26.41,
+      "atoms_saved_per_commit_on_A": 60.84,
+      "atom_window_by_reader_node": [
+       {
+        "hits": 128359,
+        "misses": 3982,
+        "loads": 3792,
+        "saved": 0,
+        "unloads": 0,
+        "read_unloads": 0
+       },
+       {
+        "hits": 136765,
+        "misses": 3962,
+        "loads": 3775,
+        "saved": 0,
+        "unloads": 0,
+        "read_unloads": 0
+       }
+      ],
+      "query_window_by_reader_node": [
+       {
+        "hits": 0,
+        "misses": 0,
+        "admissions": 0,
+        "evictions": 0,
+        "uncacheable": 0,
+        "refused": 0
+       },
+       {
+        "hits": 0,
+        "misses": 0,
+        "admissions": 0,
+        "evictions": 0,
+        "uncacheable": 0,
+        "refused": 0
+       }
+      ],
+      "atom_cache_end_by_node": [
+       {
+        "hits": 70252,
+        "misses": 8,
+        "entries": 47044,
+        "capacity": 50000,
+        "loads": 7,
+        "saved": 47037,
+        "unloads": 0,
+        "read_unloads": 0,
+        "identity_map": 47045
+       },
+       {
+        "hits": 129642,
+        "misses": 24002,
+        "entries": 23806,
+        "capacity": 50000,
+        "loads": 23806,
+        "saved": 0,
+        "unloads": 0,
+        "read_unloads": 0,
+        "identity_map": 23849
+       },
+       {
+        "hits": 138044,
+        "misses": 23982,
+        "entries": 23789,
+        "capacity": 50000,
+        "loads": 23789,
+        "saved": 0,
+        "unloads": 0,
+        "read_unloads": 0,
+        "identity_map": 23829
+       }
+      ],
+      "replication_failures_by_peer": [
+       0,
+       0,
+       0
+      ],
+      "healthy_by_peer": [
+       true,
+       true,
+       true
+      ],
+      "atom_loads_per_read": 0.06,
+      "thrash_signal": 0.0
+     },
+     {
+      "system": "protodb",
+      "read": "point",
+      "atom_cache": "on",
+      "query_cache": "on",
+      "ok": true,
+      "final_catalog_ok": true,
+      "bad_reads": 0,
+      "thread_errors": [
+       [],
+       [],
+       []
+      ],
+      "commits": 203,
+      "commit_rate": 66.60571141627344,
+      "commit_p50_ms": 24.95,
+      "reads": 129380,
+      "read_rate": 43073.10536043077,
+      "read_p50_us": 62,
+      "read_p99_us": 524,
+      "versions_seen_by_reader_node": [
+       [
+        1,
+        200
+       ],
+       [
+        1,
+        200
+       ]
+      ],
+      "versions_advanced": true,
+      "decodes_per_read": 0.083,
+      "decodes_by_reader_node": [
+       5388,
+       5349
+      ],
+      "new_versions_by_reader_node": [
+       199,
+       199
+      ],
+      "decodes_per_new_version": 26.98,
+      "atoms_saved_per_commit_on_A": 61.2,
+      "atom_window_by_reader_node": [
+       {
+        "hits": 134072,
+        "misses": 4119,
+        "loads": 3946,
+        "saved": 0,
+        "unloads": 0,
+        "read_unloads": 0
+       },
+       {
+        "hits": 137822,
+        "misses": 4132,
+        "loads": 3940,
+        "saved": 0,
+        "unloads": 0,
+        "read_unloads": 0
+       }
+      ],
+      "query_window_by_reader_node": [
+       {
+        "hits": 0,
+        "misses": 0,
+        "admissions": 0,
+        "evictions": 0,
+        "uncacheable": 0,
+        "refused": 0
+       },
+       {
+        "hits": 0,
+        "misses": 0,
+        "admissions": 0,
+        "evictions": 0,
+        "uncacheable": 0,
+        "refused": 0
+       }
+      ],
+      "atom_cache_end_by_node": [
+       {
+        "hits": 71299,
+        "misses": 8,
+        "entries": 47543,
+        "capacity": 50000,
+        "loads": 7,
+        "saved": 47536,
+        "unloads": 0,
+        "read_unloads": 0,
+        "identity_map": 47544
+       },
+       {
+        "hits": 135669,
+        "misses": 24139,
+        "entries": 23960,
+        "capacity": 50000,
+        "loads": 23960,
+        "saved": 0,
+        "unloads": 0,
+        "read_unloads": 0,
+        "identity_map": 24001
+       },
+       {
+        "hits": 139555,
+        "misses": 24152,
+        "entries": 23954,
+        "capacity": 50000,
+        "loads": 23954,
+        "saved": 0,
+        "unloads": 0,
+        "read_unloads": 0,
+        "identity_map": 23999
+       }
+      ],
+      "replication_failures_by_peer": [
+       0,
+       0,
+       0
+      ],
+      "healthy_by_peer": [
+       true,
+       true,
+       true
+      ],
+      "atom_loads_per_read": 0.061,
+      "thrash_signal": 0.0
+     }
+    ],
+    "protodb, point reads, atom cache small: runs": [
+     {
+      "system": "protodb",
+      "read": "point",
+      "atom_cache": "small",
+      "query_cache": "on",
+      "ok": true,
+      "final_catalog_ok": true,
+      "bad_reads": 0,
+      "thread_errors": [
+       [],
+       [],
+       []
+      ],
+      "commits": 146,
+      "commit_rate": 46.31338876536676,
+      "commit_p50_ms": 61.25,
+      "reads": 12065,
+      "read_rate": 4011.9174758440236,
+      "read_p50_us": 815,
+      "read_p99_us": 4199,
+      "versions_seen_by_reader_node": [
+       [
+        1,
+        143
+       ],
+       [
+        1,
+        142
+       ]
+      ],
+      "versions_advanced": true,
+      "decodes_per_read": 4.486,
+      "decodes_by_reader_node": [
+       26276,
+       27842
+      ],
+      "new_versions_by_reader_node": [
+       142,
+       141
+      ],
+      "decodes_per_new_version": 191.23,
+      "atoms_saved_per_commit_on_A": 59.51,
+      "atom_window_by_reader_node": [
+       {
+        "hits": 20138,
+        "misses": 38296,
+        "loads": 25745,
+        "saved": 0,
+        "unloads": 25745,
+        "read_unloads": 25745
+       },
+       {
+        "hits": 21745,
+        "misses": 40475,
+        "loads": 27283,
+        "saved": 0,
+        "unloads": 27283,
+        "read_unloads": 27283
+       }
+      ],
+      "query_window_by_reader_node": [
+       {
+        "hits": 0,
+        "misses": 0,
+        "admissions": 0,
+        "evictions": 0,
+        "uncacheable": 0,
+        "refused": 0
+       },
+       {
+        "hits": 0,
+        "misses": 0,
+        "admissions": 0,
+        "evictions": 0,
+        "uncacheable": 0,
+        "refused": 0
+       }
+      ],
+      "atom_cache_end_by_node": [
+       {
+        "hits": 58855,
+        "misses": 8211,
+        "entries": 2000,
+        "capacity": 2000,
+        "loads": 2019,
+        "saved": 43802,
+        "unloads": 43821,
+        "read_unloads": 2014,
+        "identity_map": 2385
+       },
+       {
+        "hits": 21536,
+        "misses": 58357,
+        "entries": 2000,
+        "capacity": 2000,
+        "loads": 45798,
+        "saved": 0,
+        "unloads": 43798,
+        "read_unloads": 43798,
+        "identity_map": 3611
+       },
+       {
+        "hits": 23147,
+        "misses": 60536,
+        "entries": 2000,
+        "capacity": 2000,
+        "loads": 47336,
+        "saved": 0,
+        "unloads": 45336,
+        "read_unloads": 45336,
+        "identity_map": 3672
+       }
+      ],
+      "replication_failures_by_peer": [
+       0,
+       0,
+       0
+      ],
+      "healthy_by_peer": [
+       true,
+       true,
+       true
+      ],
+      "atom_loads_per_read": 4.395,
+      "thrash_signal": 1.0
+     },
+     {
+      "system": "protodb",
+      "read": "point",
+      "atom_cache": "small",
+      "query_cache": "on",
+      "ok": true,
+      "final_catalog_ok": true,
+      "bad_reads": 0,
+      "thread_errors": [
+       [],
+       [],
+       []
+      ],
+      "commits": 178,
+      "commit_rate": 58.23655232706418,
+      "commit_p50_ms": 47.27,
+      "reads": 13029,
+      "read_rate": 4328.593733058529,
+      "read_p50_us": 787,
+      "read_p99_us": 3170,
+      "versions_seen_by_reader_node": [
+       [
+        1,
+        175
+       ],
+       [
+        1,
+        175
+       ]
+      ],
+      "versions_advanced": true,
+      "decodes_per_read": 4.574,
+      "decodes_by_reader_node": [
+       28245,
+       31346
+      ],
+      "new_versions_by_reader_node": [
+       174,
+       174
+      ],
+      "decodes_per_new_version": 171.24,
+      "atoms_saved_per_commit_on_A": 60.7,
+      "atom_window_by_reader_node": [
+       {
+        "hits": 21795,
+        "misses": 40915,
+        "loads": 27482,
+        "saved": 0,
+        "unloads": 27482,
+        "read_unloads": 27482
+       },
+       {
+        "hits": 24575,
+        "misses": 45344,
+        "loads": 30581,
+        "saved": 0,
+        "unloads": 30581,
+        "read_unloads": 30581
+       }
+      ],
+      "query_window_by_reader_node": [
+       {
+        "hits": 0,
+        "misses": 0,
+        "admissions": 0,
+        "evictions": 0,
+        "uncacheable": 0,
+        "refused": 0
+       },
+       {
+        "hits": 0,
+        "misses": 0,
+        "admissions": 0,
+        "evictions": 0,
+        "uncacheable": 0,
+        "refused": 0
+       }
+      ],
+      "atom_cache_end_by_node": [
+       {
+        "hits": 63333,
+        "misses": 8942,
+        "entries": 2000,
+        "capacity": 2000,
+        "loads": 2428,
+        "saved": 45918,
+        "unloads": 46346,
+        "read_unloads": 2423,
+        "identity_map": 2533
+       },
+       {
+        "hits": 23173,
+        "misses": 60976,
+        "entries": 2000,
+        "capacity": 2000,
+        "loads": 47535,
+        "saved": 0,
+        "unloads": 45535,
+        "read_unloads": 45535,
+        "identity_map": 3576
+       },
+       {
+        "hits": 25955,
+        "misses": 65405,
+        "entries": 2000,
+        "capacity": 2000,
+        "loads": 50634,
+        "saved": 0,
+        "unloads": 48634,
+        "read_unloads": 48634,
+        "identity_map": 3574
+       }
+      ],
+      "replication_failures_by_peer": [
+       0,
+       0,
+       0
+      ],
+      "healthy_by_peer": [
+       true,
+       true,
+       true
+      ],
+      "atom_loads_per_read": 4.456,
+      "thrash_signal": 1.0
+     }
+    ],
+    "protodb, point reads, atom cache off: runs": [
+     {
+      "system": "protodb",
+      "read": "point",
+      "atom_cache": "off",
+      "query_cache": "on",
+      "ok": true,
+      "final_catalog_ok": true,
+      "bad_reads": 0,
+      "thread_errors": [
+       [],
+       [],
+       []
+      ],
+      "commits": 153,
+      "commit_rate": 49.995048758486355,
+      "commit_p50_ms": 17.75,
+      "reads": 5293,
+      "read_rate": 1761.4146979451964,
+      "read_p50_us": 2037,
+      "read_p99_us": 4542,
+      "versions_seen_by_reader_node": [
+       [
+        1,
+        150
+       ],
+       [
+        1,
+        150
+       ]
+      ],
+      "versions_advanced": true,
+      "decodes_per_read": 21.353,
+      "decodes_by_reader_node": [
+       53599,
+       59425
+      ],
+      "new_versions_by_reader_node": [
+       149,
+       149
+      ],
+      "decodes_per_new_version": 379.28,
+      "atoms_saved_per_commit_on_A": null,
+      "atom_window_by_reader_node": [
+       null,
+       null
+      ],
+      "query_window_by_reader_node": [
+       {
+        "hits": 0,
+        "misses": 0,
+        "admissions": 0,
+        "evictions": 0,
+        "uncacheable": 0,
+        "refused": 0
+       },
+       {
+        "hits": 0,
+        "misses": 0,
+        "admissions": 0,
+        "evictions": 0,
+        "uncacheable": 0,
+        "refused": 0
+       }
+      ],
+      "atom_cache_end_by_node": [
+       null,
+       null,
+       null
+      ],
+      "replication_failures_by_peer": [
+       0,
+       0,
+       0
+      ],
+      "healthy_by_peer": [
+       true,
+       true,
+       true
+      ]
+     },
+     {
+      "system": "protodb",
+      "read": "point",
+      "atom_cache": "off",
+      "query_cache": "on",
+      "ok": true,
+      "final_catalog_ok": true,
+      "bad_reads": 0,
+      "thread_errors": [
+       [],
+       [],
+       []
+      ],
+      "commits": 139,
+      "commit_rate": 44.19705455795991,
+      "commit_p50_ms": 19.17,
+      "reads": 4993,
+      "read_rate": 1662.099784813237,
+      "read_p50_us": 2016,
+      "read_p99_us": 7480,
+      "versions_seen_by_reader_node": [
+       [
+        1,
+        136
+       ],
+       [
+        1,
+        135
+       ]
+      ],
+      "versions_advanced": true,
+      "decodes_per_read": 21.349,
+      "decodes_by_reader_node": [
+       51655,
+       54940
+      ],
+      "new_versions_by_reader_node": [
+       135,
+       134
+      ],
+      "decodes_per_new_version": 396.26,
+      "atoms_saved_per_commit_on_A": null,
+      "atom_window_by_reader_node": [
+       null,
+       null
+      ],
+      "query_window_by_reader_node": [
+       {
+        "hits": 0,
+        "misses": 0,
+        "admissions": 0,
+        "evictions": 0,
+        "uncacheable": 0,
+        "refused": 0
+       },
+       {
+        "hits": 0,
+        "misses": 0,
+        "admissions": 0,
+        "evictions": 0,
+        "uncacheable": 0,
+        "refused": 0
+       }
+      ],
+      "atom_cache_end_by_node": [
+       null,
+       null,
+       null
+      ],
+      "replication_failures_by_peer": [
+       0,
+       0,
+       0
+      ],
+      "healthy_by_peer": [
+       true,
+       true,
+       true
+      ]
+     }
+    ],
+    "protodb, query reads, query cache on: runs": [
+     {
+      "system": "protodb",
+      "read": "query",
+      "atom_cache": "on",
+      "query_cache": "on",
+      "ok": true,
+      "final_catalog_ok": true,
+      "bad_reads": 0,
+      "thread_errors": [
+       [],
+       [],
+       []
+      ],
+      "commits": 210,
+      "commit_rate": 69.01681416432817,
+      "commit_p50_ms": 21.0,
+      "reads": 14656,
+      "read_rate": 4880.397097974176,
+      "read_p50_us": 727,
+      "read_p99_us": 2175,
+      "versions_seen_by_reader_node": [
+       [
+        1,
+        207
+       ],
+       [
+        1,
+        207
+       ]
+      ],
+      "versions_advanced": true,
+      "decodes_per_read": 0.258,
+      "decodes_by_reader_node": [
+       1910,
+       1865
+      ],
+      "new_versions_by_reader_node": [
+       206,
+       206
+      ],
+      "decodes_per_new_version": 9.16,
+      "atoms_saved_per_commit_on_A": 59.88,
+      "atom_window_by_reader_node": [
+       {
+        "hits": 374699,
+        "misses": 1515,
+        "loads": 1236,
+        "saved": 0,
+        "unloads": 0,
+        "read_unloads": 0
+       },
+       {
+        "hits": 392104,
+        "misses": 1485,
+        "loads": 1194,
+        "saved": 0,
+        "unloads": 0,
+        "read_unloads": 0
+       }
+      ],
+      "query_window_by_reader_node": [
+       {
+        "hits": 7160,
+        "misses": 0,
+        "admissions": 0,
+        "evictions": 0,
+        "uncacheable": 0,
+        "refused": 0
+       },
+       {
+        "hits": 7496,
+        "misses": 0,
+        "admissions": 0,
+        "evictions": 0,
+        "uncacheable": 0,
+        "refused": 0
+       }
+      ],
+      "atom_cache_end_by_node": [
+       {
+        "hits": 71624,
+        "misses": 8,
+        "entries": 47695,
+        "capacity": 50000,
+        "loads": 7,
+        "saved": 47688,
+        "unloads": 0,
+        "read_unloads": 0,
+        "identity_map": 47696
+       },
+       {
+        "hits": 386022,
+        "misses": 11638,
+        "entries": 11353,
+        "capacity": 50000,
+        "loads": 11353,
+        "saved": 0,
+        "unloads": 0,
+        "read_unloads": 0,
+        "identity_map": 11565
+       },
+       {
+        "hits": 403427,
+        "misses": 11608,
+        "entries": 11311,
+        "capacity": 50000,
+        "loads": 11311,
+        "saved": 0,
+        "unloads": 0,
+        "read_unloads": 0,
+        "identity_map": 11516
+       }
+      ],
+      "replication_failures_by_peer": [
+       0,
+       0,
+       0
+      ],
+      "healthy_by_peer": [
+       true,
+       true,
+       true
+      ],
+      "query_hit_rate": 1.0,
+      "query_hits": 14656,
+      "query_misses": 0
+     },
+     {
+      "system": "protodb",
+      "read": "query",
+      "atom_cache": "on",
+      "query_cache": "on",
+      "ok": true,
+      "final_catalog_ok": true,
+      "bad_reads": 0,
+      "thread_errors": [
+       [],
+       [],
+       []
+      ],
+      "commits": 209,
+      "commit_rate": 68.544341968666,
+      "commit_p50_ms": 25.14,
+      "reads": 14695,
+      "read_rate": 4892.178972167402,
+      "read_p50_us": 740,
+      "read_p99_us": 2046,
+      "versions_seen_by_reader_node": [
+       [
+        1,
+        206
+       ],
+       [
+        1,
+        205
+       ]
+      ],
+      "versions_advanced": true,
+      "decodes_per_read": 0.26,
+      "decodes_by_reader_node": [
+       1944,
+       1881
+      ],
+      "new_versions_by_reader_node": [
+       205,
+       204
+      ],
+      "decodes_per_new_version": 9.35,
+      "atoms_saved_per_commit_on_A": 60.85,
+      "atom_window_by_reader_node": [
+       {
+        "hits": 379246,
+        "misses": 1495,
+        "loads": 1230,
+        "saved": 0,
+        "unloads": 0,
+        "read_unloads": 0
+       },
+       {
+        "hits": 389743,
+        "misses": 1454,
+        "loads": 1176,
+        "saved": 0,
+        "unloads": 0,
+        "read_unloads": 0
+       }
+      ],
+      "query_window_by_reader_node": [
+       {
+        "hits": 7246,
+        "misses": 0,
+        "admissions": 0,
+        "evictions": 0,
+        "uncacheable": 0,
+        "refused": 0
+       },
+       {
+        "hits": 7449,
+        "misses": 0,
+        "admissions": 0,
+        "evictions": 0,
+        "uncacheable": 0,
+        "refused": 0
+       }
+      ],
+      "atom_cache_end_by_node": [
+       {
+        "hits": 71911,
+        "misses": 8,
+        "entries": 47838,
+        "capacity": 50000,
+        "loads": 7,
+        "saved": 47831,
+        "unloads": 0,
+        "read_unloads": 0,
+        "identity_map": 47839
+       },
+       {
+        "hits": 390569,
+        "misses": 11618,
+        "entries": 11347,
+        "capacity": 50000,
+        "loads": 11347,
+        "saved": 0,
+        "unloads": 0,
+        "read_unloads": 0,
+        "identity_map": 11558
+       },
+       {
+        "hits": 401196,
+        "misses": 11577,
+        "entries": 11293,
+        "capacity": 50000,
+        "loads": 11293,
+        "saved": 0,
+        "unloads": 0,
+        "read_unloads": 0,
+        "identity_map": 11495
+       }
+      ],
+      "replication_failures_by_peer": [
+       0,
+       0,
+       0
+      ],
+      "healthy_by_peer": [
+       true,
+       true,
+       true
+      ],
+      "query_hit_rate": 1.0,
+      "query_hits": 14695,
+      "query_misses": 0
+     }
+    ],
+    "protodb, query reads, query cache off: runs": [
+     {
+      "system": "protodb",
+      "read": "query",
+      "atom_cache": "on",
+      "query_cache": "off",
+      "ok": true,
+      "final_catalog_ok": true,
+      "bad_reads": 0,
+      "thread_errors": [
+       [],
+       [],
+       []
+      ],
+      "commits": 204,
+      "commit_rate": 66.20128743074027,
+      "commit_p50_ms": 16.75,
+      "reads": 12373,
+      "read_rate": 4115.912813676028,
+      "read_p50_us": 880,
+      "read_p99_us": 2346,
+      "versions_seen_by_reader_node": [
+       [
+        1,
+        201
+       ],
+       [
+        1,
+        200
+       ]
+      ],
+      "versions_advanced": true,
+      "decodes_per_read": 0.285,
+      "decodes_by_reader_node": [
+       1807,
+       1716
+      ],
+      "new_versions_by_reader_node": [
+       200,
+       199
+      ],
+      "decodes_per_new_version": 8.83,
+      "atoms_saved_per_commit_on_A": 60.15,
+      "atom_window_by_reader_node": [
+       {
+        "hits": 315310,
+        "misses": 1464,
+        "loads": 1200,
+        "saved": 0,
+        "unloads": 0,
+        "read_unloads": 0
+       },
+       {
+        "hits": 332380,
+        "misses": 1418,
+        "loads": 1146,
+        "saved": 0,
+        "unloads": 0,
+        "read_unloads": 0
+       }
+      ],
+      "query_window_by_reader_node": [
+       {
+        "hits": 0,
+        "misses": 0,
+        "admissions": 0,
+        "evictions": 0,
+        "uncacheable": 0,
+        "refused": 0
+       },
+       {
+        "hits": 0,
+        "misses": 0,
+        "admissions": 0,
+        "evictions": 0,
+        "uncacheable": 0,
+        "refused": 0
+       }
+      ],
+      "atom_cache_end_by_node": [
+       {
+        "hits": 70981,
+        "misses": 8,
+        "entries": 47391,
+        "capacity": 50000,
+        "loads": 7,
+        "saved": 47384,
+        "unloads": 0,
+        "read_unloads": 0,
+        "identity_map": 47392
+       },
+       {
+        "hits": 326623,
+        "misses": 11587,
+        "entries": 11317,
+        "capacity": 50000,
+        "loads": 11317,
+        "saved": 0,
+        "unloads": 0,
+        "read_unloads": 0,
+        "identity_map": 11523
+       },
+       {
+        "hits": 343695,
+        "misses": 11541,
+        "entries": 11263,
+        "capacity": 50000,
+        "loads": 11263,
+        "saved": 0,
+        "unloads": 0,
+        "read_unloads": 0,
+        "identity_map": 11460
+       }
+      ],
+      "replication_failures_by_peer": [
+       0,
+       0,
+       0
+      ],
+      "healthy_by_peer": [
+       true,
+       true,
+       true
+      ],
+      "query_hit_rate": null,
+      "query_hits": 0,
+      "query_misses": 0
+     },
+     {
+      "system": "protodb",
+      "read": "query",
+      "atom_cache": "on",
+      "query_cache": "off",
+      "ok": true,
+      "final_catalog_ok": true,
+      "bad_reads": 0,
+      "thread_errors": [
+       [],
+       [],
+       []
+      ],
+      "commits": 176,
+      "commit_rate": 57.5468961614799,
+      "commit_p50_ms": 29.16,
+      "reads": 12301,
+      "read_rate": 4095.6936223654698,
+      "read_p50_us": 875,
+      "read_p99_us": 2739,
+      "versions_seen_by_reader_node": [
+       [
+        1,
+        173
+       ],
+       [
+        1,
+        173
+       ]
+      ],
+      "versions_advanced": true,
+      "decodes_per_read": 0.245,
+      "decodes_by_reader_node": [
+       1542,
+       1474
+      ],
+      "new_versions_by_reader_node": [
+       172,
+       172
+      ],
+      "decodes_per_new_version": 8.77,
+      "atoms_saved_per_commit_on_A": 58.89,
+      "atom_window_by_reader_node": [
+       {
+        "hits": 322927,
+        "misses": 1257,
+        "loads": 1032,
+        "saved": 0,
+        "unloads": 0,
+        "read_unloads": 0
+       },
+       {
+        "hits": 320402,
+        "misses": 1209,
+        "loads": 972,
+        "saved": 0,
+        "unloads": 0,
+        "read_unloads": 0
+       }
+      ],
+      "query_window_by_reader_node": [
+       {
+        "hits": 0,
+        "misses": 0,
+        "admissions": 0,
+        "evictions": 0,
+        "uncacheable": 0,
+        "refused": 0
+       },
+       {
+        "hits": 0,
+        "misses": 0,
+        "admissions": 0,
+        "evictions": 0,
+        "uncacheable": 0,
+        "refused": 0
+       }
+      ],
+      "atom_cache_end_by_node": [
+       {
+        "hits": 66952,
+        "misses": 8,
+        "entries": 45485,
+        "capacity": 50000,
+        "loads": 7,
+        "saved": 45478,
+        "unloads": 0,
+        "read_unloads": 0,
+        "identity_map": 45486
+       },
+       {
+        "hits": 334256,
+        "misses": 11380,
+        "entries": 11149,
+        "capacity": 50000,
+        "loads": 11149,
+        "saved": 0,
+        "unloads": 0,
+        "read_unloads": 0,
+        "identity_map": 11327
+       },
+       {
+        "hits": 331729,
+        "misses": 11332,
+        "entries": 11089,
+        "capacity": 50000,
+        "loads": 11089,
+        "saved": 0,
+        "unloads": 0,
+        "read_unloads": 0,
+        "identity_map": 11257
+       }
+      ],
+      "replication_failures_by_peer": [
+       0,
+       0,
+       0
+      ],
+      "healthy_by_peer": [
+       true,
+       true,
+       true
+      ],
+      "query_hit_rate": null,
+      "query_hits": 0,
+      "query_misses": 0
+     }
+    ]
+   },
+   "notes": [
+    "rqlite cells pending: no rqlited binary (pass --rqlite PATH)"
+   ],
+   "params": {
+    "seconds": 3.0,
+    "catalog": 20000,
+    "products": 5000,
+    "categories": 100,
+    "writers": 4,
+    "readers": 2,
+    "levels": [
+     "none",
+     "weak",
+     "linearizable",
+     "strong"
+    ],
+    "repeat": 2
+   },
+   "elapsed_s": 129.91934950600262,
+   "gil_before": false,
+   "gil_after": false
+  },
+  "cluster_store_latency": {
+   "status": "ok",
+   "work": {
+    "peers": 3,
+    "threads_per_peer": 4,
+    "store_latency_s": [
+     0.0,
+     0.03
+    ],
+    "seconds": 2.0,
+    "mode": "blind"
+   },
+   "checksum": {
+    "store latency 0 ms": true,
+    "store latency 30 ms": true
+   },
+   "expected": {
+    "store latency 0 ms": true,
+    "store latency 30 ms": true
+   },
+   "checks": [
+    {
+     "name": "store latency 0 ms: exact final state, persisted, healthy",
+     "ok": true,
+     "detail": "ids True, counter True, per-peer split True, persisted True; ids True, counter True, per-peer split True, persisted True; ids True, counter True, per-peer split True, persisted True"
+    },
+    {
+     "name": "store latency 30 ms: exact final state, persisted, healthy",
+     "ok": true,
+     "detail": "ids True, counter True, per-peer split True, persisted True; ids True, counter True, per-peer split True, persisted True; ids True, counter True, per-peer split True, persisted True"
+    }
+   ],
+   "timings": {
+    "commits/s, store latency 0 ms": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      307.0476383248223,
+      314.62856885641185,
+      307.97588248261354
+     ],
+     "n": 3,
+     "median": 307.97588248261354,
+     "p95": null,
+     "min": 307.0476383248223,
+     "max": 314.62856885641185,
+     "mean": 309.8840298879492,
+     "tail_label": "min",
+     "tail": 307.0476383248223
+    },
+    "commits/s, store latency 30 ms": {
+     "unit": "commits/s",
+     "better": "higher",
+     "per": 0,
+     "samples": [
+      316.7837292265097,
+      316.51238098976694,
+      306.43049169111066
+     ],
+     "n": 3,
+     "median": 316.51238098976694,
+     "p95": null,
+     "min": 306.43049169111066,
+     "max": 316.7837292265097,
+     "mean": 313.24220063579577,
+     "tail_label": "min",
+     "tail": 306.43049169111066
+    }
+   },
+   "metrics": {
+    "store latency 0 ms: commit latency ms": {
+     "p50": 38.12,
+     "p95": 48.55
+    },
+    "store latency 0 ms: critical section ms per commit": {
+     "validation": 0.246,
+     "replay": 0.761,
+     "path_copy": 1.806,
+     "replication": 7.542
+    },
+    "store latency 30 ms: commit latency ms": {
+     "p50": 37.91,
+     "p95": 45.47
+    },
+    "store latency 30 ms: critical section ms per commit": {
+     "validation": 0.175,
+     "replay": 0.735,
+     "path_copy": 1.766,
+     "replication": 6.734
+    },
+    "rate ratio (slow store / fast store)": 1.03
+   },
+   "notes": [],
+   "params": {
+    "latencies": [
+     0.0,
+     0.03
+    ],
+    "peers": 3,
+    "threads": 4,
+    "seconds": 2.0,
+    "repeat": 3
+   },
+   "elapsed_s": 15.967263025988359,
+   "gil_before": false,
+   "gil_after": false
+  },
+  "topk": {
+   "status": "ok",
+   "work": {
+    "rows": 20000,
+    "queries": 20,
+    "k": 10,
+    "plan_wide": "Limit <- Filter <- IndexOrderedScan",
+    "plan_selective": "Limit <- Sort <- IndexLookup"
+   },
+   "checksum": [
+    [
+     3116,
+     1694,
+     11925,
+     18379,
+     11816,
+     13315,
+     14691,
+     19098,
+     4622,
+     16226
+    ],
+    [
+     11982,
+     8374,
+     5825,
+     4364,
+     8222,
+     11485,
+     10232,
+     13467,
+     3756,
+     14039
+    ],
+    [
+     2559,
+     2713,
+     3854,
+     11734,
+     9045,
+     443,
+     5244,
+     19322,
+     7491,
+     2914
+    ],
+    [
+     1246,
+     5544,
+     14132,
+     15762,
+     13880,
+     7509,
+     11636,
+     14198,
+     6970,
+     19676
+    ],
+    [
+     2035,
+     4283,
+     16228,
+     13466,
+     174,
+     11165,
+     13560,
+     13813,
+     10493,
+     3478
+    ],
+    [
+     7208,
+     17161,
+     13744,
+     15380,
+     2785,
+     19023,
+     8500,
+     10300,
+     8228,
+     11630
+    ],
+    [
+     18022,
+     13810,
+     5843,
+     11863,
+     11190,
+     11495,
+     19989,
+     5091,
+     4840,
+     5984
+    ],
+    [
+     5555,
+     16803,
+     3750,
+     1388,
+     8519,
+     11372,
+     17489,
+     19739,
+     16260,
+     12431
+    ],
+    [
+     12809,
+     15549,
+     19192,
+     9737,
+     2287,
+     5849,
+     4211,
+     7812,
+     13790,
+     521
+    ],
+    [
+     17132,
+     7724,
+     19017,
+     1441,
+     8232,
+     2460,
+     7657,
+     11038,
+     17354,
+     7790
+    ],
+    [
+     19016,
+     4090,
+     3289,
+     15483,
+     5907,
+     16142,
+     12556,
+     866,
+     17289,
+     3521
+    ],
+    [
+     19710,
+     5193,
+     4478,
+     6673,
+     14465,
+     12386,
+     3034,
+     7993,
+     17179,
+     12136
+    ],
+    [
+     7354,
+     15087,
+     14996,
+     15384,
+     575,
+     3610,
+     19205,
+     10029,
+     3439,
+     1293
+    ],
+    [
+     4699,
+     3510,
+     4412,
+     3547,
+     14494,
+     14902,
+     10396,
+     17163,
+     7173,
+     8548
+    ],
+    [
+     17380,
+     12609,
+     11051,
+     3621,
+     1379,
+     3601,
+     3468,
+     11703,
+     2888,
+     4496
+    ],
+    [
+     17121,
+     771,
+     16354,
+     6622,
+     1742,
+     5015,
+     19319,
+     14646,
+     12741,
+     3487
+    ],
+    [
+     13107,
+     7989,
+     2264,
+     7429,
+     10143,
+     3426,
+     14834,
+     16667,
+     11030,
+     19526
+    ],
+    [
+     14429,
+     17369,
+     2718,
+     3047,
+     1604,
+     5916,
+     19270,
+     3812,
+     4160,
+     10058
+    ],
+    [
+     6835,
+     3257,
+     19349,
+     7741,
+     18193,
+     4298,
+     7395,
+     13453,
+     2035,
+     4283
+    ],
+    [
+     11118,
+     11656,
+     3207,
+     3580,
+     7792,
+     11991,
+     18365,
+     3933,
+     17338,
+     13352
+    ]
+   ],
+   "expected": [
+    [
+     3116,
+     1694,
+     11925,
+     18379,
+     11816,
+     13315,
+     14691,
+     19098,
+     4622,
+     16226
+    ],
+    [
+     11982,
+     8374,
+     5825,
+     4364,
+     8222,
+     11485,
+     10232,
+     13467,
+     3756,
+     14039
+    ],
+    [
+     2559,
+     2713,
+     3854,
+     11734,
+     9045,
+     443,
+     5244,
+     19322,
+     7491,
+     2914
+    ],
+    [
+     1246,
+     5544,
+     14132,
+     15762,
+     13880,
+     7509,
+     11636,
+     14198,
+     6970,
+     19676
+    ],
+    [
+     2035,
+     4283,
+     16228,
+     13466,
+     174,
+     11165,
+     13560,
+     13813,
+     10493,
+     3478
+    ],
+    [
+     7208,
+     17161,
+     13744,
+     15380,
+     2785,
+     19023,
+     8500,
+     10300,
+     8228,
+     11630
+    ],
+    [
+     18022,
+     13810,
+     5843,
+     11863,
+     11190,
+     11495,
+     19989,
+     5091,
+     4840,
+     5984
+    ],
+    [
+     5555,
+     16803,
+     3750,
+     1388,
+     8519,
+     11372,
+     17489,
+     19739,
+     16260,
+     12431
+    ],
+    [
+     12809,
+     15549,
+     19192,
+     9737,
+     2287,
+     5849,
+     4211,
+     7812,
+     13790,
+     521
+    ],
+    [
+     17132,
+     7724,
+     19017,
+     1441,
+     8232,
+     2460,
+     7657,
+     11038,
+     17354,
+     7790
+    ],
+    [
+     19016,
+     4090,
+     3289,
+     15483,
+     5907,
+     16142,
+     12556,
+     866,
+     17289,
+     3521
+    ],
+    [
+     19710,
+     5193,
+     4478,
+     6673,
+     14465,
+     12386,
+     3034,
+     7993,
+     17179,
+     12136
+    ],
+    [
+     7354,
+     15087,
+     14996,
+     15384,
+     575,
+     3610,
+     19205,
+     10029,
+     3439,
+     1293
+    ],
+    [
+     4699,
+     3510,
+     4412,
+     3547,
+     14494,
+     14902,
+     10396,
+     17163,
+     7173,
+     8548
+    ],
+    [
+     17380,
+     12609,
+     11051,
+     3621,
+     1379,
+     3601,
+     3468,
+     11703,
+     2888,
+     4496
+    ],
+    [
+     17121,
+     771,
+     16354,
+     6622,
+     1742,
+     5015,
+     19319,
+     14646,
+     12741,
+     3487
+    ],
+    [
+     13107,
+     7989,
+     2264,
+     7429,
+     10143,
+     3426,
+     14834,
+     16667,
+     11030,
+     19526
+    ],
+    [
+     14429,
+     17369,
+     2718,
+     3047,
+     1604,
+     5916,
+     19270,
+     3812,
+     4160,
+     10058
+    ],
+    [
+     6835,
+     3257,
+     19349,
+     7741,
+     18193,
+     4298,
+     7395,
+     13453,
+     2035,
+     4283
+    ],
+    [
+     11118,
+     11656,
+     3207,
+     3580,
+     7792,
+     11991,
+     18365,
+     3933,
+     17338,
+     13352
+    ]
+   ],
+   "checks": [
+    {
+     "name": "protodb score>=x order_by(score) take k ordered ids",
+     "ok": true,
+     "detail": "result differs from the model"
+    },
+    {
+     "name": "python heapq.nsmallest (score>=x) ordered ids",
+     "ok": true,
+     "detail": "result differs from the model"
+    },
+    {
+     "name": "sqlite3 score>=x ORDER BY LIMIT ordered ids",
+     "ok": true,
+     "detail": "result differs from the model"
+    },
+    {
+     "name": "protodb city==c order_by(score) take k ordered ids",
+     "ok": true,
+     "detail": "result differs from the model"
+    },
+    {
+     "name": "python heapq.nsmallest (city==c) ordered ids",
+     "ok": true,
+     "detail": "result differs from the model"
+    },
+    {
+     "name": "sqlite3 city=c ORDER BY LIMIT ordered ids",
+     "ok": true,
+     "detail": "result differs from the model"
+    }
+   ],
+   "timings": {
+    "protodb score>=x order_by(score) take k": {
+     "unit": "s",
+     "better": "lower",
+     "per": 20,
+     "samples": [
+      0.004141543002333492,
+      0.004113466973649338,
+      0.003970643010688946,
+      0.003954371000872925,
+      0.004137073003221303
+     ],
+     "n": 5,
+     "median": 0.004113466973649338,
+     "p95": null,
+     "min": 0.003954371000872925,
+     "max": 0.004141543002333492,
+     "mean": 0.004063419398153201,
+     "tail_label": "max",
+     "tail": 0.004141543002333492,
+     "per_op_us": 205.6733486824669,
+     "per_op_us_tail": 207.0771501166746
+    },
+    "python heapq.nsmallest (score>=x)": {
+     "unit": "s",
+     "better": "lower",
+     "per": 20,
+     "samples": [
+      0.05806645497796126,
+      0.07254893399658613,
+      0.07082170801004395,
+      0.06993654899997637,
+      0.06133946101181209
+     ],
+     "n": 5,
+     "median": 0.06993654899997637,
+     "p95": null,
+     "min": 0.05806645497796126,
+     "max": 0.07254893399658613,
+     "mean": 0.06654262139927596,
+     "tail_label": "max",
+     "tail": 0.07254893399658613,
+     "per_op_us": 3496.8274499988183,
+     "per_op_us_tail": 3627.4466998293065
+    },
+    "sqlite3 score>=x ORDER BY LIMIT": {
+     "unit": "s",
+     "better": "lower",
+     "per": 20,
+     "samples": [
+      0.00032887901761569083,
+      0.00031512000714428723,
+      0.0003108600212726742,
+      0.0003068090009037405,
+      0.00030946300830692053
+     ],
+     "n": 5,
+     "median": 0.0003108600212726742,
+     "p95": null,
+     "min": 0.0003068090009037405,
+     "max": 0.00032887901761569083,
+     "mean": 0.0003142262110486627,
+     "tail_label": "max",
+     "tail": 0.00032887901761569083,
+     "per_op_us": 15.543001063633708,
+     "per_op_us_tail": 16.44395088078454
+    },
+    "protodb city==c order_by(score) take k": {
+     "unit": "s",
+     "better": "lower",
+     "per": 20,
+     "samples": [
+      0.048715017997892573,
+      0.017947198008187115,
+      0.019499473011819646,
+      0.017599460989004,
+      0.017974156013224274
+     ],
+     "n": 5,
+     "median": 0.017974156013224274,
+     "p95": null,
+     "min": 0.017599460989004,
+     "max": 0.048715017997892573,
+     "mean": 0.024347061204025522,
+     "tail_label": "max",
+     "tail": 0.048715017997892573,
+     "per_op_us": 898.7078006612137,
+     "per_op_us_tail": 2435.7508998946287
+    },
+    "python heapq.nsmallest (city==c)": {
+     "unit": "s",
+     "better": "lower",
+     "per": 20,
+     "samples": [
+      0.04309173897490837,
+      0.04193727599340491,
+      0.04200949100777507,
+      0.04125025498797186,
+      0.040587677009170875
+     ],
+     "n": 5,
+     "median": 0.04193727599340491,
+     "p95": null,
+     "min": 0.040587677009170875,
+     "max": 0.04309173897490837,
+     "mean": 0.041775287594646215,
+     "tail_label": "max",
+     "tail": 0.04309173897490837,
+     "per_op_us": 2096.8637996702455,
+     "per_op_us_tail": 2154.5869487454183
+    },
+    "sqlite3 city=c ORDER BY LIMIT": {
+     "unit": "s",
+     "better": "lower",
+     "per": 20,
+     "samples": [
+      0.001665974996285513,
+      0.001660178997553885,
+      0.0016408329829573631,
+      0.0016353850078303367,
+      0.0016543820092920214
+     ],
+     "n": 5,
+     "median": 0.0016543820092920214,
+     "p95": null,
+     "min": 0.0016353850078303367,
+     "max": 0.001665974996285513,
+     "mean": 0.0016513507987838238,
+     "tail_label": "max",
+     "tail": 0.001665974996285513,
+     "per_op_us": 82.71910046460107,
+     "per_op_us_tail": 83.29874981427565
+    }
+   },
+   "metrics": {},
+   "notes": [
+    "R28: the ordered index scan feeds a Filter and a Limit; the measured cost shows whether the scan stops after k rows (early termination) or not"
+   ],
+   "params": {
+    "n": 20000,
+    "queries": 20,
+    "k": 10
+   },
+   "elapsed_s": 14.3562093230139,
+   "gil_before": false,
+   "gil_after": false
+  },
+  "point_lookup": {
+   "status": "ok",
+   "work": {
+    "rows": 20000,
+    "lookups": 2000,
+    "scan_lookups": 10,
+    "indexed_plan": "IndexLookup"
+   },
+   "checksum": 19947702,
+   "expected": 19947702,
+   "checks": [
+    {
+     "name": "protodb get_at(id) id sum",
+     "ok": true,
+     "detail": "19947702 != 19947702"
+    },
+    {
+     "name": "protodb EqualityIndex(code) id sum",
+     "ok": true,
+     "detail": "19947702 != 19947702"
+    },
+    {
+     "name": "protodb scan(code), no index id sum",
+     "ok": true,
+     "detail": "143750 != 143750"
+    },
+    {
+     "name": "python dict[id] id sum",
+     "ok": true,
+     "detail": "19947702 != 19947702"
+    },
+    {
+     "name": "python dict as code index id sum",
+     "ok": true,
+     "detail": "19947702 != 19947702"
+    },
+    {
+     "name": "python list scan(code) id sum",
+     "ok": true,
+     "detail": "143750 != 143750"
+    },
+    {
+     "name": "sqlite3 primary key id sum",
+     "ok": true,
+     "detail": "19947702 != 19947702"
+    },
+    {
+     "name": "sqlite3 index(code) id sum",
+     "ok": true,
+     "detail": "19947702 != 19947702"
+    },
+    {
+     "name": "sqlite3 scan(code), no index id sum",
+     "ok": true,
+     "detail": "143750 != 143750"
+    },
+    {
+     "name": "indexed plan uses the index",
+     "ok": true,
+     "detail": "IndexLookup"
+    }
+   ],
+   "timings": {
+    "protodb get_at(id)": {
+     "unit": "s",
+     "better": "lower",
+     "per": 2000,
+     "samples": [
+      0.009921474003931507,
+      0.009578278026310727,
+      0.009137234999798238,
+      0.008968640002422035,
+      0.009045045997481793
+     ],
+     "n": 5,
+     "median": 0.009137234999798238,
+     "p95": null,
+     "min": 0.008968640002422035,
+     "max": 0.009921474003931507,
+     "mean": 0.00933013460598886,
+     "tail_label": "max",
+     "tail": 0.009921474003931507,
+     "per_op_us": 4.568617499899119,
+     "per_op_us_tail": 4.960737001965754
+    },
+    "protodb EqualityIndex(code)": {
+     "unit": "s",
+     "better": "lower",
+     "per": 2000,
+     "samples": [
+      0.21770784101681784,
+      0.2592455580015667,
+      0.19819977699080482,
+      0.18350114100030623,
+      0.17882503900909796
+     ],
+     "n": 5,
+     "median": 0.19819977699080482,
+     "p95": null,
+     "min": 0.17882503900909796,
+     "max": 0.2592455580015667,
+     "mean": 0.2074958712037187,
+     "tail_label": "max",
+     "tail": 0.2592455580015667,
+     "per_op_us": 99.09988849540241,
+     "per_op_us_tail": 129.62277900078334
+    },
+    "protodb scan(code), no index": {
+     "unit": "s",
+     "better": "lower",
+     "per": 10,
+     "samples": [
+      0.6524760199827142,
+      0.6543749810080044,
+      0.6611310709849931,
+      0.6357507460052148,
+      0.6907758519810159
+     ],
+     "n": 5,
+     "median": 0.6543749810080044,
+     "p95": null,
+     "min": 0.6357507460052148,
+     "max": 0.6907758519810159,
+     "mean": 0.6589017339923885,
+     "tail_label": "max",
+     "tail": 0.6907758519810159,
+     "per_op_us": 65437.49810080043,
+     "per_op_us_tail": 69077.58519810159
+    },
+    "python dict[id]": {
+     "unit": "s",
+     "better": "lower",
+     "per": 2000,
+     "samples": [
+      0.0004433479916770011,
+      0.00022900698240846395,
+      0.00020658900029957294,
+      0.0002060999977402389,
+      0.0002263530041091144
+     ],
+     "n": 5,
+     "median": 0.0002263530041091144,
+     "p95": null,
+     "min": 0.0002060999977402389,
+     "max": 0.0004433479916770011,
+     "mean": 0.0002622793952468783,
+     "tail_label": "max",
+     "tail": 0.0004433479916770011,
+     "per_op_us": 0.1131765020545572,
+     "per_op_us_tail": 0.22167399583850056
+    },
+    "python dict as code index": {
+     "unit": "s",
+     "better": "lower",
+     "per": 2000,
+     "samples": [
+      0.0002784540120046586,
+      0.00025834000553004444,
+      0.00023892498575150967,
+      0.00025331199867650867,
+      0.00025233402266167104
+     ],
+     "n": 5,
+     "median": 0.00025331199867650867,
+     "p95": null,
+     "min": 0.00023892498575150967,
+     "max": 0.0002784540120046586,
+     "mean": 0.0002562730049248785,
+     "tail_label": "max",
+     "tail": 0.0002784540120046586,
+     "per_op_us": 0.12665599933825433,
+     "per_op_us_tail": 0.1392270060023293
+    },
+    "python list scan(code)": {
+     "unit": "s",
+     "better": "lower",
+     "per": 10,
+     "samples": [
+      0.015586936002364382,
+      0.015502779016969725,
+      0.014017131004948169,
+      0.015071025001816452,
+      0.014815758011536673
+     ],
+     "n": 5,
+     "median": 0.015071025001816452,
+     "p95": null,
+     "min": 0.014017131004948169,
+     "max": 0.015586936002364382,
+     "mean": 0.014998725807527081,
+     "tail_label": "max",
+     "tail": 0.015586936002364382,
+     "per_op_us": 1507.1025001816452,
+     "per_op_us_tail": 1558.6936002364382
+    },
+    "sqlite3 primary key": {
+     "unit": "s",
+     "better": "lower",
+     "per": 2000,
+     "samples": [
+      0.0074548460252117366,
+      0.007720520021393895,
+      0.007767312985379249,
+      0.007614502013893798,
+      0.007766894006635994
+     ],
+     "n": 5,
+     "median": 0.007720520021393895,
+     "p95": null,
+     "min": 0.0074548460252117366,
+     "max": 0.007767312985379249,
+     "mean": 0.007664815010502935,
+     "tail_label": "max",
+     "tail": 0.007767312985379249,
+     "per_op_us": 3.8602600106969476,
+     "per_op_us_tail": 3.8836564926896244
+    },
+    "sqlite3 index(code)": {
+     "unit": "s",
+     "better": "lower",
+     "per": 2000,
+     "samples": [
+      0.009494398982496932,
+      0.009407658013515174,
+      0.009981048002373427,
+      0.010226886020973325,
+      0.009637990995543078
+     ],
+     "n": 5,
+     "median": 0.009637990995543078,
+     "p95": null,
+     "min": 0.009407658013515174,
+     "max": 0.010226886020973325,
+     "mean": 0.009749596402980388,
+     "tail_label": "max",
+     "tail": 0.010226886020973325,
+     "per_op_us": 4.818995497771539,
+     "per_op_us_tail": 5.113443010486662
+    },
+    "sqlite3 scan(code), no index": {
+     "unit": "s",
+     "better": "lower",
+     "per": 10,
+     "samples": [
+      0.01153632701607421,
+      0.011230914009502158,
+      0.011417736997827888,
+      0.011217852996196598,
+      0.011959700001170859
+     ],
+     "n": 5,
+     "median": 0.011417736997827888,
+     "p95": null,
+     "min": 0.011217852996196598,
+     "max": 0.011959700001170859,
+     "mean": 0.011472506204154343,
+     "tail_label": "max",
+     "tail": 0.011959700001170859,
+     "per_op_us": 1141.7736997827888,
+     "per_op_us_tail": 1195.9700001170859
+    }
+   },
+   "metrics": {},
+   "notes": [],
+   "params": {
+    "n": 20000,
+    "lookups": 2000,
+    "scan_lookups": 10
+   },
+   "elapsed_s": 7.528246150992345,
+   "gil_before": false,
+   "gil_after": false
+  }
+ }
+}

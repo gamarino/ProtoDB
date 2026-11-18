@@ -1,0 +1,565 @@
+ProtoDB performance suite (full)
+python 3.14.6 free-threaded build=True gil_enabled=False cpus=12 (AMD Ryzen 5 5500U with Radeon Graphics); cpu frequency {'governor': 'powersave', 'driver': 'amd-pstate-epp', 'energy_performance_preference': 'balance_power', 'boost': '1'}
+workdir /home/gamarino/Documentos/proyectos/scratch-8.3n/m8-raw-path/work-6b0697a-r1 (zfs); threads [1, 2, 4, 8, 16]; repeat 5 warmup 1
+source 6b0697a clean=True (git archive export)
+stray-process check: none; free 957 GiB in /home/gamarino/Documentos/proyectos/scratch-8.3n/m8-raw-path/work-6b0697a-r1
+
+== point_lookup ==  Point lookups: primary key, secondary EqualityIndex, unindexed scan; dict/list and sqlite3.
+   work: {"indexed_plan": "IndexLookup", "lookups": 2000, "rows": 20000, "scan_lookups": 10}
+   verified: checksum 19947702 == expected; 10/10 checks passed
+  protodb get_at(id)                           median    10.26 ms  max    10.80 ms  (5.1 us/op, max 5.4)  [n=5]
+  protodb EqualityIndex(code)                  median   180.13 ms  max   204.29 ms  (90.1 us/op, max 102.1)  [n=5]
+  protodb scan(code), no index                 median   595.94 ms  max   663.95 ms  (59593.9 us/op, max 66395.1)  [n=5]
+  python dict[id]                              median    235.1 us  max    301.2 us  (0.1 us/op, max 0.2)  [n=5]
+  python dict as code index                    median    304.5 us  max    508.4 us  (0.2 us/op, max 0.3)  [n=5]
+  python list scan(code)                       median    10.95 ms  max    11.26 ms  (1095.1 us/op, max 1125.8)  [n=5]
+  sqlite3 primary key                          median     8.37 ms  max     8.47 ms  (4.2 us/op, max 4.2)  [n=5]
+  sqlite3 index(code)                          median    11.05 ms  max    13.42 ms  (5.5 us/op, max 6.7)  [n=5]
+  sqlite3 scan(code), no index                 median    12.27 ms  max    15.46 ms  (1227.2 us/op, max 1546.0)  [n=5]
+
+== range_query ==  Range queries (1 % selectivity): RangeIndex vs scan vs sorted list/bisect vs sqlite3.
+   work: {"indexed_plan": "IndexRange", "queries": 50, "rows": 20000, "rows_per_query": 200, "scan_queries": 5}
+   verified: checksum [10000, 100293203] == expected; 7/7 checks passed
+  protodb RangeIndex(score)                    median    27.27 ms  max    28.90 ms  (545.4 us/op, max 578.1)  [n=5]
+  protodb scan, no index                       median   327.55 ms  max   330.40 ms  (65509.4 us/op, max 66079.1)  [n=5]
+  python list scan                             median    13.25 ms  max    14.34 ms  (2649.7 us/op, max 2867.8)  [n=5]
+  python sorted list + bisect                  median     1.91 ms  max     2.52 ms  (38.1 us/op, max 50.4)  [n=5]
+  sqlite3 index(score)                         median     8.57 ms  max     8.92 ms  (171.3 us/op, max 178.3)  [n=5]
+  sqlite3 scan, no index                       median     5.27 ms  max     6.47 ms  (1054.3 us/op, max 1293.2)  [n=5]
+
+== topk ==  Top-k by an indexed key (ruling R28 carry item: no early termination yet) vs heapq and sqlite3.
+   work: {"k": 10, "plan_selective": "Limit <- Sort <- IndexLookup", "plan_wide": "Limit <- Filter <- IndexOrderedScan", "queries": 20, "rows": 20000}
+   verified: checksum [[3116, 1694, 11925, 18379, 11816, 13315, 14691, 19098, 4622, 16226], [11982, 8374, 5825, 4364, 8... == expected; 6/6 checks passed
+  protodb score>=x order_by(score) take k      median     4.13 ms  max     4.17 ms  (206.4 us/op, max 208.4)  [n=5]
+  python heapq.nsmallest (score>=x)            median    71.69 ms  max    92.79 ms  (3584.7 us/op, max 4639.7)  [n=5]
+  sqlite3 score>=x ORDER BY LIMIT              median    346.8 us  max    360.0 us  (17.3 us/op, max 18.0)  [n=5]
+  protodb city==c order_by(score) take k       median    17.57 ms  max    18.63 ms  (878.6 us/op, max 931.7)  [n=5]
+  python heapq.nsmallest (city==c)             median    39.59 ms  max    41.04 ms  (1979.7 us/op, max 2052.0)  [n=5]
+  sqlite3 city=c ORDER BY LIMIT                median     2.27 ms  max     2.41 ms  (113.5 us/op, max 120.5)  [n=5]
+   note: R28: the ordered index scan feeds a Filter and a Limit; the measured cost shows whether the scan stops after k rows (early termination) or not
+
+== deep_page ==  Page of 50 rows at deep offsets: ProtoDB pager by rank vs islice vs sqlite3 OFFSET and keyset.
+   work: {"offsets": [0, 10000, 100000, 900000], "page_size": 50, "plan_ordered": "IndexOrderedScan", "plan_ranged": "Filter <- IndexOrderedScan", "requests_per_sample": 20, "rows": 1000000}
+   verified: checksum [[613918, 132781, 190366, 872695, 674289, 856686, 802000, 805392, 73659, 273552, 364675, 471457, ... == expected; 28/28 checks passed
+  protodb pager.page by rank @0                median     5.16 ms  max     5.19 ms  (258.0 us/op, max 259.6)  [n=5]
+  protodb islice ordered scan (no rank) @0     median     3.93 ms  max     4.05 ms  (196.6 us/op, max 202.6)  [n=5]
+  sqlite3 OFFSET @0                            median    709.4 us  max    753.8 us  (35.5 us/op, max 37.7)  [n=5]
+  sqlite3 keyset next page @0                  median    720.7 us  max    783.9 us  (36.0 us/op, max 39.2)  [n=5]
+  protodb pager, index without weights (materializes) @0 median     1.686 s  max     1.966 s  [n=5]
+  protodb pager k>=N/2 by rank @0              median     9.21 ms  max     9.35 ms  (460.3 us/op, max 467.3)  [n=5]
+  sqlite3 k>=N/2 OFFSET @0                     median    753.6 us  max    785.8 us  (37.7 us/op, max 39.3)  [n=5]
+  protodb pager.page by rank @10000            median     5.40 ms  max     7.51 ms  (270.2 us/op, max 375.7)  [n=5]
+  protodb islice ordered scan (no rank) @10000 median   342.97 ms  max   360.48 ms  (17148.7 us/op, max 18023.9)  [n=5]
+  sqlite3 OFFSET @10000                        median     7.95 ms  max     9.52 ms  (397.3 us/op, max 476.2)  [n=5]
+  sqlite3 keyset next page @10000              median    859.7 us  max    898.0 us  (43.0 us/op, max 44.9)  [n=5]
+  protodb pager k>=N/2 by rank @10000          median     9.96 ms  max    11.48 ms  (498.2 us/op, max 574.2)  [n=5]
+  sqlite3 k>=N/2 OFFSET @10000                 median     6.81 ms  max     6.91 ms  (340.4 us/op, max 345.5)  [n=5]
+  sqlite3 keyset jump (chained) @10000         median   149.69 ms  max   236.33 ms  (74842.7 us/op, max 118165.4)  [n=5]
+  protodb pager.page by rank @100000           median     6.38 ms  max     8.40 ms  (319.0 us/op, max 420.1)  [n=5]
+  protodb islice ordered scan (no rank) @100000 median    31.321 s  max    35.551 s  (15660541.0 us/op, max 17775306.2)  [n=5]
+  sqlite3 OFFSET @100000                       median    63.38 ms  max    67.57 ms  (3168.8 us/op, max 3378.6)  [n=5]
+  sqlite3 keyset next page @100000             median    744.5 us  max    772.8 us  (37.2 us/op, max 38.6)  [n=5]
+  protodb pager k>=N/2 by rank @100000         median     9.75 ms  max    11.26 ms  (487.6 us/op, max 562.9)  [n=5]
+  sqlite3 k>=N/2 OFFSET @100000                median    65.35 ms  max    70.82 ms  (3267.6 us/op, max 3540.9)  [n=5]
+  sqlite3 keyset jump (chained) @100000        median     1.344 s  max     1.376 s  (672051.6 us/op, max 687933.0)  [n=5]
+  protodb pager.page by rank @900000           median     7.21 ms  max    10.63 ms  (360.7 us/op, max 531.7)  [n=5]
+  sqlite3 OFFSET @900000                       median   889.75 ms  max   969.67 ms  (44487.6 us/op, max 48483.7)  [n=5]
+  sqlite3 keyset next page @900000             median    800.6 us  max    871.2 us  (40.0 us/op, max 43.6)  [n=5]
+  protodb pager, index without weights (materializes) @900000 median     1.610 s  max     1.662 s  [n=5]
+
+== query_cache ==  A repeated query: ProtoDB without cache, cache miss, cache hit vs sqlite3 re-execution.
+   work: {"plan_A@100000": "Filter <- IndexRange", "plan_A@1000000": "Filter <- IndexRange", "plan_B@100000": "Filter <- IndexOrderedScan", "plan_B@1000000": "Filter <- IndexOrderedScan", "sizes": [100000, 1000000], "span": 20000}
+   verified: checksum [[10026, 503917031], [1000, 49957000, [54307, 69807, 20207, 75307, 70807]], [10063, 5024867444]] == expected; 17/17 checks passed
+  N=100000 A range+filter: protodb no cache    median    90.72 ms  max    95.95 ms  [n=5]
+  N=100000 A range+filter: protodb cache miss  median   148.14 ms  max   160.12 ms  [n=5]
+  N=100000 A range+filter: protodb cache hit   median     4.64 ms  max     6.18 ms  [n=5]
+  N=100000 A range+filter: sqlite3 (re-executes) median    12.74 ms  max    14.25 ms  [n=5]
+  N=100000 B filter ordered by k: protodb no cache median    15.649 s  max    16.800 s  [n=5]
+  N=100000 B filter ordered by k: protodb cache miss median    15.977 s  max    16.450 s  [n=5]
+  N=100000 B filter ordered by k: protodb cache hit median    998.7 us  max     1.05 ms  [n=5]
+  N=100000 B filter ordered by k: sqlite3 (re-executes) median    38.18 ms  max    39.56 ms  [n=5]
+  N=1000000 A range+filter: protodb no cache   median    84.07 ms  max    88.76 ms  [n=5]
+  N=1000000 A range+filter: protodb cache miss median   152.73 ms  max   164.08 ms  [n=5]
+  N=1000000 A range+filter: protodb cache hit  median     4.37 ms  max     5.02 ms  [n=5]
+  N=1000000 A range+filter: sqlite3 (re-executes) median   124.54 ms  max   128.95 ms  [n=5]
+   cache_stats: {'100000': {'hits': 14, 'misses': 12, 'entries': 1, 'bytes': 501134, 'capacity': 67108864, 'admissions': 12, 'evictions': 0, 'uncacheable': 0, 'refused': 0}, '1000000': {'hits': 7, 'misses': 6, 'entries': 1, 'bytes': 5023674, 'capacity': 67108864, 'admissions': 6, 'evictions': 0, 'uncacheable': 0, 'refused': 0}}
+
+== inventory ==  Telecom inventory graph (sites/equipment/cards/ports/links, history): ProtoDB vs sqlite3.
+   work: {"atom_cache_entries": "default", "bulk change: sites, equipment": [2, 20], "durability": "ProtoDB fsync, SQLite FULL", "fan_out": "10 equipment/site, 10 cards/equipment, 8-48 ports/card, links on about half the ports", "mean path length (ports)": 30.4, "model_count_s": 0.05, "objects": 95645, "sites": 28}
+   verified: checksum [28, 280, 2800, 78523, 14014] == expected; 3/3 checks passed
+  protodb build (one commit per site)          median    39.974 s  max    39.974 s  (417.9 us/op, max 417.9)  [n=1] SINGLE SAMPLE
+  sqlite3 build (one transaction per site)     median   266.01 ms  max   266.01 ms  (2.8 us/op, max 2.8)  [n=1] SINGLE SAMPLE
+  protodb point lookup of a port (warm)        median     7.80 ms  max     8.65 ms  (78.0 us/op, max 86.5)  [n=5]
+  sqlite3 point lookup of a port (warm)        median    527.2 us  max    558.5 us  (5.3 us/op, max 5.6)  [n=5]
+  protodb equipment at a site (warm)           median    17.46 ms  max    17.95 ms  (174.6 us/op, max 179.5)  [n=5]
+  sqlite3 equipment at a site (warm)           median    767.9 us  max    863.9 us  (7.7 us/op, max 8.6)  [n=5]
+  protodb ports at a site (3 levels / 3-way join) (warm) median    67.89 ms  max    75.97 ms  (13578.2 us/op, max 15195.0)  [n=5]
+  sqlite3 ports at a site (3 levels / 3-way join) (warm) median     4.43 ms  max     5.04 ms  (885.5 us/op, max 1008.1)  [n=5]
+  protodb path trace (warm)                    median     7.95 ms  max    10.00 ms  (397.5 us/op, max 500.0)  [n=5]
+  sqlite3 path trace (warm)                    median    945.3 us  max     1.45 ms  (47.3 us/op, max 72.5)  [n=5]
+  protodb point lookup, cold (first request of a new instance) median     2.88 ms  max     3.10 ms  [n=5]
+  sqlite3 point lookup, cold (first request of a new instance) median    211.5 us  max    246.6 us  [n=5]
+  protodb equipment at a site, cold (first request of a new instance) median     4.16 ms  max     4.28 ms  [n=5]
+  sqlite3 equipment at a site, cold (first request of a new instance) median    267.7 us  max    283.8 us  [n=5]
+  protodb path trace, cold (first request of a new instance) median    36.99 ms  max    41.32 ms  [n=5]
+  sqlite3 path trace, cold (first request of a new instance) median    541.7 us  max    576.3 us  [n=5]
+  protodb bulk status change of one region (one commit) median    16.82 ms  max    17.93 ms  (840.9 us/op, max 896.7)  [n=5]
+  protodb as-of: region status before the last change median    179.3 us  max    197.7 us  (9.0 us/op, max 9.9)  [n=5]
+  sqlite3 bulk status change of one region (one commit) median     1.65 ms  max     2.47 ms  (82.7 us/op, max 123.3)  [n=5]
+  sqlite3 as-of: region status before the last change median     48.2 us  max     75.7 us  (2.4 us/op, max 3.8)  [n=5]
+   build commits/s: {'protodb': 0.7, 'sqlite3': 105.26}
+   build objects/s: {'protodb': 2393, 'sqlite3': 359552}
+   after build: peak RSS kB (both systems, one process): 7120472
+   after build: atom cache: {'hits': 445910, 'misses': 8, 'entries': 50000, 'capacity': 50000, 'loads': 20, 'saved': 278837, 'unloads': 228857, 'read_unloads': 13, 'identity_map': 52300}
+   on-disk bytes (allocated, apparent): {'protodb': [15014912, 40463206], 'sqlite3': [1725440, 2965504]}
+   bytes per object (allocated, apparent): {'protodb': [157.0, 423.1], 'sqlite3': [18.0, 31.0]}
+   on-disk bytes after the bulk changes (allocated): {'protodb': 15014912, 'sqlite3': 1725440}
+   end: peak RSS kB (both systems, one process): 7120472
+   end: atom cache: {'hits': 460400, 'misses': 31617, 'entries': 50000, 'capacity': 50000, 'loads': 24720, 'saved': 279359, 'unloads': 254079, 'read_unloads': 24713, 'identity_map': 59486}
+   note: cold = a new storage instance or connection (empty in-process caches); the OS page cache and the ZFS ARC are not dropped, which needs root
+
+== bulk_insert ==  Bulk insert of n records in one transaction (fsync), with and without indexes; dict and sqlite3.
+   work: {"durability": "fsync / synchronous=FULL", "rows": 10000, "transactions": 1}
+   verified: checksum [10000, 49995000] == expected; 5/5 checks passed
+  protodb Dictionary, no index                 median     2.066 s  max     2.164 s  (206.6 us/op, max 216.4)  [n=3]
+  protodb Dictionary + EqualityIndex + RangeIndex median     7.600 s  max     8.102 s  (760.0 us/op, max 810.2)  [n=3]
+  python dict (memory only)                    median     4.46 ms  max     4.52 ms  (0.4 us/op, max 0.5)  [n=3]
+  sqlite3 table, primary key only              median    35.31 ms  max    37.84 ms  (3.5 us/op, max 3.8)  [n=3]
+  sqlite3 + 2 indexes                          median    49.06 ms  max    50.62 ms  (4.9 us/op, max 5.1)  [n=3]
+
+== index_update_cost ==  Marginal cost of each index on an update (carry item: ~80-95 us per index update).
+   work: {"index_counts": [0, 1, 2, 3], "rows": 10000, "updates_per_sample": 2000}
+   verified: checksum [2, 7, 9, 17, 20, 31, 32, 46, 49, 52, 53, 59, 61, 62, 65, 90, 99, 104, 124, 128, 142, 145, 146, 1... == expected; 11/11 checks passed
+  set_at (replace) with 0 index(es)            median   115.20 ms  max   115.86 ms  (57.6 us/op, max 57.9)  [n=5]
+  set_at (replace) with 1 index(es)            median   582.29 ms  max   628.01 ms  (291.1 us/op, max 314.0)  [n=5]
+  set_at (replace) with 2 index(es)            median   973.36 ms  max     1.135 s  (486.7 us/op, max 567.4)  [n=5]
+  set_at (replace) with 3 index(es)            median     1.406 s  max     1.427 s  (703.2 us/op, max 713.7)  [n=5]
+   marginal_us_per_index: {'0->1': 233.5, '1->2': 195.5, '2->3': 216.5}
+
+== commit_durability ==  Small read-modify-write commits per durability mode vs sqlite3 at the matching synchronous level.
+   work: {"commit": "read counter n, n+1, set_at(i, i) on a Dictionary root", "commits_per_sample": {"flush": 300, "fsync": 300, "none": 2000}, "sqlite": "BEGIN; UPDATE n=n+1; INSERT (i, i); COMMIT (WAL)"}
+   verified: checksum {'protodb fsync': [300, 300, 44850], 'sqlite3 FULL': [300, 300, 44850], 'protodb flush': [300, 30... == expected; 6/6 checks passed
+  protodb FileStorage durability=fsync         median     2.150 s  max     2.202 s  (7166.1 us/op, max 7339.1)  [n=5]
+  protodb durability=fsync commits/s           median       139.5 commits/s  min     136.3  [n=5]
+  sqlite3 synchronous=FULL                     median   489.01 ms  max   496.08 ms  (1630.0 us/op, max 1653.6)  [n=5]
+  sqlite3 synchronous=FULL commits/s           median       613.5 commits/s  min     604.7  [n=5]
+  protodb FileStorage durability=flush         median     1.689 s  max     1.882 s  (5629.1 us/op, max 6272.1)  [n=5]
+  protodb durability=flush commits/s           median       177.6 commits/s  min     159.4  [n=5]
+  sqlite3 synchronous=NORMAL                   median    31.06 ms  max    39.28 ms  (103.5 us/op, max 130.9)  [n=5]
+  sqlite3 synchronous=NORMAL commits/s         median      9659.1 commits/s  min    7638.0  [n=5]
+  protodb FileStorage durability=none          median     4.344 s  max    19.054 s  (2171.8 us/op, max 9526.9)  [n=5]
+  protodb durability=none commits/s            median       460.4 commits/s  min     105.0  [n=5]
+  sqlite3 synchronous=OFF                      median   120.33 ms  max   146.69 ms  (60.2 us/op, max 73.3)  [n=5]
+  sqlite3 synchronous=OFF commits/s            median     16621.5 commits/s  min   13634.5  [n=5]
+   note: flush and SQLite NORMAL are in the same class: process-crash safe, not power-loss safe. ProtoDB flush also fsyncs the root (D19), which costs sync work without making the commit's data power-loss safe; no crash-matrix test covers flush under power loss
+
+== versions ==  Persistent update cost: one new version per update (path copy) vs a full dict copy, by size.
+   work: {"committed_updates": 200, "dict_copy_updates_per_sample": 50, "sizes": [1000, 10000, 100000], "updates_per_sample": 2000}
+   verified: checksum {'1000': -1146686, '10000': -1888055, '100000': -1986221} == expected; 12/12 checks passed
+  protodb set_at -> new version, n=1000        median    91.44 ms  max   470.94 ms  (45.7 us/op, max 235.5)  [n=5]
+  python dict copy + update, n=1000            median    461.3 us  max    988.1 us  (9.2 us/op, max 19.8)  [n=5]
+  protodb committed update (durability=none), n=1000 median   362.54 ms  max   365.34 ms  (1812.7 us/op, max 1826.7)  [n=3]
+  protodb set_at -> new version, n=10000       median   115.84 ms  max   152.63 ms  (57.9 us/op, max 76.3)  [n=5]
+  python dict copy + update, n=10000           median     7.35 ms  max    27.44 ms  (147.0 us/op, max 548.8)  [n=5]
+  protodb committed update (durability=none), n=10000 median   412.08 ms  max   413.49 ms  (2060.4 us/op, max 2067.4)  [n=3]
+  protodb set_at -> new version, n=100000      median   149.44 ms  max   177.94 ms  (74.7 us/op, max 89.0)  [n=5]
+  python dict copy + update, n=100000          median   278.98 ms  max   322.23 ms  (5579.6 us/op, max 6444.5)  [n=5]
+  protodb committed update (durability=none), n=100000 median   472.58 ms  max   681.88 ms  (2362.9 us/op, max 3409.4)  [n=3]
+
+== canonical_rewalk ==  canonical() on a list vs on an already frozen list (carry item: the frozen input is re-walked).
+   work: {"elements": 220000}
+   verified: checksum [220000, 24199890000] == expected; 2/2 checks passed
+  canonical(list) -> FrozenList                median    36.67 ms  max    37.96 ms  (0.2 us/op, max 0.2)  [n=5]
+  canonical(FrozenList) re-walk                median    47.47 ms  max    49.56 ms  (0.2 us/op, max 0.2)  [n=5]
+
+== cold_open ==  Cold open (time to first read), cold vs warm full walk, page-cache hit rates, tiered recovery.
+   work: {"history_commits": 500, "random_lookups": 2000, "rows": 20000}
+   verified: checksum [20000, 199990000] == expected; 7/7 checks passed
+  open + first read                            median     3.79 ms  max     5.28 ms  [n=5]
+  cold walk (new storage instance)             median     2.169 s  max     2.259 s  (108.4 us/op, max 113.0)  [n=5]
+  warm walk (new transaction, warm page cache) median    12.52 ms  max    14.71 ms  (0.6 us/op, max 0.7)  [n=5]
+  random get_at, new transaction per batch     median     9.82 ms  max    10.84 ms  (4.9 us/op, max 5.4)  [n=5]
+  TieredStorage reopen (log + segment scan), 500 commits median     5.15 ms  max     9.53 ms  [n=5]
+   page cache hit rate: {'cold walk': 0.9961, 'warm walk': 0.0}
+   page cache hit rate, random lookups: 0.0
+   page cache reads per lookup: 0.0
+
+== concurrent_commits ==  Commit throughput and conflict rate with 1..N threads (conflicting, blind merge, disjoint).
+   work: {"commits_per_run": 240, "indexed_base_entries": 1000, "storage": "FileStorage durability=none", "threads": [1, 2, 4, 8, 16]}
+   verified: checksum {'conflicting, 1 thread(s)': 240, 'conflicting, 2 thread(s)': 240, 'conflicting, 4 thread(s)': 24... == expected; 20/20 checks passed
+  conflicting: commits/s, 1 thread(s)          median       610.5 commits/s  min     560.4  [n=5]
+  conflicting: commits/s, 2 thread(s)          median       591.7 commits/s  min     506.1  [n=5]
+  conflicting: commits/s, 4 thread(s)          median       546.0 commits/s  min     527.6  [n=5]
+  conflicting: commits/s, 8 thread(s)          median       497.6 commits/s  min     461.2  [n=5]
+  conflicting: commits/s, 16 thread(s)         median       376.1 commits/s  min      95.5  [n=5]
+  blind merge: commits/s, 1 thread(s)          median       384.8 commits/s  min     363.6  [n=5]
+  blind merge: commits/s, 2 thread(s)          median       368.5 commits/s  min     354.1  [n=5]
+  blind merge: commits/s, 4 thread(s)          median       421.5 commits/s  min      89.9  [n=5]
+  blind merge: commits/s, 8 thread(s)          median       358.1 commits/s  min     316.0  [n=5]
+  blind merge: commits/s, 16 thread(s)         median       467.6 commits/s  min     407.8  [n=5]
+  blind merge, indexed dict: commits/s, 1 thread(s) median       233.0 commits/s  min      77.6  [n=5]
+  blind merge, indexed dict: commits/s, 2 thread(s) median       220.9 commits/s  min      76.0  [n=5]
+  blind merge, indexed dict: commits/s, 4 thread(s) median       255.0 commits/s  min     235.9  [n=5]
+  blind merge, indexed dict: commits/s, 8 thread(s) median       248.8 commits/s  min      81.6  [n=5]
+  blind merge, indexed dict: commits/s, 16 thread(s) median       259.9 commits/s  min     243.8  [n=5]
+  disjoint roots: commits/s, 1 thread(s)       median       671.8 commits/s  min     605.9  [n=5]
+  disjoint roots: commits/s, 2 thread(s)       median       562.7 commits/s  min     427.2  [n=5]
+  disjoint roots: commits/s, 4 thread(s)       median       723.3 commits/s  min     677.6  [n=5]
+  disjoint roots: commits/s, 8 thread(s)       median       840.6 commits/s  min     810.0  [n=5]
+  disjoint roots: commits/s, 16 thread(s)      median       875.2 commits/s  min     786.0  [n=5]
+   conflicting: attempts per commit, 1 thread(s): 1.0
+   conflicting: attempts per commit, 2 thread(s): 1.28
+   conflicting: attempts per commit, 4 thread(s): 1.68
+   conflicting: attempts per commit, 8 thread(s): 3.05
+   conflicting: attempts per commit, 16 thread(s): 6.38
+   blind merge: attempts per commit, 1 thread(s): 1.0
+   blind merge: attempts per commit, 2 thread(s): 1.0
+   blind merge: attempts per commit, 4 thread(s): 1.0
+   blind merge: attempts per commit, 8 thread(s): 1.0
+   blind merge: attempts per commit, 16 thread(s): 1.0
+   blind merge, indexed dict: attempts per commit, 1 thread(s): 1.0
+   blind merge, indexed dict: attempts per commit, 2 thread(s): 1.0
+   blind merge, indexed dict: attempts per commit, 4 thread(s): 1.0
+   blind merge, indexed dict: attempts per commit, 8 thread(s): 1.0
+   blind merge, indexed dict: attempts per commit, 16 thread(s): 1.0
+   disjoint roots: attempts per commit, 1 thread(s): 1.0
+   disjoint roots: attempts per commit, 2 thread(s): 1.0
+   disjoint roots: attempts per commit, 4 thread(s): 1.0
+   disjoint roots: attempts per commit, 8 thread(s): 1.0
+   disjoint roots: attempts per commit, 16 thread(s): 1.0
+
+== concurrent_reads ==  Read scaling with 1..N threads (own transaction per thread): get_at and index queries; dict baseline.
+   work: {"lookups_per_thread": 4000, "queries_per_thread": 200, "rows": 20000, "threads": [1, 2, 4, 8, 16]}
+   verified: checksum {'protodb get_at, 1 thread(s)': True, 'protodb EqualityIndex query, 1 thread(s)': True, 'python d... == expected; 15/15 checks passed
+  protodb get_at: ops/s, 1 thread(s)           median    167823.5 ops/s  min   31328.4  [n=5]
+  protodb EqualityIndex query: ops/s, 1 thread(s) median      3593.1 ops/s  min    3239.1  [n=5]
+  python dict lookup: ops/s, 1 thread(s)       median   1217397.3 ops/s  min 1055693.9  [n=5]
+  protodb get_at: ops/s, 2 thread(s)           median    251336.6 ops/s  min  173391.0  [n=5]
+  protodb EqualityIndex query: ops/s, 2 thread(s) median      6364.8 ops/s  min    5496.5  [n=5]
+  python dict lookup: ops/s, 2 thread(s)       median   1374494.9 ops/s  min 1316063.5  [n=5]
+  protodb get_at: ops/s, 4 thread(s)           median    385129.1 ops/s  min  320469.0  [n=5]
+  protodb EqualityIndex query: ops/s, 4 thread(s) median     10842.0 ops/s  min    9205.3  [n=5]
+  python dict lookup: ops/s, 4 thread(s)       median   2430042.1 ops/s  min 2385755.5  [n=5]
+  protodb get_at: ops/s, 8 thread(s)           median    605697.2 ops/s  min  562259.5  [n=5]
+  protodb EqualityIndex query: ops/s, 8 thread(s) median     13513.0 ops/s  min   12588.2  [n=5]
+  python dict lookup: ops/s, 8 thread(s)       median   2858584.4 ops/s  min 2283693.1  [n=5]
+  protodb get_at: ops/s, 16 thread(s)          median    606994.3 ops/s  min  531223.4  [n=5]
+  protodb EqualityIndex query: ops/s, 16 thread(s) median     13243.0 ops/s  min   12017.3  [n=5]
+  python dict lookup: ops/s, 16 thread(s)      median   3293484.2 ops/s  min 3068811.2  [n=5]
+   protodb get_at: speedup vs 1 thread(s): {'1': 1.0, '2': 1.5, '4': 2.29, '8': 3.61, '16': 3.62}
+   protodb EqualityIndex query: speedup vs 1 thread(s): {'1': 1.0, '2': 1.77, '4': 3.02, '8': 3.76, '16': 3.69}
+   python dict lookup: speedup vs 1 thread(s): {'1': 1.0, '2': 1.13, '4': 2.0, '8': 2.35, '16': 2.71}
+
+== parallel_scan ==  ParallelPool.scan of a CPU-bound function with 1..N workers vs a sequential loop (D40).
+   work: {"items": 2000, "spin": 4000, "workers": [1, 2, 4, 8, 16]}
+   verified: checksum 4299980615064 == expected; 6/6 checks passed
+  sequential loop                              median     1.099 s  max     1.183 s  (549.4 us/op, max 591.5)  [n=5]
+  ParallelPool.scan, 1 worker(s)               median     1.125 s  max     1.243 s  (562.3 us/op, max 621.7)  [n=5]
+  ParallelPool.scan, 2 worker(s)               median     1.201 s  max     1.276 s  (600.4 us/op, max 638.0)  [n=5]
+  ParallelPool.scan, 4 worker(s)               median   981.87 ms  max     1.043 s  (490.9 us/op, max 521.7)  [n=5]
+  ParallelPool.scan, 8 worker(s)               median     1.079 s  max     1.136 s  (539.6 us/op, max 568.2)  [n=5]
+  ParallelPool.scan, 16 worker(s)              median     1.115 s  max     1.146 s  (557.5 us/op, max 572.8)  [n=5]
+   speedup vs sequential: {'1': 0.98, '2': 0.92, '4': 1.12, '8': 1.02, '16': 0.99}
+
+== vector_knn ==  kNN latency, build time and recall: exact and ivf_flat backends vs numpy brute force.
+   work: {"backends": {"exact": {}, "ivf_flat": {"nlist": 100, "nprobe": 10}}, "dim": 32, "k": 10, "metric": "cosine", "queries": 100, "vectors": 10000}
+   verified: checksum {'exact': 100, 'ivf_flat': 100} == expected; 7/7 checks passed
+  numpy brute force (reference)                median   135.75 ms  max   143.97 ms  (1357.5 us/op, max 1439.7)  [n=5]
+  exact: build index over 10000 vectors        median   308.77 ms  max   317.91 ms  (30.9 us/op, max 31.8)  [n=3]
+  exact: first query after build (derived structures) median    70.49 ms  max    70.49 ms  [n=1] SINGLE SAMPLE
+  exact: kNN query (k=10)                      median    81.80 ms  max   104.30 ms  (818.0 us/op, max 1043.0)  [n=5]
+  ivf_flat: build index over 10000 vectors     median     1.807 s  max     1.909 s  (180.7 us/op, max 190.9)  [n=3]
+  ivf_flat: first query after build (derived structures) median    58.68 ms  max    58.68 ms  [n=1] SINGLE SAMPLE
+  ivf_flat: kNN query (k=10)                   median   148.28 ms  max   170.31 ms  (1482.8 us/op, max 1703.1)  [n=5]
+   recall@10 vs brute force: {'exact': 1.0, 'ivf_flat': 1.0}
+
+== vector_knn_hnsw ==  kNN latency, build time and recall of the hnsw backend (isolated: hnswlib enables the GIL).
+   work: {"backends": {"hnsw": {}}, "dim": 32, "k": 10, "metric": "cosine", "queries": 100, "vectors": 10000}
+   verified: checksum {'hnsw': 100} == expected; 4/4 checks passed
+  numpy brute force (reference)                median   124.45 ms  max   131.96 ms  (1244.5 us/op, max 1319.6)  [n=5]
+  hnsw: build index over 10000 vectors         median   335.22 ms  max   352.75 ms  (33.5 us/op, max 35.3)  [n=3]
+  hnsw: first query after build (derived structures) median   903.24 ms  max   903.24 ms  [n=1] SINGLE SAMPLE
+  hnsw: kNN query (k=10)                       median    65.30 ms  max    69.41 ms  (653.0 us/op, max 694.1)  [n=5]
+   recall@10 vs brute force: {'hnsw': 1.0}
+   note: hnswlib re-enables the GIL when imported on a free-threaded build; this workload ran in its own interpreter
+
+== cluster_cas_baseline ==  CAS-only baseline (reverted D5): CloudStorage writers arbitrated by the store's conditional root write.
+   work: {"commit": "read and increment counter n (one root)", "seconds": 3.0, "store_latency_s": [0.0, 0.03], "writers": [1, 4]}
+   verified: checksum {'latency 0 ms, 1 writer(s), run 1': 2842, 'latency 0 ms, 1 writer(s), run 2': 832, 'latency 0 ms... == expected; 12/12 checks passed
+  CAS-only commits/s, latency 0 ms, 1 writer(s) median       884.6 commits/s  min     267.8  [n=3]
+  CAS-only commits/s, latency 0 ms, 4 writer(s) median       824.6 commits/s  min     811.4  [n=3]
+  CAS-only commits/s, latency 30 ms, 1 writer(s) median         6.6 commits/s  min       6.5  [n=3]
+  CAS-only commits/s, latency 30 ms, 4 writer(s) median         6.1 commits/s  min       6.0  [n=3]
+   latency 0 ms, 1 writer(s): commit latency ms (all runs): {'p50': 1.03, 'p95': 1.48}
+   latency 0 ms, 1 writer(s): failed root CAS per commit, each run: [0.0, 0.0, 0.0]
+   latency 0 ms, 4 writer(s): commit latency ms (all runs): {'p50': 1.12, 'p95': 1.73}
+   latency 0 ms, 4 writer(s): failed root CAS per commit, each run: [0.0, 0.0, 0.0]
+   latency 30 ms, 1 writer(s): commit latency ms (all runs): {'p50': 152.31, 'p95': 152.86}
+   latency 30 ms, 1 writer(s): failed root CAS per commit, each run: [0.0, 0.0, 0.0]
+   latency 30 ms, 4 writer(s): commit latency ms (all runs): {'p50': 152.36, 'p95': 3591.14}
+   latency 30 ms, 4 writer(s): failed root CAS per commit, each run: [0.39, 0.26, 0.26]
+   note: each writer is its own ObjectSpace/CloudStorage instance (as separate processes would be); a commit's root CAS is on the commit path, so the store latency bounds it
+
+== cluster_peers ==  In-process cluster: commits/s, latency and critical-section breakdown with 1/2/4/8 peers.
+   work: {"durability": "fsync (local tier)", "modes": ["blind", "increment"], "peers": [1, 2, 4, 8], "seconds": 2.0, "store_latency_s": 0.0, "threads_per_peer": 4}
+   verified: checksum {'blind, 1 peer(s)': True, 'blind, 2 peer(s)': True, 'blind, 4 peer(s)': True, 'blind, 8 peer(s)'... == expected; 8/8 checks passed
+  blind: commits/s, 1 peer(s) x 4 threads      median       272.8 commits/s  min      95.2  [n=3]
+  blind: commits/s, 2 peer(s) x 4 threads      median       316.9 commits/s  min     308.6  [n=3]
+  blind: commits/s, 4 peer(s) x 4 threads      median       291.9 commits/s  min     144.9  [n=3]
+  blind: commits/s, 8 peer(s) x 4 threads      median       192.9 commits/s  min     191.1  [n=3]
+  increment: commits/s, 1 peer(s) x 4 threads  median       166.0 commits/s  min     164.3  [n=3]
+  increment: commits/s, 2 peer(s) x 4 threads  median       106.0 commits/s  min      99.0  [n=3]
+  increment: commits/s, 4 peer(s) x 4 threads  median        87.4 commits/s  min      45.0  [n=3]
+  increment: commits/s, 8 peer(s) x 4 threads  median        77.7 commits/s  min      75.6  [n=3]
+   blind, 1 peer(s): commit latency ms: {'p50': 13.79, 'p95': 20.61}
+   blind, 1 peer(s): attempts per commit: 1.0
+   blind, 1 peer(s): lease acquisitions tried per commit: 0.0
+   blind, 1 peer(s): critical section ms per commit: {'validation': 0.036, 'replay': 0.157, 'path_copy': 1.61, 'replication': 3.277}
+   blind, 1 peer(s): commits per peer, each run: [[556], [295], [551]]
+   blind, 2 peer(s): commit latency ms: {'p50': 24.71, 'p95': 33.43}
+   blind, 2 peer(s): attempts per commit: 1.0
+   blind, 2 peer(s): lease acquisitions tried per commit: 0.0
+   blind, 2 peer(s): critical section ms per commit: {'validation': 0.188, 'replay': 0.636, 'path_copy': 1.816, 'replication': 7.137}
+   blind, 2 peer(s): commits per peer, each run: [[309, 315], [327, 327], [321, 320]]
+   blind, 4 peer(s): commit latency ms: {'p50': 53.02, 'p95': 66.38}
+   blind, 4 peer(s): attempts per commit: 1.0
+   blind, 4 peer(s): lease acquisitions tried per commit: 0.0
+   blind, 4 peer(s): critical section ms per commit: {'validation': 0.183, 'replay': 0.819, 'path_copy': 1.855, 'replication': 8.815}
+   blind, 4 peer(s): commits per peer, each run: [[149, 148, 152, 151], [152, 150, 148, 150], [152, 148, 148, 149]]
+   blind, 8 peer(s): commit latency ms: {'p50': 152.3, 'p95': 250.09}
+   blind, 8 peer(s): attempts per commit: 1.0
+   blind, 8 peer(s): lease acquisitions tried per commit: 0.0
+   blind, 8 peer(s): critical section ms per commit: {'validation': 0.335, 'replay': 1.163, 'path_copy': 2.453, 'replication': 14.223}
+   blind, 8 peer(s): commits per peer, each run: [[57, 60, 60, 59, 60, 56, 60, 60], [49, 52, 52, 52, 50, 52, 52, 52], [52, 53, 55, 52, 52, 52, 52, 56]]
+   increment, 1 peer(s): commit latency ms: {'p50': 6.87, 'p95': 118.6}
+   increment, 1 peer(s): attempts per commit: 3.37
+   increment, 1 peer(s): lease acquisitions tried per commit: 0.01
+   increment, 1 peer(s): critical section ms per commit: {'validation': 0.007, 'replay': 0.132, 'path_copy': 1.685, 'replication': 3.0}
+   increment, 1 peer(s): commits per peer, each run: [[348], [334], [335]]
+   increment, 2 peer(s): commit latency ms: {'p50': 51.95, 'p95': 224.85}
+   increment, 2 peer(s): attempts per commit: 4.69
+   increment, 2 peer(s): lease acquisitions tried per commit: 0.01
+   increment, 2 peer(s): critical section ms per commit: {'validation': 0.007, 'replay': 0.635, 'path_copy': 1.591, 'replication': 5.447}
+   increment, 2 peer(s): commits per peer, each run: [[103, 102], [108, 113], [113, 108]]
+   increment, 4 peer(s): commit latency ms: {'p50': 128.79, 'p95': 544.6}
+   increment, 4 peer(s): attempts per commit: 4.53
+   increment, 4 peer(s): lease acquisitions tried per commit: 0.01
+   increment, 4 peer(s): critical section ms per commit: {'validation': 0.008, 'replay': 0.78, 'path_copy': 1.67, 'replication': 6.645}
+   increment, 4 peer(s): commits per peer, each run: [[45, 54, 51, 47], [52, 48, 50, 46], [52, 46, 42, 50]]
+   increment, 8 peer(s): commit latency ms: {'p50': 280.69, 'p95': 1071.73}
+   increment, 8 peer(s): attempts per commit: 4.49
+   increment, 8 peer(s): lease acquisitions tried per commit: 0.01
+   increment, 8 peer(s): critical section ms per commit: {'validation': 0.008, 'replay': 1.035, 'path_copy': 1.761, 'replication': 7.733}
+   increment, 8 peer(s): commits per peer, each run: [[25, 22, 23, 17, 23, 22, 22, 29], [21, 28, 19, 25, 25, 24, 24, 22], [26, 25, 21, 25, 26, 24, 21, 20]]
+
+== cluster_store_latency ==  Storage-latency independence: the same 3-peer cluster with 0 and 30 ms object-store latency.
+   work: {"mode": "blind", "peers": 3, "seconds": 2.0, "store_latency_s": [0.0, 0.03], "threads_per_peer": 4}
+   FAILED: Traceback (most recent call last):
+  File "/home/gamarino/Documentos/proyectos/scratch-8.3n/m8-raw-path/export-6b0697a/proto_db/transactions.py", line 1914, in _permit_round
+    replication = coordinator.replicate(permission, current, tier=tier, propose=not conflicted)
+  File "/home/gamarino/Documentos/proyectos/scratch-8.3n/m8-raw-path/export-6b0697a/proto_db/cluster/coordinator.py", line 4017, in replicate
+    raise ProtoOutcomeUnknownError(
+        f"Node {self._node}: {why}; the root (epoch {root.epoch}) may or may not take effect")
+proto_db.errors.ProtoOutcomeUnknownError: Node n1: fewer than 1 other members stored the commit's records before the lease ended; the root (epoch 432) may or may not take effect
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/gamarino/Documentos/proyectos/scratch-8.3n/m8-raw-path/export-6b0697a/benchmarks/harness.py", line 531, in run_one
+    result = bench.fn(ctx, dict(params))
+  File "/home/gamarino/Documentos/proyectos/scratch-8.3n/m8-raw-path/export-6b0697a/benchmarks/workloads/cluster.py", line 274, in cluster_store_latency
+    runs = [_cluster_run(ctx, p["peers"], MemoryObjectStore(latency=latency), "blind", p["threads"],
+            ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                         p["seconds"]) for _ in range(p["repeat"])]
+                         ^^^^^^^^^^^^^
+  File "/home/gamarino/Documentos/proyectos/scratch-8.3n/m8-raw-path/export-6b0697a/benchmarks/workloads/cluster.py", line 154, in _cluster_run
+    elapsed, committed, attempts, latencies, by_db = _drive(cl.dbs, threads, seconds, mode, batch)
+                                                     ~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/gamarino/Documentos/proyectos/scratch-8.3n/m8-raw-path/export-6b0697a/benchmarks/workloads/cluster.py", line 137, in _drive
+    elapsed, _ = run_threads([worker_for(i, db) for i, db in enumerate(dbs) for _ in range(threads_per_db)])
+                 ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/gamarino/Documentos/proyectos/scratch-8.3n/m8-raw-path/export-6b0697a/benchmarks/support.py", line 245, in run_threads
+    raise errors[0]
+  File "/home/gamarino/Documentos/proyectos/scratch-8.3n/m8-raw-path/export-6b0697a/benchmarks/support.py", line 230, in wrap
+    results[i] = fn()
+                 ~~^^
+  File "/home/gamarino/Documentos/proyectos/scratch-8.3n/m8-raw-path/export-6b0697a/benchmarks/workloads/cluster.py", line 127, in worker
+    db.run(fn, **RUN_KW)
+    ~~~~~~^^^^^^^^^^^^^^
+  File "/home/gamarino/Documentos/proyectos/scratch-8.3n/m8-raw-path/export-6b0697a/proto_db/transactions.py", line 2681, in run
+    tr.commit()
+    ~~~~~~~~~^^
+  File "/home/gamarino/Documentos/proyectos/scratch-8.3n/m8-raw-path/export-6b0697a/proto_db/transactions.py", line 3745, in commit
+    self._commit()
+    ~~~~~~~~~~~~^^
+  File "/home/gamarino/Documentos/proyectos/scratch-8.3n/m8-raw-path/export-6b0697a/proto_db/transactions.py", line 3770, in _commit
+    published = _commit_root(self.storage, space.lock_timeout, self._scoped_build_root,
+                             space.coordinator)
+  File "/home/gamarino/Documentos/proyectos/scratch-8.3n/m8-raw-path/export-6b0697a/proto_db/transactions.py", line 1326, in _commit_root
+    return _commit_under_lease(coordinator, lock_timeout, build)
+  File "/home/gamarino/Documentos/proyectos/scratch-8.3n/m8-raw-path/export-6b0697a/proto_db/transactions.py", line 1488, in _commit_under_lease
+    raise error
+proto_db.errors.ProtoOutcomeUnknownError: Node n1: fewer than 1 other members stored the commit's records before the lease ended; the root (epoch 432) may or may not take effect
+
+
+== cluster_tcp ==  TCP subprocess peers (1/2/3/4/8, one process each, fsync), plus 3 peers in flush and none modes.
+   work: {"commit": "blind add of one id", "durability": "fsync (local tier) for the peer sweep", "durability_sweep": {"modes": ["flush", "none"], "peers": 3}, "peers": [1, 2, 3, 4, 8], "seconds": 3.0, "threads_per_peer": 4}
+   verified: checksum {'1 peer(s)': True, '2 peer(s)': True, '3 peer(s)': True, '4 peer(s)': True, '8 peer(s)': True, '... == expected; 10/10 checks passed
+  commits/s, 1 TCP peer(s) x 4 threads         median       218.0 commits/s  min     214.6  [n=3]
+  commits/s, 2 TCP peer(s) x 4 threads         median       291.5 commits/s  min     257.3  [n=3]
+  commits/s, 3 TCP peer(s) x 4 threads         median       256.2 commits/s  min     243.6  [n=3]
+  commits/s, 4 TCP peer(s) x 4 threads         median       264.7 commits/s  min     262.0  [n=3]
+  commits/s, 8 TCP peer(s) x 4 threads         median       211.8 commits/s  min     209.1  [n=3]
+  commits/s, 3 TCP peer(s) x 4 threads, durability=flush median       274.3 commits/s  min     269.5  [n=3]
+  commits/s, 3 TCP peer(s) x 4 threads, durability=none median       279.2 commits/s  min     249.7  [n=3]
+  commits/s, 3 peer(s), payload 100 B          median       160.6 commits/s  min     138.5  [n=3]
+  commits/s, 3 peer(s), payload 10240 B        median       193.1 commits/s  min     188.3  [n=3]
+  commits/s, 3 peer(s), payload 102400 B       median       161.9 commits/s  min     157.4  [n=3]
+   1 peer(s): commit latency ms (all peers): {'p50': 16.81, 'p95': 27.12}
+   1 peer(s): commit latency ms per peer: [{'p50': 16.81, 'p95': 27.12}]
+   1 peer(s): lease acquisitions tried per commit: 0.0
+   1 peer(s): critical section ms per commit: {'validation': 0.063, 'replay': 0.171, 'path_copy': 2.156, 'replication': 3.91}
+   1 peer(s): commits per peer, each run: [[661], [660], [648]]
+   1 peer(s): syncs per commit by role (median run): {'committer': 0.52, 'persister': 0.46}
+   1 peer(s): syncs per commit, total (median run): 0.98
+   1 peer(s): syncs after the window until persisted (median run): {'committer': 0, 'persister': 1}
+   1 peer(s): syncs per commit by call site (median run): {'committer: fsync cluster.rootlog._write:659 <- cluster.rootlog.append_records:573 (entry transactions.run)': 0.49, 'persister: fsync storage.file.fsync:159 <- storage.file._write_out:415 (entry cluster.persister._run)': 0.13, 'persister: fsync storage.file.fsync_dir:175 <- storage.file._write_out:418 (entry cluster.persister._run)': 0.07, 'persister: fsync storage.file.fsync_dir:175 <- storage.file.sync:484 (entry cluster.persister._run)': 0.06, 'persister: fsync storage.tiered._checkpoint_data:1507 <- storage.tiered.checkpoint:1481 (entry cluster.persister._run)': 0.06, 'persister: fsync storage.logfile.prepare_replacement:372 <- cluster.rootlog._compact:702 (entry cluster.persister._run)': 0.06, 'persister: fsync storage.logfile.fsync_dir:296 <- cluster.rootlog._compact:706 (entry cluster.persister._run)': 0.06, 'persister: fsync storage.tiered.flush:1127 <- storage.tiered.ship:2034 (entry cluster.persister._run)': 0.03, 'committer: fsync storage.tiered._sync_manifest:1412 <- storage.tiered.accept_replication:1454 (entry transactions.run)': 0.03, 'persister: fsync storage.tiered._sync_manifest:1412 <- storage.tiered._checkpoint_data:1508 (entry cluster.persister._run)': 0.0}
+   2 peer(s): commit latency ms (all peers): {'p50': 26.0, 'p95': 40.05}
+   2 peer(s): commit latency ms per peer: [{'p50': 25.68, 'p95': 39.53}, {'p50': 26.25, 'p95': 40.72}]
+   2 peer(s): lease acquisitions tried per commit: 0.01
+   2 peer(s): critical section ms per commit: {'validation': 0.201, 'replay': 0.691, 'path_copy': 1.947, 'replication': 7.843}
+   2 peer(s): commits per peer, each run: [[389, 398], [448, 435], [439, 450]]
+   2 peer(s): syncs per commit by role (median run): {'committer': 0.31, 'follower': 0.27, 'persister': 0.49}
+   2 peer(s): syncs per commit, total (median run): 1.08
+   2 peer(s): syncs after the window until persisted (median run): {'follower': 1, 'committer': 0, 'persister': 2}
+   2 peer(s): syncs per commit by call site (median run): {'committer: fsync cluster.rootlog._write:659 <- cluster.rootlog.append_records:573 (entry transactions.run)': 0.27, 'follower: fsync cluster.rootlog._write:659 <- cluster.rootlog.append_records:573 (entry cluster.coordinator._work)': 0.27, 'persister: fsync storage.file.fsync:159 <- storage.file._write_out:415 (entry cluster.persister._run)': 0.13, 'persister: fsync storage.tiered._checkpoint_data:1502 <- storage.tiered.checkpoint:1481 (entry cluster.persister._run)': 0.1, 'persister: fsync storage.file.fsync_dir:175 <- storage.file._write_out:418 (entry cluster.persister._run)': 0.08, 'committer: fsync storage.tiered._sync_manifest:1412 <- storage.tiered.accept_replication:1454 (entry transactions.run)': 0.04, 'persister: fsync storage.tiered.flush:1127 <- storage.tiered.ship:2034 (entry cluster.persister._run)': 0.04, 'persister: fsync storage.file.fsync_dir:175 <- storage.file.sync:484 (entry cluster.persister._run)': 0.03, 'persister: fsync storage.tiered._checkpoint_data:1507 <- storage.tiered.checkpoint:1481 (entry cluster.persister._run)': 0.03, 'persister: fsync storage.tiered._fsync_dir:1905 <- storage.tiered._checkpoint_data:1510 (entry cluster.persister._run)': 0.03, 'persister: fsync storage.logfile.prepare_replacement:372 <- cluster.rootlog._compact:702 (entry cluster.persister._run)': 0.03, 'persister: fsync storage.logfile.fsync_dir:296 <- cluster.rootlog._compact:706 (entry cluster.persister._run)': 0.03}
+   3 peer(s): commit latency ms (all peers): {'p50': 41.91, 'p95': 84.0}
+   3 peer(s): commit latency ms per peer: [{'p50': 41.6, 'p95': 71.49}, {'p50': 42.18, 'p95': 88.31}, {'p50': 41.98, 'p95': 84.13}]
+   3 peer(s): lease acquisitions tried per commit: 0.01
+   3 peer(s): critical section ms per commit: {'validation': 0.172, 'replay': 0.847, 'path_copy': 2.112, 'replication': 9.804}
+   3 peer(s): commits per peer, each run: [[247, 248, 248], [260, 260, 260], [280, 280, 276]]
+   3 peer(s): syncs per commit by role (median run): {'committer': 0.35, 'follower': 0.51, 'persister': 0.8}
+   3 peer(s): syncs per commit, total (median run): 1.66
+   3 peer(s): syncs after the window until persisted (median run): {'follower': 1, 'committer': 0, 'persister': 4}
+   3 peer(s): syncs per commit by call site (median run): {'follower: fsync cluster.rootlog._write:659 <- cluster.rootlog.append_records:573 (entry cluster.coordinator._work)': 0.51, 'committer: fsync cluster.rootlog._write:659 <- cluster.rootlog.append_records:573 (entry transactions.run)': 0.27, 'persister: fsync storage.file.fsync:159 <- storage.file._write_out:415 (entry cluster.persister._run)': 0.2, 'persister: fsync storage.tiered._checkpoint_data:1502 <- storage.tiered.checkpoint:1481 (entry cluster.persister._run)': 0.17, 'persister: fsync storage.file.fsync_dir:175 <- storage.file._write_out:418 (entry cluster.persister._run)': 0.13, 'committer: fsync storage.tiered._sync_manifest:1412 <- storage.tiered.accept_replication:1454 (entry transactions.run)': 0.08, 'persister: fsync storage.file.fsync_dir:175 <- storage.file.sync:484 (entry cluster.persister._run)': 0.05, 'persister: fsync storage.tiered._checkpoint_data:1507 <- storage.tiered.checkpoint:1481 (entry cluster.persister._run)': 0.05, 'persister: fsync storage.logfile.prepare_replacement:372 <- cluster.rootlog._compact:702 (entry cluster.persister._run)': 0.05, 'persister: fsync storage.logfile.fsync_dir:296 <- cluster.rootlog._compact:706 (entry cluster.persister._run)': 0.05, 'persister: fsync storage.tiered._fsync_dir:1905 <- storage.tiered._checkpoint_data:1510 (entry cluster.persister._run)': 0.05, 'persister: fsync storage.tiered.flush:1127 <- storage.tiered.ship:2034 (entry cluster.persister._run)': 0.04, 'persister: fsync storage.tiered._sync_manifest:1412 <- storage.tiered._checkpoint_data:1508 (entry cluster.persister._run)': 0.01}
+   4 peer(s): commit latency ms (all peers): {'p50': 58.62, 'p95': 78.31}
+   4 peer(s): commit latency ms per peer: [{'p50': 58.01, 'p95': 78.4}, {'p50': 58.9, 'p95': 80.25}, {'p50': 58.62, 'p95': 77.8}, {'p50': 58.48, 'p95': 75.02}]
+   4 peer(s): lease acquisitions tried per commit: 0.01
+   4 peer(s): critical section ms per commit: {'validation': 0.166, 'replay': 0.909, 'path_copy': 2.058, 'replication': 10.004}
+   4 peer(s): commits per peer, each run: [[200, 200, 200, 200], [204, 204, 204, 200], [208, 204, 204, 204]]
+   4 peer(s): syncs per commit by role (median run): {'committer': 0.37, 'follower': 0.64, 'persister': 0.75}
+   4 peer(s): syncs per commit, total (median run): 1.76
+   4 peer(s): syncs after the window until persisted (median run): {'follower': 4, 'committer': 0, 'persister': 7}
+   4 peer(s): syncs per commit by call site (median run): {'follower: fsync cluster.rootlog._write:659 <- cluster.rootlog.append_records:573 (entry cluster.coordinator._work)': 0.64, 'committer: fsync cluster.rootlog._write:659 <- cluster.rootlog.append_records:573 (entry transactions.run)': 0.27, 'persister: fsync storage.file.fsync:159 <- storage.file._write_out:415 (entry cluster.persister._run)': 0.25, 'persister: fsync storage.file.fsync_dir:175 <- storage.file._write_out:418 (entry cluster.persister._run)': 0.15, 'persister: fsync storage.tiered._checkpoint_data:1502 <- storage.tiered.checkpoint:1481 (entry cluster.persister._run)': 0.13, 'committer: fsync storage.tiered._sync_manifest:1412 <- storage.tiered.accept_replication:1454 (entry transactions.run)': 0.1, 'persister: fsync storage.tiered.flush:1127 <- storage.tiered.ship:2034 (entry cluster.persister._run)': 0.05, 'persister: fsync storage.file.fsync_dir:175 <- storage.file.sync:484 (entry cluster.persister._run)': 0.03, 'persister: fsync storage.tiered._checkpoint_data:1507 <- storage.tiered.checkpoint:1481 (entry cluster.persister._run)': 0.03, 'persister: fsync storage.logfile.prepare_replacement:372 <- cluster.rootlog._compact:702 (entry cluster.persister._run)': 0.03, 'persister: fsync storage.logfile.fsync_dir:296 <- cluster.rootlog._compact:706 (entry cluster.persister._run)': 0.03, 'persister: fsync storage.tiered._fsync_dir:1905 <- storage.tiered._checkpoint_data:1510 (entry cluster.persister._run)': 0.03, 'persister: fsync storage.tiered._sync_manifest:1412 <- storage.tiered._checkpoint_data:1508 (entry cluster.persister._run)': 0.0}
+   8 peer(s): commit latency ms (all peers): {'p50': 140.15, 'p95': 208.36}
+   8 peer(s): commit latency ms per peer: [{'p50': 139.52, 'p95': 202.62}, {'p50': 140.72, 'p95': 214.06}, {'p50': 140.36, 'p95': 200.4}, {'p50': 139.19, 'p95': 206.8}, {'p50': 145.96, 'p95': 203.35}, {'p50': 142.59, 'p95': 206.65}, {'p50': 138.73, 'p95': 206.59}, {'p50': 140.02, 'p95': 211.39}]
+   8 peer(s): lease acquisitions tried per commit: 0.04
+   8 peer(s): critical section ms per commit: {'validation': 0.261, 'replay': 1.191, 'path_copy': 2.28, 'replication': 12.605}
+   8 peer(s): commits per peer, each run: [[84, 84, 84, 84, 86, 84, 84, 88], [88, 88, 88, 86, 88, 84, 88, 84], [84, 84, 83, 80, 84, 84, 84, 84]]
+   8 peer(s): syncs per commit by role (median run): {'committer': 0.49, 'follower': 0.81, 'persister': 1.15}
+   8 peer(s): syncs per commit, total (median run): 2.44
+   8 peer(s): syncs after the window until persisted (median run): {'follower': 9, 'persister': 15, 'committer': 0}
+   8 peer(s): syncs per commit by call site (median run): {'follower: fsync cluster.rootlog._write:659 <- cluster.rootlog.append_records:573 (entry cluster.coordinator._work)': 0.81, 'persister: fsync storage.file.fsync:159 <- storage.file._write_out:415 (entry cluster.persister._run)': 0.34, 'persister: fsync storage.tiered._checkpoint_data:1502 <- storage.tiered.checkpoint:1481 (entry cluster.persister._run)': 0.28, 'committer: fsync cluster.rootlog._write:659 <- cluster.rootlog.append_records:573 (entry transactions.run)': 0.26, 'persister: fsync storage.file.fsync_dir:175 <- storage.file._write_out:418 (entry cluster.persister._run)': 0.24, 'committer: fsync storage.tiered._sync_manifest:1412 <- storage.tiered.accept_replication:1454 (entry transactions.run)': 0.23, 'persister: fsync storage.file.fsync_dir:175 <- storage.file.sync:484 (entry cluster.persister._run)': 0.05, 'persister: fsync storage.tiered._checkpoint_data:1507 <- storage.tiered.checkpoint:1481 (entry cluster.persister._run)': 0.05, 'persister: fsync storage.logfile.prepare_replacement:372 <- cluster.rootlog._compact:702 (entry cluster.persister._run)': 0.05, 'persister: fsync storage.logfile.fsync_dir:296 <- cluster.rootlog._compact:706 (entry cluster.persister._run)': 0.05, 'persister: fsync storage.tiered._fsync_dir:1905 <- storage.tiered._checkpoint_data:1510 (entry cluster.persister._run)': 0.05, 'persister: fsync storage.tiered.flush:1127 <- storage.tiered.ship:2034 (entry cluster.persister._run)': 0.02, 'persister: fsync storage.tiered._sync_manifest:1412 <- storage.tiered._checkpoint_data:1508 (entry cluster.persister._run)': 0.0}
+   3 peer(s), durability=flush: commit latency ms (all peers): {'p50': 41.86, 'p95': 60.82}
+   3 peer(s), durability=flush: commit latency ms per peer: [{'p50': 41.62, 'p95': 59.94}, {'p50': 41.7, 'p95': 61.14}, {'p50': 42.13, 'p95': 60.96}]
+   3 peer(s), durability=flush: lease acquisitions tried per commit: 0.01
+   3 peer(s), durability=flush: critical section ms per commit: {'validation': 0.301, 'replay': 0.824, 'path_copy': 1.949, 'replication': 8.517}
+   3 peer(s), durability=flush: commits per peer, each run: [[273, 276, 272], [284, 282, 284], [279, 280, 280]]
+   3 peer(s), durability=flush: syncs per commit by role (median run): {'committer': 0.37, 'follower': 0.52, 'persister': 0.4}
+   3 peer(s), durability=flush: syncs per commit, total (median run): 1.29
+   3 peer(s), durability=flush: syncs after the window until persisted (median run): {'follower': 3, 'committer': 0, 'persister': 2}
+   3 peer(s), durability=flush: syncs per commit by call site (median run): {'follower: fsync cluster.rootlog._write:659 <- cluster.rootlog.append_records:573 (entry cluster.coordinator._work)': 0.52, 'committer: fsync cluster.rootlog._write:659 <- cluster.rootlog.append_records:573 (entry transactions.run)': 0.27, 'persister: fsync storage.tiered._checkpoint_data:1502 <- storage.tiered.checkpoint:1481 (entry cluster.persister._run)': 0.13, 'persister: fsync storage.file.fsync:159 <- storage.file.sync:481 (entry cluster.persister._run)': 0.11, 'committer: fsync storage.tiered._sync_manifest:1412 <- storage.tiered.accept_replication:1454 (entry transactions.run)': 0.09, 'persister: fsync storage.file.fsync_dir:175 <- storage.file.sync:484 (entry cluster.persister._run)': 0.02, 'persister: fsync storage.tiered._checkpoint_data:1507 <- storage.tiered.checkpoint:1481 (entry cluster.persister._run)': 0.02, 'persister: fsync storage.tiered._fsync_dir:1905 <- storage.tiered._checkpoint_data:1510 (entry cluster.persister._run)': 0.02, 'persister: fsync storage.logfile.prepare_replacement:372 <- cluster.rootlog._compact:702 (entry cluster.persister._run)': 0.02, 'persister: fsync storage.logfile.fsync_dir:296 <- cluster.rootlog._compact:706 (entry cluster.persister._run)': 0.02, 'persister: fsync storage.file.fsync_dir:175 <- storage.file._write_out:418 (entry cluster.persister._run)': 0.02, 'persister: fsync storage.file.fsync:159 <- storage.file._write_out:415 (entry cluster.persister._run)': 0.01, 'persister: fsync storage.tiered._sync_manifest:1412 <- storage.tiered._checkpoint_data:1508 (entry cluster.persister._run)': 0.0}
+   3 peer(s), durability=none: commit latency ms (all peers): {'p50': 40.51, 'p95': 58.41}
+   3 peer(s), durability=none: commit latency ms per peer: [{'p50': 40.33, 'p95': 58.41}, {'p50': 40.51, 'p95': 63.98}, {'p50': 40.79, 'p95': 57.3}]
+   3 peer(s), durability=none: lease acquisitions tried per commit: 0.01
+   3 peer(s), durability=none: critical section ms per commit: {'validation': 0.162, 'replay': 0.82, 'path_copy': 1.995, 'replication': 8.168}
+   3 peer(s), durability=none: commits per peer, each run: [[285, 288, 285], [282, 284, 284], [255, 252, 252]]
+   3 peer(s), durability=none: syncs per commit by role (median run): {'committer': 0.36, 'follower': 0.52, 'persister': 0.44}
+   3 peer(s), durability=none: syncs per commit, total (median run): 1.32
+   3 peer(s), durability=none: syncs after the window until persisted (median run): {'follower': 3, 'committer': 0, 'persister': 8}
+   3 peer(s), durability=none: syncs per commit by call site (median run): {'follower: fsync cluster.rootlog._write:659 <- cluster.rootlog.append_records:573 (entry cluster.coordinator._work)': 0.52, 'committer: fsync cluster.rootlog._write:659 <- cluster.rootlog.append_records:573 (entry transactions.run)': 0.27, 'persister: fsync storage.tiered._checkpoint_data:1502 <- storage.tiered.checkpoint:1481 (entry cluster.persister._run)': 0.13, 'persister: fsync storage.file.fsync:159 <- storage.file.sync:481 (entry cluster.persister._run)': 0.11, 'committer: fsync storage.tiered._sync_manifest:1412 <- storage.tiered.accept_replication:1454 (entry transactions.run)': 0.1, 'persister: fsync storage.file.fsync_dir:175 <- storage.file.sync:484 (entry cluster.persister._run)': 0.03, 'persister: fsync storage.tiered._checkpoint_data:1507 <- storage.tiered.checkpoint:1481 (entry cluster.persister._run)': 0.03, 'persister: fsync storage.tiered._fsync_dir:1905 <- storage.tiered._checkpoint_data:1510 (entry cluster.persister._run)': 0.03, 'persister: fsync storage.logfile.prepare_replacement:372 <- cluster.rootlog._compact:702 (entry cluster.persister._run)': 0.03, 'persister: fsync storage.logfile.fsync_dir:296 <- cluster.rootlog._compact:706 (entry cluster.persister._run)': 0.03, 'persister: fsync storage.file.fsync_dir:175 <- storage.file._write_out:418 (entry cluster.persister._run)': 0.03, 'persister: fsync storage.file.fsync:159 <- storage.file._write_out:415 (entry cluster.persister._run)': 0.02, 'persister: fsync storage.tiered._sync_manifest:1412 <- storage.tiered._checkpoint_data:1508 (entry cluster.persister._run)': 0.0}
+   3 peer(s), payload 100 B: payload MB/s: 0.016
+   3 peer(s), payload 100 B: latency ms: {'p50': 72.87, 'p95': 101.23}
+   3 peer(s), payload 100 B: committer frame bytes per commit: 5873
+   3 peer(s), payload 100 B: cluster frame bytes per commit: 12850
+   3 peer(s), payload 100 B: loopback bytes per commit: 13216
+   3 peer(s), payload 100 B: fsyncs per node per commit: [0.65, 0.55, 0.65]
+   3 peer(s), payload 10240 B: payload MB/s: 1.977
+   3 peer(s), payload 10240 B: latency ms: {'p50': 60.72, 'p95': 79.33}
+   3 peer(s), payload 10240 B: committer frame bytes per commit: 15282
+   3 peer(s), payload 10240 B: cluster frame bytes per commit: 32285
+   3 peer(s), payload 10240 B: loopback bytes per commit: 32650
+   3 peer(s), payload 10240 B: fsyncs per node per commit: [0.63, 0.61, 0.61]
+   3 peer(s), payload 102400 B: payload MB/s: 16.581
+   3 peer(s), payload 102400 B: latency ms: {'p50': 69.17, 'p95': 104.05}
+   3 peer(s), payload 102400 B: committer frame bytes per commit: 102976
+   3 peer(s), payload 102400 B: cluster frame bytes per commit: 216433
+   3 peer(s), payload 102400 B: loopback bytes per commit: 216906
+   3 peer(s), payload 102400 B: fsyncs per node per commit: [0.65, 0.69, 0.67]
+
+== rqlite_reference ==  3-node rqlite on loopback vs a 3-peer ProtoDB TCP cluster: small commits, per request and batched.
+   work: {"pending": "rqlite not available (pass --rqlite PATH or set PROTODB_BENCH_RQLITED)"}
+   PENDING: rqlite not available (pass --rqlite PATH or set PROTODB_BENCH_RQLITED)
+
+== mixed_read_write ==  3 members: readers on every node during commits (R97); rqlite at each read consistency level.
+   work: {"catalog": 10000, "cells": 5, "members": 3, "readers_per_node": [1, 4], "rqlite_levels": "pending (no rqlited binary)", "seconds": 3.0, "writers_per_node": 4}
+   verified: checksum {'protodb, writers only': True, 'protodb, readers only, 1 reader(s)/node': True, 'protodb, writer... == expected; 5/5 checks passed
+  protodb, writers only: commits/s             median       189.2 commits/s  min     184.4  [n=2]
+  protodb, readers only, 1 reader(s)/node: reads/s median     58838.5 reads/s  min   57879.6  [n=2]
+  protodb, writers + readers, 1 reader(s)/node: commits/s median       130.9 commits/s  min     130.4  [n=2]
+  protodb, writers + readers, 1 reader(s)/node: reads/s median     36401.6 reads/s  min   35781.1  [n=2]
+  protodb, readers only, 4 reader(s)/node: reads/s median     67455.5 reads/s  min   66948.6  [n=2]
+  protodb, writers + readers, 4 reader(s)/node: commits/s median        51.9 commits/s  min      46.0  [n=2]
+  protodb, writers + readers, 4 reader(s)/node: reads/s median     51266.1 reads/s  min   48216.7  [n=2]
+   protodb, writers only: runs: [{'system': 'protodb', 'writers': 4, 'readers': 0, 'ok': True, 'commits': 597, 'commit_rate': 193.94425489117572, 'commit_latency_ms': {'p50': 59.78, 'p95': 88.57}, 'syncs_per_commit': 1.85, 'ids_missing': 0, 'ids_extra': 0, 'ids_duplicated': 0, 'thread_errors': [[], [], []], 'commits_by_peer': [197, 200, 200], 'kept_run_dir': None, 'replication_failures_by_peer': [0, 0, 0], 'healthy_by_peer': [True, True, True]}, {'system': 'protodb', 'writers': 4, 'readers': 0, 'ok': True, 'commits': 565, 'commit_rate': 184.40536421375694, 'commit_latency_ms': {'p50': 63.65, 'p95': 90.19}, 'syncs_per_commit': 1.91, 'ids_missing': 0, 'ids_extra': 0, 'ids_duplicated': 0, 'thread_errors': [[], [], []], 'commits_by_peer': [188, 189, 188], 'kept_run_dir': None, 'replication_failures_by_peer': [0, 0, 0], 'healthy_by_peer': [True, True, True]}]
+   protodb, readers only, 1 reader(s)/node: read p50/p99 us, each run: [[35, 216], [34, 239]]
+   protodb, readers only, 1 reader(s)/node: runs: [{'system': 'protodb', 'writers': 0, 'readers': 1, 'ok': True, 'commits': 0, 'commit_rate': None, 'commit_latency_ms': None, 'syncs_per_commit': None, 'ids_missing': 0, 'ids_extra': 0, 'ids_duplicated': 0, 'thread_errors': [[], [], []], 'commits_by_peer': [0, 0, 0], 'kept_run_dir': None, 'replication_failures_by_peer': [0, 0, 0], 'healthy_by_peer': [True, True, True], 'versions_ok': True, 'reads': 179868, 'bad_reads': 0, 'read_rate': 59797.349936998864, 'read_p50_us': 35, 'read_p99_us': 216, 'read_max_us': 16018, 'read_steady_p50_us': 34, 'read_steady_p99_us': 152, 'read_by_node': [{'reads': 72611, 'versions': [1, 1], 'p50_us': 33, 'p99_us': 64, 'max_us': 2735}, {'reads': 55158, 'versions': [1, 1], 'p50_us': 35, 'p99_us': 248, 'max_us': 13671}, {'reads': 52099, 'versions': [1, 1], 'p50_us': 35, 'p99_us': 276, 'max_us': 16018}], 'versions_seen': [1, 1], 'versions_seen_by_node': [[1, 1], [1, 1], [1, 1]]}, {'system': 'protodb', 'writers': 0, 'readers': 1, 'ok': True, 'commits': 0, 'commit_rate': None, 'commit_latency_ms': None, 'syncs_per_commit': None, 'ids_missing': 0, 'ids_extra': 0, 'ids_duplicated': 0, 'thread_errors': [[], [], []], 'commits_by_peer': [0, 0, 0], 'kept_run_dir': None, 'replication_failures_by_peer': [0, 0, 0], 'healthy_by_peer': [True, True, True], 'versions_ok': True, 'reads': 174109, 'bad_reads': 0, 'read_rate': 57879.5877118454, 'read_p50_us': 34, 'read_p99_us': 239, 'read_max_us': 17141, 'read_steady_p50_us': 34, 'read_steady_p99_us': 159, 'read_by_node': [{'reads': 70097, 'versions': [1, 1], 'p50_us': 34, 'p99_us': 71, 'max_us': 1957}, {'reads': 51173, 'versions': [1, 1], 'p50_us': 35, 'p99_us': 342, 'max_us': 16445}, {'reads': 52839, 'versions': [1, 1], 'p50_us': 35, 'p99_us': 270, 'max_us': 17141}], 'versions_seen': [1, 1], 'versions_seen_by_node': [[1, 1], [1, 1], [1, 1]]}]
+   protodb, writers + readers, 1 reader(s)/node: read p50/p99 us, each run: [[54, 425], [51, 405]]
+   protodb, writers + readers, 1 reader(s)/node: runs: [{'system': 'protodb', 'writers': 4, 'readers': 1, 'ok': True, 'commits': 402, 'commit_rate': 131.3980480567623, 'commit_latency_ms': {'p50': 88.78, 'p95': 121.07}, 'syncs_per_commit': 2.35, 'ids_missing': 0, 'ids_extra': 0, 'ids_duplicated': 0, 'thread_errors': [[], [], []], 'commits_by_peer': [132, 134, 136], 'kept_run_dir': None, 'replication_failures_by_peer': [0, 0, 0], 'healthy_by_peer': [True, True, True], 'versions_ok': True, 'reads': 109469, 'bad_reads': 0, 'read_rate': 35781.12667344704, 'read_p50_us': 54, 'read_p99_us': 425, 'read_max_us': 52258, 'read_steady_p50_us': 53, 'read_steady_p99_us': 300, 'read_by_node': [{'reads': 47071, 'versions': [1, 391], 'p50_us': 51, 'p99_us': 141, 'max_us': 52258}, {'reads': 30275, 'versions': [1, 391], 'p50_us': 59, 'p99_us': 522, 'max_us': 27977}, {'reads': 32123, 'versions': [1, 391], 'p50_us': 53, 'p99_us': 539, 'max_us': 37191}], 'versions_seen': [1, 391], 'versions_seen_by_node': [[1, 391], [1, 391], [1, 391]]}, {'system': 'protodb', 'writers': 4, 'readers': 1, 'ok': True, 'commits': 401, 'commit_rate': 130.36521542924294, 'commit_latency_ms': {'p50': 89.51, 'p95': 127.9}, 'syncs_per_commit': 2.44, 'ids_missing': 0, 'ids_extra': 0, 'ids_duplicated': 0, 'thread_errors': [[], [], []], 'commits_by_peer': [133, 136, 132], 'kept_run_dir': None, 'replication_failures_by_peer': [0, 0, 0], 'healthy_by_peer': [True, True, True], 'versions_ok': True, 'reads': 113879, 'bad_reads': 0, 'read_rate': 37022.095680465725, 'read_p50_us': 51, 'read_p99_us': 405, 'read_max_us': 28400, 'read_steady_p50_us': 50, 'read_steady_p99_us': 280, 'read_by_node': [{'reads': 49129, 'versions': [1, 386], 'p50_us': 48, 'p99_us': 145, 'max_us': 28400}, {'reads': 31458, 'versions': [1, 390], 'p50_us': 60, 'p99_us': 510, 'max_us': 26170}, {'reads': 33292, 'versions': [1, 386], 'p50_us': 54, 'p99_us': 489, 'max_us': 25480}], 'versions_seen': [1, 390], 'versions_seen_by_node': [[1, 386], [1, 390], [1, 386]]}]
+   protodb, readers only, 4 reader(s)/node: read p50/p99 us, each run: [[79, 1382], [76, 1388]]
+   protodb, readers only, 4 reader(s)/node: runs: [{'system': 'protodb', 'writers': 0, 'readers': 4, 'ok': True, 'commits': 0, 'commit_rate': None, 'commit_latency_ms': None, 'syncs_per_commit': None, 'ids_missing': 0, 'ids_extra': 0, 'ids_duplicated': 0, 'thread_errors': [[], [], []], 'commits_by_peer': [0, 0, 0], 'kept_run_dir': None, 'replication_failures_by_peer': [0, 0, 0], 'healthy_by_peer': [True, True, True], 'versions_ok': True, 'reads': 201310, 'bad_reads': 0, 'read_rate': 66948.63147095434, 'read_p50_us': 79, 'read_p99_us': 1382, 'read_max_us': 87012, 'read_steady_p50_us': 78, 'read_steady_p99_us': 1250, 'read_by_node': [{'reads': 78294, 'versions': [1, 1], 'p50_us': 77, 'p99_us': 1193, 'max_us': 43962}, {'reads': 61900, 'versions': [1, 1], 'p50_us': 81, 'p99_us': 1515, 'max_us': 35207}, {'reads': 61116, 'versions': [1, 1], 'p50_us': 79, 'p99_us': 1492, 'max_us': 87012}], 'versions_seen': [1, 1], 'versions_seen_by_node': [[1, 1], [1, 1], [1, 1]]}, {'system': 'protodb', 'writers': 0, 'readers': 4, 'ok': True, 'commits': 0, 'commit_rate': None, 'commit_latency_ms': None, 'syncs_per_commit': None, 'ids_missing': 0, 'ids_extra': 0, 'ids_duplicated': 0, 'thread_errors': [[], [], []], 'commits_by_peer': [0, 0, 0], 'kept_run_dir': None, 'replication_failures_by_peer': [0, 0, 0], 'healthy_by_peer': [True, True, True], 'versions_ok': True, 'reads': 204631, 'bad_reads': 0, 'read_rate': 67962.37794404766, 'read_p50_us': 76, 'read_p99_us': 1388, 'read_max_us': 76044, 'read_steady_p50_us': 75, 'read_steady_p99_us': 1268, 'read_by_node': [{'reads': 84950, 'versions': [1, 1], 'p50_us': 74, 'p99_us': 1028, 'max_us': 62851}, {'reads': 58241, 'versions': [1, 1], 'p50_us': 81, 'p99_us': 1621, 'max_us': 61291}, {'reads': 61440, 'versions': [1, 1], 'p50_us': 75, 'p99_us': 1540, 'max_us': 76044}], 'versions_seen': [1, 1], 'versions_seen_by_node': [[1, 1], [1, 1], [1, 1]]}]
+   protodb, writers + readers, 4 reader(s)/node: read p50/p99 us, each run: [[78, 2321], [79, 2087]]
+   protodb, writers + readers, 4 reader(s)/node: runs: [{'system': 'protodb', 'writers': 4, 'readers': 4, 'ok': True, 'commits': 142, 'commit_rate': 46.03393588046031, 'commit_latency_ms': {'p50': 251.21, 'p95': 425.37}, 'syncs_per_commit': 5.19, 'ids_missing': 0, 'ids_extra': 0, 'ids_duplicated': 0, 'thread_errors': [[], [], []], 'commits_by_peer': [48, 48, 46], 'kept_run_dir': None, 'replication_failures_by_peer': [0, 0, 0], 'healthy_by_peer': [True, True, True], 'versions_ok': True, 'reads': 148733, 'bad_reads': 0, 'read_rate': 48216.657643017636, 'read_p50_us': 78, 'read_p99_us': 2321, 'read_max_us': 153314, 'read_steady_p50_us': 78, 'read_steady_p99_us': 2019, 'read_by_node': [{'reads': 63140, 'versions': [1, 127], 'p50_us': 73, 'p99_us': 1817, 'max_us': 153314}, {'reads': 41579, 'versions': [1, 127], 'p50_us': 81, 'p99_us': 2760, 'max_us': 120452}, {'reads': 44014, 'versions': [1, 131], 'p50_us': 85, 'p99_us': 2589, 'max_us': 135755}], 'versions_seen': [1, 131], 'versions_seen_by_node': [[1, 127], [1, 127], [1, 131]]}, {'system': 'protodb', 'writers': 4, 'readers': 4, 'ok': True, 'commits': 177, 'commit_rate': 57.85785636934326, 'commit_latency_ms': {'p50': 185.26, 'p95': 308.79}, 'syncs_per_commit': 4.91, 'ids_missing': 0, 'ids_extra': 0, 'ids_duplicated': 0, 'thread_errors': [[], [], []], 'commits_by_peer': [60, 60, 57], 'kept_run_dir': None, 'replication_failures_by_peer': [0, 0, 0], 'healthy_by_peer': [True, True, True], 'versions_ok': True, 'reads': 166163, 'bad_reads': 0, 'read_rate': 54315.45190903494, 'read_p50_us': 79, 'read_p99_us': 2087, 'read_max_us': 154353, 'read_steady_p50_us': 78, 'read_steady_p99_us': 1841, 'read_by_node': [{'reads': 69674, 'versions': [1, 166], 'p50_us': 76, 'p99_us': 1510, 'max_us': 41567}, {'reads': 46272, 'versions': [1, 166], 'p50_us': 83, 'p99_us': 2497, 'max_us': 154353}, {'reads': 50217, 'versions': [1, 166], 'p50_us': 79, 'p99_us': 2428, 'max_us': 58716}], 'versions_seen': [1, 166], 'versions_seen_by_node': [[1, 166], [1, 166], [1, 166]]}]
+   note: rqlite cells pending: no rqlited binary (pass --rqlite PATH)
+
+== cluster_cache ==  3 members, writers on A, readers on B and C: the cross-transaction caches under writes (R110).
+   work: {"catalog": 20000, "categories": 100, "cells": 5, "members": 3, "products": 5000, "readers": 2, "rqlite_levels": "pending (no rqlited binary)", "seconds": 3.0, "writers": 4}
+   verified: checksum {'protodb, point reads, atom cache on': True, 'protodb, point reads, atom cache small': True, 'pr... == expected; 5/5 checks passed
+  protodb, point reads, atom cache on: reads/s median     40579.3 reads/s  min   39544.4  [n=2]
+  protodb, point reads, atom cache small: reads/s median      4273.2 reads/s  min    4099.3  [n=2]
+  protodb, point reads, atom cache off: reads/s median      1617.6 reads/s  min    1586.9  [n=2]
+  protodb, query reads, query cache on: reads/s median      4740.7 reads/s  min    4631.2  [n=2]
+  protodb, query reads, query cache off: reads/s median      4215.1 reads/s  min    4193.2  [n=2]
+   protodb, point reads, atom cache on: runs: [{'system': 'protodb', 'read': 'point', 'atom_cache': 'on', 'query_cache': 'on', 'ok': True, 'final_catalog_ok': True, 'bad_reads': 0, 'thread_errors': [[], [], []], 'commits': 187, 'commit_rate': 61.28500659674655, 'commit_p50_ms': 36.67, 'reads': 118809, 'read_rate': 39544.44277356259, 'read_p50_us': 67, 'read_p99_us': 635, 'versions_seen_by_reader_node': [[1, 184], [1, 184]], 'versions_advanced': True, 'decodes_per_read': 0.081, 'decodes_by_reader_node': [4873, 4794], 'new_versions_by_reader_node': [183, 183], 'decodes_per_new_version': 26.41, 'atoms_saved_per_commit_on_A': 59.76, 'atom_window_by_reader_node': [{'hits': 119640, 'misses': 3800, 'loads': 3615, 'saved': 0, 'unloads': 0, 'read_unloads': 0}, {'hits': 129677, 'misses': 3766, 'loads': 3615, 'saved': 0, 'unloads': 0, 'read_unloads': 0}], 'query_window_by_reader_node': [{'hits': 0, 'misses': 0, 'admissions': 0, 'evictions': 0, 'uncacheable': 0, 'refused': 0}, {'hits': 0, 'misses': 0, 'admissions': 0, 'evictions': 0, 'uncacheable': 0, 'refused': 0}], 'atom_cache_end_by_node': [{'hits': 68661, 'misses': 8, 'entries': 46296, 'capacity': 50000, 'loads': 7, 'saved': 46289, 'unloads': 0, 'read_unloads': 0, 'identity_map': 46297}, {'hits': 120983, 'misses': 23820, 'entries': 23629, 'capacity': 50000, 'loads': 23629, 'saved': 0, 'unloads': 0, 'read_unloads': 0, 'identity_map': 23670}, {'hits': 131018, 'misses': 23786, 'entries': 23629, 'capacity': 50000, 'loads': 23629, 'saved': 0, 'unloads': 0, 'read_unloads': 0, 'identity_map': 23664}], 'replication_failures_by_peer': [0, 0, 0], 'healthy_by_peer': [True, True, True], 'atom_loads_per_read': 0.061, 'thrash_signal': 0.0}, {'system': 'protodb', 'read': 'point', 'atom_cache': 'on', 'query_cache': 'on', 'ok': True, 'final_catalog_ok': True, 'bad_reads': 0, 'thread_errors': [[], [], []], 'commits': 198, 'commit_rate': 65.01893311090302, 'commit_p50_ms': 19.18, 'reads': 125033, 'read_rate': 41614.175184625885, 'read_p50_us': 64, 'read_p99_us': 563, 'versions_seen_by_reader_node': [[1, 195], [1, 195]], 'versions_advanced': True, 'decodes_per_read': 0.082, 'decodes_by_reader_node': [5175, 5119], 'new_versions_by_reader_node': [194, 194], 'decodes_per_new_version': 26.53, 'atoms_saved_per_commit_on_A': 61.35, 'atom_window_by_reader_node': [{'hits': 130109, 'misses': 4024, 'loads': 3837, 'saved': 0, 'unloads': 0, 'read_unloads': 0}, {'hits': 132422, 'misses': 4030, 'loads': 3834, 'saved': 0, 'unloads': 0, 'read_unloads': 0}], 'query_window_by_reader_node': [{'hits': 0, 'misses': 0, 'admissions': 0, 'evictions': 0, 'uncacheable': 0, 'refused': 0}, {'hits': 0, 'misses': 0, 'admissions': 0, 'evictions': 0, 'uncacheable': 0, 'refused': 0}], 'atom_cache_end_by_node': [{'hits': 70717, 'misses': 8, 'entries': 47268, 'capacity': 50000, 'loads': 7, 'saved': 47261, 'unloads': 0, 'read_unloads': 0, 'identity_map': 47269}, {'hits': 131446, 'misses': 24044, 'entries': 23851, 'capacity': 50000, 'loads': 23851, 'saved': 0, 'unloads': 0, 'read_unloads': 0, 'identity_map': 23894}, {'hits': 133761, 'misses': 24050, 'entries': 23848, 'capacity': 50000, 'loads': 23848, 'saved': 0, 'unloads': 0, 'read_unloads': 0, 'identity_map': 23887}], 'replication_failures_by_peer': [0, 0, 0], 'healthy_by_peer': [True, True, True], 'atom_loads_per_read': 0.061, 'thrash_signal': 0.0}]
+   protodb, point reads, atom cache small: runs: [{'system': 'protodb', 'read': 'point', 'atom_cache': 'small', 'query_cache': 'on', 'ok': True, 'final_catalog_ok': True, 'bad_reads': 0, 'thread_errors': [[], [], []], 'commits': 178, 'commit_rate': 58.125313053252476, 'commit_p50_ms': 52.02, 'reads': 13371, 'read_rate': 4447.081929629871, 'read_p50_us': 784, 'read_p99_us': 3046, 'versions_seen_by_reader_node': [[1, 175], [1, 174]], 'versions_advanced': True, 'decodes_per_read': 4.572, 'decodes_by_reader_node': [30392, 30738], 'new_versions_by_reader_node': [174, 173], 'decodes_per_new_version': 176.17, 'atoms_saved_per_commit_on_A': 60.54, 'atom_window_by_reader_node': [{'hits': 23499, 'misses': 43985, 'loads': 29629, 'saved': 0, 'unloads': 29629, 'read_unloads': 29629}, {'hits': 24165, 'misses': 44348, 'loads': 29896, 'saved': 0, 'unloads': 29896, 'read_unloads': 29896}], 'query_window_by_reader_node': [{'hits': 0, 'misses': 0, 'admissions': 0, 'evictions': 0, 'uncacheable': 0, 'refused': 0}, {'hits': 0, 'misses': 0, 'admissions': 0, 'evictions': 0, 'uncacheable': 0, 'refused': 0}], 'atom_cache_end_by_node': [{'hits': 63244, 'misses': 8927, 'entries': 2000, 'capacity': 2000, 'loads': 2394, 'saved': 45890, 'unloads': 46284, 'read_unloads': 2389, 'identity_map': 2505}, {'hits': 24877, 'misses': 64046, 'entries': 2000, 'capacity': 2000, 'loads': 49682, 'saved': 0, 'unloads': 47682, 'read_unloads': 47682, 'identity_map': 3564}, {'hits': 25545, 'misses': 64409, 'entries': 2000, 'capacity': 2000, 'loads': 49949, 'saved': 0, 'unloads': 47949, 'read_unloads': 47949, 'identity_map': 3604}], 'replication_failures_by_peer': [0, 0, 0], 'healthy_by_peer': [True, True, True], 'atom_loads_per_read': 4.452, 'thrash_signal': 1.0}, {'system': 'protodb', 'read': 'point', 'atom_cache': 'small', 'query_cache': 'on', 'ok': True, 'final_catalog_ok': True, 'bad_reads': 0, 'thread_errors': [[], [], []], 'commits': 148, 'commit_rate': 48.22762267930182, 'commit_p50_ms': 47.62, 'reads': 12330, 'read_rate': 4099.310208258372, 'read_p50_us': 800, 'read_p99_us': 4108, 'versions_seen_by_reader_node': [[1, 145], [1, 145]], 'versions_advanced': True, 'decodes_per_read': 4.494, 'decodes_by_reader_node': [26148, 29261], 'new_versions_by_reader_node': [144, 144], 'decodes_per_new_version': 192.39, 'atoms_saved_per_commit_on_A': 58.84, 'atom_window_by_reader_node': [{'hits': 20048, 'misses': 38108, 'loads': 25622, 'saved': 0, 'unloads': 25622, 'read_unloads': 25622}, {'hits': 22756, 'misses': 42612, 'loads': 28682, 'saved': 0, 'unloads': 28682, 'read_unloads': 28682}], 'query_window_by_reader_node': [{'hits': 0, 'misses': 0, 'admissions': 0, 'evictions': 0, 'uncacheable': 0, 'refused': 0}, {'hits': 0, 'misses': 0, 'admissions': 0, 'evictions': 0, 'uncacheable': 0, 'refused': 0}], 'atom_cache_end_by_node': [{'hits': 58895, 'misses': 8222, 'entries': 2000, 'capacity': 2000, 'loads': 2017, 'saved': 43822, 'unloads': 43839, 'read_unloads': 2012, 'identity_map': 2408}, {'hits': 21424, 'misses': 58169, 'entries': 2000, 'capacity': 2000, 'loads': 45675, 'saved': 0, 'unloads': 43675, 'read_unloads': 43675, 'identity_map': 3659}, {'hits': 24134, 'misses': 62673, 'entries': 2000, 'capacity': 2000, 'loads': 48735, 'saved': 0, 'unloads': 46735, 'read_unloads': 46735, 'identity_map': 3686}], 'replication_failures_by_peer': [0, 0, 0], 'healthy_by_peer': [True, True, True], 'atom_loads_per_read': 4.404, 'thrash_signal': 1.0}]
+   protodb, point reads, atom cache off: runs: [{'system': 'protodb', 'read': 'point', 'atom_cache': 'off', 'query_cache': 'on', 'ok': True, 'final_catalog_ok': True, 'bad_reads': 0, 'thread_errors': [[], [], []], 'commits': 145, 'commit_rate': 46.09136121307562, 'commit_p50_ms': 18.91, 'reads': 4951, 'read_rate': 1648.3890035603563, 'read_p50_us': 2077, 'read_p99_us': 6485, 'versions_seen_by_reader_node': [[1, 142], [1, 142]], 'versions_advanced': True, 'decodes_per_read': 21.35, 'decodes_by_reader_node': [51000, 54702], 'new_versions_by_reader_node': [141, 141], 'decodes_per_new_version': 374.83, 'atoms_saved_per_commit_on_A': None, 'atom_window_by_reader_node': [None, None], 'query_window_by_reader_node': [{'hits': 0, 'misses': 0, 'admissions': 0, 'evictions': 0, 'uncacheable': 0, 'refused': 0}, {'hits': 0, 'misses': 0, 'admissions': 0, 'evictions': 0, 'uncacheable': 0, 'refused': 0}], 'atom_cache_end_by_node': [None, None, None], 'replication_failures_by_peer': [0, 0, 0], 'healthy_by_peer': [True, True, True]}, {'system': 'protodb', 'read': 'point', 'atom_cache': 'off', 'query_cache': 'on', 'ok': True, 'final_catalog_ok': True, 'bad_reads': 0, 'thread_errors': [[], [], []], 'commits': 140, 'commit_rate': 44.542156034798985, 'commit_p50_ms': 19.43, 'reads': 4768, 'read_rate': 1586.8872524282792, 'read_p50_us': 2083, 'read_p99_us': 8987, 'versions_seen_by_reader_node': [[1, 137], [1, 137]], 'versions_advanced': True, 'decodes_per_read': 21.35, 'decodes_by_reader_node': [48877, 52921], 'new_versions_by_reader_node': [136, 136], 'decodes_per_new_version': 374.26, 'atoms_saved_per_commit_on_A': None, 'atom_window_by_reader_node': [None, None], 'query_window_by_reader_node': [{'hits': 0, 'misses': 0, 'admissions': 0, 'evictions': 0, 'uncacheable': 0, 'refused': 0}, {'hits': 0, 'misses': 0, 'admissions': 0, 'evictions': 0, 'uncacheable': 0, 'refused': 0}], 'atom_cache_end_by_node': [None, None, None], 'replication_failures_by_peer': [0, 0, 0], 'healthy_by_peer': [True, True, True]}]
+   protodb, query reads, query cache on: runs: [{'system': 'protodb', 'read': 'query', 'atom_cache': 'on', 'query_cache': 'on', 'ok': True, 'final_catalog_ok': True, 'bad_reads': 0, 'thread_errors': [[], [], []], 'commits': 212, 'commit_rate': 69.42744395405116, 'commit_p50_ms': 19.86, 'reads': 14564, 'read_rate': 4850.255646942485, 'read_p50_us': 747, 'read_p99_us': 2035, 'versions_seen_by_reader_node': [[1, 209], [1, 209]], 'versions_advanced': True, 'decodes_per_read': 0.268, 'decodes_by_reader_node': [2014, 1886], 'new_versions_by_reader_node': [208, 208], 'decodes_per_new_version': 9.38, 'atoms_saved_per_commit_on_A': 60.94, 'atom_window_by_reader_node': [{'hits': 386634, 'misses': 1548, 'loads': 1248, 'saved': 0, 'unloads': 0, 'read_unloads': 0}, {'hits': 375624, 'misses': 1476, 'loads': 1200, 'saved': 0, 'unloads': 0, 'read_unloads': 0}], 'query_window_by_reader_node': [{'hits': 7386, 'misses': 0, 'admissions': 0, 'evictions': 0, 'uncacheable': 0, 'refused': 0}, {'hits': 7178, 'misses': 0, 'admissions': 0, 'evictions': 0, 'uncacheable': 0, 'refused': 0}], 'atom_cache_end_by_node': [{'hits': 72322, 'misses': 8, 'entries': 48039, 'capacity': 50000, 'loads': 7, 'saved': 48032, 'unloads': 0, 'read_unloads': 0, 'identity_map': 48040}, {'hits': 397947, 'misses': 11671, 'entries': 11365, 'capacity': 50000, 'loads': 11365, 'saved': 0, 'unloads': 0, 'read_unloads': 0, 'identity_map': 11579}, {'hits': 386939, 'misses': 11599, 'entries': 11317, 'capacity': 50000, 'loads': 11317, 'saved': 0, 'unloads': 0, 'read_unloads': 0, 'identity_map': 11523}], 'replication_failures_by_peer': [0, 0, 0], 'healthy_by_peer': [True, True, True], 'query_hit_rate': 1.0, 'query_hits': 14564, 'query_misses': 0}, {'system': 'protodb', 'read': 'query', 'atom_cache': 'on', 'query_cache': 'on', 'ok': True, 'final_catalog_ok': True, 'bad_reads': 0, 'thread_errors': [[], [], []], 'commits': 203, 'commit_rate': 66.85151875566423, 'commit_p50_ms': 27.1, 'reads': 13907, 'read_rate': 4631.209852715402, 'read_p50_us': 776, 'read_p99_us': 2201, 'versions_seen_by_reader_node': [[1, 200], [1, 200]], 'versions_advanced': True, 'decodes_per_read': 0.267, 'decodes_by_reader_node': [1904, 1810], 'new_versions_by_reader_node': [199, 199], 'decodes_per_new_version': 9.33, 'atoms_saved_per_commit_on_A': 60.78, 'atom_window_by_reader_node': [{'hits': 372969, 'misses': 1460, 'loads': 1194, 'saved': 0, 'unloads': 0, 'read_unloads': 0}, {'hits': 354889, 'misses': 1420, 'loads': 1140, 'saved': 0, 'unloads': 0, 'read_unloads': 0}], 'query_window_by_reader_node': [{'hits': 7126, 'misses': 0, 'admissions': 0, 'evictions': 0, 'uncacheable': 0, 'refused': 0}, {'hits': 6781, 'misses': 0, 'admissions': 0, 'evictions': 0, 'uncacheable': 0, 'refused': 0}], 'atom_cache_end_by_node': [{'hits': 71129, 'misses': 8, 'entries': 47459, 'capacity': 50000, 'loads': 7, 'saved': 47452, 'unloads': 0, 'read_unloads': 0, 'identity_map': 47460}, {'hits': 384306, 'misses': 11583, 'entries': 11311, 'capacity': 50000, 'loads': 11311, 'saved': 0, 'unloads': 0, 'read_unloads': 0, 'identity_map': 11516}, {'hits': 366226, 'misses': 11543, 'entries': 11257, 'capacity': 50000, 'loads': 11257, 'saved': 0, 'unloads': 0, 'read_unloads': 0, 'identity_map': 11453}], 'replication_failures_by_peer': [0, 0, 0], 'healthy_by_peer': [True, True, True], 'query_hit_rate': 1.0, 'query_hits': 13907, 'query_misses': 0}]
+   protodb, query reads, query cache off: runs: [{'system': 'protodb', 'read': 'query', 'atom_cache': 'on', 'query_cache': 'off', 'ok': True, 'final_catalog_ok': True, 'bad_reads': 0, 'thread_errors': [[], [], []], 'commits': 212, 'commit_rate': 69.59196408924832, 'commit_p50_ms': 25.64, 'reads': 12723, 'read_rate': 4236.959458940138, 'read_p50_us': 857, 'read_p99_us': 2267, 'versions_seen_by_reader_node': [[1, 209], [1, 209]], 'versions_advanced': True, 'decodes_per_read': 0.289, 'decodes_by_reader_node': [1889, 1792], 'new_versions_by_reader_node': [208, 208], 'decodes_per_new_version': 8.85, 'atoms_saved_per_commit_on_A': 58.56, 'atom_window_by_reader_node': [{'hits': 325929, 'misses': 1516, 'loads': 1248, 'saved': 0, 'unloads': 0, 'read_unloads': 0}, {'hits': 340172, 'misses': 1480, 'loads': 1188, 'saved': 0, 'unloads': 0, 'read_unloads': 0}], 'query_window_by_reader_node': [{'hits': 0, 'misses': 0, 'admissions': 0, 'evictions': 0, 'uncacheable': 0, 'refused': 0}, {'hits': 0, 'misses': 0, 'admissions': 0, 'evictions': 0, 'uncacheable': 0, 'refused': 0}], 'atom_cache_end_by_node': [{'hits': 71271, 'misses': 8, 'entries': 47535, 'capacity': 50000, 'loads': 7, 'saved': 47528, 'unloads': 0, 'read_unloads': 0, 'identity_map': 47536}, {'hits': 337210, 'misses': 11639, 'entries': 11365, 'capacity': 50000, 'loads': 11365, 'saved': 0, 'unloads': 0, 'read_unloads': 0, 'identity_map': 11579}, {'hits': 351453, 'misses': 11603, 'entries': 11305, 'capacity': 50000, 'loads': 11305, 'saved': 0, 'unloads': 0, 'read_unloads': 0, 'identity_map': 11509}], 'replication_failures_by_peer': [0, 0, 0], 'healthy_by_peer': [True, True, True], 'query_hit_rate': None, 'query_hits': 0, 'query_misses': 0}, {'system': 'protodb', 'read': 'query', 'atom_cache': 'on', 'query_cache': 'off', 'ok': True, 'final_catalog_ok': True, 'bad_reads': 0, 'thread_errors': [[], [], []], 'commits': 189, 'commit_rate': 61.937151866914164, 'commit_p50_ms': 26.96, 'reads': 12592, 'read_rate': 4193.198511119145, 'read_p50_us': 871, 'read_p99_us': 2307, 'versions_seen_by_reader_node': [[1, 186], [1, 186]], 'versions_advanced': True, 'decodes_per_read': 0.267, 'decodes_by_reader_node': [1722, 1645], 'new_versions_by_reader_node': [185, 185], 'decodes_per_new_version': 9.1, 'atoms_saved_per_commit_on_A': 60.73, 'atom_window_by_reader_node': [{'hits': 325017, 'misses': 1365, 'loads': 1110, 'saved': 0, 'unloads': 0, 'read_unloads': 0}, {'hits': 333949, 'misses': 1323, 'loads': 1068, 'saved': 0, 'unloads': 0, 'read_unloads': 0}], 'query_window_by_reader_node': [{'hits': 0, 'misses': 0, 'admissions': 0, 'evictions': 0, 'uncacheable': 0, 'refused': 0}, {'hits': 0, 'misses': 0, 'admissions': 0, 'evictions': 0, 'uncacheable': 0, 'refused': 0}], 'atom_cache_end_by_node': [{'hits': 69311, 'misses': 8, 'entries': 46598, 'capacity': 50000, 'loads': 7, 'saved': 46591, 'unloads': 0, 'read_unloads': 0, 'identity_map': 46599}, {'hits': 336336, 'misses': 11488, 'entries': 11227, 'capacity': 50000, 'loads': 11227, 'saved': 0, 'unloads': 0, 'read_unloads': 0, 'identity_map': 11418}, {'hits': 345266, 'misses': 11446, 'entries': 11185, 'capacity': 50000, 'loads': 11185, 'saved': 0, 'unloads': 0, 'read_unloads': 0, 'identity_map': 11369}], 'replication_failures_by_peer': [0, 0, 0], 'healthy_by_peer': [True, True, True], 'query_hit_rate': None, 'query_hits': 0, 'query_misses': 0}]
+   note: rqlite cells pending: no rqlited binary (pass --rqlite PATH)
+
+== history_depth ==  Current-state query at history depths 1-1000 per entity (versioned entities, ``previous``).
+   work: {"customers": 100, "depths": [1, 10, 100, 1000], "entities": 1000, "queries per sample": 200, "query cache": "off (query_cache_bytes=0)", "rows per query": 10}
+   verified: checksum {'1': [[[17, 1, 's1-43'], [117, 1, 's1-39'], [217, 1, 's1-35'], [317, 1, 's1-31'], [417, 1, 's1-2... == expected; 8/8 checks passed
+  depth 1: query, warm                         median    40.63 ms  max    44.69 ms  (203.1 us/op, max 223.5)  [n=5]
+  depth 1: query, uncached                     median   497.76 ms  max   523.63 ms  (2488.8 us/op, max 2618.2)  [n=5]
+  depth 10: query, warm                        median    37.63 ms  max    43.43 ms  (188.1 us/op, max 217.1)  [n=5]
+  depth 10: query, uncached                    median   515.97 ms  max   680.82 ms  (2579.9 us/op, max 3404.1)  [n=5]
+  depth 100: query, warm                       median    37.73 ms  max    38.48 ms  (188.6 us/op, max 192.4)  [n=5]
+  depth 100: query, uncached                   median   503.79 ms  max   593.64 ms  (2518.9 us/op, max 2968.2)  [n=5]
+  depth 1000: query, warm                      median    37.56 ms  max    42.59 ms  (187.8 us/op, max 212.9)  [n=5]
+  depth 1000: query, uncached                  median   518.02 ms  max   568.19 ms  (2590.1 us/op, max 2840.9)  [n=5]
+   depth 1: {'versions stored': 1000, 'index entries': 1000, 'build_s': 0.4, 'on-disk bytes (allocated, apparent)': [183296, 464082]}
+   depth 10: {'versions stored': 10000, 'index entries': 1000, 'build_s': 4.8, 'on-disk bytes (allocated, apparent)': [531456, 4923154]}
+   depth 100: {'versions stored': 100000, 'index entries': 1000, 'build_s': 65.8, 'on-disk bytes (allocated, apparent)': [17599488, 49600688]}
+   depth 1000: {'versions stored': 1000000, 'index entries': 1000, 'build_s': 664.0, 'on-disk bytes (allocated, apparent)': [175673344, 498885831]}
+   depth 1: decodes per query, warm, each sample: [0.0, 0.0, 0.0, 0.0, 0.0]
+   depth 1: decodes per query, uncached, each sample: [35.78, 35.78, 35.78, 35.78, 35.78]
+   depth 10: decodes per query, warm, each sample: [0.0, 0.0, 0.0, 0.0, 0.0]
+   depth 10: decodes per query, uncached, each sample: [35.78, 35.78, 35.78, 35.78, 35.78]
+   depth 100: decodes per query, warm, each sample: [0.0, 0.0, 0.0, 0.0, 0.0]
+   depth 100: decodes per query, uncached, each sample: [35.78, 35.78, 35.78, 35.78, 35.78]
+   depth 1000: decodes per query, warm, each sample: [0.0, 0.0, 0.0, 0.0, 0.0]
+   depth 1000: decodes per query, uncached, each sample: [35.78, 35.78, 35.78, 35.78, 35.78]
+
+25 workload(s) in 2945.0 s: 23 verified, 1 pending, 1 failed: cluster_store_latency
+results written to /home/gamarino/Documentos/proyectos/scratch-8.3n/m8-raw-path/6b0697a-gil0-r1.json

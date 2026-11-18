@@ -1138,17 +1138,96 @@ about 3 ms of those. What the remaining 7 ms under the lock are (writing the rep
 aggregates, the history) is not separated by these probes and is not measured. The probes' own overhead is not
 measured either.
 
-**Not measured yet.** These costs of the semantic model have no numbers on this page; each is for the final
-integration runs, and none is quoted until it is measured:
+Raw path against 2.0.0rc4, and the catalog install commit
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-- The raw path against 2.0.0rc4 (``2d78c2b``): code that uses no semantic layer now pays the implicit-parent
-  probe when an attribute is absent and when parents are listed, the intent check of every registry method
-  call, the root order of every transaction and the ``__intentLog`` probe of every commit. The comparisons so
-  far were against mid-branch commits only.
-- The catalog paths: every install commit of a catalogued database decodes, recomposes and re-encodes the whole
-  stored catalog under the root lock, also when nothing changes (an idempotent reinstall); a pending catalog is
-  verified again by every new session of the transaction that installed it; a process verifies each stored
-  catalog once (memoized per catalog record).
+**The raw path** (code that uses no semantic layer) at ``6b0697a`` against 2.0.0rc4 (``2d78c2b``), Python
+3.14t with the GIL off, on the shared machine (another session's soak held about 1.5 cores). Two
+measurements, each interleaving the two exports:
+
+- the full suite, two repetitions of each commit (load average 4.2-5.8);
+- the seven workloads the first one flagged, three more repetitions of each commit (load average 4.0-8.6;
+  the last ``6b0697a`` repetition ran at 7.7-8.1).
+
+A change counts only when every repetition of one commit is worse than every repetition of the other. In the
+full suite 33 of 209 timings were consistently slower by more than 10 % and 18 consistently faster, but the
+controls that are the same code in both exports (the ``dict``, ``heapq`` and ``sqlite3`` variants) moved by
+up to 2.6x, so the full suite alone decides nothing at that size. The targeted repetitions settle the
+candidates:
+
+.. list-table::
+   :header-rows: 1
+
+   * - Timing
+     - 2d78c2b
+     - 6b0697a
+     - Verdict
+   * - ``cluster_cache``, point reads, atom cache on (reads/s, mean of 3)
+     - 46 750
+     - 38 780
+     - slower in all 5 pairs (17 %)
+   * - ``cluster_cache``, point reads, atom cache off / small; query reads, query cache off
+     -
+     -
+     - slower in all 3 targeted pairs (11-17 %)
+   * - ``inventory``, as-of read of a region's status
+     - 0.19 ms
+     - 0.22 ms
+     - slower in all 3 targeted pairs (18 %)
+   * - ``inventory``, bulk status change of one region (one commit)
+     - 17.3 ms
+     - 19.3 ms
+     - slower in all 3 targeted pairs (12 %)
+   * - ``inventory``, point lookup of a port
+     - 5.9 ms
+     - 7.1 ms
+     - not settled: 56 % slower in the full suite, but the third ``2d78c2b`` repetition was as slow (7.3 ms)
+   * - ``cold_open`` open + first read; ``query_cache`` hits; ``topk``; ``point_lookup``
+     -
+     -
+     - not reproduced: equal or faster in the targeted repetitions
+
+The slower timings are reads and commits through ``DBObject`` attribute access and the commit path, where
+the raw path now pays new costs: the implicit-parent probe when an attribute is absent and when parents are
+listed, the intent check of every registry method call, the root order of every transaction and the
+``__intentLog`` probe of every commit. Which of them costs what is **not attributed**: no profile was taken. The
+``6b0697a`` mean of the first row includes its last repetition, run at the higher load (34 040 reads/s). Once in the full suite,
+``cluster_store_latency`` stopped with ``ProtoOutcomeUnknownError``: a lease ended under load before a member
+stored the commit's records. That is the typed outcome the protocol reports in that case, and the workload
+does not handle it. The other five runs of that workload passed. Results:
+``benchmarks/results/2026-11-18-6b0697a-rawpath/``.
+
+**The catalog install commit** (FileStorage, Python 3.14t with the GIL off, load average about 7; three
+processes of 30 commits each, medians of each process):
+
+.. list-table::
+   :header-rows: 1
+
+   * - Commit
+     - Median (ms)
+   * - a root write (reference)
+     - 6.1-7.0
+   * - install a module without semantic declarations, database without a catalog
+     - 6.8-7.5
+   * - the same install, database with the demo's catalog (two modules)
+     - 23.4-24.9
+   * - first install of ``acme_sales`` / ``acme_delivery``
+     - 20-30 / 18-21
+   * - reinstall of an installed module
+     - 1.1-1.9
+
+An install that adds a module to a catalogued database recomposes and re-encodes the stored catalog under
+the root lock although the catalog does not change: about 17 ms per install commit with the demo's catalog.
+How that grows with the catalog's size is not measured. A reinstall of an installed module plans nothing to
+add and commits no registry change. Earlier text on this page said it recomposed the catalog; it does not.
+Results and the probe: ``benchmarks/results/2026-11-18-6b0697a-catalog-install/`` (the plain modules are
+generated, one file per module, as in ``m6plain-p1-example.py``).
+
+**Not measured yet.** These costs of the semantic model have no numbers on this page:
+
+- The catalog paths beyond the install commit: a pending catalog is verified again by every new session of
+  the transaction that installed it; a process verifies each stored catalog once (memoized per catalog
+  record); the install commit's growth with the catalog's size.
 - Per-access costs of the session: one operations object per attribute access of a semantic object; the
   linear scans of an ordered (``List``) end that membership checks and unlinks make, quadratic in the members
   when a load links them one by one; and the first write of a maintained aggregate that a later module added to
