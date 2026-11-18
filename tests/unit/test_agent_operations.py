@@ -1220,3 +1220,26 @@ def test_a_path_through_an_undeclared_step_is_checked_after_it(mode):
             reader.close()
         space.close()
 
+
+@pytest.mark.parametrize("log", [False, True])
+def test_serve_restores_the_operator_log_after_it_returns(tmp_path, monkeypatch, log):
+    """Final re-review minor: while ``serve`` runs, the operator's log stays off the root handlers; once it
+    returns, the 'proto_db.agent' logger is as it was (its propagation, level and handlers)."""
+    import logging
+    from proto_db import FileStorage
+    from proto_db.agent import mcp_server
+    path = str(tmp_path / "space")
+    space = ObjectSpace(FileStorage(path))
+    space.new_database("acme")
+    space.close()
+    logger = logging.getLogger("proto_db.agent")
+    before = (logger.propagate, logger.level, list(logger.handlers))
+    seen = []
+
+    class Server:
+        def run(self, transport):
+            seen.append((logger.propagate, len(logger.handlers)))
+    monkeypatch.setattr(mcp_server, "build_server", lambda db, raw=False: Server())
+    mcp_server.serve(path, "acme", log=str(tmp_path / "operator.log") if log else None)
+    assert seen == [(False, len(before[2]) + 1)]
+    assert (logger.propagate, logger.level, list(logger.handlers)) == before

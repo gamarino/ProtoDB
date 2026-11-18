@@ -12,10 +12,12 @@ server is built, never when :mod:`proto_db.agent` is imported.
 The operator's log (``logging.getLogger("proto_db.agent")``) keeps the original messages the agent is not
 told, which may hold stored data.  :func:`serve` never lets it reach the server's stderr, which the MCP client
 (the agent's host) collects: the logger does not propagate to the root logger (whose handlers FastMCP sets
-up on stderr), and it writes to the file ``log`` names, or nowhere when ``log`` is ``None``.
+up on stderr), and it writes to the file ``log`` names, or nowhere when ``log`` is ``None``.  When
+:func:`serve` returns, the logger is as it found it.
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 from collections.abc import Mapping
@@ -85,10 +87,13 @@ def build_server(db, *, raw: bool = False):
     return server
 
 
-def _operator_log(log: str | None) -> logging.Handler:
-    """Route the operator's log of a served server to the file ``log`` (appended), or nowhere for ``None``,
-    and never to the root logger's handlers (see the module docstring).  Returns the handler it added."""
+@contextlib.contextmanager
+def _operator_log(log: str | None):
+    """While the block runs, route the operator's log of a served server to the file ``log`` (appended), or
+    nowhere for ``None``, and never to the root logger's handlers (see the module docstring).  Afterwards the
+    'proto_db.agent' logger is as it was: its handler removed and closed, its propagation and level restored."""
     logger = logging.getLogger("proto_db.agent")
+    propagate, level = logger.propagate, logger.level
     if log is None:
         handler: logging.Handler = logging.NullHandler()
     else:
@@ -97,7 +102,12 @@ def _operator_log(log: str | None) -> logging.Handler:
         logger.setLevel(logging.WARNING)
     logger.addHandler(handler)
     logger.propagate = False
-    return handler
+    try:
+        yield
+    finally:
+        logger.removeHandler(handler)
+        handler.close()
+        logger.propagate, logger.level = propagate, level
 
 
 def serve(path: str, database: str, *, mapping: Mapping[str, str] | None = None, raw: bool = False,
@@ -108,14 +118,10 @@ def serve(path: str, database: str, *, mapping: Mapping[str, str] | None = None,
     from ..storage.file import FileStorage
     from ..transactions import ObjectSpace
 
-    handler = _operator_log(log)
-    try:
+    with _operator_log(log):
         space = ObjectSpace(FileStorage(path), modules_mapping=dict(mapping) if mapping else None)
         try:
             server = build_server(space.open_database(database), raw=raw)
             server.run("stdio")
         finally:
             space.close()
-    finally:
-        logging.getLogger("proto_db.agent").removeHandler(handler)
-        handler.close()
