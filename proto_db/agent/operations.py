@@ -119,6 +119,7 @@ import datetime
 import functools
 import json
 import logging
+import uuid
 from collections.abc import Mapping
 from decimal import Decimal, InvalidOperation
 
@@ -205,7 +206,7 @@ def to_json(value):
     if isinstance(value, MutableObject):
         return {"cell": value.name}
     if isinstance(value, Mapping):
-        return {_key(key): to_json(item) for key, item in value.items()}
+        return {_key(key, to_json): to_json(item) for key, item in value.items()}
     if isinstance(value, (list, tuple)):
         return [to_json(item) for item in value]
     if isinstance(value, (List, Set)):
@@ -215,12 +216,19 @@ def to_json(value):
     raise ProtoValidationError(f"{type(value).__name__} has no JSON form")
 
 
-def _key(key) -> str:
-    """A map key as a JSON object key: a scalar's text; any other key (a record, a handle) is refused, never
-    written through its ``str``."""
-    if key is None or isinstance(key, (str, int, float, Decimal)):
+def _key(key, write) -> str:
+    """A map key as a JSON object key.  A scalar, a UUID or a timedelta is its text; a handle its cell name; any
+    other key (a date, bytes, a tuple, a record) is the text of what ``write`` (:func:`to_json` or
+    :func:`_flat`) makes of it, so a key is never written through a ``str`` the withholding policy has not seen:
+    a record key is refused by :func:`to_json` and summarized by :func:`_flat`."""
+    if isinstance(key, str):
+        return key
+    if key is None or isinstance(key, (bool, int, float, Decimal, uuid.UUID, datetime.timedelta)):
         return str(key)
-    raise ProtoValidationError(f"A map key of kind {type(key).__name__} has no JSON form")
+    if isinstance(key, MutableObject):
+        return key.name
+    written = write(key)
+    return written if isinstance(written, str) else json.dumps(written, ensure_ascii=False, sort_keys=True)
 
 
 def from_json(value):
@@ -272,7 +280,7 @@ def _flat(value):
     if isinstance(value, (list, tuple)):
         return [_flat(item) for item in value]
     if isinstance(value, Mapping):
-        return {_key(key): _flat(item) for key, item in value.items()}
+        return {_key(key, _flat): _flat(item) for key, item in value.items()}
     return to_json(value)
 
 

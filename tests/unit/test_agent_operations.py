@@ -1344,38 +1344,68 @@ def test_an_undeclared_attribute_holding_a_handle_stays_withheld_not_refused(mod
 
 
 
-@pytest.mark.parametrize("mode", ["raw", "raw without the code"])
-def test_a_record_inside_a_plain_container_is_summarized_never_dumped(mode):
-    """A record inside a plain list, tuple or dict value (the codec stores them) is reached with ``from``,
-    never inlined: a row shows ``{"record": type}``, so the withheld personal name never reaches the agent."""
+def test_a_record_inside_a_plain_container_is_summarized_never_dumped():
+    """A record inside a plain list, tuple or dict value (the codec stores them), at any depth, is reached with
+    ``from``, never inlined: a row shows ``{"record": type}``, so the withheld personal name never reaches the
+    agent.  (The code-less server, whose records are opaque, is the subprocess test below.)"""
     storage = MemoryStorage()
     space = ObjectSpace(storage, modules_mapping=MAPPING)
-    reader = ObjectSpace(storage, modules_mapping={}) if mode == "raw without the code" else None
     try:
         db = space.new_database("db")
         db.run(lambda tr: tr.install_module("acme_sales"))
         company = _customers_of_bob(db)
 
         def extra(tr):
-            bob = tr.get_mutable(next(name for name in tr.mutable_names() if name.startswith(CUSTOMER)))
+            name = next(name for name in tr.mutable_names() if name.startswith(CUSTOMER))
+            bob = tr.get_mutable(name)
+            bound = {"entity": MutableObject(name), "version": bob}
             tr.set_mutable(company.name, tr.get_mutable(company.name).with_(
-                extra=[bob], extra_map={"k": bob}, extra_tuple=(bob,)))
+                extra=[bob], extra_map={"k": bob}, extra_tuple=(bob,), nested=[[bob], {"a": (bob, [bob])}],
+                bound_in_list=[bound], bound=bound, record_key={bob: 1}))
         db.run(extra)
-        target = db if reader is None else reader.open_database("db")
         root = {"from": ["via", ["cell", company.name], "customers"], "select": ["company"]}
-        rows = query(target, {"from": ["via", ["cell", company.name], "customers", "company"]}, raw=True)["rows"]
+        rows = query(db, {"from": ["via", ["cell", company.name], "customers", "company"]}, raw=True)["rows"]
         assert MARK not in json.dumps(rows)
-        summary = {"record": CUSTOMER}
-        assert rows[0]["values"]["extra"] == [summary] and rows[0]["values"]["extra_tuple"] == [summary]
-        assert rows[0]["values"]["extra_map"] == {"k": summary}
-        for name in ("extra", "extra_map", "extra_tuple"):
-            answer = query(target, dict(root, select=[f"company.{name}"]), raw=True)
+        values, summary = rows[0]["values"], {"record": CUSTOMER}
+        assert values["extra"] == [summary] and values["extra_tuple"] == [summary]
+        assert values["extra_map"] == {"k": summary}
+        assert values["nested"] == [[summary], {"a": [summary, [summary]]}]
+        assert values["bound_in_list"][0]["version"] == summary
+        assert list(values["record_key"]) == [json.dumps(summary)]
+        # A bound version shows its values, the personal ones withheld (the product as sold).
+        assert values["bound"]["version"]["type_name"] == CUSTOMER
+        assert values["bound"]["version"]["values"]["credit_limit"] == "777"
+        assert "name" not in values["bound"]["version"]["values"]
+        for name in ("extra", "extra_map", "extra_tuple", "nested", "bound_in_list", "bound", "record_key"):
+            answer = query(db, dict(root, select=[f"company.{name}"]), raw=True)
             assert MARK not in json.dumps(answer), name
     finally:
-        if reader is not None:
-            reader.close()
         space.close()
 
+
+def test_map_keys_the_codec_stores_are_written_as_their_text():
+    """A map keyed by a date, bytes, a tuple, a UUID, a timedelta or a handle (all stored by the codec) is a
+    row value like any other: its keys are written as text, never refused."""
+    import uuid as _uuid
+    from datetime import timedelta
+    storage = MemoryStorage()
+    space = ObjectSpace(storage, modules_mapping=MAPPING)
+    try:
+        db = space.new_database("db")
+        db.run(lambda tr: tr.install_module("acme_sales"))
+        company = _customers_of_bob(db)
+        key = _uuid.UUID(int=7)
+        db.run(lambda tr: tr.set_mutable(company.name, tr.get_mutable(company.name).with_(
+            by_day={date(2026, 1, 1): 1}, by_bytes={b"k": 2}, by_pair={(1, 2): 3}, by_uuid={key: 4},
+            by_span={timedelta(days=1): 5}, by_cell={company: 6})))
+        rows = query(db, {"from": ["via", ["cell", company.name], "customers", "company"]}, raw=True)["rows"]
+        values = rows[0]["values"]
+        assert values["by_day"] == {"2026-01-01": 1}
+        assert values["by_bytes"] == {json.dumps({"bytes": base64.b64encode(b"k").decode()}): 2}
+        assert values["by_pair"] == {"[1, 2]": 3} and values["by_uuid"] == {str(key): 4}
+        assert values["by_span"] == {"1 day, 0:00:00": 5} and values["by_cell"] == {company.name: 6}
+    finally:
+        space.close()
 
 def test_to_json_refuses_a_record():
     """A record has no JSON form of its own: rows summarize it, and the generic writer fails closed."""
