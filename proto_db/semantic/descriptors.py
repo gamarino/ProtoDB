@@ -49,7 +49,7 @@ from ..core import codec
 from ..core.atom import TYPE_NAME_PATTERN
 from ..errors import ProtoValidationError
 from ..values import MISSING, MutableObject, canonical, is_atom
-from .expressions import Reader, check_ast, dependencies, evaluate, parse
+from .expressions import Reader, check_ast, dependencies, evaluate, parse, total_rules
 
 __all__ = ["Field", "Enum", "Computed", "Aggregate", "Relation", "RelationTo", "Role", "Invariant", "intent",
            "Certified", "SENSITIVITIES"]
@@ -395,7 +395,8 @@ def _evaluate_guarded(tree, receiver, name):
                                    f"computed attributes")
     token = _EVALUATING.set(running | {key})
     try:
-        value = evaluate(tree, receiver, reader=_reader_for(receiver))
+        with total_rules():         # a derived field stays a total function, also during an agent query (R283)
+            value = evaluate(tree, receiver, reader=_reader_for(receiver))
     finally:
         _EVALUATING.reset(token)
     return value

@@ -28,9 +28,13 @@ Refusals instead of silent empty answers (spec section 11, R283)
     (:func:`~proto_db.semantic.expressions.agent_rules`), in both modes: a comparison whose present operands
     (neither MISSING nor nil) have different D28 type ranks (a date with a text) raises ``ProtoValidationError``
     naming the operator and the two kinds, where the language answers false, also when the planner answers it
-    through an index; a ``root`` or ``cell`` origin absent from the version read raises one naming it, where the
-    language gives no members.  Both are decided after the withholding screen, by kinds of values the agent may
-    see or by a name it supplied, so neither tests a withheld value.
+    through an index (then every element of the end is checked); a ``root`` or ``cell`` origin of the agent's
+    tree that the version read does not list raises one naming it, where the language gives no members (checked
+    on the tree before evaluation; a listed origin holding nil exists, and is empty).  Only the agent's own
+    expressions follow these rules: a catalog-declared expression evaluated meanwhile (a computed attribute, an
+    aggregate) keeps D28 (:func:`~proto_db.semantic.expressions.total_rules`).  Both refusals are decided after
+    the withholding screen, by kinds of values the agent may see or by a name it supplied, so neither tests a
+    withheld value.
 
 Rows
     A row of a query without an aggregate is ``{"entity": {"cell": name} | None, "type_name", "values"}``:
@@ -824,16 +828,47 @@ def _answerable(snapshot, model: Mapping | None, terms) -> dict:
 
 # -- query ---------------------------------------------------------------------------------------------------
 
-def _reserved_root(tree: Mapping):
-    """The first reserved (``__``) root the ``from``, ``where`` or aggregate of ``tree`` names, else ``None``."""
-    stack = [tree["from"], tree.get("where"), tree.get("aggregate")]
+def _origins(tree: Mapping) -> list:
+    """The ``root`` and ``cell`` origins ``(kind, name)`` of the ``from``, ``where`` and aggregate of ``tree``, in
+    the order they appear (a ``via``'s origin, a bare root, an aggregate's ``over``), each once."""
+    found, stack = [], [tree.get("aggregate"), tree.get("where"), tree["from"]]
     while stack:
         node = stack.pop()
         if isinstance(node, list) and node and isinstance(node[0], str) and node[0] != "const":
-            if node[0] == "root" and len(node) > 1 and isinstance(node[1], str) and node[1].startswith("__"):
-                return node[1]
-            stack.extend(node[1:])
-    return None
+            if node[0] in ("root", "cell") and len(node) > 1 and isinstance(node[1], str):
+                if (node[0], node[1]) not in found:
+                    found.append((node[0], node[1]))
+            else:
+                stack.extend(reversed(node[1:]))
+    return found
+
+
+def _reserved_root(tree: Mapping):
+    """The first reserved (``__``) root the ``from``, ``where`` or aggregate of ``tree`` names, else ``None``."""
+    return next((name for kind, name in _origins(tree) if kind == "root" and name.startswith("__")), None)
+
+
+def _listed(names, name: str) -> bool:
+    """Whether ``name`` is among ``names``, a version's root or cell names in code point order (stops past it)."""
+    for listed in names:
+        if listed >= name:
+            return listed == name
+    return False
+
+
+def _check_origins(snapshot, tree: Mapping, version: str) -> None:
+    """Refuse the first ``root`` or ``cell`` origin of ``tree`` that the version read does not list (spec section
+    11, R283): R265 gives an absent origin no members, so a misspelled name would answer 0 rows.  Checked on the
+    tree, before anything is evaluated, so the refusal depends neither on the data nor on the plan.  A listed name
+    exists, also when it holds nil (an empty origin).  The names came from the agent; no stored value is named."""
+    for kind, name in _origins(tree):
+        if kind == "root":
+            present = snapshot.get_root_object(name) is not None or _listed(snapshot.iter_root_names(), name)
+        else:
+            present = snapshot.get_mutable(name) is not None or _listed(snapshot.iter_mutable_names(), name)
+        if not present:
+            raise ProtoValidationError(f"The {kind} {name!r} does not exist in {version}; an agent query refuses an "
+                                       f"absent origin instead of answering it as empty (spec section 11, R283)")
 
 
 def _screen(policy: _Withholding, tree) -> frozenset | None:
@@ -929,6 +964,8 @@ def query(db, tree: Mapping, *, raw: bool = False) -> dict:
     if not raw and of_type is not None and of_type not in policy.entities:
         raise ProtoValidationError(f"The semantic catalog describes no type {of_type!r}")
     types = policy.screen(tree)
+    _check_origins(snapshot, tree, "the version read (the one 'as_of' names)" if "as_of" in tree else
+                   "the version read")
     aggregate, select = tree.get("aggregate"), tree.get("select")
     default = select is None and aggregate is None
     chosen: dict = {}
@@ -951,8 +988,7 @@ def query(db, tree: Mapping, *, raw: bool = False) -> dict:
         answer = query_stored(snapshot, run, with_members=True, selection=use) if raw else \
             session.query(run, members=True, selection=use)
         return _answer(answer, tree, policy, raw)
-    version = "the version read (the one 'as_of' names)" if "as_of" in tree else "the version read"
-    with checking_reached(policy.check_member), agent_rules(version):
+    with checking_reached(policy.check_member), agent_rules():
         return scrubbed("the query", answered, log=_LOG)
 
 

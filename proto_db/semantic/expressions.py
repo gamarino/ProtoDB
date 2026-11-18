@@ -44,8 +44,8 @@ from ..query.expressions import And, Expression, Not, Or
 from ..query.terms import MIRRORED, Term, compare
 from ..values import MISSING, MutableObject, canonical, is_atom, is_orderable, order_key
 
-__all__ = ["Reader", "checking", "checking_reached", "reached", "agent_rules", "refusing", "check_kinds",
-           "check_origin", "check_ast", "evaluate", "to_planner", "dependencies", "parse", "unwrap_entry", "describe_operand",
+__all__ = ["Reader", "checking", "checking_reached", "reached", "agent_rules", "total_rules", "refusing",
+           "check_kinds", "check_ast", "evaluate", "to_planner", "dependencies", "parse", "unwrap_entry", "describe_operand",
            "ARITHMETIC", "COMPARISONS", "RESERVED", "MAX_EXPRESSION_DEPTH"]
 
 #: The arithmetic operators (R264); division is not specified.
@@ -152,8 +152,8 @@ def reached(holder, step: str, member) -> None:
         check(holder, step, member)
 
 
-#: While :func:`agent_rules` holds it, how an absent origin's refusal names the version read (else ``None``).
-_AGENT: contextvars.ContextVar = contextvars.ContextVar("proto_db_semantic_agent", default=None)
+#: Whether the agent-query rules hold in this context (:func:`agent_rules`; :func:`total_rules` suspends them).
+_AGENT: contextvars.ContextVar = contextvars.ContextVar("proto_db_semantic_agent", default=False)
 
 #: The name of each D28 type rank, as a refusal names an operand's kind (by its rank, never its value).
 _RANK_NAMES = ("missing", "nil", "boolean", "number", "text", "bytes", "date", "time", "time with a time zone",
@@ -161,58 +161,59 @@ _RANK_NAMES = ("missing", "nil", "boolean", "number", "text", "bytes", "date", "
 
 
 @contextlib.contextmanager
-def agent_rules(version: str = "the version read"):
-    """While the block runs in this context, evaluation follows the agent-query rules (spec section 11, R283)
-    instead of being a total function: a comparison whose present operands have different D28 type ranks
-    raises (:func:`check_kinds`), and so does a ``root`` or ``cell`` origin absent from the version read
-    (:func:`check_origin`; ``version`` is how its message names that version).  Outside the block (constraints,
-    derived fields, maintained aggregates, the session's own query) D28 and R265 hold unchanged: such a
-    comparison is false and such an origin has no members."""
-    token = _AGENT.set(version)
+def _rules(on: bool):
+    token = _AGENT.set(on)
     try:
         yield
     finally:
         _AGENT.reset(token)
 
 
+def agent_rules():
+    """While the block runs in this context, a comparison of the expression the agent wrote follows the
+    agent-query rule (spec section 11, R283): when its present operands have different D28 type ranks it raises
+    (:func:`check_kinds`) instead of being false.  The agent interface enters it around the evaluation of an
+    agent's query; every catalog-declared expression evaluated meanwhile (a computed attribute, an aggregate, a
+    maintained key) runs under :func:`total_rules`, so derived fields stay total functions as D28 defines them.
+    (Whether a ``root`` or ``cell`` origin exists is checked on the agent's tree before evaluation, by the agent
+    interface.)
+
+    A context variable is copied into a thread started while it is set (``sys.flags.thread_inherit_context``),
+    and that thread would keep the rules after the block: no thread is started inside an agent query today, and
+    code that starts one lazily there must pass it a fresh ``contextvars.Context()``."""
+    return _rules(True)
+
+
+def total_rules():
+    """While the block runs, D28 holds unchanged even inside :func:`agent_rules`: the evaluation of a
+    catalog-declared expression (constraints, derived fields, aggregates and keys are total functions)."""
+    return _rules(False)
+
+
 def refusing() -> bool:
     """Whether the agent-query rules (:func:`agent_rules`) hold in this context."""
-    return _AGENT.get() is not None
-
-
-def _plain_refusal(message: str) -> ProtoValidationError:
-    """A refusal whose message names only what the query names and kinds: the agent boundary reports it as is
-    (``semantic_plain``, :func:`proto_db.semantic.entities.scrubbed`)."""
-    error = ProtoValidationError(message)
-    error.semantic_plain = True
-    return error
+    return _AGENT.get()
 
 
 def check_kinds(op: str, left, right) -> None:
     """Under :func:`agent_rules`, refuse the comparison ``left op right`` when both operands are present (neither
     MISSING nor nil), orderable, and of different D28 type ranks: D28 makes it false for every value, so an
-    agent would read a plausible empty answer.  The message names the operator and the two kinds only.  A
-    MISSING or nil operand, an operand no rank orders (a list, a map, NaN) and every comparison outside the
-    rules keep D28's semantics."""
-    if _AGENT.get() is None or left is MISSING or right is MISSING or left is None or right is None:
+    agent would read a plausible empty answer.  The message names the operator and the two kinds only, and is
+    marked ``semantic_plain`` so the agent boundary (:func:`proto_db.semantic.entities.scrubbed`) reports it as
+    it is.  A MISSING or nil operand, an operand no rank orders (a list, a map, NaN, a version-bound reference)
+    and every comparison outside the rules keep D28's semantics."""
+    if not _AGENT.get() or left is MISSING or right is MISSING or left is None or right is None:
         return
     if not (is_orderable(left) and is_orderable(right)):
         return
     lrank, rrank = order_key(left)[0], order_key(right)[0]
     if lrank != rrank:
-        raise _plain_refusal(f"Operator {op!r} compares a {_RANK_NAMES[lrank]} with a {_RANK_NAMES[rrank]}: values "
-                             f"of different kinds are never equal or ordered, so an agent query refuses the "
-                             f"comparison instead of answering it as false (spec section 11, R283)")
-
-
-def check_origin(kind: str, name: str, found) -> None:
-    """Under :func:`agent_rules`, refuse the ``root`` or ``cell`` origin ``name`` (``kind``) when ``found``, what
-    the version read holds under it, is ``None``: R265 gives an absent origin no members, so a misspelled name
-    would answer 0 rows.  The name came from the agent; no stored value is named."""
-    version = _AGENT.get()
-    if version is not None and found is None:
-        raise _plain_refusal(f"The {kind} {name!r} does not exist in {version}; an agent query refuses an absent "
-                             f"origin instead of answering it as empty (spec section 11, R283)")
+        error = ProtoValidationError(
+            f"Operator {op!r} compares a {_RANK_NAMES[lrank]} with a {_RANK_NAMES[rrank]}: values of different kinds "
+            f"are never equal or ordered, so an agent query refuses the comparison instead of answering it as false "
+            f"(spec section 11, R283)")
+        error.semantic_plain = True
+        raise error
 
 
 # -- the static check -------------------------------------------------------------------------------
@@ -501,14 +502,11 @@ def _members_of(node, element, reader: Reader) -> tuple:
         current = [element]
     elif kind == "cell":
         found = reader.cell(origin[1])
-        check_origin("cell", origin[1], found)
         current = [] if found is None else [found]
         if found is not None:
             reached(None, origin[1], found)
     else:
-        found = reader.root(origin[1])
-        check_origin("root", origin[1], found)
-        _reach(reader.members(found), current, {}, reader)
+        _reach(reader.members(reader.root(origin[1])), current, {}, reader)
     for role in roles:
         hop, seen = [], {}
         for member in current:

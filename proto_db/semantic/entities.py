@@ -148,12 +148,12 @@ from ..indexing.range import RangeIndex
 from ..query.expressions import And
 from ..query.linq import from_collection
 from ..query.terms import Term
-from ..values import MISSING, MutableObject, is_atom, values_equal
+from ..values import MISSING, MutableObject, canonical, is_atom, is_orderable, order_key, values_equal
 from . import compose as _compose
 from . import constraints as _constraints
 from .classes import IntentContext
 from .descriptors import RegistryReader
-from .expressions import (Reader, _arithmetic, check_origin, checking, reached, refusing, _identity, _number, _operand_error, _truth, check_ast, describe_operand,
+from .expressions import (Reader, _arithmetic, check_kinds, checking, reached, refusing, total_rules, _identity, _number, _operand_error, _truth, check_ast, describe_operand,
                           evaluate, to_planner, unwrap_entry)
 
 __all__ = ["Version", "Members", "BoundIntent", "SessionContext", "Operations", "Schema", "StoredReader", "check_query",
@@ -884,7 +884,9 @@ class Operations:
     # -- evaluation ---------------------------------------------------------------------------------------
 
     def _evaluate(self, tree, element):
-        with self.reading():
+        """Evaluate a catalog-declared ``tree`` (an aggregate, its ``where``, a maintained key, a ``requires``):
+        a total function, also during an agent query (:func:`~proto_db.semantic.expressions.total_rules`)."""
+        with self.reading(), total_rules():
             return evaluate(tree, element, reader=self.reader)
 
     def _contribution(self, tree, member):
@@ -1444,14 +1446,11 @@ class Operations:
         stored value (the handle) beside the record it designates."""
         if origin[0] == "cell":
             found = self.reader.cell(origin[1])
-            check_origin("cell", origin[1], found)
             current = [] if found is None else [(MutableObject(origin[1]), found)]
             if found is not None:
                 reached(None, origin[1], found)
         else:
-            found = self.reader.root(origin[1])
-            check_origin("root", origin[1], found)
-            current = self._reached(self.reader.members(found))
+            current = self._reached(self.reader.members(self.reader.root(origin[1])))
         for role in roles:
             out, seen = [], {}
             for _, record in current:
@@ -1571,17 +1570,19 @@ class Operations:
                 indexed.append(conjunct)
         if collection is None:
             return [], {**source, "plan": None, "indexed": copy.deepcopy(indexed), "residual": copy.deepcopy(residual)}
-        if holder is not None and checking():
-            # Every member of the end is checked, not only those the plan keeps: whether the check refuses
-            # must not depend on what the where selects (no yes/no answer about a member it would refuse).
-            _tagged(_FROM, self._reached, [unwrap_entry(element) if entries else element
-                                           for element in collection.elements()], holder, step)
-        if candidates and refusing():
-            # Under the agent-query rules a comparison across kinds is refused (spec section 11, R283), but the
-            # planner answers a planned conjunct without the evaluator: each element of the collection is
-            # evaluated against the planned conjuncts as the planner reads it (its stored values, no default),
-            # so whether a query is refused never depends on its plan.  One pass over the end, agent queries only.
-            _tagged(_WHERE, self._check_kinds, collection, candidates)
+        kinds = _planned_comparisons(candidates) if refusing() else ()
+        if (holder is not None and checking()) or kinds:
+            elements = list(collection.elements())          # one walk of the end serves both checks
+            if holder is not None and checking():
+                # Every member of the end is checked, not only those the plan keeps: whether the check refuses
+                # must not depend on what the where selects (no yes/no answer about a member it would refuse).
+                _tagged(_FROM, self._reached, [unwrap_entry(element) if entries else element
+                                               for element in elements], holder, step)
+            if kinds:
+                # Under the agent-query rules a comparison across kinds is refused (spec section 11, R283), but the
+                # planner answers a planned comparison without the evaluator: it is checked here on every element
+                # of the end, by the stored value the planner reads.  Agent queries only.
+                _tagged(_WHERE, _check_planned_kinds, elements, kinds)
         query = from_collection(collection)
         if planned:
             query = query.where(planned[0] if len(planned) == 1 else And(*planned))
@@ -1590,14 +1591,6 @@ class Operations:
         reached = _tagged(_FROM, self._reached, [unwrap_entry(element) if entries else element for element in listed])
         members = _tagged(_WHERE, self._satisfying, reached, residual)
         return members, {**source, "plan": plan, "indexed": copy.deepcopy(indexed), "residual": copy.deepcopy(residual)}
-
-    @staticmethod
-    def _check_kinds(collection, candidates) -> None:
-        """Evaluate each planned conjunct of ``candidates`` on every element of ``collection`` as the planner reads
-        it, for the refusal of a comparison across kinds (:func:`~proto_db.semantic.expressions.check_kinds`)."""
-        for element in collection.elements():
-            for candidate in candidates:
-                evaluate(candidate, element)
 
     def _terms(self, used: list, types: list, reads: list) -> list:
         """The catalog elements the query used, with their certification: the roles it crossed and the
@@ -1632,6 +1625,44 @@ class Operations:
                     element = add(owner, step) if owner is not None and self.schema.has(owner) else None
                     owner = element.get("target") if element is not None else None
         return out
+
+
+def _planned_comparisons(candidates) -> dict:
+    """The comparisons of the planned conjuncts ``candidates`` (each a one-step ``attr`` against a ``const``, the
+    shape :func:`~proto_db.semantic.expressions.to_planner` plans) whose constant is present and orderable, by
+    attribute name: ``{name: [(operator, constant, attr_left, the constant's D28 rank)]}``."""
+    found, stack = {}, list(candidates)
+    while stack:
+        node = stack.pop()
+        if not (isinstance(node, list) and node and isinstance(node[0], str)):
+            continue
+        if node[0] in ("==", "!=", "<", "<=", ">", ">="):
+            left, right = node[1], node[2]
+            attr_left = left[0] == "attr" and right[0] == "const"
+            if not (attr_left or (right[0] == "attr" and left[0] == "const")):
+                continue
+            (name,), value = (left[1:], right[1]) if attr_left else (right[1:], left[1])
+            value = canonical(value)
+            if value is not MISSING and value is not None and is_orderable(value):
+                found.setdefault(name, []).append((node[0], value, attr_left, order_key(value)[0]))
+        elif node[0] != "const":
+            stack.extend(node[1:])
+    return found
+
+
+def _check_planned_kinds(elements, kinds: Mapping) -> None:
+    """Refuse a planned comparison across kinds (:func:`~proto_db.semantic.expressions.check_kinds`) on any of
+    ``elements``, each read as the planner reads it: its stored value, MISSING when absent (no default).  One read
+    and one rank per element and attribute; the message is :func:`check_kinds`'s."""
+    for element in elements:
+        for name, comparisons in kinds.items():
+            stored = _stored_step(element, name)
+            if stored is MISSING or stored is None or not is_orderable(stored):
+                continue
+            rank = order_key(stored)[0]
+            for op, value, attr_left, value_rank in comparisons:
+                if rank != value_rank:
+                    check_kinds(op, stored, value) if attr_left else check_kinds(op, value, stored)
 
 
 def _same_key(old, new) -> bool:

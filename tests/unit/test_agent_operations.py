@@ -1745,3 +1745,81 @@ def test_the_code_less_raw_server_refuses_the_footguns_too(tmp_path):
     assert kind == "ProtoValidationError" and "date" in message and "text" in message, message
     kind, message = seen["root"]
     assert kind == "ProtoValidationError" and "'ordrs'" in message, message
+
+
+# -- R283 fix round 1: only the agent's own expressions; origins checked on the tree -------------------------
+
+@pytest.fixture
+def kinds_db(space):
+    """``acme_kinds``: things whose code is a text, a computed ``is_five`` and a non-maintained aggregate
+    ``fives`` that compare it with a number (false under D28), held by one holder in the root ``holders``."""
+    database = space.new_database("kinds")
+    database.run(lambda tr: tr.install_module("acme_kinds"))
+
+    def build(tr):
+        s = semantic(tr)
+        holder = s.create("acme.kinds.Holder", name="h")
+        for code in ("a", "b"):
+            s.create("acme.kinds.Thing", code=code, holder=holder)
+        tr.set_root_object("holders", tr.new_list().append_last(holder))
+        return holder.name
+    return database, database.run(build)
+
+
+def test_a_derived_field_comparing_across_kinds_keeps_d28_in_an_agent_query(kinds_db):
+    """A computed attribute or an aggregate the catalog declares is not the agent's expression: it stays a total
+    function (false), read through the default selection, a select, a where or an aggregate's term."""
+    db, holder = kinds_db
+    things = ["via", ["cell", holder], "things"]
+    rows = query(db, {"from": things})["rows"]
+    assert sorted(row["values"]["code"] for row in rows) == ["a", "b"]
+    assert all(row["values"]["is_five"] is False for row in rows)
+    assert [row["values"] for row in query(db, {"from": things, "select": ["is_five"]})["rows"]] == \
+        [{"is_five": False}] * 2
+    assert query(db, {"from": things, "where": ["==", ["attr", "is_five"], ["const", False]],
+                      "aggregate": ["count"]})["rows"] == [{"count": 2}]
+    assert query(db, {"from": ["root", "holders"], "select": ["fives"]})["rows"][0]["values"] == {"fives": 0}
+    assert query(db, {"from": ["root", "holders"], "aggregate": ["sum", ["attr", "fives"]]})["rows"] == [{"sum": 0}]
+    # the agent's own comparison is still held to the rule, also beside a derived field
+    _refused(db, {"from": things, "where": ["==", ["attr", "is_five"], ["const", 0]]}, False, "boolean", "number")
+    _refused(db, {"from": things, "where": ["==", ["attr", "code"], ["const", 5]]}, False, "text", "number")
+
+
+@pytest.mark.parametrize("raw", [False, True])
+def test_an_absent_origin_is_refused_whatever_evaluation_reaches(db, raw):
+    """Origin existence is checked on the agent's tree before evaluation: behind an empty end, behind an
+    ``and``/``or`` that stops early, in an aggregate's term over no members, and under ``as_of``."""
+    world = _load(db)
+    db.run(lambda tr: tr.set_root_object("empty", tr.new_list()))
+    empty = ["root", "empty"]
+    count_nope = ["==", ["count", ["root", "nope"]], ["const", 0]]
+    missing = ORDER + "#" + "0" * 32
+    for tree, name in (({"from": empty, "where": count_nope, "aggregate": ["count"]}, "'nope'"),
+                       ({"from": empty, "aggregate": ["sum", ["count", ["root", "nope"]]]}, "'nope'"),
+                       ({"from": _orders_of(world), "aggregate": ["count"],
+                         "where": ["and", ["==", ["const", 1], ["const", 2]], count_nope]}, "'nope'"),
+                       ({"from": _orders_of(world), "aggregate": ["count"],
+                         "where": ["or", ["==", ["const", 1], ["const", 1]],
+                                   ["==", ["count", ["via", ["cell", missing], "lines"]], ["const", 0]]]},
+                        repr(missing))):
+        _refused(db, tree, raw, name, "version read")
+    before = query(db, {"from": empty, "aggregate": ["count"]}, raw=raw)["version"]["ref"]
+    db.run(lambda tr: tr.set_root_object("later", tr.new_list().append_last(world["bob"])))
+    late = ["==", ["count", ["root", "later"]], ["const", 0]]
+    assert query(db, {"from": empty, "where": late, "aggregate": ["count"]}, raw=raw)["rows"] == [{"count": 0}]
+    for tree in ({"from": empty, "where": late, "aggregate": ["count"], "as_of": before},
+                 {"from": _orders_of(world), "aggregate": ["count"], "as_of": before,
+                  "where": ["and", ["==", ["const", 1], ["const", 2]], late]}):
+        _refused(db, tree, raw, "'later'", "version read", "as_of")
+
+
+@pytest.mark.parametrize("raw", [False, True])
+def test_a_root_holding_nil_exists_and_is_empty(db, raw):
+    """A root the version lists exists, also when it holds nil (R265: a nil end is empty); a removed one is not."""
+    db.run(lambda tr: tr.set_root_object("nul", None))
+    assert "nul" in db.snapshot_at(_current_ref(db)).root_names
+    assert query(db, {"from": ["root", "nul"]}, raw=raw)["rows"] == []
+    assert query(db, {"from": ["root", "nul"], "aggregate": ["count"]}, raw=raw)["rows"] == [{"count": 0}]
+    db.run(lambda tr: tr.set_root_object("gone", tr.new_list()))
+    db.run(lambda tr: tr.remove_root_object("gone"))
+    _refused(db, {"from": ["root", "gone"]}, raw, "'gone'")

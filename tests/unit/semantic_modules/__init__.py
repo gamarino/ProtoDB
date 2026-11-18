@@ -27,6 +27,7 @@ MAPPING = {
     "acme_ghost": f"{_PACKAGE}.acme_ghost",
     "acme_keyed": f"{_PACKAGE}.acme_keyed",
     "acme_leaky": f"{_PACKAGE}.acme_leaky",
+    "acme_kinds": f"{_PACKAGE}.acme_kinds",
     "acme_audit": f"{_PACKAGE}.acme_audit",
     "acme_late_count": f"{_PACKAGE}.acme_late_count",
     "acme_credit_cap": f"{_PACKAGE}.acme_credit_cap",

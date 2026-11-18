@@ -564,18 +564,30 @@ Rules:
   catalog and raw mode alike); the expression language of section 7 is unchanged for constraints, derived fields,
   maintained aggregates and the session's own `query`, which stay total functions (and the conformance vectors
   with them).
-  - A comparison (`==`, `!=`, `<`, `<=`, `>`, `>=`) anywhere in the query (`from`, `where`, an aggregate's
-    term) whose two evaluated operands are both present (neither MISSING nor nil) and orderable, and have
+  - A comparison (`==`, `!=`, `<`, `<=`, `>`, `>=`) the agent wrote, anywhere in its query (`from`, `where`, an
+    aggregate's term), whose two evaluated operands are both present (neither MISSING nor nil) and orderable, and have
     different D28 type ranks, raises `ProtoValidationError` naming the operator and the two kinds (int and
     decimal are one rank, the number), never a value. A comparison with MISSING or nil keeps D28's semantics. A
     comparison the planner answers through an index is held to the same rule: it is checked against every element
     of the collection. On a collection that mixes kinds, a query can therefore be refused under an index plan and
     answered under a scan whose `and`/`or` never reaches the mixed element; each outcome is a correct answer or a
-    refusal, never a silent empty one.
-  - A `["root", name]` or `["cell", name]` origin anywhere in the query that does not exist in the version read
-    (with `as_of`, the version it names) raises `ProtoValidationError` naming the origin and saying that version.
-    The catalog declares no roots, so existence in the version read is the rule; an existing empty root answers
-    no rows. The reserved roots keep their own refusal.
+    refusal, never a silent empty one. That check reads each element's stored value once per planned attribute in
+    the walk of the end the agent interface already makes; measured on an index-answered count over N order lines
+    (fastest of 5, `-X gil=0`), 22 ms against 17 ms without it at N = 2,000 and 112 ms against 82 ms at N = 10,000.
+  - Only the agent's own expressions follow the rule: a catalog-declared expression evaluated during the query (a
+    computed attribute, an aggregate, its `where`, a maintained key) keeps D28 and stays a total function, so a
+    derived field that compares across kinds reads false, as everywhere else.
+  - Known gap: a version-bound reference (`{"entity", "version"}`) has no D28 rank, so comparing one with an
+    identity handle (`["==", ["attr", "product"], ["const", {"cell": name}]]` on a `binding="version"` role) is
+    still false without a refusal. An agent reaches the entity through the role's path instead.
+  - A `["root", name]` or `["cell", name]` origin anywhere in the query (`from`, a `via`, `where`, an aggregate's
+    term) that the version read (with `as_of`, the version it names) does not list raises `ProtoValidationError`
+    naming the origin and saying that version. The origins are collected from the tree and checked before anything
+    is evaluated, so the refusal depends neither on the data nor on the plan (an origin behind an empty end or an
+    `and`/`or` that stops early is refused too). The catalog declares no roots, so existence in the version read is
+    the rule: a listed root or cell exists, also when it holds nil, and an existing empty or nil root answers no
+    rows. In raw mode a reserved (`__`) root keeps its own refusal ("not available"), checked first; catalog mode
+    has no such refusal, so there an absent reserved root is refused as absent and a present one is read.
   - Withholding comes first: a `from`, `where` or aggregate reading a withheld attribute is refused before
     anything is evaluated, so neither refusal can test a withheld value; a kind refusal is decided by the kinds of
     reachable values the agent may see, an origin refusal by a name the agent supplied.
@@ -696,5 +708,6 @@ Conflicts with the brief found while writing, resolved above:
 
 - **R283** (maintainer, changes this specification) An agent query refuses, with `ProtoValidationError`, a
   comparison across D28 type ranks between present operands and a `root` or `cell` origin absent from the version
-  read, where the expression language answers false and no members (section 11). The expression language itself
+  read, where the expression language answers false and no members (section 11). Only the expressions the agent
+  wrote are held to it; catalog-declared expressions evaluated meanwhile keep D28. The expression language itself
   (D28, R265) and the conformance vectors are unchanged.
