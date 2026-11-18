@@ -185,8 +185,9 @@ def _content_free(error: Exception, operation: str) -> Exception:
 def to_json(value):
     """``value`` as JSON-ready data: a ``Decimal`` as its string, a date, time or datetime in ISO 8601, an
     identity handle as ``{"cell": name}``, bytes as ``{"bytes": base64}``, a map as an object with string
-    keys, a list, tuple, ``List`` or ``Set`` as an array, a record as ``{"type_name", "values"}``.  Anything
-    else is ``ProtoValidationError``."""
+    keys, a list, tuple, ``List`` or ``Set`` as an array.  Anything else is ``ProtoValidationError``, a record
+    included: a record is reached with ``from`` and summarized in a row (:func:`_flat`), never written out
+    whole, so no path can write a value the withholding policy has not seen (fail closed)."""
     if value is None or isinstance(value, (bool, int, str)):
         return value
     if isinstance(value, float):
@@ -204,15 +205,22 @@ def to_json(value):
     if isinstance(value, MutableObject):
         return {"cell": value.name}
     if isinstance(value, Mapping):
-        return {str(key): to_json(item) for key, item in value.items()}
+        return {_key(key): to_json(item) for key, item in value.items()}
     if isinstance(value, (list, tuple)):
         return [to_json(item) for item in value]
     if isinstance(value, (List, Set)):
         return [to_json(item) for item in value.elements()]
     if _is_record(value):
-        return {"type_name": getattr(type(value), "__type_name__", None),
-                "values": {name: to_json(item) for name, item in _own(value).items()}}
+        raise ProtoValidationError(f"A record ({_stored_type(value)}) has no JSON form: it is reached with 'from'")
     raise ProtoValidationError(f"{type(value).__name__} has no JSON form")
+
+
+def _key(key) -> str:
+    """A map key as a JSON object key: a scalar's text; any other key (a record, a handle) is refused, never
+    written through its ``str``."""
+    if key is None or isinstance(key, (str, int, float, Decimal)):
+        return str(key)
+    raise ProtoValidationError(f"A map key of kind {type(key).__name__} has no JSON form")
 
 
 def from_json(value):
@@ -253,13 +261,18 @@ def _bound(value) -> bool:
 
 def _flat(value):
     """A value inside a row: what a role, a record or a collection holds is reached with ``from``, not
-    inlined (see "Rows")."""
+    inlined (see "Rows").  A plain list, tuple or map is summarized item by item, so a record inside one is
+    ``{"record": type}`` too."""
     if _bound(value):
         return {"entity": {"cell": value["entity"].name}, "version": {"record": _stored_type(value["version"])}}
     if isinstance(value, (List, Set)):
         return {"collection": "list" if isinstance(value, List) else "set", "count": value.count}
     if _is_record(value):
         return {"record": _stored_type(value)}
+    if isinstance(value, (list, tuple)):
+        return [_flat(item) for item in value]
+    if isinstance(value, Mapping):
+        return {_key(key): _flat(item) for key, item in value.items()}
     return to_json(value)
 
 
@@ -654,26 +667,33 @@ def describe(db, type_name: str, *, raw: bool = False) -> dict:
     return answer
 
 
-def _stored_description(snapshot, type_name: str) -> dict:
-    """What the stored records of ``type_name`` hold (raw :func:`describe`)."""
-    cells, nested, attributes = 0, 0, {}
-
-    def take(record):
-        for name, value in _own(record).items():
-            attributes.setdefault(name, set()).add(_kind_of(value))
+def _stored_records(snapshot):
+    """``(value, in_cell)`` for every cell's value and every atom held in a collection of a cell's record:
+    what raw mode describes and matches."""
     for name in _names(snapshot, "cell", None):
         record = snapshot.get_mutable(name)
-        if _stored_type(record) == type_name:
-            cells += 1
-            take(record)
+        yield record, True
         if _is_record(record):
             for value in _own(record).values():
                 if isinstance(value, (List, Set)):
                     for element in value.elements():
                         element = unwrap_entry(element)
-                        if is_atom(element) and _stored_type(element) == type_name:
-                            nested += 1
-                            take(element)
+                        if is_atom(element):
+                            yield element, False
+
+
+def _stored_description(snapshot, type_name: str) -> dict:
+    """What the stored records of ``type_name`` hold (raw :func:`describe`)."""
+    cells, nested, attributes = 0, 0, {}
+    for record, in_cell in _stored_records(snapshot):
+        if _stored_type(record) != type_name:
+            continue
+        if in_cell:
+            cells += 1
+        else:
+            nested += 1
+        for name, value in _own(record).items():
+            attributes.setdefault(name, set()).add(_kind_of(value))
     return {"type_name": type_name, "cells": cells, "records": nested,
             "attributes": {name: sorted(kinds) for name, kinds in sorted(attributes.items())}}
 
@@ -727,10 +747,9 @@ def _vocabulary(snapshot, model: Mapping | None) -> list:
     out = []
     if model is None:
         types: dict = {}
-        for name in _names(snapshot, "cell", None):
-            record = snapshot.get_mutable(name)
-            names = types.setdefault(_stored_type(record), set())
-            if _is_record(record):
+        for record, in_cell in _stored_records(snapshot):
+            if in_cell or _is_record(record):           # a nested collection is not a type to name
+                names = types.setdefault(_stored_type(record), set())
                 names.update(_own(record).keys())
         for type_name, names in sorted(types.items()):
             out.append(({"kind": "entity", "type_name": type_name, "name": None},

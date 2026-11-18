@@ -1343,6 +1343,58 @@ def test_an_undeclared_attribute_holding_a_handle_stays_withheld_not_refused(mod
         space.close()
 
 
+
+@pytest.mark.parametrize("mode", ["raw", "raw without the code"])
+def test_a_record_inside_a_plain_container_is_summarized_never_dumped(mode):
+    """A record inside a plain list, tuple or dict value (the codec stores them) is reached with ``from``,
+    never inlined: a row shows ``{"record": type}``, so the withheld personal name never reaches the agent."""
+    storage = MemoryStorage()
+    space = ObjectSpace(storage, modules_mapping=MAPPING)
+    reader = ObjectSpace(storage, modules_mapping={}) if mode == "raw without the code" else None
+    try:
+        db = space.new_database("db")
+        db.run(lambda tr: tr.install_module("acme_sales"))
+        company = _customers_of_bob(db)
+
+        def extra(tr):
+            bob = tr.get_mutable(next(name for name in tr.mutable_names() if name.startswith(CUSTOMER)))
+            tr.set_mutable(company.name, tr.get_mutable(company.name).with_(
+                extra=[bob], extra_map={"k": bob}, extra_tuple=(bob,)))
+        db.run(extra)
+        target = db if reader is None else reader.open_database("db")
+        root = {"from": ["via", ["cell", company.name], "customers"], "select": ["company"]}
+        rows = query(target, {"from": ["via", ["cell", company.name], "customers", "company"]}, raw=True)["rows"]
+        assert MARK not in json.dumps(rows)
+        summary = {"record": CUSTOMER}
+        assert rows[0]["values"]["extra"] == [summary] and rows[0]["values"]["extra_tuple"] == [summary]
+        assert rows[0]["values"]["extra_map"] == {"k": summary}
+        for name in ("extra", "extra_map", "extra_tuple"):
+            answer = query(target, dict(root, select=[f"company.{name}"]), raw=True)
+            assert MARK not in json.dumps(answer), name
+    finally:
+        if reader is not None:
+            reader.close()
+        space.close()
+
+
+def test_to_json_refuses_a_record():
+    """A record has no JSON form of its own: rows summarize it, and the generic writer fails closed."""
+    storage = MemoryStorage()
+    space = ObjectSpace(storage, modules_mapping=MAPPING)
+    try:
+        db = space.new_database("db")
+        db.run(lambda tr: tr.install_module("acme_sales"))
+        company = _customers_of_bob(db)
+        tr = db.new_transaction()
+        try:
+            record = tr.get_mutable(company.name)
+            with pytest.raises(ProtoValidationError, match="record"):
+                to_json([record])
+        finally:
+            tr.abort()
+    finally:
+        space.close()
+
 _RAW_READER = r"""
 import json, sys
 from proto_db import FileStorage, ObjectSpace
@@ -1363,7 +1415,8 @@ try:
                       "customers": [row["values"] for row in operations.query(
                           db, {"from": ["via", ["cell", company], "customers"]}, raw=True)["rows"]],
                       "customer": operations.describe(db, "acme.sales.Customer", raw=True),
-                      "answerable": operations.check_answerable(db, ["total"], raw=True)}))
+                      "line": operations.describe(db, "acme.sales.OrderLine", raw=True),
+                      "answerable": operations.check_answerable(db, ["total", "quantity"], raw=True)}))
 finally:
     space.close()
 """
@@ -1387,7 +1440,65 @@ def test_raw_mode_reads_the_stored_fields_without_the_models_code(tmp_path):
     assert seen["opaque"]                                   # the case under test: no class in that process
     assert {"number", "date", "customer", "lines", "total"} <= set(seen["describe"]["attributes"])
     assert {"number", "date", "total"} <= set(seen["row"])
-    assert "stored" in json.dumps(seen["answerable"])
+    assert seen["answerable"]["matches"]["total"] == [{"kind": "attribute", "type_name": "acme.sales.Order",
+                                                       "name": "total", "via": "stored"}]
+    assert {"type_name": "acme.sales.OrderLine", "name": "quantity"}.items() <= \
+        seen["answerable"]["matches"]["quantity"][0].items()            # a nested record's attribute (M2)
+    # Lines are records inside each order's collection, never cells: read through the opaque order too.
+    assert seen["line"]["cells"] == 0 and seen["line"]["records"] > 0
+    assert {"product", "quantity", "price"} <= set(seen["line"]["attributes"])
     # The stored catalog's sensitivity still holds for opaque records: the personal name is never returned.
     assert seen["customers"] and all("credit_limit" in row and "name" not in row for row in seen["customers"])
     assert "name" in seen["customer"]["attributes"]          # listed by name (as in catalog mode), never its value
+
+
+_CONTAINER_READER = r"""
+import json, sys
+from proto_db import FileStorage, ObjectSpace
+from proto_db.agent import operations
+from proto_db.core.atom import OpaqueAtom
+space = ObjectSpace(FileStorage(sys.argv[1]), modules_mapping={})      # no code: records load opaque
+try:
+    db = space.open_database("db")
+    company = sys.argv[2]
+    rows = operations.query(db, {"from": ["via", ["cell", company], "customers", "company"]}, raw=True)["rows"]
+    selected = {name: operations.query(db, {"from": ["via", ["cell", company], "customers"],
+                                            "select": [f"company.{name}"]}, raw=True)
+                for name in ("extra", "extra_map", "extra_tuple")}
+    record = operations._snapshot(db).get_mutable(company)
+    print(json.dumps({"opaque": isinstance(record, OpaqueAtom), "rows": rows, "selected": selected}))
+finally:
+    space.close()
+"""
+
+
+def test_a_record_inside_a_plain_container_is_summarized_in_a_process_without_the_code(tmp_path):
+    """The code-less server's records are opaque atoms: a record inside a plain container is summarized there
+    too, and the withheld personal name never reaches the agent."""
+    import os
+    import subprocess
+    import sys
+    from proto_db.storage.file import FileStorage
+    path = str(tmp_path / "space")
+    space = ObjectSpace(FileStorage(path), modules_mapping=MAPPING)
+    try:
+        db = space.new_database("db")
+        db.run(lambda tr: tr.install_module("acme_sales"))
+        company = _customers_of_bob(db)
+
+        def extra(tr):
+            bob = tr.get_mutable(next(name for name in tr.mutable_names() if name.startswith(CUSTOMER)))
+            tr.set_mutable(company.name, tr.get_mutable(company.name).with_(
+                extra=[bob], extra_map={"k": bob}, extra_tuple=(bob,)))
+        db.run(extra)
+    finally:
+        space.close()
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    done = subprocess.run([sys.executable, "-c", _CONTAINER_READER, path, company.name], capture_output=True,
+                          text=True, timeout=120, cwd=root, env={**os.environ, "PYTHONPATH": root})
+    assert done.returncode == 0, done.stderr
+    seen = json.loads(done.stdout.splitlines()[-1])
+    assert seen["opaque"]
+    assert MARK not in json.dumps(seen)
+    assert seen["rows"][0]["values"]["extra"] == [{"record": CUSTOMER}]
+    assert seen["rows"][0]["values"]["extra_map"] == {"k": {"record": CUSTOMER}}
