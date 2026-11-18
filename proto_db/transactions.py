@@ -574,6 +574,10 @@ class Snapshot:
         """Value of root ``name`` in this version (``None`` if absent)."""
         return self._root.objects.get_at(_check_name(name))
 
+    def has_root_object(self, name: str) -> bool:
+        """Whether this version lists the root ``name``, also one holding ``None`` (O(log n), no name scan)."""
+        return self._root.objects.has(_check_name(name))
+
     @property
     def mutable_names(self) -> tuple:
         """Sorted names of the mutable cells present in this version."""
@@ -586,6 +590,10 @@ class Snapshot:
     def get_mutable(self, name: str):
         """Value of the mutable cell ``name`` in this version (``None`` if absent)."""
         return self._root.mutables.get_at(_check_name(name, "mutable"))
+
+    def has_mutable(self, name: str) -> bool:
+        """Whether this version lists the mutable cell ``name``, also one holding ``None`` (O(log n), no name scan)."""
+        return self._root.mutables.has(_check_name(name, "mutable"))
 
     def pager(self, root_name: str, *, where=None, order_by=None, page_size: int):
         """A portable :class:`~proto_db.query.pager.Pager` over the collection at ``root_name`` in

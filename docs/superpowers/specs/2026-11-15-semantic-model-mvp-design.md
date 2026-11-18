@@ -570,8 +570,12 @@ Rules:
     decimal are one rank, the number), never a value. A comparison with MISSING or nil keeps D28's semantics. A
     comparison the planner answers through an index is held to the same rule: it is checked against every element
     of the collection. On a collection that mixes kinds, a query can therefore be refused under an index plan and
-    answered under a scan whose `and`/`or` never reaches the mixed element; each outcome is a correct answer or a
-    refusal, never a silent empty one. That check reads each element's stored value once per planned attribute in
+    answered under a scan whose `and`/`or` never reaches the mixed element. Every comparison of a planned conjunct
+    is checked, under `and`, `or` and `not` alike (the index answers each of them over the whole end), so a planned
+    `or` can be refused even when no element mixes kinds: `x == 1 or x == 'a'` over elements whose `x` is a number
+    is refused under an index plan and answered by a scan, whose `or` stops at the first disjunct. Each outcome is
+    a correct answer or a refusal, never a silent empty one; a refusal names the first mismatching comparison, in
+    the conjuncts' order. That check reads each element's stored value once per planned attribute in
     the walk of the end the agent interface already makes; measured on an index-answered count over N order lines
     (fastest of 5, `-X gil=0`), 22 ms against 17 ms without it at N = 2,000 and 112 ms against 82 ms at N = 10,000.
   - Only the agent's own expressions follow the rule: a catalog-declared expression evaluated during the query (a
@@ -582,9 +586,10 @@ Rules:
     still false without a refusal. An agent reaches the entity through the role's path instead.
   - A `["root", name]` or `["cell", name]` origin anywhere in the query (`from`, a `via`, `where`, an aggregate's
     term) that the version read (with `as_of`, the version it names) does not list raises `ProtoValidationError`
-    naming the origin and saying that version. The origins are collected from the tree and checked before anything
-    is evaluated, so the refusal depends neither on the data nor on the plan (an origin behind an empty end or an
-    `and`/`or` that stops early is refused too). The catalog declares no roots, so existence in the version read is
+    naming the query part, the origin and that version. The origins are collected from the tree (each once, in
+    tree order) and checked before anything is evaluated, one lookup of the version's name table each, so the
+    refusal depends neither on the data nor on the plan (an origin behind an empty end or an `and`/`or` that stops
+    early is refused too). The catalog declares no roots, so existence in the version read is
     the rule: a listed root or cell exists, also when it holds nil, and an existing empty or nil root answers no
     rows. In raw mode a reserved (`__`) root keeps its own refusal ("not available"), checked first; catalog mode
     has no such refusal, so there an absent reserved root is refused as absent and a present one is read.

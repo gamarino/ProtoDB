@@ -828,47 +828,43 @@ def _answerable(snapshot, model: Mapping | None, terms) -> dict:
 
 # -- query ---------------------------------------------------------------------------------------------------
 
+#: The query parts an origin refusal names (as the engine's evaluation failures name them).
+_FROM_PART, _WHERE_PART, _AGGREGATE_PART = "the query's 'from'", "the query's 'where'", "the query's aggregate"
+
+
 def _origins(tree: Mapping) -> list:
-    """The ``root`` and ``cell`` origins ``(kind, name)`` of the ``from``, ``where`` and aggregate of ``tree``, in
-    the order they appear (a ``via``'s origin, a bare root, an aggregate's ``over``), each once."""
-    found, stack = [], [tree.get("aggregate"), tree.get("where"), tree["from"]]
+    """The ``root`` and ``cell`` origins of the ``from``, ``where`` and aggregate of ``tree``, in the order they
+    appear (a ``via``'s origin, a bare root, an aggregate's ``over``), each once, as ``((kind, name), part)`` where
+    ``part`` names the query part it first appears in.  Linear in the tree (a dict de-duplicates)."""
+    found: dict = {}
+    stack = [(tree.get("aggregate"), _AGGREGATE_PART), (tree.get("where"), _WHERE_PART), (tree["from"], _FROM_PART)]
     while stack:
-        node = stack.pop()
+        node, part = stack.pop()
         if isinstance(node, list) and node and isinstance(node[0], str) and node[0] != "const":
             if node[0] in ("root", "cell") and len(node) > 1 and isinstance(node[1], str):
-                if (node[0], node[1]) not in found:
-                    found.append((node[0], node[1]))
+                found.setdefault((node[0], node[1]), part)
             else:
-                stack.extend(reversed(node[1:]))
-    return found
+                stack.extend((child, part) for child in reversed(node[1:]))
+    return list(found.items())
 
 
 def _reserved_root(tree: Mapping):
     """The first reserved (``__``) root the ``from``, ``where`` or aggregate of ``tree`` names, else ``None``."""
-    return next((name for kind, name in _origins(tree) if kind == "root" and name.startswith("__")), None)
-
-
-def _listed(names, name: str) -> bool:
-    """Whether ``name`` is among ``names``, a version's root or cell names in code point order (stops past it)."""
-    for listed in names:
-        if listed >= name:
-            return listed == name
-    return False
+    return next((name for (kind, name), _ in _origins(tree) if kind == "root" and name.startswith("__")), None)
 
 
 def _check_origins(snapshot, tree: Mapping, version: str) -> None:
     """Refuse the first ``root`` or ``cell`` origin of ``tree`` that the version read does not list (spec section
     11, R283): R265 gives an absent origin no members, so a misspelled name would answer 0 rows.  Checked on the
     tree, before anything is evaluated, so the refusal depends neither on the data nor on the plan.  A listed name
-    exists, also when it holds nil (an empty origin).  The names came from the agent; no stored value is named."""
-    for kind, name in _origins(tree):
-        if kind == "root":
-            present = snapshot.get_root_object(name) is not None or _listed(snapshot.iter_root_names(), name)
-        else:
-            present = snapshot.get_mutable(name) is not None or _listed(snapshot.iter_mutable_names(), name)
+    exists, also when it holds nil (an empty origin): one O(log n) lookup of the version's name table per origin,
+    never a scan of its names.  The names came from the agent; no stored value is named."""
+    for (kind, name), part in _origins(tree):
+        present = snapshot.has_root_object(name) if kind == "root" else snapshot.has_mutable(name)
         if not present:
-            raise ProtoValidationError(f"The {kind} {name!r} does not exist in {version}; an agent query refuses an "
-                                       f"absent origin instead of answering it as empty (spec section 11, R283)")
+            raise ProtoValidationError(f"{part}: the {kind} {name!r} does not exist in {version}; an agent query "
+                                       f"refuses an absent origin instead of answering it as empty (spec section 11, "
+                                       f"R283)")
 
 
 def _screen(policy: _Withholding, tree) -> frozenset | None:

@@ -1823,3 +1823,78 @@ def test_a_root_holding_nil_exists_and_is_empty(db, raw):
     db.run(lambda tr: tr.set_root_object("gone", tr.new_list()))
     db.run(lambda tr: tr.remove_root_object("gone"))
     _refused(db, {"from": ["root", "gone"]}, raw, "'gone'")
+
+
+# -- R283 fix round 2: O(log n) existence, linear origin walk, the planned 'or', messages ---------------------
+
+@pytest.mark.parametrize("raw", [False, True])
+def test_origin_existence_never_scans_the_version_names(db, raw, monkeypatch):
+    """An absent or a nil origin is decided by one lookup of the name table, never by walking the version's root
+    or cell names (on a real database the cell table is as large as the database)."""
+    from proto_db.transactions import Snapshot
+    world = _load(db)
+    db.run(lambda tr: tr.set_root_object("nul", None))
+
+    def scanned(*args, **kwargs):
+        raise AssertionError("an agent query scanned the version's names")
+    monkeypatch.setattr(Snapshot, "iter_root_names", scanned)
+    monkeypatch.setattr(Snapshot, "iter_mutable_names", scanned)
+    monkeypatch.setattr(Snapshot, "root_names", property(scanned))
+    monkeypatch.setattr(Snapshot, "mutable_names", property(scanned))
+    assert query(db, {"from": ["root", "nul"], "aggregate": ["count"]}, raw=raw)["rows"] == [{"count": 0}]
+    _refused(db, {"from": ["root", "zzz-absent"]}, raw, "'zzz-absent'")
+    _refused(db, {"from": ["via", ["cell", ORDER + "#" + "f" * 32], "lines"]}, raw, "does not exist")
+    assert query(db, {"from": _orders_of(world), "aggregate": ["count"]}, raw=raw)["rows"] == [{"count": 4}]
+
+
+def test_the_origin_walk_keeps_tree_order_and_names_each_origin_once():
+    many = ["or", *(["==", ["count", ["root", f"r{i % 50}"]], ["const", 0]] for i in range(5000))]
+    tree = {"from": ["via", ["cell", "c"], "x"], "where": many,
+            "aggregate": ["sum", ["count", ["via", ["cell", "c"], "y"]]]}
+    found = operations._origins(tree)
+    assert [origin for origin, _ in found] == [("cell", "c")] + [("root", f"r{i}") for i in range(50)]
+    assert [part for _, part in found[:2]] == ["the query's 'from'", "the query's 'where'"]
+
+
+@pytest.mark.parametrize("raw", [False, True])
+def test_an_absent_origin_refusal_names_the_query_part(db, raw):
+    world = _load(db)
+    message = _refused(db, {"from": _orders_of(world), "where": ["==", ["count", ["root", "nope"]], ["const", 0]]},
+                       raw, "'nope'")
+    assert message.startswith("the query's 'where': the root 'nope' does not exist"), message
+    message = _refused(db, {"from": ["root", "nope"]}, raw)
+    assert message.startswith("the query's 'from': the root 'nope'"), message
+
+
+def _ints_db(db):
+    """A holder cell whose stored list ``items`` holds records with an int ``x`` and an int ``y`` (raw mode plans
+    over it; catalog mode, for which the holder is uncatalogued, scans it)."""
+    from proto_db.core.dbobject import DBObject
+
+    def build(tr):
+        items = tr.new_list()
+        for _ in range(3):
+            items = items.append_last(DBObject(x=1, y=1))
+        tr.new_mutable("holder", DBObject(items=items))
+    db.run(build)
+    return ["via", ["cell", "holder"], "items"]
+
+
+def test_a_planned_or_is_checked_on_every_disjunct(db):
+    """Under an index plan every comparison of a planned conjunct is checked on every element, also one under an
+    ``or`` a scan never reaches: ``x == 1 or x == 'a'`` over int elements is refused when planned (raw mode here)
+    and answered when scanned (catalog mode reads the uncatalogued holder as a residual), never silently empty
+    (spec section 11, R283)."""
+    items = _ints_db(db)
+    tree = {"from": items, "where": ["or", ["==", ["attr", "x"], ["const", 1]], ["==", ["attr", "x"], ["const", "a"]]],
+            "aggregate": ["count"]}
+    _refused(db, tree, True, "number", "text")
+    scanned = query(db, tree)
+    assert scanned["rows"] == [{"count": 3}] and scanned["explain"]["indexed"] == []
+
+
+def test_a_planned_refusal_names_the_first_mismatching_comparison(db):
+    items = _ints_db(db)
+    where = ["and", ["==", ["attr", "x"], ["const", "t"]], ["==", ["attr", "y"], ["const", date(2026, 1, 1)]]]
+    _refused(db, {"from": items, "where": where}, True, "a number with a text")
+    _refused(db, {"from": items, "where": ["and", where[2], where[1]]}, True, "a number with a date")

@@ -1627,11 +1627,12 @@ class Operations:
         return out
 
 
-def _planned_comparisons(candidates) -> dict:
+def _planned_comparisons(candidates) -> tuple:
     """The comparisons of the planned conjuncts ``candidates`` (each a one-step ``attr`` against a ``const``, the
-    shape :func:`~proto_db.semantic.expressions.to_planner` plans) whose constant is present and orderable, by
-    attribute name: ``{name: [(operator, constant, attr_left, the constant's D28 rank)]}``."""
-    found, stack = {}, list(candidates)
+    shape :func:`~proto_db.semantic.expressions.to_planner` plans) whose constant is present and orderable, in
+    the order they appear (conjunct by conjunct, left to right, under ``and``, ``or`` and ``not`` alike: the index
+    answers every one of them over the whole end), as ``(operator, name, constant, attr_left, constant's rank)``."""
+    found, stack = [], list(reversed(candidates))
     while stack:
         node = stack.pop()
         if not (isinstance(node, list) and node and isinstance(node[0], str)):
@@ -1644,25 +1645,27 @@ def _planned_comparisons(candidates) -> dict:
             (name,), value = (left[1:], right[1]) if attr_left else (right[1:], left[1])
             value = canonical(value)
             if value is not MISSING and value is not None and is_orderable(value):
-                found.setdefault(name, []).append((node[0], value, attr_left, order_key(value)[0]))
+                found.append((node[0], name, value, attr_left, order_key(value)[0]))
         elif node[0] != "const":
-            stack.extend(node[1:])
-    return found
+            stack.extend(reversed(node[1:]))
+    return tuple(found)
 
 
-def _check_planned_kinds(elements, kinds: Mapping) -> None:
+def _check_planned_kinds(elements, kinds) -> None:
     """Refuse a planned comparison across kinds (:func:`~proto_db.semantic.expressions.check_kinds`) on any of
-    ``elements``, each read as the planner reads it: its stored value, MISSING when absent (no default).  One read
-    and one rank per element and attribute; the message is :func:`check_kinds`'s."""
+    ``elements``, each read as the planner reads it: its stored value, MISSING when absent (no default).  Each
+    attribute is read and ranked once per element; on an element, the first mismatching comparison in ``kinds``'
+    order is the one the message names."""
     for element in elements:
-        for name, comparisons in kinds.items():
-            stored = _stored_step(element, name)
-            if stored is MISSING or stored is None or not is_orderable(stored):
-                continue
-            rank = order_key(stored)[0]
-            for op, value, attr_left, value_rank in comparisons:
-                if rank != value_rank:
-                    check_kinds(op, stored, value) if attr_left else check_kinds(op, value, stored)
+        ranks: dict = {}
+        for op, name, value, attr_left, value_rank in kinds:
+            if name not in ranks:
+                stored = _stored_step(element, name)
+                orderable = stored is not MISSING and stored is not None and is_orderable(stored)
+                ranks[name] = (stored, order_key(stored)[0] if orderable else None)
+            stored, rank = ranks[name]
+            if rank is not None and rank != value_rank:
+                check_kinds(op, stored, value) if attr_left else check_kinds(op, value, stored)
 
 
 def _same_key(old, new) -> bool:
