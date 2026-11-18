@@ -49,20 +49,27 @@ The registry roots (runtime registry)
     global, ``CloudStorage`` across processes, can still lose the root's compare-and-swap like
     any commit, ``ProtoConflictError``; ``Database.run`` retries it.)  No module is imported
     under the root lock: a build that needs one publishes nothing, the commit imports outside
-    the lock and runs the lock step again.  A catalog update (``set_catalog_object``) replaces
-    one entry under normal conflict rules.  Every commit path builds its root here (:meth:`Transaction._build_root`): a
-    commit alone, a group-commit round (each build on the root the previous one produced) and
-    a round under the cluster lease (each build on the committed base).  Applications cannot
-    write nor remove a ``__`` root.
+    the lock and runs the lock step again.  The semantic catalog (``__semanticCatalog``,
+    :mod:`proto_db.semantic.store`) merges the same way, in the same lock step: the Module items
+    it lacks are added for the committed list and its entities recomposed from that list's
+    registry, so concurrent installs give the composition of the union; a database none of whose
+    modules makes a semantic declaration gets no catalog (its records stay format 4 or 5).  A
+    catalog update (``set_catalog_object``) replaces one entry under normal conflict rules.
+    Every commit path builds its root here (:meth:`Transaction._build_root`): a commit alone, a
+    group-commit round (each build on the root the previous one produced) and a round under the
+    cluster lease (each build on the committed base).  Applications cannot write nor remove a
+    ``__`` root.
 
 The registry of a database (runtime registry, Task 8)
     A transaction resolves through :attr:`Transaction.registry`: the registry of its snapshot's
     module list (with its own pending installs), built on first need, outside every lock, once
-    per list per process.  The space binds each database to the list its first transaction
-    sees; a transaction on another list (another process installed a module) raises the
-    mismatch ``ProtoValidationError`` at its first resolution through the registry, until
-    :meth:`ObjectSpace.reload_registry` rebuilds it (spec Q2: no automatic rebuild).  A commit of
-    this space that installs modules rebinds the database to the list it committed.  An as-of
+    per list per process.  The space adopts the list its first transaction of each database
+    sees, every list its own install commits publish and every list
+    :meth:`ObjectSpace.reload_registry` rebuilds; a transaction on an adopted list resolves with
+    it, whatever its version, and one on another list (another process installed a module)
+    raises the mismatch ``ProtoValidationError`` at its first resolution through the registry,
+    until ``reload_registry`` (spec Q2: no automatic rebuild).  The database's binding, which
+    loaded objects use outside any block, follows the newest adopted version.  An as-of
     read resolves with its own version's list inside ``with snapshot:`` (:attr:`Snapshot.registry`)
     and never changes the binding.  The resolving code decides the registry,
     never load order or cache state (ruling R201): an object of a transaction resolves with that
@@ -83,8 +90,21 @@ Mutable cells (D11, D35)
     and records that in the read set, so two concurrent creators conflict;
     ``set_mutable`` requires the cell to exist, and a blind set of a cell removed by a
     concurrent commit is a conflict (it never resurrects the cell).  A
-    :class:`~proto_db.core.dbobject.MutableObject` handle names a cell and resolves it
+    :class:`~proto_db.values.MutableObject` handle names a cell and resolves it
     through a transaction.
+
+Intent transactions (spec section 9, R269; Task 8)
+    ``new_transaction(intents=True)`` and ``run(fn, intents=True)`` start a transaction whose
+    semantic session logs its operations instead of writing cells (:mod:`proto_db.semantic.intents`).
+    At commit, in the build under the root lock, after the root writes and the registry merge and
+    before the raw cell writes, the log validates the reads its caller decided on and replays the
+    operations on the cells current then (``ProtoConflictError`` on a changed read), and the commit
+    writes the operations' IntentRecords in ``__intentLog``.  A commit that logged nothing removes an
+    older ``__intentLog`` (the root holds the records of the commit that wrote its version), unless it
+    wrote that root itself (an internal writer, such as the conformance generator; applications cannot
+    write reserved roots); a database
+    that never used intents has none, so without the flag nothing changes.  A space with a cluster
+    coordinator refuses the flag (``ProtoNotSupportedError``).
 
 Commit protocol (D34)
     1. No writes: nothing is saved nor published.
@@ -132,6 +152,7 @@ Persistence context (ruling R3)
 """
 from __future__ import annotations
 
+import contextlib
 import copy
 import datetime
 import functools
@@ -145,8 +166,9 @@ import uuid
 import weakref
 from _weakref import _remove_dead_weakref
 from collections.abc import Mapping
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Iterator, Optional
 
+from .catalog.atoms import INTENT_LOG_ROOT, SEMANTIC_CATALOG_ROOT
 from .collections.base import ConcurrentOptimized, _Immutable
 from .collections.dictionaries import Dictionary, RepeatedKeysDictionary
 from .collections.hash_dictionaries import HashDictionary
@@ -197,6 +219,9 @@ def _utc_now() -> datetime.datetime:
 
 #: The registry's roots (:mod:`proto_db.registry`).
 _REGISTRY_ROOTS = frozenset({_registry.MODULES_ROOT, _registry.CATALOG_ROOT})
+#: The roots a semantic operation's checks depend on: the module list, the registry catalog and the semantic
+#: catalog.  A transaction that wrote through the semantic session reads them (final review I2).
+_SEMANTIC_CATALOG_ROOTS = (_registry.MODULES_ROOT, _registry.CATALOG_ROOT, SEMANTIC_CATALOG_ROOT)
 
 #: Lock steps a commit runs at most when each one finds modules to import first (review I-1).  Each
 #: retry has strictly more of the merged list imported, so only installs committed concurrently
@@ -226,6 +251,42 @@ class _released:
         return False
 
 
+def _semantic_store():
+    """:mod:`proto_db.semantic.store`, imported on first use (it imports the semantic layer, which
+    imports this module)."""
+    from .semantic import store
+    return store
+
+
+def _intents():
+    """:mod:`proto_db.semantic.intents`, imported on first use (it imports this module)."""
+    from .semantic import intents
+    return intents
+
+
+def _constraints():
+    """:mod:`proto_db.semantic.constraints`, imported on first use (the semantic layer imports this module)."""
+    from .semantic import constraints
+    return constraints
+
+
+class _SemanticUndo:
+    """What the top-level semantic operation in progress changed in its transaction, to undo it when it fails
+    (:meth:`Transaction.semantic_operation`): per cell, whether it was written before, its earlier write and
+    whether it was set blindly; per field-version slot, its earlier record (``_ABSENT``: none)."""
+
+    __slots__ = ("cells", "versions")
+
+    def __init__(self):
+        self.cells: dict = {}
+        self.versions: dict = {}
+
+
+def _check_intents_flag(intents) -> None:
+    if not isinstance(intents, bool):
+        raise ProtoValidationError(f"intents must be a bool, not {intents!r}")
+
+
 def _check_not_reserved(name: str) -> None:
     """Root names starting with ``__`` are reserved for the format (the runtime registry's roots,
     Task 10.P A1): applications never write nor remove one; the registry writes its own at commit."""
@@ -240,6 +301,11 @@ def _check_name(name, what: str = "root") -> str:
         return check_text(name)
     except ProtoValidationError as e:
         raise ProtoValidationError(f"Invalid {what} name {name!r}: {e}") from e
+
+
+def _names_after(table, after: str | None):
+    """The keys of a version's name table (roots or mutables), in order, strictly after ``after`` if given."""
+    return table.keys() if after is None else table.keys(after=_check_name(after))
 
 
 def _modules_mapping(mapping) -> Mapping:
@@ -371,12 +437,21 @@ class HistoryEntry:
     @property
     def root_names(self) -> tuple:
         """Sorted names of the roots present in this version."""
-        return tuple(sorted(self._root.objects.keys()))
+        return tuple(self._root.objects.keys())
 
     @property
     def mutable_names(self) -> tuple:
         """Sorted names of the mutable cells present in this version."""
-        return tuple(sorted(self._root.mutables.keys()))
+        return tuple(self._root.mutables.keys())
+
+    def iter_root_names(self, *, after: str | None = None) -> Iterator[str]:
+        """The names of the roots of this version in name (code point) order, lazily; with ``after``, those
+        strictly after it (a cursor: never a sort of every name)."""
+        return _names_after(self._root.objects, after)
+
+    def iter_mutable_names(self, *, after: str | None = None) -> Iterator[str]:
+        """The names of the mutable cells of this version, as :meth:`iter_root_names` gives the roots'."""
+        return _names_after(self._root.mutables, after)
 
     def get_mutable(self, name: str):
         """Value of the mutable cell ``name`` in this version (``None`` if absent).  A value read
@@ -488,20 +563,37 @@ class Snapshot:
     @property
     def root_names(self) -> tuple:
         """Sorted names of the roots present in this version."""
-        return tuple(sorted(self._root.objects.keys()))
+        return tuple(self._root.objects.keys())
+
+    def iter_root_names(self, *, after: str | None = None) -> Iterator[str]:
+        """The names of the roots of this version in name (code point) order, lazily; with ``after``, those
+        strictly after it (a cursor: never a sort of every name)."""
+        return _names_after(self._root.objects, after)
 
     def get_root_object(self, name: str):
         """Value of root ``name`` in this version (``None`` if absent)."""
         return self._root.objects.get_at(_check_name(name))
 
+    def has_root_object(self, name: str) -> bool:
+        """Whether this version lists the root ``name``, also one holding ``None`` (O(log n), no name scan)."""
+        return self._root.objects.has(_check_name(name))
+
     @property
     def mutable_names(self) -> tuple:
         """Sorted names of the mutable cells present in this version."""
-        return tuple(sorted(self._root.mutables.keys()))
+        return tuple(self._root.mutables.keys())
+
+    def iter_mutable_names(self, *, after: str | None = None) -> Iterator[str]:
+        """The names of the mutable cells of this version, as :meth:`iter_root_names` gives the roots'."""
+        return _names_after(self._root.mutables, after)
 
     def get_mutable(self, name: str):
         """Value of the mutable cell ``name`` in this version (``None`` if absent)."""
         return self._root.mutables.get_at(_check_name(name, "mutable"))
+
+    def has_mutable(self, name: str) -> bool:
+        """Whether this version lists the mutable cell ``name``, also one holding ``None`` (O(log n), no name scan)."""
+        return self._root.mutables.has(_check_name(name, "mutable"))
 
     def pager(self, root_name: str, *, where=None, order_by=None, page_size: int):
         """A portable :class:`~proto_db.query.pager.Pager` over the collection at ``root_name`` in
@@ -747,14 +839,50 @@ def _mismatch(database: str, bound: tuple, listed: tuple) -> ProtoValidationErro
 
 class _Binding:
     """The module list one database is bound to in one space, and its registry once built;
-    ``seq`` orders the bindings of a space (the most recent is the highest)."""
+    ``seq`` orders the bindings of a space (the most recent is the highest); ``key`` is the
+    ``(label, version)`` of the database version whose list it is (``None`` when unknown): the
+    order of the cluster's roots (:func:`proto_db.cluster.rootlog.compare_roots`; label ``0``
+    outside cluster mode), in which a later lineage orders after the one it replaced; ``origin``
+    is the ``(label, cluster epoch)`` of the space root it came from, in cluster mode (``None``
+    otherwise), compared with the node's committed root (see :meth:`_SpaceRegistries.started`)."""
 
-    __slots__ = ("names", "registry", "seq")
+    __slots__ = ("names", "registry", "seq", "key", "origin")
 
-    def __init__(self, names: tuple, registry, seq: int):
+    def __init__(self, names: tuple, registry, seq: int, key: Optional[tuple] = None,
+                 origin: Optional[tuple] = None):
         self.names = names
         self.registry = registry
         self.seq = seq
+        self.key = key
+        self.origin = origin
+
+
+def _root_order(space: Optional["SpaceRoot"], record, clustered: bool) -> tuple:
+    """``(label, origin)`` of the space root ``space`` at ``record``: the label is the term of the
+    cluster lease that committed it (as :func:`proto_db.cluster.persister.cluster_fields`) and the
+    origin ``(label, cluster epoch)``, in cluster mode.  Outside cluster mode the label is ``0`` for
+    every root and there is no origin: a space without a coordinator orders its versions alone (a
+    cluster's storage opened locally keeps the labels of its cluster roots, while a local commit
+    writes an unlabelled root)."""
+    if not clustered or space is None:
+        return 0, None
+    label = space.cluster_term or 0
+    return label, (label, record.epoch if record is not None else 0)
+
+
+def _committed_origin(coordinator) -> Optional[tuple]:
+    """``(label, epoch)`` of the committed root ``coordinator`` knows (in memory), ``None`` when it
+    knows none."""
+    known, record, label = coordinator.committed_root()[:3]
+    if not known:
+        return None
+    return label, record.epoch if record is not None else 0
+
+
+def _orders_after(key: Optional[tuple], other: Optional[tuple]) -> bool:
+    """Whether the version ``key`` orders after ``other`` (``(label, version)``); an unknown key
+    (``None``) orders before every known one."""
+    return key is not None and (other is None or key > other)
 
 
 def _not_nested(reader) -> ProtoUserError:
@@ -790,11 +918,32 @@ class _SpaceRegistries:
         transaction that starts on the bound list keeps that binding for its life.  One whose
         list differs (another process installed a module) raises the mismatch
         ``ProtoValidationError`` at its first resolution through the registry: there is no
-        automatic rebuild.  Only two events rebind a database: a commit of this space that
-        installed modules (to the list it committed, so the installing space never mismatches
-        itself) and :meth:`ObjectSpace.reload_registry` (a fresh build, for that database only).
-        As-of reads (snapshots, history, pagers) never bind, rebind or take part in the fallback
-        (ruling R196).
+        automatic rebuild (spec Q2).
+
+    Adopted lists
+        The space keeps, per database, the lists it **adopted**: the list bound at the first
+        start, every list an install commit of this space published (or ended with
+        ``ProtoOutcomeUnknownError``), and every list :meth:`ObjectSpace.reload_registry` bound.  A
+        transaction whose snapshot lists an adopted list never mismatches, whatever its version and
+        whatever the order of its snapshot read, its bind and the commits of the space (R82): it
+        binds to that list's registry (from the process cache, R257).  A list never adopted is the
+        mismatch.  While an install commit is between its publish and its rebind, its list is
+        pending (:meth:`committing`) and counts as adopted.  The lists are never pruned: they are
+        bounded by the space's installs and reloads, never by its transactions.
+
+    The database's binding
+        What a loaded object resolved outside any block uses (:meth:`fallback`).  It moves only
+        forward in the order of the database's versions, ``(label, version)`` (the cluster's root
+        order, in which a later lineage orders after the one it replaced; label ``0`` for every
+        root in a space without a coordinator), so concurrent installs of the space never move it back: a transaction on
+        an adopted list of a later version moves it, one on an earlier version gets a binding of
+        its own.  An install commit's rebind moves it to the list committed.
+        :meth:`ObjectSpace.reload_registry` always rebinds it (see :meth:`reload`), also to a
+        version that orders below the bound one: the explicit recovery after a failover beyond
+        the failure model.  In cluster mode a binding whose root orders above the node's
+        committed root (``force_rejoin()`` on a survivor) is replaced or marked stale by the next
+        transaction on an earlier version (see :meth:`started`).  As-of reads (snapshots, history,
+        pagers) never bind, rebind or take part in the fallback (ruling R196).
 
     Who decides (ruling R201)
         The registry is decided by the code doing the resolving, never by load order or cache
@@ -826,6 +975,10 @@ class _SpaceRegistries:
         # database name -> {module names: Registry or the message of a failed build}: the
         # registries of a database reloaded in this space, built fresh for it (ruling R243).
         self._reloaded: dict = {}
+        self._adopted: dict = {}        # database name -> {module names}: the adopted lists
+        # In cluster mode: () -> the (label, epoch) of the committed root the node knows, or None.
+        self.committed_origin: Optional[Callable[[], Optional[tuple]]] = None
+        self._pending: dict = {}        # database name -> {module names: count}: install builds in flight
 
     def build(self, database: str, names: tuple):
         """The registry of ``names`` for ``database``, outside every lock: from the process cache,
@@ -868,15 +1021,34 @@ class _SpaceRegistries:
         with self._lock:
             return own.setdefault(names, built)
 
-    def reload(self, database: str, names: tuple):
-        """``ObjectSpace.reload_registry``: a fresh registry of ``names`` for ``database``; every
-        registry of the database cached before is dropped (ruling R243), and the database is
-        rebound to the new one.  Nothing changes when the build fails."""
-        registry = self.build_fresh(database, names) if names else None
-        with self._lock:
-            self._reloaded[database] = {names: registry} if names else {}
-        self.rebind(database, names, registry)
-        return registry
+    def reload(self, database: str, read: Callable[[], tuple]):
+        """``ObjectSpace.reload_registry``: ``read()`` gives the module list of the database's current
+        version, that version's key and its root's origin; a fresh registry of that list is built, every registry of the
+        database cached before is dropped (ruling R243), and the database is rebound to the new one.
+
+        It rebinds whatever the bound version, with one exception that keeps it from moving the
+        binding back: when the binding orders after what it read (an install commit of this space
+        published and rebound meanwhile), it reads again and reloads that newer list.  Only when the
+        current version still orders below the same binding does it rebind to it anyway: that binding
+        came from a lineage the database no longer follows (a cluster refounded or forcibly rejoined
+        beyond its failure model), and this explicit rebuild is what recovers from it.  The new
+        binding is a new object, so a registry built before the reload is never stored in it.  Nothing
+        changes when a build fails."""
+        names, key, origin = read()
+        observed = None             # a binding that ordered after the version read, read again since
+        while True:
+            registry = self.build_fresh(database, names) if names else None
+            with self._lock:
+                bound = self._bound.get(database)
+                if bound is None or bound is observed or not _orders_after(bound.key, key):
+                    self._reloaded[database] = {names: registry} if names else {}
+                    self._bind(database, names, registry, key, origin)
+                    return registry
+                observed = bound
+            names, key, origin = read()
+            if not _orders_after(observed.key, key):
+                observed = None     # the newer version is current now: reload it, no exception
+
 
     def build_fresh(self, database: str, names: tuple):
         """A new registry of ``names`` for ``database`` only (``reload_registry``): never published
@@ -886,26 +1058,57 @@ class _SpaceRegistries:
         except ProtoNotSupportedError as e:
             raise ProtoNotSupportedError(f"Database {database!r} lists modules this process cannot load: {e}") from e
 
-    def _new_binding(self, database: str, names: tuple, registry) -> _Binding:
-        """Under ``_lock``: bind ``database``."""
+    def _bind(self, database: str, names: tuple, registry, key: Optional[tuple],
+              origin: Optional[tuple] = None) -> _Binding:
+        """Under ``_lock``: bind ``database`` to ``names`` (a list this space adopts), the list of its
+        version ``key`` in the space root ``origin``."""
+        self._adopted.setdefault(database, set()).add(names)
         self._seq += 1
-        binding = self._bound[database] = _Binding(names, registry, self._seq)
+        binding = self._bound[database] = _Binding(names, registry, self._seq, key, origin)
+        self._stale.pop(database, None)
         self._generation += 1
         return binding
 
-    def started(self, database: str, names: tuple) -> Optional[_Binding]:
-        """A transaction of ``database`` starts on the list ``names``: binds the database when it
-        is not bound yet; returns the binding when it is for ``names`` (the transaction keeps
-        it), else ``None`` (a mismatch, recorded).  Never imports."""
+    def started(self, database: str, names: tuple, key: Optional[tuple] = None,
+                origin: Optional[tuple] = None) -> Optional[_Binding]:
+        """A transaction of ``database`` starts on the list ``names`` of the database's version
+        ``key`` (``(label, version)``), in the space root ``origin`` (cluster mode): binds the
+        database when it is not bound yet; returns the binding the transaction keeps, else ``None``
+        (a mismatch, recorded for the fallback).
+
+        A list this space adopted (see the class docstring), or one an install commit of this space
+        is publishing (:meth:`committing`), is never a mismatch, whatever its version and whatever
+        the order of that commit's publish, its rebind and this call (R82).  When its version orders
+        after the bound one, the database is bound to it; otherwise the transaction gets a binding
+        of its own for its list.  Then, in cluster mode, the database's binding is unchanged while
+        the node's committed root orders at or after the root the binding came from (always, inside
+        the failure model).  Below it (``force_rejoin()`` on a survivor dropped that root), the
+        binding is of a lineage the node no longer follows: the database binds to this list when
+        the transaction's snapshot is the committed root, and is marked stale otherwise, so a loaded
+        object resolved outside any block raises the mismatch until ``reload_registry``.  Never
+        imports."""
         binding = self._bound.get(database)
         if binding is not None and binding.names == names:
             return binding
         with self._lock:
             binding = self._bound.get(database)
             if binding is None:
-                return self._new_binding(database, names, None)
+                return self._bind(database, names, None, key, origin)
             if binding.names == names:
                 return binding
+            if names in self._adopted.get(database, ()) or names in self._pending.get(database, ()):
+                if _orders_after(key, binding.key):
+                    return self._bind(database, names, None, key, origin)
+                committed = self.committed_origin
+                if committed is not None and binding.origin is not None:
+                    current = committed()       # the coordinator's lock is a leaf: never takes ours
+                    if current is not None and current < binding.origin:
+                        if origin == current:
+                            return self._bind(database, names, None, key, origin)
+                        if self._stale.get(database) != names:
+                            self._stale[database] = names
+                            self._generation += 1
+                return _Binding(names, None, 0, key, origin)
             if self._stale.get(database) != names:
                 self._stale[database] = names
                 self._generation += 1
@@ -923,22 +1126,57 @@ class _SpaceRegistries:
                 self._generation += 1
             return binding.registry
 
-    def bound_for(self, database: str, names: tuple):
-        """The registry of ``database`` for a transaction on the list ``names`` that kept no
-        binding: the mismatch error when the database is bound to another list."""
-        binding = self._bound.get(database)
+    def bound_for(self, database: str, names: tuple, key: Optional[tuple] = None,
+                  origin: Optional[tuple] = None):
+        """The registry of ``database`` for a transaction on the list ``names`` (of the database's
+        version ``key``) that kept no binding: the mismatch error when the database is bound to
+        another list (see :meth:`started`)."""
+        binding = self.started(database, names, key, origin)
         if binding is None:
-            binding = self.started(database, names)
-        if binding is None or binding.names != names:
             raise _mismatch(database, self._bound[database].names, names)
         return self.registry(database, binding)
 
-    def rebind(self, database: str, names: tuple, registry=None) -> None:
-        """Bind ``database`` to ``names`` (its registry, or ``None`` to build it on need): after a
-        commit of this space that installed modules, and by ``reload_registry``.  Never fails."""
+    def committing(self, database: str, names: tuple) -> None:
+        """Under the root lock, before the publish: a commit of this space that installs modules
+        builds the list ``names``.  Until the commit ends (:meth:`committed`), a transaction whose
+        snapshot lists it (the publish landed, the rebind has not run yet) treats it as adopted.
+        Each build is counted on its own, so overlapping commits never replace each other's."""
         with self._lock:
-            self._new_binding(database, names, registry)
-            self._stale.pop(database, None)
+            pending = self._pending.setdefault(database, {})
+            pending[names] = pending.get(names, 0) + 1
+
+    def committed(self, database: str, recorded: list, published: Optional[tuple]) -> None:
+        """A commit ended: each of the lists it ``recorded`` (one per build, :meth:`committing`) is
+        no longer pending, and the one it ``published`` (``None`` for none) is adopted.  A publish of
+        unknown outcome passes its build as ``published``: if it landed, the next transaction on its
+        list binds to it (the rebind that did not run); if it did not, only a snapshot listing
+        exactly those names, a list someone published, ever matches it."""
+        with self._lock:
+            pending = self._pending.get(database, {})
+            for names in recorded:
+                count = pending.get(names, 0) - 1
+                if count > 0:
+                    pending[names] = count
+                else:
+                    pending.pop(names, None)
+            if published is not None:
+                self._adopted.setdefault(database, set()).add(published)
+
+    def rebind(self, database: str, names: tuple, registry=None, key: Optional[tuple] = None,
+               origin: Optional[tuple] = None) -> bool:
+        """After a commit of this space that installed modules: adopt ``names``, the list of the
+        database's version ``key``, and bind the database to it (its registry, or ``None`` to build
+        it on need) when that version orders after the bound one.  The commits of one space finish
+        in any order (each thread rebinds after its own publish), so the binding always ends on the
+        newest list, whichever thread rebinds last.  Returns whether it bound.  Never fails."""
+        with self._lock:
+            self._adopted.setdefault(database, set()).add(names)
+            bound = self._bound.get(database)
+            if bound is not None and not _orders_after(key, bound.key):
+                return False
+            self._bind(database, names, registry, key, origin)
+            return True
+
 
     def fallback(self):
         """The registry of a loaded object resolved outside any reader block (see the class
@@ -2010,6 +2248,8 @@ class ObjectSpace:
         self._storage = storage
         self._atoms = _AtomCache(storage, atom_cache_entries) if atom_cache_entries else None
         self._registries = _SpaceRegistries(self._modules_mapping, self._modules_allowed)
+        if coordinator is not None:
+            self._registries.committed_origin = functools.partial(_committed_origin, coordinator)
         if self._atoms is not None:
             self._atoms._space_registries = self._registries
         self._query_cache = QueryCache(query_cache_bytes, self._space_load)
@@ -2083,15 +2323,28 @@ class ObjectSpace:
         and spaces use, is unchanged).  It invalidates every registry of this database cached
         before it in this space (ruling R243): later snapshots, installing transactions and the
         bindings after later installs build fresh for this database, so they all run the reloaded
-        code.  Transactions and snapshot objects that already resolved keep the registry they had.  Returns the registry, or ``None`` when the database
+        code.  Transactions and snapshot objects that already resolved keep the registry they had.
+        The list is adopted, and the database is rebound to it even when its version orders below
+        the bound one (after a failover beyond the cluster's failure model), unless an install
+        commit of this space bound a newer version meanwhile: then that version is reloaded
+        (:meth:`_SpaceRegistries.reload`).  Returns the registry, or ``None`` when the database
         lists no modules.  ``ProtoValidationError`` if the database does not exist;
         ``ProtoNotSupportedError`` if a listed module cannot be imported (nothing is rebound)."""
         _check_name(database_name, "database")
         self._check_open()
-        root = Database(self, database_name)._root_in(_SpaceContext(self._storage), self._read_storage_root())
-        names = _registry.listed_modules(root.objects)
-        _registry.forget_failure(names, self._modules_mapping)
-        return self._registries.reload(database_name, names)
+
+        def read() -> tuple:
+            record = self._read_storage_root()
+            space = _load_space(_SpaceContext(self._storage), record)
+            root = None if space is None else space.databases.get_at(database_name)
+            if root is None:
+                raise ProtoValidationError(f"Database {database_name!r} does not exist")
+            names = _registry.listed_modules(root.objects)
+            _registry.forget_failure(names, self._modules_mapping)
+            label, origin = _root_order(space, record, self._coordinator is not None)
+            return names, (label, root.version), origin
+
+        return self._registries.reload(database_name, read)
 
     @property
     def coordinator(self):
@@ -2283,10 +2536,13 @@ class Database:
             raise ProtoValidationError(f"Database {self._name!r} does not exist")
         return root
 
-    def new_transaction(self) -> "Transaction":
-        """Start a transaction on the current snapshot."""
+    def new_transaction(self, *, intents: bool = False) -> "Transaction":
+        """Start a transaction on the current snapshot.  With ``intents=True`` its semantic session logs its
+        operations and the commit replays them (spec section 9; see :class:`Transaction`); a space with a
+        cluster coordinator refuses it (``ProtoNotSupportedError``)."""
+        _check_intents_flag(intents)
         self._space._check_open()
-        return Transaction(self)
+        return Transaction(self, intents=intents)
 
     def history(self) -> list:
         """The committed versions of this database, newest first, as :class:`HistoryEntry` objects."""
@@ -2387,7 +2643,7 @@ class Database:
         return check_resumed(pager, fields)
 
     def run(self, fn: Callable[["Transaction"], Any], retries: int = 10,
-            backoff: tuple = (0.001, 0.2)) -> Any:
+            backoff: tuple = (0.001, 0.2), *, intents: bool = False) -> Any:
         """Run ``fn(tr)`` in a fresh transaction, commit it and return ``fn``'s result.
 
         On ``ProtoConflictError`` (from the commit, from a merge, or raised by ``fn``)
@@ -2400,8 +2656,10 @@ class Database:
         root that permission committed.  Any other exception aborts the
         transaction and propagates unchanged; notably ``ProtoOutcomeUnknownError`` is never
         retried, because the commit may have been applied.  If ``fn`` ends the transaction itself
-        (commit or abort), ``run`` returns its result without committing.
+        (commit or abort), ``run`` returns its result without committing.  With ``intents=True`` each
+        attempt is an intent transaction (:meth:`new_transaction`).
         """
+        _check_intents_flag(intents)
         if isinstance(retries, bool) or not isinstance(retries, int) or retries < 0:
             raise ProtoValidationError("retries must be a non-negative int")
         try:
@@ -2418,7 +2676,7 @@ class Database:
         _RUN.kept_group = None
         try:
             for attempt in range(retries + 1):
-                tr = self.new_transaction()
+                tr = self.new_transaction(intents=intents)
                 _RUN.retry_left = attempt < retries
                 held = False
                 try:
@@ -2457,10 +2715,66 @@ class Transaction:
     Implements :class:`~proto_db.core.atom.PersistenceContext`.  Once committed or
     aborted, every public method raises ``ProtoUserError``.  As a context manager it
     commits on success and aborts on an exception (which propagates).
+
+    Locks (concurrency model, "Free-threading"): a transaction is meant for one thread at a
+    time, and a misuse from several threads sees each call happen entirely before or after the
+    others.  One reentrant lock per transaction, ``_lock``, gives that:
+
+    - every public method that reads or writes the transaction's roots, cells, module list,
+      catalog or semantic slot holds it for the call (``install_module`` for its two steps, never
+      across its imports);
+    - a semantic operation (:meth:`semantic_operation`), and a read of a semantic session over
+      the transaction, holds it throughout: the calls it makes re-enter it;
+    - :meth:`commit` holds it while it builds and publishes, and releases it around its imports
+      (import-time code that uses the transaction from another thread then fails fast: the
+      state is ``committing``).  :meth:`commit` and :meth:`abort` called inside a semantic
+      operation of the same thread are refused, so that release never happens inside one.
+
+    The order is ``_lock``, then the root lock (and the space's registry lock).  A commit's
+    build, under the root lock, never takes the ``_lock`` of a transaction being built: a call
+    on a transaction that is not active fails before taking the lock, so a computed attribute
+    that reads a cell (in this thread, or in a group-commit leader that builds this
+    transaction) raises instead of waiting for the committing thread; and resolution reads the
+    registry memo the commit filled beforehand (:meth:`_prebuild_registries`).  The one
+    exception is resolution of an object whose context is another, active transaction with no
+    registry resolved yet: :meth:`_resolution_registry` takes that transaction's ``_lock``
+    briefly.  It is harmless: a call or a semantic operation holding that lock never waits for
+    the root lock (committing another transaction from inside an operation is not supported),
+    and that transaction's own commit fills its memo, or remembers its error, before it waits
+    for the root lock, after which its resolution takes no lock.
+
+    Replaying intents at commit keeps this order (intent mode, :mod:`proto_db.semantic.intents`).
+    The replay runs in :meth:`_build_root`, under the root lock, in the thread that builds the
+    commit: its own, or a group-commit leader building the queued commits of other threads, each of
+    which holds its own transaction's ``_lock`` while it waits.  It takes no transaction's
+    ``_lock``: the log it reads is frozen (changed only under ``_lock`` while the transaction is
+    active, and the transaction stopped being active under ``_lock`` before its commit was queued),
+    the cells it reads and writes are its own, and it resolves through the registry memo filled
+    before the root lock.  An intent's own code that calls another transaction meets the rule
+    above: that transaction is not active (it raises before the lock), or its lock is held by a
+    call that never waits for the root lock.  So the replay adds no edge to the order ``_lock``,
+    then the root lock, then the leaf locks (atom cache, registry cache), and no cycle.
+
+    Constraints (spec section 10, :mod:`proto_db.semantic.constraints`): the outermost semantic operation
+    is all or nothing (:meth:`semantic_operation` undoes its writes when it raises), and :meth:`commit`
+    checks the cardinality of the entities the semantic operations wrote under the lock, before the state
+    leaves active and outside the root lock, so its reads enter the read set; a violation aborts the
+    transaction (``ProtoConstraintError``).  A transaction that ran no semantic write checks nothing.
+
+    With ``intents=True`` (spec section 9) the transaction is in intent mode: see
+    :mod:`proto_db.semantic.intents`.  A raw write (:meth:`set_mutable`, :meth:`new_mutable`,
+    :meth:`remove_mutable`) of a cell its intent log touches is refused (``ProtoUserError``), and so is a
+    raw read (:meth:`get_mutable`, :meth:`snapshot_mutable`) of a cell the log wrote.
     """
 
-    def __init__(self, database: Database):
-        """Start a transaction on ``database``'s current snapshot (use :meth:`Database.new_transaction`)."""
+    def __init__(self, database: Database, *, intents: bool = False):
+        """Start a transaction on ``database``'s current snapshot (use :meth:`Database.new_transaction`).
+        ``intents=True``: intent mode (spec section 9), refused on a space with a cluster coordinator."""
+        _check_intents_flag(intents)
+        if intents and database.space._coordinator is not None:
+            raise ProtoNotSupportedError(
+                "Intent transactions (intents=True) run on one node: a space with a cluster coordinator refuses "
+                "them (spec section 9, R269)")
         self._database = database
         self.storage = database.space.storage
         atoms = database.space._atoms
@@ -2485,6 +2799,25 @@ class Transaction:
         self._catalog_given: set = set()
         self._catalog_updates: dict = {}    # registry name -> (snapshot entry's pointer, new version)
         self._validated_modules: Optional[tuple] = None
+        self._validated_registry: Optional[_registry.Registry] = None   # the registry of _validated_modules
+        # The semantic catalog (proto_db.semantic.store): an install whose list has semantic contributions,
+        # or whose snapshot's catalog lacks some of them, merges the catalog at commit.
+        self._semantic_pending = False
+        # The field version of each entity a version-bound role binds (proto_db.semantic.entities):
+        # cell name -> record; read and written under the lock (semantic_field_version).
+        self._semantic_versions: dict = {}
+        # The semantic operations in progress (semantic_operation), nested ones included; changed under the
+        # lock only, so a non-zero count seen by the lock's holder is its own (see "Locks").
+        self._semantic_depth = 0
+        # The undo log of the top-level semantic operation in progress (None outside one), and the cells the
+        # semantic operations that succeeded wrote, in order: the commit checks their constraints
+        # (proto_db.semantic.constraints).  Both under the lock.
+        self._semantic_undo: Optional[_SemanticUndo] = None
+        self._semantic_touched: dict = {}
+        self._committed_version: Optional[int] = None    # the version the last build produced
+        self._committed_key: Optional[tuple] = None      # its (label, version), for the rebind
+        self._committed_origin: Optional[tuple] = None   # its root's (label, cluster epoch), cluster mode
+        self._recorded: list = []           # the list of each build that installs (committing)
         self._own_modules: tuple = ()           # the list this transaction's installs saw (snapshot + pending)
         self._import_needed: Optional[tuple] = None     # set by a build that needs imports (I-1)
         record = database.space._snapshot_record()
@@ -2499,11 +2832,18 @@ class Transaction:
         # first resolution through the registry); nothing is imported here.
         listed = _listed_modules(self._objects)
         self._listed = () if listed is None else listed
-        self._binding = None if listed is None else self._space_registries.started(database.name, listed)
+        label, self._snapshot_origin = _root_order(self._snapshot_space, record,
+                                                   database.space._coordinator is not None)
+        self._snapshot_key = (label, self._db_root.version)
+        self._binding = (None if listed is None else
+                         self._space_registries.started(database.name, listed, self._snapshot_key,
+                                                        self._snapshot_origin))
         # (number of installs, registry): the registry once resolved; the snapshot's list is fixed
         # for the transaction's life, so only its own installs change it (review Important 3).
         self._registry_memo: Optional[tuple] = None
         self._prebuild_error: Optional[ProtoDBError] = None     # a registry the commit could not build
+        # Intent mode (spec section 9): the intent log, replayed at commit (proto_db.semantic.intents).
+        self._intent_log = _intents().IntentLog(self) if intents else None
 
     @property
     def _linearizations(self) -> BoundedCache:
@@ -2549,6 +2889,28 @@ class Transaction:
         """True until the transaction is committed or aborted."""
         return self._state == _ACTIVE
 
+    @property
+    def intents(self) -> bool:
+        """Whether the transaction is in intent mode (``Database.new_transaction(intents=True)``)."""
+        return self._intent_log is not None
+
+    def _check_not_logged(self, name: str) -> None:
+        """Under the lock: refuse a raw write of a cell the intent log touches (spec section 9)."""
+        if self._intent_log is not None and self._intent_log.touches(name):
+            raise ProtoUserError(
+                f"The cell {name!r} is read or written by this transaction's intent log; a raw write of it is "
+                f"refused (spec section 9): change it through the semantic session")
+
+    def _check_not_written_by_log(self, name: str) -> None:
+        """Under the lock: refuse a raw read of a cell the intent log wrote (spec section 9).  The raw view
+        never holds the log's effects: they exist from the commit on, recomputed by the replay on the cells
+        current then, so the record view's value is not what commits either."""
+        if self._intent_log is not None and self._intent_log.cells.wrote(name):
+            raise ProtoUserError(
+                f"The cell {name!r} is written by this transaction's intent log; a raw read of it is refused "
+                f"(spec section 9): its value is decided when the commit replays the log -- read it through "
+                f"the semantic session")
+
     def _check_active(self) -> None:
         if self._state != _ACTIVE:
             raise ProtoUserError(f"The transaction is {self._state}; start a new one")
@@ -2563,8 +2925,11 @@ class Transaction:
         (ruling R241); :meth:`installed_modules` and :meth:`catalog_object` read the same state
         without entering the read set."""
         _check_name(name)
-        with self._lock:
+        if self._state != _ACTIVE:      # fails before the lock (see "Locks" in the class docstring)
             self._check_active()
+        with self._lock:
+            if self._state != _ACTIVE:
+                self._check_active()
             if name in self._writes:
                 value = self._writes[name]
                 return None if value is _REMOVED else value
@@ -2585,8 +2950,11 @@ class Transaction:
         :meth:`Snapshot.pager`).  Refused (``ProtoUserError``) when this transaction has written
         that root: uncommitted data does not exist for anyone else (P2).  The read is recorded."""
         _check_name(root_name)
-        with self._lock:
+        if self._state != _ACTIVE:      # fails before the lock (see "Locks" in the class docstring)
             self._check_active()
+        with self._lock:
+            if self._state != _ACTIVE:
+                self._check_active()
             if root_name in self._writes:
                 raise ProtoUserError(f"Root {root_name!r} was written in this transaction; a pager pages a "
                                      f"committed snapshot (commit first, or page from another transaction)")
@@ -2611,8 +2979,11 @@ class Transaction:
         if not isinstance(replace, bool):
             raise ProtoValidationError("replace must be a bool")
         value = canonical_for(value, f"Root {name!r}")
-        with self._lock:
+        if self._state != _ACTIVE:      # fails before the lock (see "Locks" in the class docstring)
             self._check_active()
+        with self._lock:
+            if self._state != _ACTIVE:
+                self._check_active()
             if replace or self._writes.get(name) is _REMOVED:
                 self._replaced.add(name)
             self._writes[name] = value
@@ -2621,8 +2992,11 @@ class Transaction:
         """Remove root ``name`` at commit (a no-op if it is absent then); a later set of it replaces."""
         _check_name(name)
         _check_not_reserved(name)
-        with self._lock:
+        if self._state != _ACTIVE:      # fails before the lock (see "Locks" in the class docstring)
             self._check_active()
+        with self._lock:
+            if self._state != _ACTIVE:
+                self._check_active()
             self._writes[name] = _REMOVED
             self._replaced.add(name)
 
@@ -2634,8 +3008,11 @@ class Transaction:
         recorded (ABSENT included), so a concurrent creator makes the commit
         conflict; deciding from ``root_names()`` gives no such protection.
         """
-        with self._lock:
+        if self._state != _ACTIVE:      # fails before the lock (see "Locks" in the class docstring)
             self._check_active()
+        with self._lock:
+            if self._state != _ACTIVE:
+                self._check_active()
             names = set(self._objects.keys())
             for name, value in self._writes.items():
                 if value is _REMOVED:
@@ -2668,10 +3045,16 @@ class Transaction:
         """
         _check_name(name, "mutable")
         value = canonical_for(value, f"Mutable {name!r}")
-        with self._lock:
+        if self._state != _ACTIVE:      # fails before the lock (see "Locks" in the class docstring)
             self._check_active()
+        with self._lock:
+            if self._state != _ACTIVE:
+                self._check_active()
+            self._check_not_logged(name)
             if self._mutable_view(name, record=True) is not _ABSENT:
                 raise ProtoValidationError(f"Mutable {name!r} already exists")
+            if self._semantic_depth:
+                self._note_undo(name)
             self._mwrites[name] = value
         return MutableObject(name)
 
@@ -2683,10 +3066,190 @@ class Transaction:
         makes the commit raise ``ProtoConflictError``.
         """
         _check_name(name, "mutable")
-        with self._lock:
+        if self._state != _ACTIVE:      # fails before the lock (see "Locks" in the class docstring)
             self._check_active()
+        with self._lock:
+            if self._state != _ACTIVE:
+                self._check_active()
+            self._check_not_written_by_log(name)
             value = self._mutable_view(name, record=True)
             return None if value is _ABSENT else value
+
+    def snapshot_mutable(self, name: str):
+        """Return the value of the mutable cell ``name`` in the snapshot this transaction reads (``None`` if
+        absent there): never the transaction's own writes, and not recorded in the read set.
+
+        A caller that needs the read validated at commit reads the cell with :meth:`get_mutable` too.
+        Raises ``ProtoUserError`` if the transaction is not active.
+        """
+        _check_name(name, "mutable")
+        if self._state != _ACTIVE:      # fails before the lock (see "Locks" in the class docstring)
+            self._check_active()
+        with self._lock:
+            if self._state != _ACTIVE:
+                self._check_active()
+            self._check_not_written_by_log(name)
+            value = self._mutables.get_at(name, _ABSENT)
+        return None if value is _ABSENT else value
+
+    @contextlib.contextmanager
+    def semantic_operation(self):
+        """Hold the transaction's lock for a semantic operation (:mod:`proto_db.semantic.entities`):
+        ``with tr.semantic_operation() as top: ...``.  Every other call of this transaction, its commit and
+        its abort happen entirely before or after the block (see "Locks" in the class docstring).  The
+        transaction is checked active once the lock is held, so an operation that waited for a commit
+        fails before its first step.  Reentrant: an operation may run others; ``top`` is true for the
+        outermost one only.
+
+        The outermost operation is all or nothing in the transaction: when its block raises, every cell
+        write and field-version binding it made is undone (its reads stay in the read set), and when it
+        returns, the cells it wrote join those whose constraints the commit checks
+        (:meth:`semantic_changes`, :mod:`proto_db.semantic.constraints`).  The first operation that writes
+        also enters the catalog roots (``__currentModules``, ``__catalog``, ``__semanticCatalog``) in the read
+        set: its writes were checked against this version's catalog, so a concurrent install makes the commit
+        conflict and a retry checks them against the new one, as an intent-mode commit does.  The undo log is
+        made by the operation's first write, so an operation that only reads allocates nothing.
+
+        Only the outermost operation is undone: a nested operation that fails inside it is not undone by
+        itself, so an intent that catches a nested operation's failure and goes on keeps that operation's
+        partial writes.  No rule is bypassed by it: the outermost operation's invariants are checked on
+        everything it wrote, partial writes included, before it returns."""
+        if self._state != _ACTIVE:      # fails before the lock (see "Locks" in the class docstring)
+            self._check_active()
+        with self._lock:
+            if self._state != _ACTIVE:
+                self._check_active()
+            depth = self._semantic_depth
+            top = depth == 0
+            try:
+                self._semantic_depth = depth + 1
+                yield top
+                if top and self._semantic_undo is not None:
+                    self._semantic_touched.update(dict.fromkeys(self._semantic_undo.cells))
+                    self._read_catalog_roots()
+            except BaseException:
+                if top and self._semantic_undo is not None:
+                    self._undo_semantic_operation()
+                raise
+            finally:
+                self._semantic_depth = depth        # restored exactly, whatever interrupted the block
+                if top:
+                    self._semantic_undo = None
+
+    def _read_catalog_roots(self) -> None:
+        """Under the lock: enter the catalog roots in the read set (see :meth:`semantic_operation`)."""
+        for name in _SEMANTIC_CATALOG_ROOTS:
+            if name not in self._reads:
+                self._reads[name] = _token(self._objects.get_at(name, _ABSENT))
+
+    def _note_undo(self, name: str) -> None:
+        """Under the lock, inside a top-level semantic operation: remember the cell ``name`` as it was
+        before the operation's first write of it (the first write makes the undo log)."""
+        if self._semantic_undo is None:
+            self._semantic_undo = _SemanticUndo()
+        cells = self._semantic_undo.cells
+        if name not in cells:
+            had = name in self._mwrites
+            cells[name] = (had, self._mwrites.get(name), name in self._mexpected)
+
+    def _undo_semantic_operation(self) -> None:
+        """Under the lock: undo what the failed top-level semantic operation wrote (see
+        :meth:`semantic_operation`)."""
+        undo = self._semantic_undo
+        for name, (had, previous, expected) in undo.cells.items():
+            if had:
+                self._mwrites[name] = previous
+            else:
+                self._mwrites.pop(name, None)
+            if expected:
+                self._mexpected.add(name)
+            else:
+                self._mexpected.discard(name)
+        for name, previous in undo.versions.items():
+            if previous is _ABSENT:
+                self._semantic_versions.pop(name, None)
+            else:
+                self._semantic_versions[name] = previous
+
+    def semantic_changes(self) -> dict:
+        """Inside the top-level semantic operation in progress (holding the lock): the cells it wrote so far,
+        each with its value before the operation in this transaction's view (``None``: absent).  Raises
+        ``ProtoUserError`` outside one."""
+        with self._lock:
+            undo = self._semantic_undo
+            if not self._semantic_depth:
+                raise ProtoUserError("semantic_changes() is read inside a semantic operation")
+            if undo is None:
+                return {}                       # nothing written yet
+            out = {}
+            for name, (had, previous, _) in undo.cells.items():
+                if not had:
+                    previous = self._mutables.get_at(name, _ABSENT)
+                out[name] = None if previous is _ABSENT or previous is _REMOVED else previous
+            return out
+
+    def semantic_touched(self) -> tuple:
+        """The cells the transaction's semantic operations wrote, in the order of their first write (the
+        commit checks their cardinality, :mod:`proto_db.semantic.constraints`)."""
+        with self._lock:
+            return tuple(self._semantic_touched)
+
+    def _end(self, verb: str) -> None:
+        """Under the lock: the change of state of :meth:`commit` and :meth:`abort`; refused inside a
+        semantic operation of this thread (it would publish or drop half of it).  A semantic operation
+        of another thread was waited for by taking the lock."""
+        self._check_can_end(verb)
+        self._state = _COMMITTING if verb == "commit" else _ABORTED
+
+    def _check_can_end(self, verb: str) -> None:
+        if self._semantic_depth:
+            raise ProtoUserError(f"Cannot {verb} the transaction inside one of its semantic operations; "
+                                 f"{verb} after the operation returns")
+        self._check_active()
+
+    def _check_semantic_commit(self) -> None:
+        """Under the lock, before the commit leaves the active state and outside the root lock (preflight
+        F28): the cardinality of every entity the transaction's semantic operations wrote (direct mode;
+        :func:`proto_db.semantic.constraints.check_commit`).  What it reads enters the read set, so the
+        commit's validation keeps the check valid.  A violation aborts the transaction and raises
+        ``ProtoConstraintError``; a refusal to commit (inside an operation, not active) keeps today's
+        behaviour."""
+        self._check_can_end("commit")
+        try:
+            _constraints().check_commit(self)
+        except BaseException:
+            self._state = _ABORTED
+            raise
+
+    def semantic_field_version(self, name: str):
+        """The field version the semantic layer bound for the entity in cell ``name`` in this transaction
+        (``None`` if none); see :mod:`proto_db.semantic.entities`.  Raises ``ProtoUserError`` if the
+        transaction is not active."""
+        if self._state != _ACTIVE:      # fails before the lock (see "Locks" in the class docstring)
+            self._check_active()
+        with self._lock:
+            if self._state != _ACTIVE:
+                self._check_active()
+            return self._semantic_versions.get(name)
+
+    def set_semantic_field_version(self, name: str, expected, record):
+        """Store ``record`` as the field version of cell ``name`` if the stored one is ``expected``
+        (``None``: none stored); return the one stored afterwards (compare-and-set).  Raises
+        ``ProtoUserError`` if the transaction is not active."""
+        if self._state != _ACTIVE:      # fails before the lock (see "Locks" in the class docstring)
+            self._check_active()
+        with self._lock:
+            if self._state != _ACTIVE:
+                self._check_active()
+            current = self._semantic_versions.get(name)
+            if current is expected:
+                if self._semantic_depth:
+                    if self._semantic_undo is None:
+                        self._semantic_undo = _SemanticUndo()
+                    if name not in self._semantic_undo.versions:
+                        self._semantic_undo.versions[name] = self._semantic_versions.get(name, _ABSENT)
+                self._semantic_versions[name] = current = record
+            return current
 
     def set_mutable(self, name: str, value) -> None:
         """Set the mutable cell ``name`` to ``value`` at commit; the cell must exist.
@@ -2698,10 +3261,16 @@ class Transaction:
         """
         _check_name(name, "mutable")
         value = canonical_for(value, f"Mutable {name!r}")
-        with self._lock:
+        if self._state != _ACTIVE:      # fails before the lock (see "Locks" in the class docstring)
             self._check_active()
+        with self._lock:
+            if self._state != _ACTIVE:
+                self._check_active()
+            self._check_not_logged(name)
             if self._mutable_view(name, record=False) is _ABSENT:
                 raise ProtoValidationError(f"Mutable {name!r} does not exist; create it with new_mutable")
+            if self._semantic_depth:
+                self._note_undo(name)
             if name not in self._mwrites:
                 self._mexpected.add(name)
             self._mwrites[name] = value
@@ -2713,22 +3282,35 @@ class Transaction:
         concurrent commit makes a blind removal a no-op, not a conflict.
         """
         _check_name(name, "mutable")
-        with self._lock:
+        if self._state != _ACTIVE:      # fails before the lock (see "Locks" in the class docstring)
             self._check_active()
+        with self._lock:
+            if self._state != _ACTIVE:
+                self._check_active()
+            self._check_not_logged(name)
             if self._mutable_view(name, record=False) is _ABSENT:
                 raise ProtoValidationError(f"Mutable {name!r} does not exist")
+            if self._semantic_depth:
+                self._note_undo(name)
             self._mwrites[name] = _REMOVED
 
     def mutable_names(self) -> list:
-        """Sorted names of the mutable cells as this transaction sees them (not recorded in the read set)."""
-        with self._lock:
+        """Sorted names of the mutable cells as this transaction sees them (not recorded in the read set).
+        In intent mode the cells the log created are listed too, under the names the commit gives them (R260;
+        a replay that would create others is a conflict)."""
+        if self._state != _ACTIVE:      # fails before the lock (see "Locks" in the class docstring)
             self._check_active()
+        with self._lock:
+            if self._state != _ACTIVE:
+                self._check_active()
             names = set(self._mutables.keys())
             for name, value in self._mwrites.items():
                 if value is _REMOVED:
                     names.discard(name)
                 else:
                     names.add(name)
+            if self._intent_log is not None:
+                names.update(self._intent_log.cells.written())
             return sorted(names)
 
     # -- the runtime registry ----------------------------------------------------------------
@@ -2746,24 +3328,49 @@ class Transaction:
         module that cannot be imported ``ProtoNotSupportedError``; nothing of a refused install
         stays pending.  Installing an installed module adds only what it lacks (idempotent).
 
+        It also collects the semantic additions (spec section 5): the list's contributions are
+        composed with the snapshot's semantic catalog here, outside every lock, so a refused
+        composition (a change R282 forbids, a structural redefinition) raises ``ProtoValidationError``
+        with nothing pending; at commit the catalog merges add-if-absent (see the module docstring).
+        A stored catalog that lacks contributions of the installed list (a writer without the
+        semantic layer installed modules since) gets them at the next install, of any module; a
+        database without a catalog gets one at its next install that adds a module, and its
+        reinstalls behave exactly as before the semantic layer.
+
         The imports run without the transaction's lock held (review M-5): a module's import-time
         code may use this transaction from another thread.  At commit the list and the catalog
         merge add-if-absent against the current root (see :mod:`proto_db.registry`): the merge
         never makes installs conflict with each other.  Installing is permanent; there is no
         uninstall.
         """
+        if self._state != _ACTIVE:      # fails before the lock (see "Locks" in the class docstring)
+            self._check_active()
         space = self._database.space
         mapping, allowed = space.modules_mapping, space.modules_allowed
         while True:
             with self._lock:
-                self._check_active()
+                if self._state != _ACTIVE:
+                    self._check_active()
+                if self._semantic_depth:
+                    # Its imports would run holding the lock the operation holds (review M-5).
+                    raise ProtoUserError("Cannot install a module inside a semantic operation of the transaction; "
+                                         "install it before or after the operation")
                 installed = self._installed_names()
             additions, introduced = _registry.install_plan(name, installed, mapping, allowed)
             candidate = installed + tuple(module for module, _ in additions)
             imported = (name,) + tuple(module for module, _ in additions)
+            store = _semantic_store()
+            stored = store.read_stored(self._objects)[0]
             if additions:
-                _registry.registry_for(candidate, mapping=mapping, allowed=allowed)
+                registry = _registry.registry_for(candidate, mapping=mapping, allowed=allowed)
                 imported += candidate
+            elif stored is not None and stored["module_set"] != sorted(set(installed)):
+                # Nothing to add to the list, but the stored catalog lacks part of it (a writer without
+                # the semantic layer installed since): repaired from the list's registry.  A database
+                # without a catalog reinstalls as before the semantic layer, building nothing.
+                registry = _registry.registry_for(installed, mapping=mapping, allowed=allowed)
+            else:
+                registry = None
             # Only the modules this call imported (review NB-1): import_module waited for any other
             # thread's import of them, so one still being imported is this thread's own, whose
             # declarations so far are not the module's.  A module this call did not import may be
@@ -2773,8 +3380,12 @@ class Transaction:
                 raise ProtoUserError(
                     f"Module(s) {', '.join(map(repr, unfinished))} are still being imported by this thread: "
                     f"a module's import-time code cannot install itself or a module that needs it (review N-3)")
+            # The semantic additions, composed outside every lock: a refused composition (a forbidden
+            # change, R282) raises here, so nothing of a refused install stays pending.
+            semantic = registry is not None and store.merged_model(stored, registry) is not None
             with self._lock:
-                self._check_active()
+                if self._state != _ACTIVE:
+                    self._check_active()
                 if self._installed_names() != installed:
                     continue            # another install of this transaction landed meanwhile: plan again
                 catalog = _registry.registry_root(self._objects, _registry.CATALOG_ROOT, _registry.Catalog)
@@ -2787,7 +3398,10 @@ class Transaction:
                     self._catalog_new[rn] = DBObject(context=self, parents=(rn,))
                 if additions:
                     self._validated_modules = candidate
+                    self._validated_registry = registry
                     self._own_modules = candidate
+                if semantic:
+                    self._semantic_pending = True
                 return
 
     def installed_modules(self) -> tuple:
@@ -2797,8 +3411,11 @@ class Transaction:
         (review M-6), as a :class:`~proto_db.registry.ModuleList`, but it is an ordinary read: it
         enters the read set, and a concurrent install then makes this transaction's commit
         conflict (``ProtoConflictError``; ruling R241).  Use this method to read the list."""
-        with self._lock:
+        if self._state != _ACTIVE:      # fails before the lock (see "Locks" in the class docstring)
             self._check_active()
+        with self._lock:
+            if self._state != _ACTIVE:
+                self._check_active()
             return self._installed_names()
 
     def _installed_names(self) -> tuple:
@@ -2812,8 +3429,8 @@ class Transaction:
         (:func:`proto_db.registry.registry_for`): transactions on the same list share one
         registry.  A transaction that installs a module resolves through a registry built for
         its own pending list; other transactions see the module after the commit.  Otherwise the
-        list must be the one the space bound the database to (see ``ObjectSpace.reload_registry``):
-        a different list raises ``ProtoValidationError`` ("registry built for modules ... but the
+        list must be one the space adopted (see ``ObjectSpace.reload_registry``): another list
+        raises ``ProtoValidationError`` ("registry built for modules ... but the
         database lists ..."), never an automatic rebuild (spec Q2).  A listed module that cannot
         be imported raises ``ProtoNotSupportedError`` naming it and the database.  Usable after the
         transaction ended, like ``load`` (its objects outlive it)."""
@@ -2839,7 +3456,7 @@ class Transaction:
         elif self._binding is not None and self._binding.names == names:
             found = registries.registry(name, self._binding)
         else:
-            found = registries.bound_for(name, names)
+            found = registries.bound_for(name, names, self._snapshot_key, self._snapshot_origin)
         self._registry_memo = (installs, found)
         return found
 
@@ -2892,8 +3509,11 @@ class Transaction:
         commits another one for the same name first, this commit then conflicts instead of
         leaving the object handed out unreachable from the catalog."""
         _registry._check_name("A registry name", registry_name)
-        with self._lock:
+        if self._state != _ACTIVE:      # fails before the lock (see "Locks" in the class docstring)
             self._check_active()
+        with self._lock:
+            if self._state != _ACTIVE:
+                self._check_active()
             pending = self._catalog_new.get(registry_name)
             if pending is not None:
                 self._catalog_given.add(registry_name)
@@ -2926,8 +3546,11 @@ class Transaction:
         if registry_name not in obj._persisted_parents():
             raise ProtoValidationError(
                 f"The catalog object of {registry_name!r} must keep {registry_name!r} among its parents")
-        with self._lock:
+        if self._state != _ACTIVE:      # fails before the lock (see "Locks" in the class docstring)
             self._check_active()
+        with self._lock:
+            if self._state != _ACTIVE:
+                self._check_active()
             if registry_name in self._catalog_new:
                 # An update of the object this transaction's own install creates: an update against an
                 # entry absent from the snapshot.  If a concurrent install adds the name first, the
@@ -2943,7 +3566,7 @@ class Transaction:
             self._catalog_updates[registry_name] = (existing.atom_pointer, obj)
 
     def _registry_pending(self) -> bool:
-        return bool(self._installs or self._catalog_new or self._catalog_updates)
+        return bool(self._installs or self._catalog_new or self._catalog_updates or self._semantic_pending)
 
     def _registry_view(self, name: str):
         """The registry root ``name`` as this transaction sees it: the snapshot's with this
@@ -2973,24 +3596,59 @@ class Transaction:
         self._committed_modules = committed.names() if committed is not None else ()
         if merged is not None:
             names = merged.names()
-            if names != self._validated_modules:
-                space = self._database.space
-                try:
-                    _registry.Registry.build(names, mapping=space.modules_mapping, allowed=space.modules_allowed,
-                                             imports=False)
-                except _registry.ModulesNotImported:
-                    self._import_needed = names
-                    return None
-                except ProtoDBError as e:
-                    raise self._union_conflict(names, e) from e
-                self._validated_modules = names
+            if names != self._validated_modules and self._commit_registry(names) is None:
+                return None
             objects = objects.set_at(_registry.MODULES_ROOT, merged)
         catalog = _registry.registry_root(current_objects, _registry.CATALOG_ROOT, _registry.Catalog)
         merged_catalog = _registry.merged_catalog(catalog, self._catalog_new, self._catalog_given, self,
                                                   self._catalog_updates)
         if merged_catalog is not None:
             objects = objects.set_at(_registry.CATALOG_ROOT, merged_catalog)
+        if self._installs or self._semantic_pending:
+            objects = self._merged_semantic_catalog(objects, current_objects)
         return objects
+
+    def _merged_semantic_catalog(self, objects: Dictionary, current_objects: Dictionary) -> Optional[Dictionary]:
+        """Under the root lock, after the module list merged: ``objects`` with the semantic catalog of
+        ``current_objects`` (the one current at commit, never through the read set) merged add-if-absent
+        for the committed list, the entities recomposed from the registry of that list
+        (:func:`proto_db.semantic.store.merged_semantic_catalog`); no import.  A database with no catalog
+        whose list contributes nothing gets none (its records stay format 4 or 5).  A union whose
+        composition fails is refused like a union that does not build (review N-4).  ``None`` when the
+        registry needs modules this process has not fully imported (see :meth:`_merged_registry`)."""
+        from .catalog.atoms import SEMANTIC_CATALOG_ROOT, semantic_catalog_root
+        current = semantic_catalog_root(current_objects)
+        if current is None and not self._semantic_pending:
+            return objects
+        names = self._committed_modules
+        registry = self._commit_registry(names)
+        if registry is None:
+            return None
+        try:
+            merged = _semantic_store().merged_semantic_catalog(current, registry, self)
+        except ProtoValidationError as e:
+            raise self._union_conflict(names, e) from e
+        return objects if merged is None else objects.set_at(SEMANTIC_CATALOG_ROOT, merged)
+
+    def _commit_registry(self, names: tuple) -> Optional[_registry.Registry]:
+        """Under the root lock: the registry of the module list ``names``, built without importing when
+        it is not the one already validated; ``None`` (with ``_import_needed`` set) when it needs modules
+        this process has not fully imported."""
+        registry = self._validated_registry
+        if registry is not None and set(registry.key) == set(names):
+            return registry
+        space = self._database.space
+        try:
+            registry = _registry.Registry.build(names, mapping=space.modules_mapping, allowed=space.modules_allowed,
+                                                imports=False)
+        except _registry.ModulesNotImported:
+            self._import_needed = names
+            return None
+        except ProtoDBError as e:
+            raise self._union_conflict(names, e) from e
+        self._validated_modules = names
+        self._validated_registry = registry
+        return registry
 
     def _import_for_commit(self, names: tuple) -> None:
         """Outside the root lock and the transaction's lock: build the registry of ``names`` (the
@@ -3001,8 +3659,9 @@ class Transaction:
         and ``install_module`` then states the real refusal); this transaction's own list,
         ``ProtoUserError``, or the build's own error."""
         space = self._database.space
+        registry = None
         try:
-            _registry.Registry.build(names, mapping=space.modules_mapping, allowed=space.modules_allowed)
+            registry = _registry.Registry.build(names, mapping=space.modules_mapping, allowed=space.modules_allowed)
         except _registry.ModulesBeingImported as e:
             unfinished = e.names
         except ProtoDBError as e:
@@ -3020,6 +3679,7 @@ class Transaction:
                 f"Module(s) {', '.join(map(repr, unfinished))} of this transaction's list are still being imported "
                 f"by this thread: a module's import-time code cannot commit an install whose list needs it")
         self._validated_modules = names
+        self._validated_registry = registry
 
     def _union_conflict(self, names: tuple, error: ProtoDBError) -> ProtoDBError:
         """The error for a merged list ``names`` whose build raised ``error``: the list this
@@ -3070,21 +3730,24 @@ class Transaction:
     # -- end --------------------------------------------------------------------------------
 
     def abort(self) -> None:
-        """Discard the transaction's writes; publishes nothing."""
+        """Discard the transaction's writes; publishes nothing.  Waits for a semantic operation in
+        progress in another thread; refused (``ProtoUserError``) inside one of this thread."""
         with self._lock:
-            self._check_active()
-            self._state = _ABORTED
+            self._end("abort")
 
     def commit(self) -> None:
         """Commit the writes (commit protocol in the module docstring).
 
         Raises ``ProtoConflictError`` when a root in the read set changed or a merge
         conflicts; nothing is published then.  The transaction ends either way: after a
-        failed commit it is aborted.
+        failed commit it is aborted.  It waits for a semantic operation in progress in another
+        thread, and is refused (``ProtoUserError``, the transaction stays active) inside one of
+        this thread.
         """
         with self._lock:
-            self._check_active()
-            self._state = _COMMITTING
+            if self._semantic_touched:
+                self._check_semantic_commit()
+            self._end("commit")
             committed = False
             try:
                 self._commit()
@@ -3093,7 +3756,8 @@ class Transaction:
                 self._state = _COMMITTED if committed else _ABORTED
 
     def _commit(self) -> None:
-        if not self._writes and not self._mwrites and not self._registry_pending():
+        if not self._writes and not self._mwrites and not self._registry_pending() \
+                and not (self._intent_log is not None and self._intent_log.entries):
             return
         written = (list(self._writes.values()) + list(self._mwrites.values()) + list(self._catalog_new.values())
                    + [obj for _, obj in self._catalog_updates.values()])
@@ -3105,33 +3769,47 @@ class Transaction:
         # one local sync (D50); no flush per transaction.
         with _released(self._lock):
             self._prebuild_registries()
-        for _ in range(_IMPORT_ROUNDS):
-            self._import_needed = None
-            with _registry.no_builds():
-                published = _commit_root(self.storage, space.lock_timeout, self._scoped_build_root,
-                                         space.coordinator)
-            if self._import_needed is None:
-                break
-            # The build published nothing: it needs modules this process has not fully imported,
-            # which are never imported under the root lock (review I-1).  Import them, then run the
-            # lock step again (on the root current then).
-            # Without the transaction's lock either (review N-2): a module's import-time code may use
-            # this transaction from another thread, and fails fast (the state is committing).
-            with _released(self._lock):
-                self._import_for_commit(self._import_needed)
-        else:
-            raise ProtoConflictError(
-                f"Modules were installed concurrently through {_IMPORT_ROUNDS} attempts of this commit; retry it")
-        if published:
-            # Post-publish, cannot fail: a committed value's log was consumed by this
-            # commit, so a later transaction reusing it must not replay it again (D33).
-            for value in written:
-                if isinstance(value, ConcurrentOptimized):
-                    object.__setattr__(value, "_log_complete", False)
-            if self._installs:
-                # This space installed: it binds the database to the list it committed (the
-                # merged one), built on need, so it never mismatches itself (spec 14 item 4).
-                space._registries.rebind(self._database.name, self._committed_modules)
+        published = unknown = False
+        try:
+            for _ in range(_IMPORT_ROUNDS):
+                self._import_needed = None
+                with _registry.no_builds():
+                    try:
+                        published = _commit_root(self.storage, space.lock_timeout, self._scoped_build_root,
+                                                 space.coordinator)
+                    except ProtoOutcomeUnknownError:
+                        unknown = True
+                        raise
+                if self._import_needed is None:
+                    break
+                # The build published nothing: it needs modules this process has not fully imported,
+                # which are never imported under the root lock (review I-1).  Import them, then run the
+                # lock step again (on the root current then).
+                # Without the transaction's lock either (review N-2): a module's import-time code may use
+                # this transaction from another thread, and fails fast (the state is committing).
+                with _released(self._lock):
+                    self._import_for_commit(self._import_needed)
+            else:
+                raise ProtoConflictError(
+                    f"Modules were installed concurrently through {_IMPORT_ROUNDS} attempts of this commit; retry it")
+            if published:
+                # Post-publish, cannot fail: a committed value's log was consumed by this
+                # commit, so a later transaction reusing it must not replay it again (D33).
+                for value in written:
+                    if isinstance(value, ConcurrentOptimized):
+                        object.__setattr__(value, "_log_complete", False)
+                if self._installs:
+                    # This space installed: it binds the database to the list it committed (the
+                    # merged one), built on need, so it never mismatches itself (spec 14 item 4).
+                    space._registries.rebind(self._database.name, self._committed_modules,
+                                             key=self._committed_key, origin=self._committed_origin)
+        finally:
+            if self._recorded:
+                # Published and rebound, or failed: no build is pending any more; the published one
+                # (or one of unknown outcome) is adopted.
+                space._registries.committed(
+                    self._database.name, self._recorded,
+                    self._recorded[-1] if published or unknown else None)
 
     def _scoped_build_root(self, current, stamp: Optional[_ClusterStamp] = None) -> AtomPointer:
         """:meth:`_build_root` with this transaction as the reader (review I1, ruling R201): what
@@ -3186,13 +3864,29 @@ class Transaction:
             if objects is None:
                 return None             # modules to import first, outside the lock (_commit)
         mutables = db_root.mutables
+        if self._intent_log is not None:
+            # Intent mode (preflight F22): validate the fine reads, replay the log on the current cells and
+            # write __intentLog; the raw writes below hold no cell the log touched.  No transaction lock.
+            merge_started = clock()
+            objects, mutables = self._intent_log.replay(self, db_root, objects, mutables)
+            replay += clock() - merge_started
+        elif INTENT_LOG_ROOT not in self._writes and current_objects.has(INTENT_LOG_ROOT):
+            objects = objects.remove_at(INTENT_LOG_ROOT)    # an older commit's log is not this version's (R271)
         for name, value in self._mwrites.items():
             if value is not _REMOVED:
                 mutables = mutables.set_at(name, value)
             elif mutables.has(name):
                 mutables = mutables.remove_at(name)
+        self._committed_version = db_root.version + 1
+        self._committed_key = (stamp.term if stamp is not None else 0, self._committed_version)
+        self._committed_origin = (stamp.term, stamp.epoch) if stamp is not None else None
+        if self._installs:
+            # Before the publish: a transaction of this space that starts on this list before the
+            # commit's rebind binds to it (review I1).
+            self._database.space._registries.committing(self._database.name, self._committed_modules)
+            self._recorded.append(self._committed_modules)
         new_root = DatabaseRoot(objects=objects, mutables=mutables, previous=db_root,
-                                version=db_root.version + 1,
+                                version=self._committed_version,
                                 committed_at=max(_utc_now(), db_root.committed_at), origin=db_root.origin,
                                 context=self)
         new_space = _new_space_root(space.databases.set_at(self._database.name, new_root), self, stamp, space)

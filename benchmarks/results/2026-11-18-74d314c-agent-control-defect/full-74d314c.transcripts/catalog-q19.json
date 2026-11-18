@@ -1,0 +1,31 @@
+{
+  "id": "q19",
+  "mode": "catalog",
+  "argv": [
+    "claude",
+    "-p",
+    "You are answering one question about a company's business database.  Use only the tools of the MCP server 'proto_db'; do not use files, the web or any other source.\nQuestion: What is the date of the most recently dated order?\nWhen you are done, end your reply with exactly one line of the form\nANSWER: <answer>\nwhere <answer> is a plain number (digits, an optional minus sign and decimal point; no units, currency signs or thousands separators), a date as YYYY-MM-DD, the cell name of an entity exactly as the database gives it (when the question asks which entity), or NOT ANSWERABLE when the database does not hold what the question needs.",
+    "--mcp-config",
+    "/home/gamarino/Documentos/proyectos/scratch-8.3n/agent-exp-work/server-1/mcp.json",
+    "--strict-mcp-config",
+    "--tools",
+    "",
+    "--allowedTools",
+    "mcp__proto_db__list_entities",
+    "mcp__proto_db__describe",
+    "mcp__proto_db__query",
+    "mcp__proto_db__check_answerable",
+    "--setting-sources",
+    "",
+    "--disable-slash-commands",
+    "--no-session-persistence",
+    "--model",
+    "claude-sonnet-5-5"
+  ],
+  "prompt": "You are answering one question about a company's business database.  Use only the tools of the MCP server 'proto_db'; do not use files, the web or any other source.\nQuestion: What is the date of the most recently dated order?\nWhen you are done, end your reply with exactly one line of the form\nANSWER: <answer>\nwhere <answer> is a plain number (digits, an optional minus sign and decimal point; no units, currency signs or thousands separators), a date as YYYY-MM-DD, the cell name of an entity exactly as the database gives it (when the question asks which entity), or NOT ANSWERABLE when the database does not hold what the question needs.",
+  "stdout": "The latest order date is 2026-12-17. That is after today's date (2026-11-18), so it is a future-dated order. The question asks for the most recently dated order, not the latest one up to today, so I'm using the maximum date. The next latest is 2026-12-09, also in the future.\n\nANSWER: 2026-12-17\n",
+  "stderr": "Warning: this sign-in ends between 2026-11-20 and 2026-11-23 (in 2 days at the earliest). Renewing it does not move those dates. Run claude auth login before then, or use claude setup-token for unattended jobs.\n",
+  "exit_code": 0,
+  "timed_out": false,
+  "seconds": 7.406
+}

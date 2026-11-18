@@ -221,3 +221,13 @@ class TestFreeThreading:
             t.join()
         assert errors == []
         assert list(base.items()) == expected_items
+
+
+def test_keys_after_a_key_are_the_keys_strictly_after_it_in_order():
+    d = make([("b", 2), ("a", 1), ("d", 4), (3, "x")])
+    assert list(d.keys()) == [3, "a", "b", "d"]
+    assert list(d.keys(after="a")) == ["b", "d"]
+    assert list(d.keys(after="c")) == ["d"]
+    assert list(d.keys(after="d")) == []
+    assert list(d.keys(after=3)) == ["a", "b", "d"]
+    assert list(make().keys(after="a")) == []

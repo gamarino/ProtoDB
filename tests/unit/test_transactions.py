@@ -556,6 +556,25 @@ def test_history_lists_versions_newest_first(db):
     assert history[-1].root_names == ()
 
 
+
+def test_version_names_iterate_lazily_in_name_order_after_a_name(db):
+    def build(tr):
+        for name in ("b", "a", "c"):
+            tr.set_root_object(name, 1)
+        for name in ("n2", "n1"):
+            tr.new_mutable(name, 1)
+    db.run(build)
+    entry = db.history()[0]
+    snapshot = db.snapshot_at(entry)
+    for view in (snapshot, entry):
+        assert list(view.iter_root_names()) == ["a", "b", "c"] == list(view.root_names)
+        assert list(view.iter_root_names(after="a")) == ["b", "c"]
+        assert list(view.iter_root_names(after="bb")) == ["c"]
+        assert list(view.iter_root_names(after="c")) == []
+        assert list(view.iter_mutable_names()) == ["n1", "n2"] == list(view.mutable_names)
+        assert list(view.iter_mutable_names(after="n1")) == ["n2"]
+
+
 # -- run() -----------------------------------------------------------------------------------
 
 def test_run_returns_the_result_and_commits(db):
@@ -1190,3 +1209,58 @@ def test_release_failure_does_not_mask_a_conflict(caplog):
             again.set_root_object("x", 4)
     assert "injected release failure" in caplog.text
     space.close()
+
+
+def test_a_group_commit_leader_building_another_threads_transaction_fails_fast_on_its_calls(monkeypatch):
+    """A group-commit leader builds a transaction of another thread, which holds that transaction's lock
+    while it waits for the leader.  A call the build makes on that transaction (a computed attribute reading
+    a cell) must fail fast ("committing") before taking the lock, not wait for it: waiting deadlocks both
+    threads (re-review 5, probe_leader).  The order is set by the group queue, with no sleep."""
+    from proto_db import transactions as T
+    space = ObjectSpace(MemoryStorage())
+    db = space.new_database("db")
+    db.run(lambda tr: [tr.new_mutable(n, 0) for n in ("a", "b", "c", "z")])
+    group = T._group_of(space.storage)
+    original = Transaction._build_root
+    owner, held, release, seen = {}, threading.Event(), threading.Event(), {}
+
+    def build(self, current, stamp=None):
+        me = threading.current_thread().name
+        if owner[id(self)] == "T0":
+            held.set()
+            assert release.wait(60)
+        elif owner[id(self)] != me:
+            try:
+                seen[owner[id(self)]] = self.get_mutable("c")
+            except ProtoUserError as error:
+                seen[owner[id(self)]] = error
+        return original(self, current, stamp)
+    monkeypatch.setattr(Transaction, "_build_root", build)
+    outcome = {}
+
+    def commit(name, cell):
+        tr = db.new_transaction()
+        owner[id(tr)] = name
+        tr.set_mutable(cell, 1)
+        try:
+            tr.commit()
+            outcome[name] = "committed"
+        except BaseException as error:          # reported to the test
+            outcome[name] = error
+    first = threading.Thread(target=commit, args=("T0", "z"), name="T0", daemon=True)
+    first.start()
+    assert held.wait(60)
+    queued = [threading.Thread(target=commit, args=(n, c), name=n, daemon=True) for n, c in (("T1", "a"), ("T2", "b"))]
+    for thread in queued:
+        thread.start()
+    with group.cond:            # both wait in the queue behind T0's round: one leads the next round
+        assert group.cond.wait_for(lambda: len(group.queue) == 2, timeout=60)
+    release.set()
+    for thread in [first] + queued:
+        thread.join(60)
+    assert [t.name for t in [first] + queued if t.is_alive()] == [], "a commit hung"
+    assert outcome == {"T0": "committed", "T1": "committed", "T2": "committed"}
+    assert len(seen) == 1
+    (error,) = seen.values()
+    assert isinstance(error, ProtoUserError) and "committing" in str(error)
+    space.close()       # not on failure: a hung commit holds the root lock (the daemon threads die with the run)

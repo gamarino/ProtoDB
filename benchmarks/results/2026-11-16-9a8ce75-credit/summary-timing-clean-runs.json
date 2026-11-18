@@ -1,0 +1,256 @@
+{
+ "all_clean": true,
+ "cells": {
+  "direct gil=0": {
+   "attempts": {
+    "max": 895,
+    "median": 854,
+    "min": 845
+   },
+   "commit_latency_p50_ms": {
+    "max": 10.3,
+    "median": 10.02,
+    "min": 9.98
+   },
+   "commit_latency_p95_ms": {
+    "max": 18.0,
+    "median": 17.05,
+    "min": 16.69
+   },
+   "commits": {
+    "max": 323,
+    "median": 322,
+    "min": 317
+   },
+   "commits_per_s": {
+    "max": 59.19,
+    "median": 58.68,
+    "min": 57.77
+   },
+   "conflicts": {
+    "max": 529,
+    "median": 489,
+    "min": 479
+   },
+   "orders_per_s": {
+    "max": 73.3,
+    "median": 72.9,
+    "min": 72.9
+   },
+   "rejected_by_conflict": {
+    "max": 35,
+    "median": 34,
+    "min": 34
+   },
+   "rejected_by_constraint": {
+    "max": 49,
+    "median": 44,
+    "min": 42
+   },
+   "runs": 3,
+   "verified_runs": 3,
+   "violations": {
+    "max": 0,
+    "median": 0,
+    "min": 0
+   },
+   "wall_s": {
+    "max": 5.487,
+    "median": 5.4869,
+    "min": 5.4567
+   }
+  },
+  "direct gil=1": {
+   "attempts": {
+    "max": 1212,
+    "median": 1116.5,
+    "min": 1021
+   },
+   "commit_latency_p50_ms": {
+    "max": 39.78,
+    "median": 33.085,
+    "min": 26.39
+   },
+   "commit_latency_p95_ms": {
+    "max": 97.33,
+    "median": 86.38,
+    "min": 75.43
+   },
+   "commits": {
+    "max": 314,
+    "median": 309.0,
+    "min": 304
+   },
+   "commits_per_s": {
+    "max": 25.36,
+    "median": 22.095,
+    "min": 18.83
+   },
+   "conflicts": {
+    "max": 874,
+    "median": 773.0,
+    "min": 672
+   },
+   "orders_per_s": {
+    "max": 33.36,
+    "median": 28.674999999999997,
+    "min": 23.99
+   },
+   "rejected_by_conflict": {
+    "max": 62,
+    "median": 56.5,
+    "min": 51
+   },
+   "rejected_by_constraint": {
+    "max": 45,
+    "median": 34.5,
+    "min": 24
+   },
+   "runs": 2,
+   "verified_runs": 2,
+   "violations": {
+    "max": 0,
+    "median": 0.0,
+    "min": 0
+   },
+   "wall_s": {
+    "max": 16.6742,
+    "median": 14.33185,
+    "min": 11.9895
+   }
+  },
+  "intents gil=0": {
+   "attempts": {
+    "max": 400,
+    "median": 400,
+    "min": 400
+   },
+   "commit_latency_p50_ms": {
+    "max": 79.47,
+    "median": 79.24,
+    "min": 78.06
+   },
+   "commit_latency_p95_ms": {
+    "max": 111.65,
+    "median": 110.48,
+    "min": 107.27
+   },
+   "commits": {
+    "max": 296,
+    "median": 295,
+    "min": 295
+   },
+   "commits_per_s": {
+    "max": 82.88,
+    "median": 80.5,
+    "min": 80.17
+   },
+   "conflicts": {
+    "max": 0,
+    "median": 0,
+    "min": 0
+   },
+   "orders_per_s": {
+    "max": 112.0,
+    "median": 109.15,
+    "min": 108.71
+   },
+   "rejected_by_conflict": {
+    "max": 0,
+    "median": 0,
+    "min": 0
+   },
+   "rejected_by_constraint": {
+    "max": 105,
+    "median": 105,
+    "min": 104
+   },
+   "runs": 3,
+   "verified_runs": 3,
+   "violations": {
+    "max": 0,
+    "median": 0,
+    "min": 0
+   },
+   "wall_s": {
+    "max": 3.6796,
+    "median": 3.6648,
+    "min": 3.5715
+   }
+  },
+  "intents gil=1": {
+   "attempts": {
+    "max": 400,
+    "median": 400.0,
+    "min": 400
+   },
+   "commit_latency_p50_ms": {
+    "max": 100.1,
+    "median": 99.56,
+    "min": 99.02
+   },
+   "commit_latency_p95_ms": {
+    "max": 145.49,
+    "median": 140.41500000000002,
+    "min": 135.34
+   },
+   "commits": {
+    "max": 296,
+    "median": 295.5,
+    "min": 295
+   },
+   "commits_per_s": {
+    "max": 55.06,
+    "median": 54.97,
+    "min": 54.88
+   },
+   "conflicts": {
+    "max": 0,
+    "median": 0.0,
+    "min": 0
+   },
+   "orders_per_s": {
+    "max": 74.66,
+    "median": 74.41,
+    "min": 74.16
+   },
+   "rejected_by_conflict": {
+    "max": 0,
+    "median": 0.0,
+    "min": 0
+   },
+   "rejected_by_constraint": {
+    "max": 105,
+    "median": 104.5,
+    "min": 104
+   },
+   "runs": 2,
+   "verified_runs": 2,
+   "violations": {
+    "max": 0,
+    "median": 0.0,
+    "min": 0
+   },
+   "wall_s": {
+    "max": 5.3941,
+    "median": 5.3758,
+    "min": 5.3575
+   }
+  }
+ },
+ "commits_measured": [
+  "9a8ce75"
+ ],
+ "files": [
+  "direct-gil0-r1.json",
+  "direct-gil0-r2.json",
+  "direct-gil0-r3.json",
+  "intents-gil0-r1.json",
+  "intents-gil0-r2.json",
+  "intents-gil0-r3.json",
+  "direct-gil1-r1.json",
+  "direct-gil1-r2.json",
+  "intents-gil1-r1.json",
+  "intents-gil1-r2.json"
+ ]
+}

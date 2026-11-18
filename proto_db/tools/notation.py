@@ -5,8 +5,9 @@ A *value description* is a one-key JSON object naming the value's kind: ``{"int"
 is described by :func:`describe_database`: its roots in name order (records as ``object`` with
 their attributes sorted by name and, for a record with parents, its ``parents`` in order,
 collections as ``collection`` with their elements or items in the collection's own order, the
-runtime registry's roots as ``registry`` with their fields, atoms of a type this process has no
-class for as ``opaque``), its mutables, its indexes and its origin.  :mod:`proto_db.tools.verify` prints it; the conformance
+runtime registry's roots as ``registry`` with their fields, records of the semantic catalog's types
+(format 6) as ``catalog`` with their fields, atoms of a type this process has no class for as
+``opaque``), its mutables, its indexes and its origin.  :mod:`proto_db.tools.verify` prints it; the conformance
 manifest holds it for the vector spaces.
 """
 from __future__ import annotations
@@ -23,6 +24,7 @@ from ..collections.lists import List
 from ..collections.sets import CountedSet, Set
 from ..core.atom import _ABSENT, Atom, OpaqueAtom
 from ..core.dbobject import DBObject
+from ..catalog.atoms import CATALOG_RECORD_TYPES
 from ..registry import Catalog, ModuleList
 from ..values import MISSING, FrozenDict, FrozenList, MutableObject
 
@@ -128,6 +130,8 @@ def _shape(o) -> tuple:
         return _with_attrs("opaque", o)
     if isinstance(o, (ModuleList, Catalog)):
         return _with_attrs("registry", o)
+    if isinstance(o, CATALOG_RECORD_TYPES):
+        return _with_attrs("catalog", o)
     if isinstance(o, (List, Set)):
         elements = list(o.elements())
         out = [None] * len(elements)

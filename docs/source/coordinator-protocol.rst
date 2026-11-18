@@ -976,7 +976,7 @@ Where the code is
 ``proto_db/cluster/persister.py``, ``proto_db/storage/tiered.py``
    Asynchronous persistence and the persisted-root compare-and-swap.
 ``proto_db/cluster/protocol.py``, ``proto_db/cluster/transport.py``
-   Messages (protocol version 14) and the TCP and in-process transports.
+   Messages (protocol version 15) and the TCP and in-process transports.
 ``proto_db/transactions.py``
    The commit round under a permission (``_run_round``, ``_permit_round``), the base (``_lease_base``,
    ``_phase_1_floor``, ``_commit_base``).

@@ -956,6 +956,229 @@ def gen_registry_database(manifest):
     manifest["registry_database"] = entry
 
 
+#: The neutral model the catalog vector stores (``proto_db.catalog.model``; spec section 8).
+CATALOG_MODEL = HERE / "catalog_model.json"
+#: The cell names the intent log of the catalog vector names (an order and a product, R260).
+CATALOG_ORDER_CELL = "conformance.sales.Order#" + "0123456789abcdef" * 2
+CATALOG_PRODUCT_CELL = "conformance.sales.Product#" + "fedcba9876543210" * 2
+
+
+def _fill_catalog_first(tx):
+    tx.set_root_object("plain", DBObject(n=1))
+
+
+def _fill_catalog_second(tx):
+    """The catalog of :data:`CATALOG_MODEL` as the root ``__semanticCatalog``.  It is written through the
+    transaction's internal write set, the semantic layer's own path (applications cannot write a ``__``
+    root)."""
+    from proto_db.catalog.atoms import SEMANTIC_CATALOG_ROOT
+    from proto_db.catalog.model import to_atoms
+    tx._writes[SEMANTIC_CATALOG_ROOT] = to_atoms(json.loads(CATALOG_MODEL.read_text()), tx)
+
+
+def _fill_catalog_third(tx):
+    """An intent log: the IntentRecords of this commit, which produces version 3 of the database."""
+    from proto_db.catalog.atoms import INTENT_LOG_ROOT, IntentRecord
+    records = [
+        IntentRecord(intent=("conformance.sales.Order", "add_line"), target=CATALOG_ORDER_CELL,
+                     arguments={"product": CATALOG_PRODUCT_CELL, "quantity": Decimal("2"), "price": Decimal("10.50")},
+                     transaction=3, context=tx),
+        IntentRecord(intent=("conformance.sales.Order", "confirm"), target=CATALOG_ORDER_CELL, arguments={},
+                     transaction=3, context=tx),
+    ]
+    tx._writes[INTENT_LOG_ROOT] = List.from_iterable(records)
+
+
+def gen_catalog_database(manifest):
+    """A space using the format-6 feature ``catalog``: a format-4 segment, then the format-6 segment the
+    catalog's first record opened (R151), holding the records of :data:`CATALOG_MODEL` as
+    ``__semanticCatalog``; a later commit adds an ``__intentLog``.  ``vectors/catalog/canonical.msgpack``
+    is the model's canonical form (ruling R258)."""
+    from proto_db.catalog.model import canonical_form
+    with _Deterministic(0x7000):
+        entry = _write_space("catalog/space", [_fill_catalog_first, _fill_catalog_second, _fill_catalog_third],
+                             segments_expected=2)
+    entry["model"] = CATALOG_MODEL.name
+    entry["canonical"] = _write("catalog/canonical.msgpack", canonical_form(json.loads(CATALOG_MODEL.read_text())))
+    entry["intent_log_version"] = 3
+    manifest["catalog_database"] = entry
+
+
+def _expression_cases() -> list:
+    """``(id, ast, element, extra)`` of the expression vectors; ``extra`` may hold ``cells`` (cell name ->
+    record, what identity handles designate) and ``defaults`` (attribute -> the catalogued default of
+    the element's type)."""
+    def attr(*names):
+        return ["attr", *names]
+
+    def const(value):
+        return ["const", value]
+
+    record = DBObject(i=7, j=2, d=Decimal("1.50"), s="open", flag=True, off=False, nil=None, f=1.5)
+    lines = [DBObject(quantity=2, price=Decimal("2.50"), state="open"),
+             DBObject(quantity=1, price=Decimal("4"), state="cancelled"),
+             DBObject(price=Decimal("1.25"), state="open")]
+    order = DBObject(state="open", lines=List.from_iterable(lines))
+    customer = DBObject(name="ACME", orders=List.from_iterable([
+        order, DBObject(state="open", lines=List.from_iterable([DBObject(quantity=5, price=Decimal("1"))])),
+        DBObject(state="open")]))
+    product_cell = "conformance.sales.Product#" + "fedcba9876543210" * 2
+    order_cell = "conformance.sales.Order#" + "0123456789abcdef" * 2
+    product = DBObject(sku="p1", price=Decimal("10.50"))
+    handled_line = DBObject(quantity=2, product=MutableObject(product_cell))
+    handled_order = DBObject(state="open", lines=List.from_iterable([handled_line]))
+    handled_customer = DBObject(name="ACME", orders=List.from_iterable([MutableObject(order_cell)]))
+    with_handles = {"cells": {product_cell: product, order_cell: handled_order}}
+    big = Decimal("12345678901234567890.123456789012345678901")
+    tens = DBObject(lines=List.from_iterable([DBObject(v=Decimal("1E+1")), DBObject(v=Decimal("2E+1"))]))
+    # A record's identity is its oid, which a description does not carry: the vectors repeat handles
+    # (identified by their cell name), and the unit tests repeat records.
+    repeated = DBObject(lines=List.from_iterable([DBObject(quantity=4), MutableObject(product_cell),
+                                                  MutableObject("conformance.sales.Product#" + "0" * 32),
+                                                  MutableObject(product_cell)]))
+    entity = MutableObject(product_cell)
+    bound = DBObject(lines=List.from_iterable([{"entity": entity, "version": DBObject(sku="p1", price=Decimal("10.00"))},
+                                               {"entity": entity, "version": DBObject(sku="p1", price=Decimal("10.50"))}]))
+    # A many end with a maintained key (R262) holds entry records {member, key}: a hop takes the member.
+    entries = DBObject(lines=List.from_iterable([DBObject(member=DBObject(quantity=2), key=7),
+                                                 DBObject(member=MutableObject(product_cell)),
+                                                 DBObject(member=DBObject(quantity=3), key=5)]))
+    from proto_db.semantic.expressions import MAX_EXPRESSION_DEPTH
+
+    def nested_not(depth):
+        tree = attr("flag")
+        for _ in range(depth - 1):
+            tree = ["not", tree]
+        return tree
+
+    amount = ["*", attr("quantity"), attr("price")]
+    via_lines = ["via", ["self"], "orders", "lines"]
+    return [
+        ("const", const(5), record, {}),
+        ("attr", attr("s"), record, {}),
+        ("attr-absent-is-missing", attr("credit_limit"), record, {}),
+        ("attr-absent-reads-the-default", attr("credit_limit"), record, {"defaults": {"credit_limit": Decimal("100")}}),
+        ("attr-stored-wins-over-the-default", attr("s"), record, {"defaults": {"s": "closed"}}),
+        ("attr-stored-nil-is-a-value", attr("nil"), record, {"defaults": {"nil": 3}}),
+        ("attr-path-through-a-handle", attr("product", "price"), handled_line, with_handles),
+        ("attr-path-absent-step", attr("product", "price"), record, {}),
+        ("plus-int", ["+", attr("i"), attr("j")], record, {}),
+        ("minus-int", ["-", attr("j"), attr("i")], record, {}),
+        ("times-int", ["*", attr("i"), attr("j")], record, {}),
+        ("plus-int-decimal", ["+", attr("i"), attr("d")], record, {}),
+        ("times-decimal-int", ["*", attr("d"), attr("i")], record, {}),
+        ("minus-decimal-decimal", ["-", const(Decimal("0.3")), const(Decimal("0.10"))], record, {}),
+        ("decimal-arithmetic-is-exact", ["*", const(big), const(big)], record, {}),
+        ("plus-exponent-is-the-smaller", ["+", const(Decimal("1E+1")), const(Decimal("1E+2"))], record, {}),
+        ("plus-int-has-exponent-0", ["+", const(Decimal("1E+1")), const(2)], record, {}),
+        ("times-exponent-is-the-sum", ["*", const(Decimal("1E+1")), const(Decimal("1E+1"))], record, {}),
+        ("minus-to-zero-keeps-the-exponent", ["-", const(Decimal("0.10")), const(Decimal("0.10"))], record, {}),
+        ("missing-and-wrong-kind-refused", ["+", attr("absent"), const("x")], record, {}),
+        ("non-finite-decimal-refused", ["+", const(Decimal("Infinity")), const(1)], record, {}),
+        ("plus-missing", ["+", attr("absent"), attr("i")], record, {}),
+        ("times-decimal-missing", ["*", attr("d"), attr("absent")], record, {}),
+        ("eq", ["==", attr("s"), const("open")], record, {}),
+        ("eq-int-decimal", ["==", attr("i"), const(Decimal("7.0"))], record, {}),
+        ("eq-bool-int", ["==", attr("flag"), const(1)], record, {}),
+        ("eq-nil", ["==", attr("nil"), const(None)], record, {}),
+        ("ne", ["!=", attr("s"), const("closed")], record, {}),
+        ("lt", ["<", attr("j"), attr("i")], record, {}),
+        ("le", ["<=", attr("d"), const(Decimal("1.5"))], record, {}),
+        ("gt", [">", attr("j"), attr("i")], record, {}),
+        ("ge", [">=", attr("i"), const(8)], record, {}),
+        ("lt-across-type-ranks", ["<", attr("s"), const(10)], record, {}),
+        ("eq-missing", ["==", attr("absent"), const(1)], record, {}),
+        ("ne-missing", ["!=", attr("absent"), const(1)], record, {}),
+        ("lt-missing", ["<", const(1), attr("absent")], record, {}),
+        ("and", ["and", attr("flag"), ["<", attr("j"), attr("i")]], record, {}),
+        ("or", ["or", attr("off"), ["==", attr("i"), const(8)]], record, {}),
+        ("not", ["not", attr("off")], record, {}),
+        ("and-missing-is-false", ["and", const(True), attr("absent")], record, {}),
+        ("or-missing-is-false", ["or", attr("absent"), attr("off")], record, {}),
+        ("not-missing-is-true", ["not", attr("absent")], record, {}),
+        ("and-stops-at-the-first-false", ["and", attr("off"), attr("i")], record, {}),
+        ("or-stops-at-the-first-true", ["or", attr("flag"), attr("i")], record, {}),
+        ("and-non-boolean-refused", ["and", attr("flag"), attr("i")], record, {}),
+        ("not-non-boolean-refused", ["not", attr("s")], record, {}),
+        ("sum", ["sum", "lines", attr("quantity")], order, {}),
+        ("sum-of-products", ["sum", "lines", amount], order, {}),
+        ("sum-of-nothing-is-int-0", ["sum", "lines", amount], customer, {}),
+        ("sum-where", ["sum", "lines", amount, ["==", attr("state"), const("open")]], order, {}),
+        ("count", ["count", "lines"], order, {}),
+        ("count-where", ["count", "lines", ["!=", attr("state"), const("cancelled")]], order, {}),
+        ("count-of-nothing-is-int-0", ["count", "lines"], record, {}),
+        ("sum-folds-from-int-0", ["sum", "lines", attr("v")], tens, {}),
+        ("where-missing-is-not-a-member", ["count", "lines", attr("absent")], order, {}),
+        ("sum-term-wrong-kind-refused", ["sum", "lines", attr("state")], order, {}),
+        ("where-non-boolean-refused", ["count", "lines", attr("quantity")], order, {}),
+        ("via-a-member-reached-twice-counts-once", ["via", ["self"], "lines"], repeated, with_handles),
+        ("via-version-bound-members", ["via", ["self"], "lines"], bound, {}),
+        ("via-over-a-non-role-refused", ["count", "name"], customer, {}),
+        ("via-entry-records-stand-for-their-members", ["via", ["self"], "lines"], entries, with_handles),
+        ("sum-over-entry-records", ["sum", "lines", attr("quantity")], entries, with_handles),
+        ("via-two-hops", via_lines, customer, {}),
+        ("sum-over-via-two-hops", ["sum", via_lines, amount], customer, {}),
+        ("via-three-hops-through-handles", ["via", ["self"], "orders", "lines", "product"], handled_customer,
+         with_handles),
+        ("plus-float-refused", ["+", attr("f"), const(1)], record, {}),
+        ("times-float-refused", ["*", attr("d"), const(0.5)], record, {}),
+        ("plus-bool-refused", ["+", attr("flag"), const(1)], record, {}),
+        ("plus-str-refused", ["+", attr("s"), const("x")], record, {}),
+        ("plus-nil-refused", ["+", attr("nil"), const(1)], record, {}),
+        ("division-refused", ["/", attr("i"), const(2)], record, {}),
+        ("root-outside-a-query-refused", ["count", ["via", ["root", "orders"], "lines"]], record, {}),
+        ("cell-outside-a-query-refused", ["count", ["via", ["cell", order_cell], "lines"]], record, {}),
+        ("depth-at-the-limit", nested_not(MAX_EXPRESSION_DEPTH), record, {}),
+        ("depth-past-the-limit-refused", nested_not(MAX_EXPRESSION_DEPTH + 1), record, {}),
+        ("unknown-operator-refused", ["concat", attr("s"), const("x")], record, {}),
+        ("reserved-operator-not-supported", ["in", attr("s"), const(("open", "closed"))], record, {}),
+    ]
+
+
+def _vector_reader(element, cells: dict, defaults: dict):
+    """The reader of an expression vector: its ``cells``, and the ``defaults`` of its element's type."""
+    from proto_db.semantic.expressions import Reader
+
+    class VectorReader(Reader):
+        def cell(self, name):
+            return cells.get(name)
+
+        def default(self, record, name):
+            return defaults.get(name, MISSING) if record is element else MISSING
+
+    return VectorReader()
+
+
+def evaluate_vector(ast, element, cells: dict, defaults: dict):
+    """What an expression vector expects: ``check_ast`` (outside a query), then ``evaluate`` on its element
+    with its reader; the result's description, or ``{"error": ...}``."""
+    from proto_db.errors import ProtoNotSupportedError
+    from proto_db.semantic.expressions import check_ast, evaluate
+    try:
+        check_ast(ast)
+        return notation.describe_object(evaluate(ast, element, reader=_vector_reader(element, cells, defaults)))
+    except ProtoNotSupportedError:
+        return {"error": "not_supported"}
+    except ProtoValidationError:
+        return {"error": "validation"}
+
+
+def gen_expressions(manifest):
+    """The evaluation vectors of the expression language (spec section 7; format spec, "The expression
+    language"): each tree, the element it is evaluated on, and the expected value or error."""
+    out = []
+    for name, ast, element, extra in _expression_cases():
+        cells, defaults = extra.get("cells", {}), extra.get("defaults", {})
+        entry = {"id": name, "ast": typed.describe_ast(ast), "element": notation.describe_object(element)}
+        if cells:
+            entry["cells"] = [[cell, notation.describe_object(value)] for cell, value in sorted(cells.items())]
+        if defaults:
+            entry["defaults"] = [[attribute, notation.describe(value)] for attribute, value in sorted(defaults.items())]
+        entry["expected"] = evaluate_vector(ast, element, cells, defaults)
+        out.append(entry)
+    manifest["expressions"] = out
+
+
 def gen_legacy_database(manifest):
     """A format-3 space: format-3 segment and root, a DatabaseRoot without ``origin``, a
     key-group and a vector index without ``member_tokens`` (plain KeyNode trees, format-3
@@ -1146,13 +1369,14 @@ def gen_cluster(manifest):
     segs_log = logfile.encode_header(tiered.MANIFEST_KIND) + logfile.encode_frame(seg_uuid.bytes)
     # A root of storage format 5 (a space holding format-5 data): versioned entries (kind 7) in a
     # log of format 3; a reader of log format 2 refuses it at the header, of entry kinds 1-6 at
-    # the entry.
-    root_v5 = fmt.RootRecord(fmt.FORMAT_VERSION, root.segment, root.offset, root.epoch)
+    # the entry.  The version is 5 as written (a later format must not rewrite this log vector).
+    v5 = 5
+    root_v5 = fmt.RootRecord(v5, root.segment, root.offset, root.epoch)
     v5_entries = [
         ("accepted-v5", rootlog._payload(1, 7, root_v5),
-         {"kind": 1, "label": 7, "root": root_desc(root), "version": fmt.FORMAT_VERSION}),
+         {"kind": 1, "label": 7, "root": root_desc(root), "version": v5}),
         ("committed-v5", rootlog._payload(2, 7, root_v5),
-         {"kind": 2, "label": 7, "root": root_desc(root), "version": fmt.FORMAT_VERSION}),
+         {"kind": 2, "label": 7, "root": root_desc(root), "version": v5}),
     ]
     log_v5 = logfile.log_contents(rootlog.LOG_KIND, [p for _, p, _ in v5_entries], rootlog.VERSIONED_LOG_VERSION)
 
@@ -1170,7 +1394,7 @@ def gen_cluster(manifest):
             "log_version": rootlog.VERSIONED_LOG_VERSION, "entry_kind": rootlog.VERSIONED_KIND,
             "entries": [{"name": n, "size": len(p), "fields": f} for n, p, f in v5_entries],
             "loaded": {"accepted": [7, root_desc(root)], "committed": [7, root_desc(root)],
-                       "version": fmt.FORMAT_VERSION},
+                       "version": v5},
         },
         "roots_log_torn": {
             "file": _write("cluster/roots-torn.log", torn), "kind": "ROOT", "valid_end": len(log) - len(last),
@@ -1249,6 +1473,8 @@ def main():
     gen_polyglot_database(manifest)
     gen_parents_database(manifest)
     gen_registry_database(manifest)
+    gen_catalog_database(manifest)
+    gen_expressions(manifest)
     gen_cluster(manifest)
     MANIFEST.write_text(json.dumps(manifest, indent=1, ensure_ascii=False) + "\n")
     PINS.write_text(pin_lines())

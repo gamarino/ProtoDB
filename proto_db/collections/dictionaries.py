@@ -128,9 +128,12 @@ class Dictionary(ConcurrentOptimized, IndexedCollection):
         """``(key, value)`` pairs in key order."""
         return avl.key_iter(self.root)
 
-    def keys(self) -> Iterator:
-        """Keys in order."""
-        for key, _ in avl.key_iter(self.root):
+    def keys(self, *, after=avl.UNBOUNDED) -> Iterator:
+        """Keys in order; with ``after``, only the keys strictly after it (by ``order_key``, D20), lazily:
+        O(log n) to start and O(1) per key, a cursor from the last key given."""
+        pairs = avl.key_iter(self.root) if after is avl.UNBOUNDED else \
+            avl.key_iter_range(self.root, lo=after, lo_inc=False)
+        for key, _ in pairs:
             yield key
 
     def _check_placement(self) -> None:

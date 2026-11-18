@@ -230,6 +230,17 @@ BUILTIN_ATOM_MODULES: dict[str, str] = {
     "proto_db.transactions.DatabaseRoot": "proto_db.transactions",
     "proto_db.registry.ModuleList": "proto_db.registry",
     "proto_db.registry.Catalog": "proto_db.registry",
+    "proto_db.catalog.SemanticCatalog": "proto_db.catalog.atoms",
+    "proto_db.catalog.Module": "proto_db.catalog.atoms",
+    "proto_db.catalog.Extension": "proto_db.catalog.atoms",
+    "proto_db.catalog.Entity": "proto_db.catalog.atoms",
+    "proto_db.catalog.Relationship": "proto_db.catalog.atoms",
+    "proto_db.catalog.Attribute": "proto_db.catalog.atoms",
+    "proto_db.catalog.Role": "proto_db.catalog.atoms",
+    "proto_db.catalog.Intent": "proto_db.catalog.atoms",
+    "proto_db.catalog.Constraint": "proto_db.catalog.atoms",
+    "proto_db.catalog.Expression": "proto_db.catalog.atoms",
+    "proto_db.catalog.IntentRecord": "proto_db.catalog.atoms",
 }
 
 
@@ -260,6 +271,17 @@ BUILTIN_TYPE_ALIASES: tuple[str, ...] = (
     "proto_db.avl.CountedKeyNode",
     "proto_db.registry.ModuleList",
     "proto_db.registry.Catalog",
+    "proto_db.catalog.SemanticCatalog",
+    "proto_db.catalog.Module",
+    "proto_db.catalog.Extension",
+    "proto_db.catalog.Entity",
+    "proto_db.catalog.Relationship",
+    "proto_db.catalog.Attribute",
+    "proto_db.catalog.Role",
+    "proto_db.catalog.Intent",
+    "proto_db.catalog.Constraint",
+    "proto_db.catalog.Expression",
+    "proto_db.catalog.IntentRecord",
 )
 _ALIAS_OF = {name: i for i, name in enumerate(BUILTIN_TYPE_ALIASES)}
 
@@ -369,6 +391,17 @@ def register_atom_class(cls: type) -> type:
         for alias in aliases:
             _alias_target[alias] = name
     return cls
+
+
+def _forget_atom_class(cls: type) -> None:
+    """Undo :func:`register_atom_class` for ``cls``: its names and aliases are released.  For a class
+    whose creation failed after it was registered (a refused semantic declaration), so that a corrected
+    declaration of the same type name can be made in the same process; entries of other classes are
+    never touched."""
+    with _registry_lock:
+        for key in [key for key, found in _registry.items() if found is cls]:
+            del _registry[key]
+            _alias_target.pop(key, None)
 
 
 def _declared_aliases(cls: type, name: str) -> tuple:
@@ -633,7 +666,14 @@ class Atom:
         else:
             cls.__type_name__ = f"{cls.__module__}.{cls.__qualname__}"     # legacy read name only
         cls._type_name_declared = declared
+        cls._before_registration()
         register_atom_class(cls)
+
+    @classmethod
+    def _before_registration(cls) -> None:
+        """Called on a new subclass just before it is registered under its type name: a subclass's
+        checks that may refuse the class run here, so that a refused class is never resolvable by
+        its type name, not even for an instant (free threading).  It must not change anything."""
 
     def __init__(self, *, context: PersistenceContext | None = None):
         _check_context(context)

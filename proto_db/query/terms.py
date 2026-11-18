@@ -50,11 +50,11 @@ from typing import Any
 
 from ..errors import ProtoNotSupportedError, ProtoValidationError
 from ..indexing.keyspec import KeySpec
-from ..values import MISSING, canonical, fold_hybrid, is_atom, is_orderable, order_key
+from ..values import MISSING, canonical, fold_hybrid, is_atom, is_orderable, order_key, values_equal
 
 __all__ = ["Term", "NearQuery", "is_orderable", "OPERATORS", "NEAR_METRICS", "EQ", "NE", "LT", "LE", "GT", "GE", "IN", "BETWEEN",
            "BETWEEN_EXCL_BOTH", "BETWEEN_EXCL_LOW", "BETWEEN_EXCL_HIGH", "IS_NONE", "NOT_NONE", "NEAR", "CONTAINS",
-           "IS_TRUE", "NOT_TRUE", "display_value"]
+           "IS_TRUE", "NOT_TRUE", "display_value", "compare", "MIRRORED"]
 
 EQ = "=="
 NE = "!="
@@ -226,31 +226,18 @@ class Term:
             return bool(key) == (op == IS_TRUE)
         if op == CONTAINS:
             return _contains(key, self.value)
-        if op == NE:
-            return not (is_orderable(key) and order_key(key) == order_key(self.value))
+        if op in _SCALAR_OPS:
+            return compare(key, op, self.value)
         if not is_orderable(key):
             return False
         k = order_key(key)
-        if op == EQ:
-            return k == order_key(self.value)
         if op == IN:
             return any(k == order_key(v) for v in self.value)
-        if op in _BETWEEN_OPS:
-            include_low, include_high = _BETWEEN_OPS[op]
-            low, high = order_key(self.value[0]), order_key(self.value[1])
-            if k[0] != low[0]:
-                return False
-            return (low <= k if include_low else low < k) and (k <= high if include_high else k < high)
-        v = order_key(self.value)
-        if k[0] != v[0]:
+        include_low, include_high = _BETWEEN_OPS[op]
+        low, high = order_key(self.value[0]), order_key(self.value[1])
+        if k[0] != low[0]:
             return False
-        if op == LT:
-            return k < v
-        if op == LE:
-            return k <= v
-        if op == GT:
-            return k > v
-        return k >= v  # GE
+        return (low <= k if include_low else low < k) and (k <= high if include_high else k < high)
 
     def describe(self) -> dict:
         """``{"path", "op", "value"}`` for ``explain()``; the value is JSON-safe (:func:`display_value`)."""
@@ -277,6 +264,44 @@ class Term:
         if op == IN:
             return [self.path, op, list(value)]
         return [self.path, op, value]
+
+
+#: The comparison an operator becomes when its operands swap sides (``a < b`` is ``b > a``).
+MIRRORED = {EQ: EQ, NE: NE, LT: GT, LE: GE, GT: LT, GE: LE}
+
+
+def compare(left, op: str, right) -> bool:
+    """The scalar comparison ``left op right`` of D28, shared by :meth:`Term.matches` (``left`` is the
+    element's key, ``right`` the term's operand) and the semantic expression language (spec section 7),
+    so an indexed answer and a scanned one cannot diverge.
+
+    ``op`` is one of ``==``, ``!=``, ``<``, ``<=``, ``>``, ``>=``.  A MISSING operand makes every
+    comparison false, ``!=`` included.  ``==`` is :func:`values_equal` and ``!=`` its negation between
+    present values; an operand that cannot be ordered (a list, a dict, NaN) equals nothing.  The
+    ordering operators hold only between orderable operands of one type rank, by :func:`order_key`.
+    """
+    if left is MISSING or right is MISSING:
+        return False
+    if not is_orderable(right):
+        if not is_orderable(left):
+            return op == NE
+        left, op, right = right, MIRRORED[op], left
+    if op == NE:
+        return not (is_orderable(left) and values_equal(left, right))
+    if not is_orderable(left):
+        return False
+    k, v = order_key(left), order_key(right)
+    if op == EQ:
+        return k == v
+    if k[0] != v[0]:
+        return False
+    if op == LT:
+        return k < v
+    if op == LE:
+        return k <= v
+    if op == GT:
+        return k > v
+    return k >= v  # GE
 
 
 def _contains(key, operand) -> bool:

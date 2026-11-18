@@ -24,11 +24,13 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install the package and the test dependencies
+        # The extra "agent" (the MCP SDK) installs from wheels on every leg, 3.14t included (pydantic-core,
+        # cryptography and rpds-py publish cp314t wheels); its tests skip where it is absent.
         # msgpack >= 1.2.0 is a hard requirement (its packer nests the 1024 containers the
         # format needs); it is named here as well so that a resolver can never pick an older one.
         run: |
           python -m pip install --upgrade pip
-          python -m pip install "msgpack>=1.2.0" -e ".[dev,vectors,parquet]"
+          python -m pip install "msgpack>=1.2.0" -e ".[dev,vectors,parquet,agent]"
           python -c "import sys, msgpack; print(sys.version); print('msgpack', msgpack.version)"
 
       - name: Run the test suite

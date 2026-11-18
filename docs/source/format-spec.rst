@@ -36,15 +36,15 @@ The key words MUST, MUST NOT, SHOULD and MAY are used as in RFC 2119. A section 
      - Value
      - Where it is written
    * - Storage format (``FORMAT_VERSION``)
-     - 5
-     - every segment header and every root record; versions 2 to 5 are read, and 4 is written
-       unless the data uses a feature of 5 (`Format stability`_)
+     - 6
+     - every segment header and every root record; versions 2 to 6 are read, and 4 is written
+       unless the data uses a feature of 5 or 6 (`Format stability`_)
    * - Framed log format (``LOG_FORMAT_VERSION``)
      - 3
      - the header of every framed log file; versions 2 and 3 are read, and 2 is written unless the
        log is an acceptor log holding a versioned entry (kind 7, `The acceptor log (kind ROOT)`_)
    * - Cluster protocol (``PROTOCOL_VERSION``)
-     - 14
+     - 15
      - the ``v`` field of every cluster message; no other version is accepted
 
 There are three levels of conformance:
@@ -117,7 +117,9 @@ share a directory while only features all of them read are written; ``proto_db``
 revision (``proto_db.storage.format.WRITE_FORMAT_VERSION``) for data that uses no later feature, and
 ``FEATURE_VERSIONS`` lists the version of every feature added later: ``parents`` (an atom whose
 envelope has the key ``"p"``) is version 5, and so is ``registry`` (a record of one of the
-runtime registry's built-in types, aliases 22 and 23, `Registry roots`_).
+runtime registry's built-in types, aliases 22 and 23, `Registry roots`_); ``catalog`` (a record of
+one of the semantic catalog's built-in types, aliases 24 to 34, `Semantic catalog (format 6)`_) is
+version 6.
 
 A segment header is written before the segment's records, so ``proto_db`` opens a new segment
 for a record that needs a later version than the open segment's, and a segment's version is the
@@ -139,7 +141,7 @@ record needs 5; this is conservative (nothing is lost or misread) and accepted.
 **The pinned vectors.** ``tests/conformance/vectors.sha256`` lists the SHA-256 of every file
 under ``tests/conformance/vectors/`` (``<hex digest>  <path>``, one line per file, sorted by path
 in code point order, ``/`` as the separator), then the digest of ``manifest.json``. The SHA-256
-of that list file is ``37b286fd97df098769aee26c222f76d295bf747b1a02f9441e52bd54e1ca1695``. ``test_conformance.py`` checks that the committed files
+of that list file is ``278e791c2741d3a74500089efbdc34bf489860e5e2a175ad557edce44085185e``. ``test_conformance.py`` checks that the committed files
 match the list and that this page states the list's digest. Each vector file is governed by
 the number that covers what it holds: ``vectors/cluster/*.log`` by ``LOG_FORMAT_VERSION``,
 ``vectors/cluster/messages/`` by ``PROTOCOL_VERSION``, every other file by ``FORMAT_VERSION``.
@@ -187,7 +189,8 @@ Symbol references
     and tokens) was measured and deferred: with segment compression, references plus compression
     were larger than compression alone on the measured data set (the measurement and the verdict
     are in ``docs/superpowers/2026-11-14-symbol-measurement.md``). No feature named ``symbols``
-    exists: ``FEATURE_VERSIONS`` lists only ``parents`` and ``registry``. The root
+    exists: ``FEATURE_VERSIONS`` lists ``parents`` and ``registry`` (format 5) and ``catalog``
+    (format 6, `Semantic catalog (format 6)`_), and no ``symbols``. The root
     ``__currentSymbols`` is not defined; a writer MUST NOT write it, and ``proto_db`` refuses to
     (the ``__`` rule above). Should the feature be adopted later it will be an additive change
     marked by a new format-5 feature, with its own entry in this page.
@@ -662,6 +665,39 @@ its alias; readers also accept its name (format 2 wrote names).
    * - 23
      - ``proto_db.registry.Catalog``
      - yes (added in format 5, feature ``registry``)
+   * - 24
+     - ``proto_db.catalog.SemanticCatalog``
+     - yes (added in format 6, feature ``catalog``)
+   * - 25
+     - ``proto_db.catalog.Module``
+     - yes (added in format 6, feature ``catalog``)
+   * - 26
+     - ``proto_db.catalog.Extension``
+     - yes (added in format 6, feature ``catalog``)
+   * - 27
+     - ``proto_db.catalog.Entity``
+     - yes (added in format 6, feature ``catalog``)
+   * - 28
+     - ``proto_db.catalog.Relationship``
+     - yes (added in format 6, feature ``catalog``)
+   * - 29
+     - ``proto_db.catalog.Attribute``
+     - yes (added in format 6, feature ``catalog``)
+   * - 30
+     - ``proto_db.catalog.Role``
+     - yes (added in format 6, feature ``catalog``)
+   * - 31
+     - ``proto_db.catalog.Intent``
+     - yes (added in format 6, feature ``catalog``)
+   * - 32
+     - ``proto_db.catalog.Constraint``
+     - yes (added in format 6, feature ``catalog``)
+   * - 33
+     - ``proto_db.catalog.Expression``
+     - yes (added in format 6, feature ``catalog``)
+   * - 34
+     - ``proto_db.catalog.IntentRecord``
+     - yes (added in format 6, feature ``catalog``)
 
 Lazy loading (implementation-specific, portable)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1566,6 +1602,491 @@ detection between concurrent writers (read sets, merges of concurrently written 
 is the library's job and leaves no trace in the format, except the epoch check of the publish.
 
 
+Semantic catalog (format 6)
+---------------------------
+
+**Written by the development branch; no release yet.** This chapter is normative and specifies the
+semantic model of decisions D63 to D72. The repository's development branch is the first writer
+(``proto_db``'s semantic layer writes it), and no tagged release has written format 6. A reader that
+implements it **MUST** read what this chapter specifies, and a writer **MUST** write it exactly. Data
+that uses none of it stays version 4 or 5, byte for byte (S5).
+
+What is normative is what lives in the database: the catalog and its canonical form, the
+expression language and the intent log. The declaration syntax a language offers (Python's
+``Field``, ``Relation`` and ``@intent``, Smalltalk's own) is not part of this chapter: each
+language declares the same thing its own way and **MUST** produce the same catalog. A feature
+that cannot be described as neutral data does not enter the catalog; it stays a local
+convenience of one language and is catalogued as such (``languages``, below).
+
+The feature and the types
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The format-6 feature is ``catalog``. A record whose type tag is one of the built-in types below
+(alias or name) uses it, is version 6, and so lands in a segment of version 6 or later; the
+lowest-sufficient-version rule of `Format stability`_ applies. The types are appended to the
+alias table in this order, from alias 24 (the table is append-only): 24
+``proto_db.catalog.SemanticCatalog``, 25 ``Module``, 26 ``Extension``, 27 ``Entity``, 28
+``Relationship``, 29 ``Attribute``, 30 ``Role``, 31 ``Intent``, 32 ``Constraint``, 33
+``Expression`` and 34 ``IntentRecord`` (each in the package ``proto_db.catalog``). None carries
+parents (no ``p``).
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Type
+     - Fields
+   * - ``proto_db.catalog.SemanticCatalog``
+     - The value of the root ``__semanticCatalog``. ``modules``: a ref to a Dictionary from module
+       name to Module. ``module_set``: a ``@tup`` of the module names in code-point order
+       (`Registry roots`_).
+       ``entities``: a ref to a Dictionary from type name to Entity or Relationship, the
+       composition for ``module_set``.
+   * - ``proto_db.catalog.Module``
+     - ``name``; ``version``, a string (the first writer writes ``"1"``); ``depends``, a ``@tup``
+       of module names; ``extensions``, a ``@tup`` of refs to Extension records in declaration
+       order.
+   * - ``proto_db.catalog.Extension``
+     - ``module``; ``extends``, a type name; ``entity``, a map of the entity-level elements it
+       contributes and of ``kind``, the kind of the type (``entity`` or ``relationship``);
+       ``elements``, a ``@tup`` of refs to the Attribute, Role, Intent and Constraint records it
+       declares, with the fields it states.
+   * - ``proto_db.catalog.Entity``
+     - ``type_name``; ``supertypes``; ``meaning``; ``label``; ``help``; ``synonyms``; ``key``;
+       ``attributes`` (refs to Attribute and Role records); ``intents``; ``constraints``;
+       ``certification``; ``provenance``.
+   * - ``proto_db.catalog.Relationship``
+     - The Entity fields plus ``roles``: refs to its Role records, two or more, each with
+       ``participant`` true. Its ``attributes`` hold its other elements.
+   * - ``proto_db.catalog.Attribute``
+     - ``name``; ``inherited_from``; ``kind`` (``field``, ``computed`` or ``computed_stored``);
+       ``value_type``; ``values``; ``required``; ``default``; ``unit``; ``indexed``;
+       ``expression`` (a ref to an Expression); ``languages``; ``meaning``; ``label``; ``help``;
+       ``group``; ``order``; ``synonyms``; ``examples``; ``caveats``; ``sensitivity``;
+       ``certification``; ``deprecated``; ``provenance``.
+   * - ``proto_db.catalog.Role``
+     - The Attribute fields plus ``target``, ``inverse``, ``cardinality``,
+       ``inverse_cardinality``, ``participant``, ``ordered``, ``index_by``, ``binding`` and
+       ``on_delete``.
+   * - ``proto_db.catalog.Intent``
+     - ``name``; ``inherited_from``; ``meaning``; ``parameters``, a ``@tup`` of ``(name, value_type)`` pairs;
+       ``requires`` (a ref to an Expression); ``commutes_with``; ``effects``; ``languages``;
+       ``provenance``.
+   * - ``proto_db.catalog.Constraint``
+     - ``name``; ``inherited_from``; ``scope`` (``attribute``, ``entity``, ``relation`` or ``aggregate``);
+       ``expression`` (a ref to an Expression); ``enforced``; ``meaning``; ``message``;
+       ``provenance``. A constraint declared without a name **MUST** be named ``invariant_`` followed by
+       the first 8 lower-case hex digits of the SHA-256 of the MessagePack bytes of its tree's canonical
+       encoding (`Canonical values`_), so that every language gives it the same name (R279).
+   * - ``proto_db.catalog.Expression``
+     - ``ast``: the tree of `The expression language`_.
+   * - ``proto_db.catalog.IntentRecord``
+     - ``intent``, the pair ``(type name, intent name)``; ``target``, a handle; ``arguments``, a
+       map; ``transaction``, the version number of the database version the commit produced.
+
+Field rules:
+
+- ``values`` (an enumeration of the permitted values of a ``str`` attribute), ``languages``,
+  ``inverse_cardinality`` and ``inherited_from`` are part of the format. ``inherited_from``
+  appears only on the elements (attributes, roles, intents and constraints) of a composed subtype
+  entity and names the type that declared the element. ``values`` is catalogued and not enforced by the first writer; the catalog is how a
+  reader learns that.
+- ``label`` and ``help`` are maps from a language tag to text. A declaration that gives a plain
+  string is stored as ``{"und": text}`` (BCP 47 *undetermined*); a declaration that gives a map
+  states its languages. Translations are not specified further.
+- ``value_type`` names a canonical value kind: ``bool``, ``int``, ``decimal``, ``str``, ``bytes``,
+  ``date``, ``time``, ``datetime``, ``timedelta``, ``uuid``, ``float``, ``list``, ``tuple`` or
+  ``map``. A language maps its own types onto them (Smalltalk's ``#integer`` and ``#decimal`` are
+  ``int`` and ``decimal``).
+- **``ext``.** Every record **MAY** carry ``ext``, a map from string to value. A reader keeps it
+  byte for byte, re-writes it unchanged, and never interprets it.
+- **Single-language elements.** An intent or a computed attribute implemented in one language
+  only carries ``languages``, a ``@tup`` of language names. Invoking or evaluating it from another
+  language **MUST** raise ``ProtoNotSupportedError``; describing it is allowed.
+- **Roots by name and type.** ``__semanticCatalog`` and ``__intentLog`` are reserved root names
+  (the ``__`` rule of `Format stability`_, "The per-database class registry"). ``__semanticCatalog`` is
+  identified by name and by type: a value
+  that is not a SemanticCatalog is ``ProtoCorruptionError``.
+
+**Field encodings** (the same in the design spec, section 8). A field is **required** where listed under "Required fields" below;
+every other listed field is **optional**, and absent means its default (below) or, where none is
+given, "not declared". The value kinds are those of the format (``str``, ``bool``, ``int``, ``@tup``, ``@map``,
+refs):
+
+- Text fields (``meaning``, ``message``, ``group``, ``unit``, ``certification``, ``caveats``, ``on_delete``,
+  ``sensitivity``, ``scope``, ``kind``, ``binding``, ``value_type``, ``type_name``, ``name``, ``module``, ``extends``,
+  ``version``, ``inverse``, ``inherited_from``, ``target``) are ``str``.
+
+- Lists of names are a ``@tup`` of ``str``, in declaration order: ``supertypes`` (the direct supertypes, in the
+  language's base order), ``key`` (attribute names), ``synonyms``, ``depends``, ``commutes_with`` (intent names),
+  ``index_by`` (attribute paths, dotted), ``values`` (the enumeration), ``languages`` (language names, non-empty
+  when present), ``effects`` (free text, informative) and ``provenance`` (module names: the module that defined
+  the element first, then those that modified it, in load order). ``module_set`` is a ``@tup`` of ``str`` in
+  code-point order.
+
+- Lists of elements are a ``@tup`` of refs: ``attributes`` (Attribute and Role records), ``intents``,
+  ``constraints``, ``roles``, ``extensions``, ``elements``. A composed list keeps the position of an element's first
+  definition, and an element added by a later module goes after the existing ones, in load order.
+  ``modules`` and ``entities`` are refs to Dictionaries from ``str`` to a ref (module name to Module, type name to
+  Entity or Relationship).
+
+- ``label`` and ``help`` are a ``@map`` from a language tag to ``str`` (a plain string is ``{"und": text}``).
+
+- ``examples`` is a ``@tup`` of canonical values. ``default`` is a canonical value; its absence means no default
+  is declared (a declared default of nil is present as nil). ``order`` is an ``int``. ``parameters`` is a ``@tup``
+  of ``(name, value_type)`` pairs, each a ``@tup`` of a ``str`` and a ``value_type``: a value kind, an entity type
+  name (a parameter that takes an entity, carried as its cell name), or nil for a parameter whose type is not
+  declared (an explicit "unknown", never guessed). The first writer writes no ``effects``.
+
+- ``required``, ``indexed``, ``ordered``, ``participant``, ``enforced`` and ``deprecated`` are ``bool``.
+  ``participant`` is true for a role of a relationship (Chen: a participant of the link) and false for
+  the end of a plain relation; a Relationship lists its participant roles in ``roles``, never in
+  ``attributes``, and an Entity has none.
+
+- ``cardinality`` and ``inverse_cardinality`` are the two ends of the relation as ``str``, one of ``one``, ``many``,
+  ``0..1`` and ``1..*``: ``cardinality`` is the end at the role's own entity, ``inverse_cardinality`` the end at its
+  ``target``. A declaration written as a pair (``many-to-one``, ``one-to-many``, ``one-to-one``, ``many-to-many``)
+  is stored as these two. ``binding`` is ``identity`` or ``version``. ``kind`` is ``field``, ``computed`` or
+  ``computed_stored``. ``scope`` is ``attribute``, ``entity``, ``relation`` or ``aggregate``. ``sensitivity`` is
+  ``public``, ``internal``, ``personal`` or ``secret``; ``on_delete`` is ``restrict``, ``cascade`` or ``unlink``.
+  A stored value outside its enumeration makes the catalog malformed: a reader **MUST** refuse it, never read
+  it as another value (a damaged ``sensitivity`` would change what is disclosed).
+
+- ``expression`` and ``requires`` are refs to an Expression record; ``ast`` is the tree of the expression
+  language, nested ``list`` values whose operator and names are ``str``.
+
+- ``Extension.entity`` is a ``@map`` whose keys are among ``kind``, ``meaning``, ``label``, ``help``, ``synonyms``,
+  ``key``, ``supertypes`` and ``certification``: ``kind`` is the ``str`` ``entity`` or ``relationship`` (default
+  ``entity``), and each other key has the encoding of the Entity field of that name. An Extension that declares a
+  participant role states ``kind`` ``relationship``; so does every Extension of a relationship type, since
+  ``kind`` is structural (a redefinition that restates it **MUST** equal it). So a reader that composes from the
+  contributions builds a Relationship, with the participant roles in ``roles``, exactly where the writer did.
+  The map is at its default, and omitted, when every key it holds is (empty, or ``kind`` ``entity``).
+
+- ``IntentRecord.intent`` is a ``@tup`` of two ``str``; ``target`` is the ``str`` name of the target's cell
+  (``<type name>#<32 hex digits>``); ``arguments`` is a ``@map`` from parameter name to canonical value (an entity
+  argument is carried as its cell name); ``transaction`` is an ``int``.
+
+- An ``Intent``'s ``name`` is never ``create``, ``update``, ``link``, ``unlink`` or ``relate``: those name the
+  primitive operations of `The intent log`_. A catalog that holds one is malformed.
+
+- **Required fields.** ``SemanticCatalog``: ``modules``, ``module_set``, ``entities``. ``Module``: ``name``, ``version``.
+  ``Extension``: ``module``, ``extends``. ``Entity`` and ``Relationship``: ``type_name`` (and ``roles`` for a
+  Relationship). ``Attribute``: ``name``, ``kind``. ``Role``: ``name``, ``target``, ``cardinality``. ``Intent``: ``name``.
+  ``Constraint``: ``name``, ``scope``, ``expression``. ``Expression``: ``ast``. ``IntentRecord``: all four.
+
+- A Role carries the Attribute fields except ``kind``, ``value_type``, ``values``, ``default``, ``unit`` and
+  ``expression``: a role is stored and holds entities, not a value of a kind.
+
+- **Omission.** Defaults are omitted, in the records and in the canonical form: absent text, an empty ``@tup``
+  or ``@map``, ``required`` false, ``indexed`` false, ``enforced`` true, ``sensitivity`` ``internal``, ``binding``
+  ``identity``, ``on_delete`` ``restrict``, ``ordered`` false, ``participant`` false, ``deprecated`` false and,
+  in ``Extension.entity``, ``kind`` ``entity``. A field whose value is a map of such fields (``Extension.entity``) is at its default
+  when they all are. A writer writes no field at its default; a reader
+  that meets one accepts it and its canonical form omits it. Every other optional field is written when it is
+  declared.
+
+Composition and the canonical form
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The composed ``entities`` are a cache. A reader **MAY** use them when ``module_set`` equals the
+set of module names of ``__currentModules`` (`Registry roots`_) and **MUST** otherwise compose
+from the modules' contributions. A runtime that has the modules' code recomposes from it in the
+registry's load order and verifies that the result equals the stored catalog; a difference is an
+explicit error, never corrected silently. Contributions fold in the load order: the last module
+that defines an element wins. Every composed element lists, in ``provenance``, the module that
+defined it and then the modules that modified it, in load order. Nothing is deleted: a module
+never removes another's element, it **MAY** mark it ``deprecated``, and a module is never
+uninstalled.
+
+A module **MAY** freely redefine ``label``, ``help``, ``group``, ``meaning``, ``synonyms``,
+``caveats``, ``examples``, ``default``, ``sensitivity``, ``deprecated``, the expression of a
+computed attribute, the ``enforced`` of a constraint and the implementation of an intent. It
+**MAY** add attributes, roles, intents and constraints. It **MUST NOT** change, without a
+declared migration (which this chapter does not specify, so always), the ``kind`` of an
+attribute, the ``value_type`` of a stored attribute, or the ``cardinality``, ``target`` or
+``binding`` of a role. A redefinition that restates a structural field **MUST** equal the
+composed one. A subtype entity (``supertypes`` is not empty) is composed as the fold of its
+registry linearization from the last to the first; its inherited elements carry
+``inherited_from``, and it **MUST NOT** change what a module may not change (the same list),
+because a role, query, aggregate or invariant typed by the supertype reads and writes subtype
+instances through the supertype's declaration. Of the entity-level fields a subtype inherits only
+``key``, which it **MUST NOT** redefine; its ``meaning``, ``label``, ``help``, ``synonyms`` and
+``certification`` are its own (absent unless it declares them).
+
+**The canonical form** of a catalog is the composed catalog expanded into one value: every ref
+replaced by the fields of the record it names, oids and pointers dropped, every Dictionary a
+map sorted by key, the whole encoded canonically (`Canonical values`_). Two implementations
+conform when their canonical forms are equal byte for byte. Record bytes are **not** compared:
+oids and placement differ by writer. Precisely: the value is a ``@map`` of ``entities``,
+``module_set``, ``modules`` and ``ext`` (when present); a record becomes a ``@map`` of its present
+fields, without those at their default (Omission); a Dictionary becomes a ``@map`` from its keys to
+the records they name; ``label``, ``help``, ``Extension.entity`` and ``ext`` stay ``@map`` values.
+Every such map is sorted by key in code-point order. A
+``@tup`` stays a ``@tup`` and a canonical value (``default``, an item of ``examples``, the ``ast``,
+a value inside ``ext``) is encoded as it is stored. The record types need no tag in the canonical
+form: an item of ``entities`` with ``roles`` is a Relationship, and an element with ``kind`` is an
+Attribute, one with ``target`` a Role (a participant role when ``participant`` is true), one with
+``scope`` a Constraint and any other an Intent (their required fields make this unambiguous). The vector ``catalog/canonical.msgpack`` is the
+canonical form of the vector space's catalog (`Conformance vectors`_).
+
+The expression language
+~~~~~~~~~~~~~~~~~~~~~~~
+
+An expression is a nested list ``[operator, argument...]``, stored as data in an Expression
+record's ``ast`` and evaluated the same way in every language. Its **depth** is the nesting of its
+operator lists: the outermost list is at depth 1, an operand one deeper than its operator (the
+origin of a ``via`` is part of its ``via``; the value of a ``const`` does not count). A tree deeper
+than ``MAX_EXPRESSION_DEPTH`` = 128 is invalid: a reader **MUST** refuse it with
+``ProtoValidationError`` before evaluating any of it, checking the whole tree (evaluation stops at the
+nodes it reaches, so ``["or", ["const", true], <a deeper tree>]`` would evaluate): a stored catalog's trees
+when the catalog is verified, a query's when the query is checked. A writer **MUST NOT** store one. Its
+operators:
+
+``["const", v]``
+    A canonical value.
+
+``["attr", name, ...]``
+    A path from the current element. Each step but the last is a ``one`` role or relation; an
+    absent step gives MISSING. The last step reads the element's stored own attribute, then the
+    field's catalogued ``default`` when it has one, else MISSING. It never yields a language's
+    own ``None`` for an absent value.
+
+Arithmetic ``["+", a, b]``, ``["-", a, b]``, ``["*", a, b]``
+    ``int`` with ``int`` gives ``int``; when either operand is a ``decimal`` the result is a
+    ``decimal``, computed exactly (never rounded) by the operation of the General Decimal
+    Arithmetic: an ``int`` operand is the decimal of that value with exponent 0; the exponent of the
+    result is the smaller of the operands' exponents for ``+`` and ``-`` and their sum for ``*``; a
+    zero result has the sign that arithmetic gives with round-half-even (``0.10 - 0.10`` is
+    ``0.00``, ``1E+1 + 2`` is ``12``, ``1E+1 * 1E+1`` is ``1E+2``). Both operands are checked first:
+    a ``bool``, a ``float``, a string, nil, a non-finite decimal (NaN, an infinity) or any other kind
+    raises ``ProtoValidationError``, even when the other operand is MISSING. Then MISSING in gives
+    MISSING. Division is not specified.
+
+Comparison ``["==", a, b]`` and ``"!="``, ``"<"``, ``"<="``, ``">"``, ``">="``
+    The semantics of `Order, equality and hashing`_ (equality, type ranks, order keys). A
+    comparison that involves MISSING is false.
+
+Logic ``["and", a, ...]``, ``["or", a, ...]``, ``["not", a]``
+    ``and`` and ``or`` take one operand or more, ``not`` exactly one. Operands are booleans, evaluated left to right, ``and`` stopping at the first false and ``or`` at the first
+    true. A MISSING operand counts as false (as in a comparison), so ``not`` of MISSING is true. Any other
+    non-boolean operand that is reached raises ``ProtoValidationError``.
+
+Aggregates ``["sum", over, term, where?]`` and ``["count", over, where?]``
+    ``over`` is a role name of the current element (the members of ``["via", ["self"], over]``), a
+    ``via`` expression or, in a query, a bare root. ``term`` and ``where`` are evaluated with each
+    member as the current element, in the members' order. A member for which ``where`` is not true
+    (false or MISSING) is not a member of the aggregate; a ``where`` of any other kind raises
+    ``ProtoValidationError``. ``count`` is the int number of members. ``sum`` is the left fold of
+    ``+`` from the int 0 over the members' terms: a member whose ``term`` is MISSING contributes
+    nothing, a term of any other kind than int or decimal raises as ``+`` does, so a ``sum`` of no
+    members is the int 0, and decimal terms give the exponent ``+`` gives from 0 (``1E+1`` and
+    ``2E+1`` sum to ``30``).
+
+Traversal ``["via", origin, role, role...]``
+    The set reached through each end's own collection; a ``via`` names one role or more. The origin
+    ``["self"]`` is the current element; ``["cell", name]`` is the record of that cell (nothing when
+    the cell is absent); ``["root", name]`` is the members of that root (its elements when it is a
+    List or a Set, else the root's value itself; nothing when the root is absent). ``root`` and ``cell`` are valid in queries only,
+    and ``["root", name]`` is also, in a query, an expression of its own: a bare root, the members of
+    that root as a ``via`` origin gives them.
+
+    Each hop takes, for each member of the previous hop in its order, the value of the role (a
+    ``one`` end holds one member, a ``many`` end a List or a Set whose members come in the
+    collection's iteration order; an absent or nil value holds none). The result is in
+    first-reached order, and a member reached twice counts once, at its first position, by its
+    identity: an identity handle by its cell name, a version-bound reference
+    ``{"entity": handle, "version": record}`` by the pair of the entity's cell name and the version's
+    oid, a record by its oid. A role holds nothing else: any other value reached as a member raises
+    ``ProtoValidationError``. A member is then followed: a handle to its cell's record (a handle whose
+    cell is absent contributes nothing), a version-bound reference to its version. The same rules
+    give the members of a root origin. In a hop through a role, an **entry record** of the role's
+    collection stands for its member: a ``many`` end with a maintained key (an ``index_by`` path
+    through an identity role of the member, R262) holds records of the plain record type
+    ``proto_db.core.dbobject.DBObject``, without parents, whose fields are ``member`` (the member) and
+    ``key`` (its key, absent when the key is MISSING); the hop takes the ``member``, so a traversal
+    yields members, never entries.
+
+Reserved, not specified by this revision: ``in``, ``is_missing``, ``min``, ``max``, ``exists``,
+``all``, ``reach`` and ``valid_at``. A reader that meets an operator it does not implement
+**MUST** raise ``ProtoNotSupportedError``. A text form (``"committed <= credit_limit"``) is a
+convenience of one language that is parsed into this tree; it is never stored.
+
+Entity data
+~~~~~~~~~~~
+
+This section specifies how the entities and relationships of a catalogued type are stored, so that
+any language reads and writes the same data. A writer **MUST** write it exactly; a reader **MUST**
+read it as specified.
+
+* **Cells.** An entity lives in a mutable cell (`Space and database roots`_) named
+  ``<type name>#<32 hex digits>``: the catalogued type name, ``#``, and the 32 lowercase hex digits of
+  a random UUID drawn when the creation is recorded (a replay never draws it). The cell's value is
+  a record whose type tag is the type name, without parents (no ``p`` key), holding the entity's
+  current version. A relationship atom is likewise a record without parents. The cell's
+  ``MutableObject`` handle is the entity's identity. A relationship atom has no cell: it is an
+  immutable record of the relationship's type, stored once, and every end that holds it
+  references that one record (one oid).
+* **Fields.** A field is an attribute of the record under its name. A field with a catalogued
+  default may be absent; a reader then reads the default.
+* **``one`` ends.** A role or relation of cardinality ``one`` or ``0..1`` is an attribute holding
+  the target's handle, or, for ``binding="version"``, a **bound reference**: the canonical map
+  ``{"@map": [["entity", {"@mut": name}], ["version", {"@ref": [segment, offset, tag]}]]}``, with
+  the keys in that order, where ``entity`` is the target's handle and ``version`` a nested
+  reference to the bound record (see **Version-bound roles** below). A writer **MUST** leave a
+  ``one`` end absent until it is first linked, and **MUST** write nil when it is unlinked; a reader
+  **MUST** accept absent and nil as an end holding nothing. A writer **MUST NOT** overwrite a
+  linked ``one`` end: linking it again is refused (``ProtoValidationError``, "unlink it
+  first"); an unlink then a link, in one transaction, moves it.
+* **``many`` ends.** A cardinality ``many`` or ``1..*`` is an attribute holding a ``List`` when the
+  end is ``ordered`` and a ``Set`` otherwise. A writer **MUST** leave a ``many`` end absent until
+  its first link, and **MUST** keep its collection afterwards, empty once its last member is
+  unlinked; it never writes nil to a ``many`` end. A reader **MUST** accept absent, nil and an
+  empty collection as an end holding nothing. Its members are the targets' handles, or, for an end of a
+  relationship, the atoms themselves. A link appends the member at the end of an ``ordered`` end;
+  an unlink removes it and keeps the order of the others. Both ends of an
+  inverse pair are kept by every link and unlink, in the same transaction.
+* **Indexes of a ``many`` end** (``index_by``, declared on the end or on its inverse ``one`` end).
+  A path naming one attribute of the member is a ``RangeIndex`` named ``by_<path>`` with key
+  ``<path>`` on the collection; its members are then records (atoms), since an index reads stored
+  attributes, never through a handle. A path ``role.attribute`` through an identity role of the
+  member, with a field as attribute, is a **maintained key**: the collection holds **entry
+  records**, records of the plain record type ``proto_db.core.dbobject.DBObject`` without parents
+  whose fields are ``member`` (the member) and ``key`` (the value of ``attribute`` on the entity the
+  member's ``role`` designates; absent when that value is MISSING). The collection has the
+  ``RangeIndex`` named ``by_<role>_<attribute>`` with key ``key``. A writer **MUST** replace the
+  entries in the same transaction whenever the keyed field, or the member's role, changes. A hop
+  through the end yields the members (`The expression language`_, Traversal). Other paths are not
+  specified by this revision; a writer refuses them with ``ProtoNotSupportedError``.
+* **Maintained aggregates** (``computed_stored``). A maintained aggregate is an attribute of its
+  owner's record under its name, written as the integer 0 when the owner is created and moved only by
+  deltas: when a member joins or leaves its ``over`` end, by the member's contribution (its ``term``
+  where its ``where`` holds); when a member changes, by its contribution after minus before. A change
+  of an aggregate is a change of its owner, so it moves the aggregates the owner contributes to,
+  along the inverses, in the same transaction. A value is never recomputed over its collection, so
+  its representation may differ from a fold of the same members (``Decimal("2.00")`` against
+  ``2``): a reader or verifier **MUST** compare maintained values by value (``values_equal``),
+  never by their canonical bytes. Over a ``one`` end, or on a relationship, a maintained aggregate
+  is not specified by this revision.
+* **Relationships.** A relationship atom is created with every one of its roles and its required
+  fields; an atom never changes, so a role it lacks could never be added later.
+* **Version-bound roles** (``binding="version"``). The ``version`` of a bound reference is the
+  target's **field version**, current when the operation is applied (in direct mode in the
+  transaction's view, validated by its read set at commit; in intent mode at replay). The rule
+  compares the target's fields only (attributes of kind ``field``, by value), never how they were
+  written. The transaction keeps at most one record per target, the **kept record**, which no
+  binding has before the first one that needs it. A binding binds:
+
+  - the committed record the transaction read, while the target's current fields equal its fields
+    (so an update to the same value keeps it bound);
+  - otherwise the kept record, while the current fields equal its fields;
+  - otherwise the record in the transaction's view, which becomes the kept record (for an entity
+    created in the transaction there is no committed record, so its first binding keeps its record
+    in view).
+
+  Fields that return to a kept state therefore bind the kept record again: an update to 15, a
+  binding, an update back to the committed 10, a binding, and an update to 15 again bind the first
+  15 record, then the committed record, then that same first 15 record.
+
+  Writes to the target's own ends and to its maintained aggregates never start a new bound version,
+  and a later change of the target's fields does not move an earlier binding. The record committed
+  for a target that holds the inverse end can never be the bound one: it holds the binder, and
+  immutable records hold no cycle. Several bindings of one target in one transaction therefore
+  share one stored version, and a traversal counts it once.
+
+Constraints
+~~~~~~~~~~~
+
+This section specifies what a writer of entity data checks before it publishes, so that every language
+refuses the same commits and names the rule alike. A violation is ``ProtoConstraintError`` (code 10100, a
+``ProtoValidationError``): it is never retried, and nothing of the commit or the operation it refuses is
+published. Raw cell writes are not checked: these rules bind the semantic operations.
+
+* **Cardinality**, at commit, for every entity the commit wrote through the semantic operations: a role
+  of an Entity of ``cardinality`` ``one`` **MUST** hold a target (absent and nil violate it); a ``1..*`` end
+  **MUST** hold at least one member. A relationship atom holds every role by construction. ``0..1`` and
+  ``many`` always hold. The rule is named ``<type name>.<role>.cardinality``.
+* **Enforced invariants** (a Constraint whose ``enforced`` is true) are evaluated on every entity whose
+  operands changed (an entity created counts as changed), on the state the commit publishes: after the
+  replay in intent mode, and in direct mode when each operation is applied, on the transaction's view,
+  the reads entering its read set. The tree is evaluated on the entity's record (`The expression
+  language`_); true holds, false and MISSING violate the invariant, and any other result is
+  ``ProtoValidationError``. A Constraint whose ``enforced`` is false is never checked.
+* **Enforceable invariants.** An enforced invariant **MUST** read only its entity's own attributes:
+  ``attr`` of one step (a field, a maintained aggregate, a role's stored value, or a computed attribute
+  whose expression obeys the same rule), ``count`` of a role of the entity without ``where``, constants,
+  arithmetic, comparisons and logic. Its operands then change only when the entity's record does. A
+  writer's composition (declaring or installing modules) that holds another enforced invariant is
+  refused (``ProtoNotSupportedError``). A reader of a stored catalog that holds one **MUST NOT** refuse
+  the catalog for it: the invariant is published but not enforced, and a description of its type says so.
+* **An intent's** ``requires`` false or MISSING on its target is the rule ``<type name>.<intent>.requires``,
+  carrying the intent's ``meaning``.
+
+The error carries the rule's name (``constraint``), its ``meaning``, the cell name of the entity (``entity``)
+and the values of the attribute paths the tree reads (``values``; an absent one is MISSING, ``None`` in
+neutral data, and its name is listed). Its message is the Constraint's ``message`` with these placeholders
+replaced (R279):
+
+- ``{name}``: the entity's attribute ``name``;
+- ``{entity}``, and the lower-case last component of the entity's type name or of any of its supertypes
+  (``{customer}``, ``{order}``): the entity's **key**, its ``key`` attributes' values joined by ``", "``, where a
+  key part that is a role renders as its target's key. An entity whose type declares no ``key`` renders as its
+  cell name;
+- for a tree that is an ordering comparison (``<``, ``<=``, ``>``, ``>=``): ``{left}`` and ``{right}``, its
+  operands, and ``{excess}``, the left operand minus the right one.
+
+These reserved names win over an attribute of the same name; any other placeholder is left as written. A
+MISSING operand renders as ``<missing name>``, ``name`` being the attribute path it reads. A decimal renders
+in plain notation (``10.00``), a boolean as ``true`` or ``false``, nil as ``nil``, a date or a time in ISO 8601.
+The demo's ``"The order exceeds the credit limit of {customer} by {excess}"`` renders as ``The order exceeds
+the credit limit of Fabrikam by 10.00``.
+
+**Evolution over existing entities.** A module installed later **MAY** add attributes and constraints to a
+type that has entities (`Composition and the canonical form`_). Their records then lack what it adds:
+
+- a maintained aggregate the record does not store reads as its computation over the relation's current
+  members, and the first write that moves it **MUST** store that computation plus the move (or, when a member
+  changed and the members already show it, the computation alone), never fail for its absence;
+- a ``required`` field or an enforced invariant the module adds is not checked against the entities that exist
+  at install: it binds the semantic operations from then on, as everywhere (a ``required`` field when an entity
+  is created; an enforced invariant when an operation changes its operands, so an existing entity that violates
+  it is refused at the first operation that changes one of them). Migrations that would check or repair
+  existing entities are not specified by this revision.
+
+**Conformance.** The rules of this section have no conformance vectors yet: a vector needs a writer that
+applies them, and the vectors that pin the checks across languages come with the second writer. Until then
+the reference implementation's tests are the evidence.
+
+The intent log
+~~~~~~~~~~~~~~
+
+``__intentLog`` is a root of a database's ``objects`` whose value is a ``List`` of IntentRecord
+records: those of the commit that wrote this version of the database, in the order the operations
+ran, and nothing older (history is the chain of versions, `Space and database roots`_). A value
+that is not a ``List``, or an element that is not an IntentRecord, is ``ProtoCorruptionError``
+when read. ``IntentRecord.transaction`` is the ``version`` of the DatabaseRoot the commit
+produced. A database that never used intents has no ``__intentLog``; a commit that records no
+operation writes none, and so removes the one the version before held.
+
+Each record is one top-level operation of an intent transaction: an intent invocation or one of the
+five primitives ``create``, ``update``, ``link``, ``unlink`` and ``relate``. An ``Intent`` record
+**MUST NOT** be named like a primitive, so the two never read alike: a writer refuses the declaration
+(``ProtoValidationError``), and a reader refuses a stored catalog that holds one
+(``ProtoCorruptionError``, `Semantic catalog (format 6)`_).
+
+- ``intent`` is the pair of a type name and the intent's or the primitive's name. The type is the
+  target's (the created entity's for ``create``), and the relationship's for ``relate``.
+- ``target`` is the cell of the entity the operation applies to: the new cell for ``create``, the
+  entity whose role changes for ``link`` and ``unlink``, and for ``relate`` the entity bound to the
+  relationship's first role in declaration order.
+- ``arguments`` are the intent's parameters; the fields and roles given to ``create``, ``update``
+  and ``relate``; and ``{"role", "target"}`` for ``link`` and ``unlink``. An entity is carried as
+  its cell name. The cells an operation creates other than its target (those an intent creates)
+  are listed, in creation order, under the key ``#created``, which no parameter name can take.
+  Their names are drawn when the operation is recorded and reused when it is replayed at commit,
+  which draws none (R260).
+
+
 Framed log files
 ----------------
 
@@ -1799,7 +2320,7 @@ Field types:
      - rid, inc; persisted (bool); ranges; optional ``unknown`` (bool, absent reads as false)
 
 An optional field may be absent; it is checked when present, and a receiver ignores a key it
-does not know. ``unknown`` is the only optional field of protocol 14. A member answers
+does not know. ``unknown`` is the only optional field of protocol 15. A member answers
 ``fetched`` or ``commit_info`` with ``unknown`` true when it cannot tell whether it holds what
 was asked: it has no storage attached, its space closed or detached while it served the
 request, or (``commit_info`` only) it is still attaching its storage. The asker counts such a
@@ -1822,7 +2343,7 @@ Values a member must compute like the others:
 
 The meaning of each message, and the rules that make the protocol safe, are those of
 :doc:`coordinator-protocol` and of decisions D44 to D55; the field list above is complete for
-protocol 14. The vectors hold one frame of every type.
+protocol 15. The vectors hold one frame of every type.
 
 
 A minimal external writer (file storage)
@@ -1889,7 +2410,8 @@ What is normative and what is not
 Normative: every byte layout on this page; the type names and the alias table; the value
 encoding with its one spelling per value, the map-key rule and the nesting limit; the order, hash and exact-token
 functions (for writers of keyed structures); the structure invariants of the AVL trees and
-collections; the index maintenance contract and the IVF list assignment; the field names,
+collections; the index maintenance contract and the IVF list assignment; the semantic catalog chapter (types, fields, canonical form, expression
+language and intent log); the field names,
 their optionality, the meaning of absence and the reserved attribute names (accessors
 excepted); the root names reserved by ``__``; what readers and writers do with opaque atoms and
 the name a reference carries; the format stability rules (what each version number covers, the
@@ -1980,10 +2502,18 @@ Every change since format 1 and how a reader of this revision treats data writte
        that atom. A non-canonical text form is refused;
        ``proto_db`` never wrote one. A format-3 reader refuses format-4 data
        (``ProtoNotSupportedError``)
+   * - Format 5 to 6 (D63 to D72; development branch, no release yet)
+     - The feature ``catalog``: eleven built-in types, aliases 24 to 34, for the roots
+       ``__semanticCatalog`` and ``__intentLog`` (`Semantic catalog (format 6)`_). A record of
+       one of them is version 6; data that uses none of them keeps version 4 or 5, byte for byte.
+       The cluster ``PROTOCOL_VERSION`` rises to 15 in the same change
+     - Format 2 to 5 segments and roots are read as before. A reader of format 5 refuses a
+       format-6 segment or root (``ProtoNotSupportedError``), never misreads it
 
 The cluster protocol has no compatibility across versions: every node of a cluster runs the
-same protocol version (13 here; the history of versions 6 to 13 is in
-``proto_db/cluster/protocol.py``). Before D35 a DatabaseRoot had no ``mutables``; such a
+same protocol version (15 here; the history of versions 6 to 15 is in
+``proto_db/cluster/protocol.py``). Protocol 15 came with format 6: a node of protocol 14 does not know
+the catalog's aliases, so it would write a version-4 header over a segment opened by a catalog record. Before D35 a DatabaseRoot had no ``mutables``; such a
 database cannot be opened.
 
 
@@ -2089,7 +2619,22 @@ JSON description of what every file means, in a language-neutral notation), the 
 - a ``registry`` space using the format-5 feature ``registry``: a format-4 segment, then the
   format-5 segment opened by an install of a module and its dependency, holding the catalog
   objects, the ``ModuleList`` of ``__currentModules`` and the ``Catalog`` of ``__catalog``
-  (`Registry roots`_); its root record is version 5.
+  (`Registry roots`_); its root record is version 5;
+- a ``catalog`` space using the format-6 feature ``catalog``: a format-4 segment, then the format-6
+  segment opened by the catalog's first record, holding the records of every catalog type (the
+  neutral model ``tests/conformance/catalog_model.json`` stored as ``__semanticCatalog``, and an
+  ``__intentLog`` of two IntentRecords), and the catalog's canonical form
+  (``catalog/canonical.msgpack``); its root record is version 6;
+- the evaluation of the expression language (`The expression language`_; manifest key
+  ``expressions``): each operator, int and decimal arithmetic (exact), MISSING through arithmetic,
+  comparison and logic, the exponents of decimal results, absent values and catalogued defaults,
+  ``sum`` (a left fold from 0) and ``count`` (of no members, with a ``where``, a MISSING ``where``),
+  ``via`` over several hops, through identity handles (repeated, absent) and version-bound
+  references, a tree at ``MAX_EXPRESSION_DEPTH``, and the refusals (a float, a bool, a string, nil
+  or a non-finite decimal in arithmetic, also beside MISSING, a sum term or a ``where`` of the wrong
+  kind, a non-role value as a member, division, a tree past the depth limit, ``root`` and ``cell``
+  outside a query, an unknown operator, a reserved one). These vectors are manifest entries only,
+  with no file.
 
 ``tests/conformance/vectors.sha256`` pins the vector files (`Format stability`_).
 

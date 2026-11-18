@@ -43,6 +43,10 @@ Parents are passed in two forms, side by side:
 
 .. automodule:: proto_db.core.dbobject
    :members:
+   :exclude-members: MutableObject
+
+``proto_db.core.dbobject`` re-exports :class:`~proto_db.values.MutableObject`, documented with
+:mod:`proto_db.values`.
 
 proto_db.registry
 -----------------
@@ -227,6 +231,72 @@ proto_db.interop.arrow
 
 .. automodule:: proto_db.interop.arrow
    :members:
+
+proto_db.semantic
+-----------------
+
+The semantic model (decisions D63 to D72; format spec, "Semantic catalog (format 6)"; demo
+``docs/kit/semantic/README.md``). The package re-exports the declarations and the session; the modules below
+document them. A semantic object resolves an attribute it does not hold through the registry of the database it
+was read from: with no registry current (an object built in plain Python, for one), ``getattr(o, "x", None)``
+raises :class:`~proto_db.errors.ProtoNotSupportedError` instead of returning ``None``, while its own fields read
+normally. :meth:`SemanticSession.query <proto_db.semantic.session.SemanticSession.query>` takes
+``members=True`` to also answer ``"members"``, the :class:`~proto_db.semantic.entities.Version` each row reads
+(a query without an aggregate).
+
+.. automodule:: proto_db.semantic
+
+proto_db.semantic.session
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. automodule:: proto_db.semantic.session
+   :members:
+
+proto_db.semantic.descriptors
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. automodule:: proto_db.semantic.descriptors
+   :members:
+
+proto_db.semantic.classes
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. automodule:: proto_db.semantic.classes
+   :members:
+
+proto_db.semantic.entities
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. automodule:: proto_db.semantic.entities
+   :members: Version, Members
+
+proto_db.agent
+--------------
+
+The agent interface (spec section 11). The operations need nothing beyond the core; the MCP server needs the
+optional extra ``agent`` (``pip install proto_db[agent]``, the MCP SDK pinned ``mcp>=1.30.0,<2``), imported only
+when the server starts. In raw mode (``--raw``, the agent experiment's control group) an agent still sees the
+stored type names and attribute names, but none of their meaning.
+
+.. automodule:: proto_db.agent
+
+proto_db.agent.operations
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. automodule:: proto_db.agent.operations
+   :members:
+
+proto_db.agent.mcp_server
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. automodule:: proto_db.agent.mcp_server
+   :members:
+
+proto_db.agent.step6
+~~~~~~~~~~~~~~~~~~~~
+
+.. automodule:: proto_db.agent.step6
+   :members: expected, write_expected, canonical_bytes, differences, canonical_differences
 
 proto_db.values
 ---------------

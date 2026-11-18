@@ -8,6 +8,7 @@ an exception re-raised by the parallel scan or the FSM (decisions D40, D41).
 """
 
 VALIDATION_ERROR = 10_000
+CONSTRAINT_ERROR = 10_100
 USER_ERROR = 20_000
 CORRUPTION_ERROR = 30_000
 MISFILED_ERROR = 30_100
@@ -37,6 +38,38 @@ class ProtoDBError(Exception):
 class ProtoValidationError(ProtoDBError):
     """Invalid argument, schema or data shape."""
     default_code = VALIDATION_ERROR
+
+
+class ProtoConstraintError(ProtoValidationError):
+    """A declared rule of the semantic catalog does not hold (spec section 10, R273): an enforced invariant, a
+    role's cardinality or an intent's ``requires``.  Being a ``ProtoValidationError``, it is never retried by
+    ``Database.run``; nothing of the commit or the operation it refuses is published.
+
+    ``constraint`` is the rule's name (an invariant's catalogued name, R279; ``<type>.<role>.cardinality``;
+    ``<type>.<intent>.requires``), ``meaning`` its catalogued meaning, ``entity`` the cell name of the entity it
+    was checked on, and ``values`` the operands it read, by attribute path (``MISSING`` for an absent one).
+    The message is the rule's ``message`` rendered with them.  :meth:`describe` gives all of it as neutral
+    data."""
+
+    default_code = CONSTRAINT_ERROR
+
+    def __init__(self, message: str = "", *, constraint: str | None = None, meaning: str | None = None,
+                 entity: str | None = None, values=None, code: int | None = None):
+        super().__init__(message, code=code)
+        self.constraint = constraint
+        self.meaning = meaning
+        self.entity = entity
+        self.values = dict(values or {})
+
+    def describe(self) -> dict:
+        """The error as neutral data: ``{"error", "code", "constraint", "meaning", "message", "entity",
+        "values", "missing"}``.  An absent operand is ``None`` in ``values`` and its name is in ``missing``."""
+        from .values import MISSING
+        values = {name: None if value is MISSING else value for name, value in self.values.items()}
+        missing = [name for name, value in self.values.items() if value is MISSING]
+        return {"error": type(self).__name__, "code": self.code, "constraint": self.constraint,
+                "meaning": self.meaning, "message": self.message, "entity": self.entity, "values": values,
+                "missing": missing}
 
 
 class ProtoAttributeNameError(ProtoValidationError, KeyError):

@@ -707,7 +707,7 @@ def parse_params(items: List[str]) -> Dict[str, dict]:
     return out
 
 
-def stray_processes() -> list:
+def stray_processes(pattern: str = "rqlited|cluster_peer|benchmarks|pytest") -> list:
     """``rqlited`` and benchmark processes other than this one and its ancestors (``pgrep -af``).
 
     A benchmark sharing the machine with a stray cluster or suite measures that contention, so
@@ -721,7 +721,7 @@ def stray_processes() -> list:
         except (OSError, ValueError, IndexError):
             break
     try:
-        out = subprocess.run(["pgrep", "-af", "rqlited|cluster_peer|benchmarks|pytest"], capture_output=True,
+        out = subprocess.run(["pgrep", "-af", pattern], capture_output=True,
                              text=True).stdout.splitlines()
     except OSError:                       # no pgrep: say so rather than claim a clean machine
         return ["(pgrep unavailable: check not performed)"]

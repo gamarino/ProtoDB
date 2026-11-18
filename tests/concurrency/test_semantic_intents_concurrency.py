@@ -1,0 +1,89 @@
+"""Intent transactions committed concurrently (spec section 9; Task 8).
+
+8 threads create 200 orders of one company, each for a customer of its own, in intent transactions
+(``intents=True``) committed with ``Transaction.commit`` directly, never retried.  Every order joins the
+company's ``orders`` end, a collection all the commits change, so in direct mode they would conflict on the
+company cell; in intent mode each commit is replayed on the state current at the serialized point (the root
+lock, group-commit rounds included), so every commit succeeds.
+
+Catches: a replay that loses an order (a last-writer-wins company record), adds one twice, or conflicts;
+maintained aggregates moved twice or not at all; a deadlock between a group-commit leader replaying other
+threads' intents and those threads.  No sleep decides anything (R82): the threads are released by a barrier
+and every commit is joined.
+"""
+from datetime import date
+from decimal import Decimal
+
+import pytest
+
+from proto_db.semantic import semantic
+from proto_db.storage.file import FileStorage
+from proto_db.transactions import ObjectSpace
+from tests.concurrency.harness import report, run_threads
+from tests.unit.semantic_modules import MAPPING
+
+THREADS = 8
+ORDERS = 200
+
+pytestmark = [pytest.mark.freethreaded, pytest.mark.timeout(240)]
+
+
+def test_intent_orders_of_one_company_all_commit(tmp_path):
+    space = ObjectSpace(FileStorage(str(tmp_path / "space")), modules_mapping=MAPPING)
+    try:
+        db = space.new_database("db")
+        db.run(lambda tr: tr.install_module("acme_sales"))
+
+        def world(tr):
+            s = semantic(tr)
+            company = s.create("acme.core.Company", name="ACME")
+            product = s.create("acme.catalog.Product", name="widget", list_price=Decimal("10"), company=company)
+            customers = [s.create("acme.sales.Customer", name=f"customer {i}", credit_limit=Decimal("100000"),
+                                  company=company) for i in range(THREADS)]
+            return company, product, customers
+        company, product, customers = db.run(world)
+        created = [[] for _ in range(THREADS)]
+
+        def worker(i):
+            def body():
+                for k in range(ORDERS // THREADS):
+                    number = i * (ORDERS // THREADS) + k + 1
+                    tr = db.new_transaction(intents=True)
+                    s = semantic(tr)
+                    order = s.create("acme.sales.Order", number=number, date=date(2026, 6, 1 + number % 28),
+                                     company=company, customer=customers[i])
+                    s.get(order).add_line(product, Decimal("1"), Decimal(number))
+                    tr.commit()                                 # never retried: a conflict would raise
+                    created[i].append((order, number))
+            return body
+
+        elapsed = run_threads([worker(i) for i in range(THREADS)])
+        everything = [pair for orders in created for pair in orders]
+        assert len(everything) == ORDERS
+        tr = db.new_transaction()
+        try:
+            s = semantic(tr)
+            members = [v.entity for v in s.get(company).orders]
+            assert len(members) == ORDERS and set(members) == {order for order, _ in everything}
+            for i, customer in enumerate(customers):
+                bob = s.get(customer)
+                assert sorted(v.entity.name for v in bob.orders) == sorted(o.name for o, _ in created[i])
+                assert bob.committed == sum(Decimal(n) for _, n in created[i])
+            assert len(s.get(product).order_lines) == ORDERS
+            assert all(s.get(order).total == Decimal(n) for order, n in everything)
+        finally:
+            tr.abort()
+        assert len(db.history()) == ORDERS + 3                  # one version per commit
+        report("intent orders", elapsed, f"{THREADS} threads", f"{ORDERS} commits", "0 conflicts")
+    finally:
+        space.close()
+    # What the replays built was saved with their commits: a reopened space reads it from the storage.
+    reopened = ObjectSpace(FileStorage(str(tmp_path / "space")), modules_mapping=MAPPING)
+    try:
+        tr = reopened.open_database("db").new_transaction()
+        s = semantic(tr)
+        assert len(s.get(company).orders) == ORDERS and len(s.get(product).order_lines) == ORDERS
+        assert sum(s.get(customer).committed for customer in customers) == sum(range(1, ORDERS + 1))
+        tr.abort()
+    finally:
+        reopened.close()

@@ -1,0 +1,106 @@
+{
+ "attempts": 939,
+ "check": {
+  "checked_at": "2026-11-16T08:58:22-0300",
+  "stray_processes": [],
+  "workdir_free_bytes": 1032041005056
+ },
+ "clean": true,
+ "commit": "9a8ce75",
+ "commit_attempt_latency_ms": {
+  "p50": 12.1,
+  "p95": 35.49
+ },
+ "commit_latency_ms": {
+  "p50": 9.96,
+  "p95": 29.25
+ },
+ "commits": 318,
+ "commits_per_s": 49.47,
+ "conflicts": 579,
+ "customers": 8,
+ "demand": "43292",
+ "durability": "none",
+ "environment": {
+  "cpu_affinity": 12,
+  "cpu_count": 12,
+  "cpu_frequency": {
+   "boost": "1",
+   "driver": "amd-pstate-epp",
+   "energy_performance_preference": "balance_power",
+   "governor": "powersave"
+  },
+  "cpu_model": "AMD Ryzen 5 5500U with Radeon Graphics",
+  "free_threaded_build": true,
+  "gil_enabled": false,
+  "interpreter": "/home/gamarino/Documentos/proyectos/ProtoBase/.venv314t/bin/python",
+  "platform": "Linux-7.0.0-43-generic-x86_64-desconocido-with-glibc2.43",
+  "proto_db": "2.0.0rc4",
+  "proto_db_path": "/home/gamarino/Documentos/proyectos/scratch-8.3n/semantic/t10-impl/export-9a8ce75/proto_db",
+  "python": "3.14.6",
+  "timestamp": "2026-11-16T08:59:01-0300",
+  "workdir": "/home/gamarino/Documentos/proyectos/scratch-8.3n/semantic/t10-impl/runs/work-direct-gil0-r5",
+  "workdir_fs": "zfs",
+  "xoptions": {
+   "gil": "0"
+  }
+ },
+ "error_samples": [],
+ "errors": 0,
+ "experiment": "semantic credit: intents against direct mode",
+ "gil": false,
+ "limit_fraction": 0.75,
+ "limits": {
+  "0": "4998",
+  "1": "3615",
+  "2": "4531",
+  "3": "4389",
+  "4": "5121",
+  "5": "3113",
+  "6": "3805",
+  "7": "2895"
+ },
+ "mode": "direct",
+ "orders": 400,
+ "orders_per_s": 62.23,
+ "products": 4,
+ "reconciliation": [],
+ "rejected_by_conflict": 40,
+ "rejected_by_constraint": 42,
+ "retries": 10,
+ "seed": 1,
+ "settings": {
+  "customers": 8,
+  "durability": "none",
+  "limit_fraction": 0.75,
+  "mode": "direct",
+  "orders": 400,
+  "products": 4,
+  "retries": 10,
+  "seed": 1,
+  "storage": "file",
+  "threads": 8
+ },
+ "source": {
+  "added": [],
+  "changed": [],
+  "clean": true,
+  "commit": "9a8ce75",
+  "commit_full": "9a8ce751b05dcda136ac028322e5bf6fc78705e0",
+  "dirty": false,
+  "missing": [],
+  "source": "git archive export"
+ },
+ "storage": "file",
+ "threads": 8,
+ "verified": true,
+ "verifier": {
+  "aggregate_mismatches": [],
+  "seconds": 32.798,
+  "versions": 321,
+  "violations": []
+ },
+ "versions_added": 318,
+ "violations": 0,
+ "wall_s": 6.4278
+}

@@ -929,6 +929,312 @@ Operations
   a Python application: no server to deploy, no client round trip, but every writer and reader
   is that application's process.
 
+Semantic model: intents against direct mode
+-------------------------------------------
+
+The concurrency experiment of the semantic model (``benchmarks/semantic/credit_experiment.py``, spec section 15,
+ruling R275). It is not part of the suite, and the figures elsewhere on this page do not apply to it.
+
+**Measured at commit** ``9a8ce75``, from a clean ``python -m benchmarks.export`` tree (every results file records
+``"commit": "9a8ce75"`` and ``"clean": true``), on 2026-11-16, on the machine of `Environment`_ (AMD Ryzen 5 5500U,
+6 cores / 12 threads, frequency policy as stated there), with CPython 3.14.6 free-threaded
+(``.venv314t/bin/python``), ``-X gil=0`` and ``-X gil=1``. Each run ran alone, under ``systemd-run --user --scope
+-p MemoryMax=12G -p MemorySwapMax=0``, in a new work directory on ZFS. Results:
+``benchmarks/results/2026-11-16-9a8ce75-credit/`` (one JSON file per run, the two summaries, and the driver logs
+``driver.log`` and ``rerun-c.log`` with the load average and the process check before every run).
+
+**The workload.** The demo's order-entry model (``docs/kit/semantic/acme_sales.py``): one company, 8 customers,
+4 products, 400 orders of 1-3 lines (quantity 1-3, price 5-50), placed by 8 threads, plan and limits from seed 1.
+Each customer's credit limit is 75 % of the demand the plan places on it (rounded down), so some orders must be
+refused by the credit rule ``committed <= credit_limit``. Each order is one ``Database.run`` (its default 10
+retries) that creates the order, adds its lines with the ``add_line`` intent and commits; ``FileStorage``,
+durability ``none``.
+
+- *direct*: today's transactions, the baseline of R275;
+- *intents*: the same calls with ``intents=True``; the operations are logged and replayed at commit.
+
+The workload decides on nothing it reads: it never reads a customer's committed amount, ``.record``, a query or a
+computed attribute of the company or a product. In intent mode those reads record whole cells (a sound
+coarsening; finer membership reads come after the MVP), so a workload that made them would measure that
+coarsening rather than the model.
+
+**In intent mode this workload's fine read set is empty.** An order reads nothing through the session. Its commit
+validates only the catalog roots, which no order changes, so its zero conflicts below hold by construction. The
+measurement does not exercise the fine read set, and its 79 ms commit p50 says nothing about the read set's cost.
+The spec's open question about the cost of the fine read set's granularity (section 16) is therefore **not
+answered here**. The harness now has what answers it, for the final integration re-measurement: a variant
+``--reads credit-limit``, in which each order first reads its customer's ``credit_limit`` (a stored field no order
+writes; its fine read set is ``(customer, credit_limit)``, and a concurrent change of that limit is a conflict, as
+a test shows), and per-commit stage timings in both modes (time under the root lock, the reads' validation, the
+replay, and the wait). Neither existed at ``9a8ce75``, so no figure on this page comes from them.
+
+**Every run verifies itself** before it reports a figure. The outcome of every order (committed, refused by the
+credit rule, refused by conflict after the last retry) is reconciled with the final state, read raw: the committed
+orders are exactly the orders stored, with their planned totals; each customer's maintained aggregate equals the
+sum of its committed orders and is within its limit; each refusal by the rule is explained by the final state;
+each retry was a conflict; each commit published one version. Then the history verifier
+(``benchmarks/semantic/history_verifier.py``) walks every version and recomputes each customer's committed amount
+from the order lines, raw, starting from the order cells. (At ``9a8ce75`` it summed each order's own ``lines``
+collection; it now finds the lines from the products' ``order_lines`` ends and reports an order whose own
+collection differs.) It deliberately re-states the model's rules instead of
+reusing the code that maintains the aggregates, so that it cannot agree with an error of that code. All 20 runs
+were verified.
+
+Counts, all 20 runs (5 per cell), median [min-max]:
+
+==================  ===============  ===============  =================  ===================  ==========
+Cell                committed        conflicts        refused by         refused by the       verifier
+                                     (retries)        conflict           credit rule          violations
+==================  ===============  ===============  =================  ===================  ==========
+direct, GIL off     318 [310-323]    517 [479-579]    35 [34-40]         44 [42-55]           0
+direct, GIL on      305 [301-314]    672 [625-1173]   51 [46-78]         45 [16-53]           0
+intents, GIL off    295 [295-300]    0                0                  105 [100-105]        0
+intents, GIL on     296 [293-298]    0                0                  104 [102-107]        0
+==================  ===============  ===============  =================  ===================  ==========
+
+These medians pool the runs started at every load (1-minute load 2.1-15.2). Over the clean runs only (those of
+the cost table below), the medians are: direct, GIL off: 322 committed, 489 conflicts, 34 refused by conflict, 44
+by the rule; direct, GIL on (2 runs): 304 and 314 committed, 672 and 874 conflicts, 51 and 62 refused by
+conflict, 24 and 45 by the rule; intents, GIL off: 295, 0, 0, 105; intents, GIL on (2 runs): 295 and 296
+committed, 0, 0, 104 and 105 by the rule.
+
+Of the 400 orders, intent mode refused none by conflict and conflicted on no attempt. The orders that it refused
+were refused by the credit rule, and no version of any history holds a customer above its limit or a maintained
+aggregate that differs from the lines. Direct mode also never let a customer exceed its limit (0 violations): **the
+write skew that the brief expects in direct mode did not occur**, as R275 anticipated, because today's read set
+validates every cell the credit check reads. What direct mode loses is the independent orders: every order writes
+the company's and the products' collections and its customer's aggregate, so concurrent orders conflict. 34-78
+orders per run were still conflicting after the 10 retries and were refused although they were valid, with
+479-1,173 conflicting attempts per run. Those refused orders never weighed on their customers, which is why direct
+mode refuses fewer orders by the credit rule. The verification counts (refusals by the rule explained, 0
+violations, 0 mismatches) do not depend on the load. The conflict counts do: they depend on how the threads
+interleave, and the largest (1,173 conflicts, 78 refusals) comes from a run on the loaded machine described below.
+
+Cost, from the runs started with a 1-minute load below 4 (median [min-max]):
+
+================  ====  ================  ===================  ===================  ================
+Cell              runs  commit p50 (ms)   commit p95 (ms)      orders/s             committed/s
+================  ====  ================  ===================  ===================  ================
+direct, GIL off   3     10.0 [10.0-10.3]  17.1 [16.7-18.0]     72.9 [72.9-73.3]     58.7 [57.8-59.2]
+intents, GIL off  3     79.2 [78.1-79.5]  110.5 [107.3-111.7]  109.2 [108.7-112.0]  80.5 [80.2-82.9]
+direct, GIL on    2     26.4, 39.8        75.4, 97.3           24.0, 33.4           18.8, 25.4
+intents, GIL on   2     99.0, 100.1       135.3, 145.5         74.2, 74.7           54.9, 55.1
+================  ====  ================  ===================  ===================  ================
+
+Start load (1-minute average) of these runs: direct GIL off 2.07, 3.40, 3.20; intents GIL off 3.13, 3.87, 2.46;
+direct GIL on 3.56, 3.81; intents GIL on 3.54, 3.66. With two runs, both values are given. Each figure comes from
+one timed window per run (the 400 orders, ``wall_s``): 5.46-5.49 s direct and 3.57-3.68 s intents with the GIL
+off; 12.0 and 16.7 s direct and 5.36 and 5.39 s intents with it on. That no other session's process ran during
+these runs is not what the driver checked: its process check (``pgrep -af 'pytest|benchmarks'``) could not see a
+protoST job. It rests on the load and the timeline: the 15-minute load before the first run was 2.49, from this
+task's own tests and calibration runs, and the other session's protoBaseST audit started at 09:31, after the
+reboot. Each run now records its load average and a check that includes protoST (``check`` in its JSON). The remaining cost
+cells (GIL off repetitions 4-5, GIL on repetitions 3-5) are **not measured (machine shared; re-measured in the
+final integration runs)**. The driver stopped when the machine rebooted during GIL-on repetition 3. The
+resumed runs started at loads of 4.9-15.2, just after the boot. Afterwards another session's test suite kept the
+load at 4-6, and a re-measurement that waited for a load below 3 found no quiet window in two hours. Their
+counts are in the table above; their times are in their files and not used.
+
+*Reading the cost.* A commit's latency is measured around ``Transaction.commit()`` in both modes, but the two
+commits do different work. In direct mode the credit rule is checked by the operation, before the commit, and the
+commit validates the read set and publishes. In intent mode the commit replays the logged operations on the cells
+current at commit, checks the rule on the result and publishes, under the root lock. With 8 threads, an intent
+commit therefore also waits for the replays queued ahead of it. The p50 of 79 ms (GIL off) includes that wait, and
+it is not a per-commit CPU cost: the runs at ``9a8ce75`` do not separate the two. In committed orders per second
+(recomputed from the published files, not re-measured), intent mode committed 1.37x as many orders per second as
+direct mode with the GIL off (80.5 against 58.7, medians of 3 runs). With the GIL on it committed 54.9 and 55.1
+orders/s against 18.8 and 25.4 (2 runs each). The two modes do not commit the same orders: direct mode refused
+34-78 valid orders by conflict, and so committed 301-323 against intent mode's 293-300. The orders decided per
+second (400 / window) are in the table, but a refusal by conflict counts as a decision there. Why direct mode
+loses more with the GIL on was not measured.
+
+Reproducing::
+
+    .venv314t/bin/python -m benchmarks.export 9a8ce75 <dir>/export-9a8ce75
+    cd <dir>/export-9a8ce75
+    $PY -X gil=0 -m benchmarks.semantic.credit_experiment --mode direct --threads 8 --orders 400 \
+        --customers 8 --products 4 --seed 1 --workdir <new dir> --out <file>.json
+    $PY -m benchmarks.semantic.credit_experiment --summarize <files> --out summary.json
+
+The driver alternated mode and GIL mode run by run (``direct``, ``intents``; GIL off, then on; 5 repetitions).
+A run takes about 25 seconds, most of it the history verifier's walk of about 300 versions. The final
+integration re-measurement adds ``--reads credit-limit`` runs of both modes, and reports the stage timings
+(``timings`` in each JSON file) of both variants.
+
+Re-measurement at ``6b0697a``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**Measured at commit** ``6b0697a`` (clean export: every results file records ``"clean": true``), on
+2026-11-18, same machine, interpreter and limits as above, with ``--threads 8 --orders 400 --customers 8
+--products 4 --seed 1``. The driver alternated mode, GIL mode and read variant run by run (``none`` then
+``credit-limit``; GIL off then on; ``direct`` then ``intents``; 5 repetitions): 40 runs, all verified, all
+reconciled (``all_clean``). Results: ``benchmarks/results/2026-11-18-6b0697a-credit/`` (one JSON file per run,
+``summary-none.json``, ``summary-credit-limit.json``, ``driver.log`` with the load before every run).
+
+**The machine was shared.** Another session's 24-hour protoBaseST simulation ran throughout (about 1.5 cores),
+and the 1-minute load at the start of the runs was 3.65-6.64. No quiet window was available. The counts and the
+verification below do not depend on the load; the times do, so they are not comparable with the ``9a8ce75``
+cost table (runs started below 4), and no speed change between the two commits is claimed.
+
+Counts, median [min-max] of 5 runs:
+
+=======================  =============  ==============  ==========  =============  ==========
+Cell                     committed      conflicts       refused by  refused by     verifier
+                                        (retries)       conflict    the rule       violations
+=======================  =============  ==============  ==========  =============  ==========
+direct, GIL off          314 [313-316]  562 [517-621]   36 [34-38]  50 [47-51]     0
+direct, GIL on           303 [298-307]  944 [863-1193]  66 [60-84]  31 [18-39]     0
+intents, GIL off         295 [295-296]  0               0           105 [104-105]  0
+intents, GIL on          296            0               0           104            0
+direct, GIL off, reads   313 [312-318]  598 [492-651]   40 [34-43]  44 [42-54]     0
+direct, GIL on, reads    305 [294-312]  805 [599-967]   58 [43-72]  40 [23-56]     0
+intents, GIL off, reads  295 [295-300]  0               0           105 [100-105]  0
+intents, GIL on, reads   295 [294-296]  0               0           105 [104-106]  0
+=======================  =============  ==============  ==========  =============  ==========
+
+("reads" is ``--reads credit-limit``.) The results of ``9a8ce75`` hold at ``6b0697a``, now also with a non-empty
+fine read set: intent mode refused no order by conflict and conflicted on no attempt in any of the 20 runs, and
+no version of any history holds a customer above its limit (0 violations in all 40 runs). Direct mode refused
+34-84 valid orders per run by conflict.
+
+Cost, median [min-max] of 5 runs (times measured on the shared machine):
+
+=======================  ===================  ===================  =================  ================
+Cell                     commit p50 (ms)      commit p95 (ms)      orders/s           committed/s
+=======================  ===================  ===================  =================  ================
+direct, GIL off          12.1 [11.8-12.9]     21.4 [19.5-22.9]     63.5 [59.6-65.0]   49.8 [46.8-51.3]
+direct, GIL on           45.6 [43.5-66.5]     108.3 [94.9-113.4]   22.8 [17.7-23.1]   17.4 [13.2-17.5]
+intents, GIL off         85.7 [84.9-106.9]    127.7 [118.5-156.1]  99.5 [75.4-102.0]  73.3 [55.8-75.2]
+intents, GIL on          113.6 [104.9-117.3]  163.4 [145.5-169.1]  65.1 [63.5-69.8]   48.1 [47.0-51.7]
+direct, GIL off, reads   12.2 [11.3-13.0]     20.3 [17.5-26.9]     62.3 [58.2-68.3]   49.5 [45.5-53.3]
+direct, GIL on, reads    34.7 [27.2-52.9]     92.5 [91.6-112.1]    26.4 [19.7-31.5]   20.6 [15.0-23.7]
+intents, GIL off, reads  90.8 [85.3-109.3]    126.4 [117.7-172.2]  96.4 [77.9-98.7]   71.1 [57.5-73.8]
+intents, GIL on, reads   113.9 [110.5-139.4]  159.0 [150.4-197.5]  64.8 [51.6-67.5]   47.9 [38.0-49.9]
+=======================  ===================  ===================  =================  ================
+
+Stage timings per commit attempt, median over the 5 runs of each run's p50 (ms), and the share of the window
+the root lock was held (``timings`` in each file; ``under_lock`` is ``Transaction._build_root``, ``validate`` the
+reads' validation inside it, ``replay`` the intent replay, ``wait`` the latency minus ``under_lock``):
+
+=======================  ==========  ========  ======  ====  ==============
+Cell                     under lock  validate  replay  wait  lock occupancy
+=======================  ==========  ========  ======  ====  ==============
+direct, GIL off          0.11        0.02      0.00    11.7  0.17
+intents, GIL off         10.15       0.02      3.12    70.0  0.97
+direct, GIL off, reads   0.12        0.02      0.00    11.6  0.17
+intents, GIL off, reads  10.28       0.06      3.16    71.8  0.97
+direct, GIL on           0.07        0.01      0.00    41.9  0.08
+intents, GIL on          10.59       0.02      3.38    89.7  0.75
+direct, GIL on, reads    0.08        0.01      0.00    37.9  0.07
+intents, GIL on, reads   10.47       0.06      3.47    91.5  0.76
+=======================  ==========  ========  ======  ====  ==============
+
+*What the timings say.* **The fine read set costs little here:** reading the customer's ``credit_limit`` raised
+the validation from 0.02 to 0.06 ms per intent commit, and it caused no conflict (no order changes a limit). That
+answers the spec's question on the read set's granularity (section 16) for this workload only: one stored field
+per order, never written concurrently. **The intent commit's latency is mostly the wait for the root lock**:
+with the GIL off the lock was held 97 % of the window, each intent commit held it about 10 ms, and the replay was
+about 3 ms of those. What the remaining 7 ms under the lock are (writing the replayed records, the maintained
+aggregates, the history) is not separated by these probes and is not measured. The probes' own overhead is not
+measured either.
+
+Raw path against 2.0.0rc4, and the catalog install commit
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**The raw path** (code that uses no semantic layer) at ``6b0697a`` against 2.0.0rc4 (``2d78c2b``), Python
+3.14t with the GIL off, on the shared machine (another session's soak held about 1.5 cores). Two
+measurements, each interleaving the two exports:
+
+- the full suite, two repetitions of each commit (load average 4.2-5.8);
+- the seven workloads the first one flagged, three more repetitions of each commit (load average 4.0-8.6;
+  the last ``6b0697a`` repetition ran at 7.7-8.1).
+
+A change counts only when every repetition of one commit is worse than every repetition of the other. In the
+full suite 33 of 209 timings were consistently slower by more than 10 % and 18 consistently faster, but the
+controls that are the same code in both exports (the ``dict``, ``heapq`` and ``sqlite3`` variants) moved by
+up to 2.6x, so the full suite alone decides nothing at that size. The targeted repetitions settle the
+candidates:
+
+.. list-table::
+   :header-rows: 1
+
+   * - Timing
+     - 2d78c2b
+     - 6b0697a
+     - Verdict
+   * - ``cluster_cache``, point reads, atom cache on (reads/s, mean of 3)
+     - 46 750
+     - 38 780
+     - slower in all 5 pairs (17 %)
+   * - ``cluster_cache``, point reads, atom cache off / small; query reads, query cache off
+     -
+     -
+     - slower in all 3 targeted pairs (11-17 %)
+   * - ``inventory``, as-of read of a region's status
+     - 0.19 ms
+     - 0.22 ms
+     - slower in all 3 targeted pairs (18 %)
+   * - ``inventory``, bulk status change of one region (one commit)
+     - 17.3 ms
+     - 19.3 ms
+     - slower in all 3 targeted pairs (12 %)
+   * - ``inventory``, point lookup of a port
+     - 5.9 ms
+     - 7.1 ms
+     - not settled: 56 % slower in the full suite, but the third ``2d78c2b`` repetition was as slow (7.3 ms)
+   * - ``cold_open`` open + first read; ``query_cache`` hits; ``topk``; ``point_lookup``
+     -
+     -
+     - not reproduced: equal or faster in the targeted repetitions
+
+The slower timings are reads and commits through ``DBObject`` attribute access and the commit path, where
+the raw path now pays new costs: the implicit-parent probe when an attribute is absent and when parents are
+listed, the intent check of every registry method call, the root order of every transaction and the
+``__intentLog`` probe of every commit. Which of them costs what is **not attributed**: no profile was taken. The
+``6b0697a`` mean of the first row includes its last repetition, run at the higher load (34 040 reads/s). Once in the full suite,
+``cluster_store_latency`` stopped with ``ProtoOutcomeUnknownError``: a lease ended under load before a member
+stored the commit's records. That is the typed outcome the protocol reports in that case, and the workload
+does not handle it. The other five runs of that workload passed. Results:
+``benchmarks/results/2026-11-18-6b0697a-rawpath/``.
+
+**The catalog install commit** (FileStorage, Python 3.14t with the GIL off, load average about 7; three
+processes of 30 commits each, medians of each process):
+
+.. list-table::
+   :header-rows: 1
+
+   * - Commit
+     - Median (ms)
+   * - a root write (reference)
+     - 6.1-7.0
+   * - install a module without semantic declarations, database without a catalog
+     - 6.8-7.5
+   * - the same install, database with the demo's catalog (two modules)
+     - 23.4-24.9
+   * - first install of ``acme_sales`` / ``acme_delivery``
+     - 20-30 / 18-21
+   * - reinstall of an installed module
+     - 1.1-1.9
+
+An install that adds a module to a catalogued database recomposes and re-encodes the stored catalog under
+the root lock although the catalog does not change: about 17 ms per install commit with the demo's catalog.
+How that grows with the catalog's size is not measured. A reinstall of an installed module plans nothing to
+add and commits no registry change. Earlier text on this page said it recomposed the catalog; it does not.
+Results and the probe: ``benchmarks/results/2026-11-18-6b0697a-catalog-install/`` (the plain modules are
+generated, one file per module, as in ``m6plain-p1-example.py``).
+
+**Not measured yet.** These costs of the semantic model have no numbers on this page:
+
+- The catalog paths beyond the install commit: a pending catalog is verified again by every new session of
+  the transaction that installed it; a process verifies each stored catalog once (memoized per catalog
+  record); the install commit's growth with the catalog's size.
+- Per-access costs of the session: one operations object per attribute access of a semantic object; the
+  linear scans of an ordered (``List``) end that membership checks and unlinks make, quadratic in the members
+  when a load links them one by one; and the first write of a maintained aggregate that a later module added to
+  existing entities, which computes it over the relation's members once.
+- The experiment's own instruments: the overhead of the probes that record the stage timings, and the history
+  verifier, whose walk is proportional to the versions times the cells it checks.
+
 Reproducing
 -----------
 

@@ -20,6 +20,9 @@ ProtoBase's own encoders (`generate.py`) and is checked byte for byte against th
 | `vectors/polyglot/` | A format-4 space holding a record of `polyglot.st.Order`, a type no Python class implements (an opaque atom, D59), which references a ProtoBase record and is referenced from a root, plus an older record of that type written as `polyglot.st.SalesOrder` (its previous name) and referenced under the declared name |
 | `vectors/parents/` | A space using the format-5 feature `parents`: a format-4 segment, then the format-5 segment opened by the first record with parents (the envelope key `p`), with records whose parents are records and a registry name (`registry_name`) |
 | `vectors/registry/` | A space using the format-5 feature `registry`: a format-4 segment, then the format-5 segment opened by an install of the module `conformance.sales` and its dependency `conformance.base`, after the module `base` that every first install adds (`installed`): the catalog objects of `catalog_names` (records whose only parent is their registry name), the `proto_db.registry.ModuleList` of `__currentModules` and the `proto_db.registry.Catalog` of `__catalog` |
+| `vectors/catalog/space/` | A space using the format-6 feature `catalog`: a format-4 segment, then the format-6 segment opened by the first record of the semantic catalog (`catalog_model.json` stored as `__semanticCatalog`), which also holds a later commit's `__intentLog` |
+| `vectors/catalog/canonical.msgpack` | The canonical form of that catalog (ruling R258): what two implementations compare |
+| `catalog_model.json` | The neutral model of the catalog vector (`proto_db.catalog.model`): types `conformance.sales.Customer`, `Order`, `OrderLine` and the subtype `RushOrder`, modules `base`, `conformance.catalog_base` and `conformance.catalog_sales` |
 | `vectors.sha256` | The SHA-256 of every vector file and of `manifest.json`, sorted by path; `format-spec.rst` states this file's own digest |
 | `vectors/cluster/<uuid>.seg` | The segment of one cluster commit: a `SpaceRoot` with its lease term, epoch and predecessor |
 | `vectors/cluster/roots.log` | An acceptor log holding every entry kind (1 to 6), each listed field by field |
@@ -49,7 +52,9 @@ Every description is a JSON object with one key.
 **Stored objects** (database contents): `{"object": type, "attrs": [[name, ...], ...]}` (a
 record, attributes sorted by name), `{"opaque": type, "attrs": [...]}` (a record of a type the
 reader has no class for), `{"registry": type, "attrs": [...]}` (a record of one of the runtime
-registry's types: `proto_db.registry.ModuleList`, `proto_db.registry.Catalog`), `{"collection": type, "elements": [...]}` (List, Set) or
+registry's types: `proto_db.registry.ModuleList`, `proto_db.registry.Catalog`), `{"catalog": type, "attrs": [...]}` (a
+record of one of the semantic catalog's types, `proto_db.catalog.SemanticCatalog` to `proto_db.catalog.IntentRecord`,
+attributes sorted by name), `{"collection": type, "elements": [...]}` (List, Set) or
 `{"collection": type, "items": [[key or element, value or count], ...]}` (the dictionaries,
 CountedSet), in the collection's iteration order. A record with parents also has `"parents": [...]`, its parents in
 order: records described as stored objects, registry names as `{"str": name}`.
@@ -138,9 +143,40 @@ A reader passes when, for every entry of `manifest.json`:
     accept these depths and refuse one container more; the vectors nest deeper than recursion in
     many languages allows by default.
 
+13. `catalog_database`: as `registry_database`, for its `segments` (format 4, then format 6). The
+    records of the semantic catalog's types (aliases 24 to 34, `proto_db.catalog.SemanticCatalog`
+    to `proto_db.catalog.IntentRecord`) use the feature `catalog` and so are in the format-6 segment,
+    whose first record is one of them; none has parents. The root record is version 6. The contents
+    describe them as `catalog`, with their fields as `attrs`: the root `__semanticCatalog` holds the
+    catalog of `model` (`catalog_model.json`, the neutral model: reading the records back into it must
+    give that file's content, with no field at its default), and the root `__intentLog` a List of two
+    IntentRecords whose `transaction` is `intent_log_version`, the version of the database that holds
+    them. The file `canonical` is the catalog's canonical form (format spec, "Composition and the
+    canonical form"): computing it from the model, and from the stored records, must give its bytes.
+
+14. `expressions`: the evaluation vectors of the expression language (format spec, "The expression
+    language"); they are manifest entries, with no file. Each entry has an `id`, an `ast` (the tree as
+    JSON arrays, its operators and names as JSON strings, the operand of every `const` node as a value
+    description), an `element` (a stored-object description of an unsaved record: `object` records of
+    `proto_db.core.dbobject.DBObject`, `collection` Lists, values) and `expected`. It may have `cells`,
+    `[cell name, record]` pairs: what the identity handles (`mutable`) it holds designate, read through
+    the reader; and `defaults`, `[attribute, value]` pairs: the catalogued defaults of the element's
+    own type (the other records of the entry have none). A record built from a description is a new
+    record with its own oid, so the vectors repeat members as handles (identified by their cell name),
+    never as records. Check the tree as outside a query, then
+    evaluate it on the element: the result must be `expected` exactly (a value description, a decimal
+    with its exponent; a `via` gives a `tuple` of the members reached, in first-reached order), or the
+    refusal `{"error": "validation"}` (ProtoValidationError) or `{"error": "not_supported"}`
+    (ProtoNotSupportedError, a reserved operator), whether the check or the evaluation raises it.
+
 For the cross-implementation round trip (R83a), also run the reverse: write a database with
 your implementation, open it with ProtoBase (`ObjectSpace(FileStorage(path))`), and compare; `python -m proto_db.tools.verify <path>`
 does the ProtoBase side in one command (exit 0, and the content dumped in this notation).
+
+Beyond the vectors, `test_catalog_cross_language.py` compares an implementation's step-6 output and
+catalog canonical form with ProtoBase's for one database of the semantic-model demo (environment
+`PROTODB_ST_STEP6_DB`, `PROTODB_ST_STEP6_OUTPUT`, `PROTODB_ST_CANONICAL`; skipped when unset). The
+procedure is `docs/kit/semantic/protoBaseST-handoff.md`.
 
 ## Regenerating
 

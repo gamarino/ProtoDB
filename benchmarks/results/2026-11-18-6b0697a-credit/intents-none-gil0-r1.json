@@ -1,0 +1,145 @@
+{
+ "attempts": 400,
+ "check": {
+  "checked_at": "2026-11-18T04:37:43-0300",
+  "foreign_processes": [
+   "538238 /bin/bash -c source /home/gamarino/.claude/shell-snapshots/snapshot-bash-1794830122983-6crh0o.sh 2>/dev/null || true && \\builtin shopt -u extglob 2>/dev/null || true && { \\builtin unalias -- 'which'; \\builtin unset -f -- 'which'; } >/dev/null 2>&1 || true && { \\builtin unalias -- 'unsetenv'; \\builtin unset -f -- 'unsetenv'; } >/dev/null 2>&1 || true && eval 'cd /home/gamarino/Documentos/proyectos/scratch-8.3n/wt-semantic; S=/home/gamarino/Documentos/proyectos/scratch-8.3n; PY=$S/semantic/t7-env/venv-mcp314/bin/python; CMD='\"'\"'claude -p {question} --mcp-config {mcp_config} --strict-mcp-config --tools \"\" --allowedTools mcp__proto_db__list_entities mcp__proto_db__describe mcp__proto_db__query mcp__proto_db__check_answerable --setting-sources \"\" --disable-slash-commands --no-session-persistence --model claude-sonnet-5-5'\"'\"'; systemd-run --user --scope -q -p MemoryMax=8G -p MemorySwapMax=0 $PY -m benchmarks.semantic.agent_experiment --agent-cmd \"$CMD\" --out $S/agent-exp/full-6b0697a.json --model claude-sonnet-5-5 --workdir $S/agent-exp-work --agent-dir $S/agent-exp-runs --timeout 600 > $S/agent-exp/full-6b0697a.log 2>&1; echo rc=$?; tail -4 $S/agent-exp/full-6b0697a.log' < /dev/null && pwd -P >| /tmp/claude-4593-cwd",
+   "538239 /home/gamarino/Documentos/proyectos/scratch-8.3n/semantic/t7-env/venv-mcp314/bin/python -m benchmarks.semantic.agent_experiment --agent-cmd claude -p {question} --mcp-config {mcp_config} --strict-mcp-config --tools \"\" --allowedTools mcp__proto_db__list_entities mcp__proto_db__describe mcp__proto_db__query mcp__proto_db__check_answerable --setting-sources \"\" --disable-slash-commands --no-session-persistence --model claude-sonnet-5-5 --out /home/gamarino/Documentos/proyectos/scratch-8.3n/agent-exp/full-6b0697a.json --model claude-sonnet-5-5 --workdir /home/gamarino/Documentos/proyectos/scratch-8.3n/agent-exp-work --agent-dir /home/gamarino/Documentos/proyectos/scratch-8.3n/agent-exp-runs --timeout 600",
+   "2521638 timeout 86400 /home/gamarino/Documentos/proyectos/worktrees/protoBaseST-cluster/.superpowers/sdd/2026-11-13-cluster-mode/t31-tmp/bin/protost --print-last sim_rejoin.st",
+   "2521639 /home/gamarino/Documentos/proyectos/worktrees/pinned-360/protoST/build_release/protost --print-last sim_rejoin.st"
+  ],
+  "load_average": [
+   4.083984375,
+   4.130859375,
+   4.61181640625
+  ],
+  "stray_processes": [
+   "538238 /bin/bash -c source /home/gamarino/.claude/shell-snapshots/snapshot-bash-1794830122983-6crh0o.sh 2>/dev/null || true && \\builtin shopt -u extglob 2>/dev/null || true && { \\builtin unalias -- 'which'; \\builtin unset -f -- 'which'; } >/dev/null 2>&1 || true && { \\builtin unalias -- 'unsetenv'; \\builtin unset -f -- 'unsetenv'; } >/dev/null 2>&1 || true && eval 'cd /home/gamarino/Documentos/proyectos/scratch-8.3n/wt-semantic; S=/home/gamarino/Documentos/proyectos/scratch-8.3n; PY=$S/semantic/t7-env/venv-mcp314/bin/python; CMD='\"'\"'claude -p {question} --mcp-config {mcp_config} --strict-mcp-config --tools \"\" --allowedTools mcp__proto_db__list_entities mcp__proto_db__describe mcp__proto_db__query mcp__proto_db__check_answerable --setting-sources \"\" --disable-slash-commands --no-session-persistence --model claude-sonnet-5-5'\"'\"'; systemd-run --user --scope -q -p MemoryMax=8G -p MemorySwapMax=0 $PY -m benchmarks.semantic.agent_experiment --agent-cmd \"$CMD\" --out $S/agent-exp/full-6b0697a.json --model claude-sonnet-5-5 --workdir $S/agent-exp-work --agent-dir $S/agent-exp-runs --timeout 600 > $S/agent-exp/full-6b0697a.log 2>&1; echo rc=$?; tail -4 $S/agent-exp/full-6b0697a.log' < /dev/null && pwd -P >| /tmp/claude-4593-cwd",
+   "538239 /home/gamarino/Documentos/proyectos/scratch-8.3n/semantic/t7-env/venv-mcp314/bin/python -m benchmarks.semantic.agent_experiment --agent-cmd claude -p {question} --mcp-config {mcp_config} --strict-mcp-config --tools \"\" --allowedTools mcp__proto_db__list_entities mcp__proto_db__describe mcp__proto_db__query mcp__proto_db__check_answerable --setting-sources \"\" --disable-slash-commands --no-session-persistence --model claude-sonnet-5-5 --out /home/gamarino/Documentos/proyectos/scratch-8.3n/agent-exp/full-6b0697a.json --model claude-sonnet-5-5 --workdir /home/gamarino/Documentos/proyectos/scratch-8.3n/agent-exp-work --agent-dir /home/gamarino/Documentos/proyectos/scratch-8.3n/agent-exp-runs --timeout 600"
+  ],
+  "workdir_free_bytes": 1028333240320
+ },
+ "clean": true,
+ "commit": "6b0697a",
+ "commit_attempt_latency_ms": {
+  "p50": 86.1,
+  "p95": 149.86
+ },
+ "commit_latency_ms": {
+  "p50": 92.6,
+  "p95": 156.09
+ },
+ "commits": 295,
+ "commits_per_s": 65.56,
+ "conflicts": 0,
+ "customers": 8,
+ "demand": "43292",
+ "durability": "none",
+ "environment": {
+  "cpu_affinity": 12,
+  "cpu_count": 12,
+  "cpu_frequency": {
+   "boost": "1",
+   "driver": "amd-pstate-epp",
+   "energy_performance_preference": "balance_power",
+   "governor": "powersave"
+  },
+  "cpu_model": "AMD Ryzen 5 5500U with Radeon Graphics",
+  "free_threaded_build": true,
+  "gil_enabled": false,
+  "interpreter": "/home/gamarino/Documentos/proyectos/ProtoBase/.venv314t/bin/python",
+  "platform": "Linux-7.0.0-43-generic-x86_64-desconocido-with-glibc2.43",
+  "proto_db": "2.0.0rc4",
+  "proto_db_path": "/home/gamarino/Documentos/proyectos/scratch-8.3n/credit-6b0697a/export-6b0697a/proto_db",
+  "python": "3.14.6",
+  "timestamp": "2026-11-18T04:38:20-0300",
+  "workdir": "/home/gamarino/Documentos/proyectos/scratch-8.3n/credit-6b0697a/work-intents-none-gil0-r1",
+  "workdir_fs": "zfs",
+  "xoptions": {
+   "gil": "0"
+  }
+ },
+ "error_samples": [],
+ "errors": 0,
+ "experiment": "semantic credit: intents against direct mode",
+ "gil": false,
+ "limit_fraction": 0.75,
+ "limits": {
+  "0": "4998",
+  "1": "3615",
+  "2": "4531",
+  "3": "4389",
+  "4": "5121",
+  "5": "3113",
+  "6": "3805",
+  "7": "2895"
+ },
+ "mode": "intents",
+ "orders": 400,
+ "orders_per_s": 88.9,
+ "products": 4,
+ "reads": "none",
+ "reconciliation": [],
+ "rejected_by_conflict": 0,
+ "rejected_by_constraint": 105,
+ "retries": 10,
+ "seed": 1,
+ "settings": {
+  "customers": 8,
+  "durability": "none",
+  "limit_fraction": 0.75,
+  "mode": "intents",
+  "orders": 400,
+  "products": 4,
+  "reads": "none",
+  "retries": 10,
+  "seed": 1,
+  "storage": "file",
+  "threads": 8
+ },
+ "source": {
+  "added": [],
+  "changed": [],
+  "clean": true,
+  "commit": "6b0697a",
+  "commit_full": "6b0697a0bd44136613882c206fbb7b0c90039e6b",
+  "dirty": false,
+  "missing": [],
+  "source": "git archive export"
+ },
+ "storage": "file",
+ "threads": 8,
+ "timing_checks": [],
+ "timings": {
+  "commits_not_reached": 0,
+  "lock_occupancy": 0.9634,
+  "replay_ms": {
+   "p50": 3.36,
+   "p95": 6.35
+  },
+  "samples": 400,
+  "under_lock_ms": {
+   "p50": 10.61,
+   "p95": 20.75
+  },
+  "validate_ms": {
+   "p50": 0.03,
+   "p95": 0.05
+  },
+  "wait_ms": {
+   "p50": 74.53,
+   "p95": 133.6
+  },
+  "what": "per commit attempt: under_lock = Transaction._build_root; validate = the reads' validation in it; replay = IntentLog.replay without validation (0 in direct mode); wait = latency - under_lock; lock_occupancy = sum(under_lock) / wall_s"
+ },
+ "verified": true,
+ "verifier": {
+  "aggregate_mismatches": [],
+  "seconds": 32.012,
+  "versions": 298,
+  "violations": []
+ },
+ "versions_added": 295,
+ "violations": 0,
+ "wall_s": 4.4994
+}

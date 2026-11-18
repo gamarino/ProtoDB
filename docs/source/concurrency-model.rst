@@ -100,9 +100,31 @@ Free-threading
 Collections, indexes and records are immutable and need no locks. Shared mutable state is guarded by locks:
 the storage write buffer and segment writer, the atom and record caches, the publication of a lazy load, the
 transaction's own bookkeeping, and the space's root reference. ``ObjectSpace`` and ``Database`` are shared
-freely between threads. A ``Transaction`` is meant for one thread at a time; an internal lock serialises
-its methods, so a misuse from several threads sees each call happen entirely before or after the others. The
+freely between threads. A ``Transaction`` is meant for one thread at a time; its internal lock serialises
+its methods and the semantic operations on it (create, update, link, unlink and relate of
+:mod:`proto_db.semantic`, and the reads of a semantic session over it), so a misuse from several threads
+sees each call happen entirely before or after the others: a commit or an abort from another thread waits
+for a semantic operation in progress, and an operation that waited for a commit fails before its first
+step. Iterating the members of a ``many`` end is many calls, each one atomic, not one. Ending a transaction
+from inside one of its semantic operations on the same thread (from a computed attribute, for example) is
+refused with ``ProtoUserError``. An intent transaction (``intents=True``) is replayed at commit under the
+root lock, possibly by a group-commit leader in another thread while the owner's thread holds the
+transaction's lock and waits; the replay takes no transaction's lock, so it adds no wait to that order. The
 test suite runs on free-threaded CPython 3.14t and with the GIL.
+
+Intent transactions
+-------------------
+
+With ``intents=True`` (one node; a clustered space refuses it) the semantic session logs its operations,
+applies them to a record view the transaction's own calls read, and the commit replays the log on the cells
+current at the serialized point. What the commit validates is what the caller read through the session: an
+attribute read is ``(cell, attribute) -> exact token``; a query, a computed attribute or a version's stored
+record is the whole token of every cell it read (coarse, never wrong; R261's finer forms are after the MVP).
+An operation that succeeded when recorded and fails at the replay, on a state a concurrent commit changed, is
+``ProtoConflictError`` and is retried by ``Database.run``; a false ``requires`` keeps its own class. The raw
+view never holds the log's effects, so a raw read (``get_mutable``, ``snapshot_mutable``) of a cell the log
+wrote, and a raw write of a cell the log touched, are refused (``ProtoUserError``); ``mutable_names`` lists
+the cells the log created.
 
 Interrupts and signal handlers on Python 3.14
 ---------------------------------------------

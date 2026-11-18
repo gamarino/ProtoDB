@@ -88,6 +88,19 @@ The registry of an object (Task 8, ruling R201)
     it, Review Focus 4), and a linearization with a name node is never computed nor walked
     without the database's registry when it has one (ruling M3 of the Task 4 review).
 
+Semantic classes (spec section 4, :mod:`proto_db.semantic.classes`)
+    An instance of a semantic class has its class's ``__type_name__`` (``_implicit_parent``) as an
+    implicit last parent, after its persisted parents (none when they already name it); it is never
+    persisted.  So the semantic class's own registry chain, and through its registry-name parents its
+    supertypes' chains, follow the instance's own attributes and persisted parents.  A definition of
+    kind ``"descriptor"`` (a semantic ``Field``, ``Computed``, ``Relation``, ...) resolves to
+    ``definition.resolve(receiver)``; a descriptor that declares nothing for the receiver (a ``Field``
+    without a default) answers :data:`UNDECLARED`, and the lookup goes on to the next definition (so
+    a module's redefinition of a field's presentation keeps an earlier module's default, as
+    composition does); a lookup that only meets such descriptors gives ``None`` at the first one's
+    position (a definition was found).  A method that is a semantic intent is bound to its invoker
+    (:func:`proto_db.semantic.classes.bind_intent`) instead of ``types.MethodType``.
+
 Positions
     Where a definition was found, as :func:`resolve` returns it: ``0`` for an own attribute; an
     ``int`` ``k >= 1`` for the object node at index ``k`` of :func:`linearize`; a pair ``(k, j)``
@@ -166,7 +179,8 @@ from .errors import (ProtoAttributeNameError, ProtoCorruptionError, ProtoNotSupp
                      ProtoValidationError)
 from .storage.cache import BoundedCache
 
-__all__ = ["linearize", "resolve", "check_members", "new_cache", "super_proxy", "SuperProxy", "CACHE_NODES",
+__all__ = ["linearize", "resolve", "definitions", "check_members", "new_cache", "super_proxy", "SuperProxy",
+           "UNDECLARED", "CACHE_NODES",
            "NAMES_PER_ENTRY", "current_registry", "set_current_registry", "reset_current_registry",
            "current_reader", "set_reader", "reset_reader", "enter_reader", "exit_reader", "registry_of"]
 
@@ -184,6 +198,13 @@ _ROOT = object()
 
 #: A cached miss in an entry's positions.
 _MISS = object()
+
+#: What a descriptor's ``resolve(receiver)`` answers when it declares no value for the receiver (a
+#: ``Field`` without a default): the lookup goes on past it.
+UNDECLARED = type("_Undeclared", (), {"__repr__": lambda self: "UNDECLARED", "__slots__": ()})()
+
+#: The definition kinds of :mod:`proto_db.registry` that resolution treats apart.
+_METHOD, _DESCRIPTOR = "method", "descriptor"
 
 #: The registry resolution uses when none is passed (``proto_db.registry.using``, ruling R169).
 _CURRENT_REGISTRY: contextvars.ContextVar = contextvars.ContextVar("proto_db_registry", default=None)
@@ -376,8 +397,11 @@ def _resolve_inherited(obj, name, registry=None) -> tuple:
 def _walk(receiver, entry, name, registry, start: int, start_extension: int) -> tuple:
     """``(value, position)`` of the first definition of ``name`` at or after the position
     ``(start, start_extension)`` of the linearization ``entry`` (``start`` >= 1; the extension
-    index applies only when the node ``start`` is a registry name); ``(None, None)`` on a miss."""
+    index applies only when the node ``start`` is a registry name); ``(None, None)`` on a miss.  A
+    descriptor that answers :data:`UNDECLARED` is passed over; when nothing after it answers, the
+    result is ``None`` at the first such descriptor's position."""
     tail = entry.tail
+    passed = None
     for index in range(start, len(tail) + 1):
         node = tail[index - 1]
         if type(node) is str:
@@ -385,29 +409,77 @@ def _walk(receiver, entry, name, registry, start: int, start_extension: int) -> 
             for j in range(start_extension if index == start else 0, len(chain)):
                 definition = chain[j].definitions.get(name)
                 if definition is not None:
-                    return _bound(definition, receiver), (index, j)
+                    value = _bound(definition, receiver)
+                    if value is UNDECLARED:
+                        passed = passed or (index, j)
+                        continue
+                    return value, (index, j)
             continue
         found = _lookup(node, name)
         if found is not _ABSENT:
             return found, index
-    return None, None
+    return None, passed
 
 
 def _value_at(receiver, entry, name, position, registry):
-    """The definition of ``name`` at the cached ``position`` (read once, never walked)."""
+    """The definition of ``name`` at the cached ``position`` (read once; walked on from there only
+    when a descriptor there declares nothing for this receiver)."""
     if type(position) is int:
         return _read(entry.tail[position - 1], name)
     index, j = position
-    return _bound(registry.chain(entry.tail[index - 1])[j].definitions[name], receiver)
+    value = _bound(registry.chain(entry.tail[index - 1])[j].definitions[name], receiver)
+    if value is UNDECLARED:
+        return _walk(receiver, entry, name, registry, index, j + 1)[0]
+    return value
 
 
 def _bound(definition, receiver):
     """A registry definition as resolution returns it: a data default as is, a method bound to
-    ``receiver`` (``self is receiver``)."""
+    ``receiver`` (``self is receiver``; an intent to its invoker), a descriptor resolved for
+    ``receiver`` (possibly :data:`UNDECLARED`)."""
     kind, value = definition
-    if kind == "method":
+    if kind == _METHOD:
+        if value.__dict__.get("__proto_intent__") is not None:
+            return _intent_binder()(value, receiver)
         return types.MethodType(value, receiver)
+    if kind == _DESCRIPTOR:
+        return value.resolve(receiver)
     return value
+
+
+def _intent_binder():
+    """:func:`proto_db.semantic.classes.bind_intent`, imported on first use (the semantic layer imports
+    this module)."""
+    global _bind_intent
+    if _bind_intent is None:
+        from .semantic.classes import bind_intent
+        _bind_intent = bind_intent
+    return _bind_intent
+
+
+_bind_intent = None
+
+
+def definitions(obj, name, registry=None):
+    """The definitions of ``name`` along the linearization of ``obj``, past its own attributes, in
+    the order a lookup meets them, unresolved: ``("own", value)`` for an object node's attribute and
+    the registry's ``(kind, value)`` for each registry-name node's extensions, newest first.  For the
+    semantic layer, which reads a descriptor itself (its declared default, its label)."""
+    parents = _parents_of(obj)
+    if not parents:
+        return
+    entry, registry = _entry_and_registry(obj, parents, registry)
+    _check_python_members(type(obj), entry, registry)
+    for node in entry.tail:
+        if type(node) is str:
+            for extension in _chain(node, registry):
+                definition = extension.definitions.get(name)
+                if definition is not None:
+                    yield definition
+            continue
+        found = _lookup(node, name)
+        if found is not _ABSENT:
+            yield "own", found
 
 
 def _chain(name: str, registry) -> tuple:
@@ -482,9 +554,16 @@ def _read(node, name):
 
 
 def _parents_of(node) -> tuple:
-    """The persisted parents of an object node (``()`` for none), never a class's ``parents``."""
+    """The parents of an object node (``()`` for none), never a class's ``parents``: its persisted
+    parents, then, for an instance of a semantic class, its type name (the implicit last parent,
+    never persisted; not repeated when the persisted parents name it)."""
     found = node._probe("_parents")
-    return () if found is _ABSENT else found
+    implicit = getattr(type(node), "_implicit_parent", None)
+    if implicit is None:
+        return () if found is _ABSENT else found
+    if found is _ABSENT:
+        return (implicit,)
+    return found if implicit in found else found + (implicit,)
 
 
 # -- _super (spec section 6) ----------------------------------------------------------------------
@@ -651,7 +730,12 @@ def _cache_slot(obj, parents: tuple, registry) -> tuple:
             owner = obj.context
             if not isinstance(owner, _transaction_class()):
                 return None, None, None
-            return owner._linearizations, (id(parents), registry), parents
+            # The persisted tuple identifies the entry: a semantic instance's parents tuple (with its
+            # implicit last parent appended) is rebuilt at each lookup, the persisted one is not.
+            held = obj._probe("_parents")
+            if held is _ABSENT or held is parents:
+                return owner._linearizations, (id(parents), registry), parents
+            return owner._linearizations, (id(held), registry, type(obj)._implicit_parent), held
         if context is None:
             context = parent.context
         keys.append(ptr)

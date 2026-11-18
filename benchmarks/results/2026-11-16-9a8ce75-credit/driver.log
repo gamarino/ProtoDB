@@ -1,0 +1,206 @@
+== direct-gil0-r1 2026-11-16T06:54:22-03:00
+ 06:54:22 up 5 days, 16:00,  1 user,  load average: 2,07, 2,33, 2,49
+Mem:           63671       38337       22439        1532        5111       25334
+Inter:          2047        2047           0
+credit experiment at 9a8ce75 (clean: True), mode direct, gil=0, 8 threads, 8 customers, 4 products, seed 1, storage file
+400 orders: 845 attempts, 322 committed, 479 conflicts (retries), 34 rejected by conflict, 44 rejected by constraint, 0 errors
+commit latency p50 9.98 ms, p95 18.0 ms; 58.68 commits/s over 5.487 s
+history verifier: 325 versions, 0 violations, 0 aggregate mismatches
+verified: every order's outcome reconciles with the final state and the history
+exit 0 2026-11-16T06:54:50-03:00
+== intents-gil0-r1 2026-11-16T06:54:50-03:00
+ 06:54:50 up 5 days, 16:01,  1 user,  load average: 3,13, 2,56, 2,56
+Mem:           63671       38494       22281        1534        5114       25177
+Inter:          2047        2047           0
+credit experiment at 9a8ce75 (clean: True), mode intents, gil=0, 8 threads, 8 customers, 4 products, seed 1, storage file
+400 orders: 400 attempts, 296 committed, 0 conflicts (retries), 0 rejected by conflict, 104 rejected by constraint, 0 errors
+commit latency p50 78.06 ms, p95 107.27 ms; 82.88 commits/s over 3.5715 s
+history verifier: 299 versions, 0 violations, 0 aggregate mismatches
+verified: every order's outcome reconciles with the final state and the history
+exit 0 2026-11-16T06:55:15-03:00
+== direct-gil1-r1 2026-11-16T06:55:15-03:00
+ 06:55:15 up 5 days, 16:01,  1 user,  load average: 3,56, 2,69, 2,61
+Mem:           63671       38553       22221        1564        5144       25117
+Inter:          2047        2047           0
+credit experiment at 9a8ce75 (clean: True), mode direct, gil=1, 8 threads, 8 customers, 4 products, seed 1, storage file
+400 orders: 1212 attempts, 314 committed, 874 conflicts (retries), 62 rejected by conflict, 24 rejected by constraint, 0 errors
+commit latency p50 39.78 ms, p95 97.33 ms; 18.83 commits/s over 16.6742 s
+history verifier: 317 versions, 0 violations, 0 aggregate mismatches
+verified: every order's outcome reconciles with the final state and the history
+exit 0 2026-11-16T06:55:55-03:00
+== intents-gil1-r1 2026-11-16T06:55:55-03:00
+ 06:55:55 up 5 days, 16:02,  1 user,  load average: 3,54, 2,83, 2,66
+Mem:           63671       38216       22563        1520        5095       25454
+Inter:          2047        2047           0
+credit experiment at 9a8ce75 (clean: True), mode intents, gil=1, 8 threads, 8 customers, 4 products, seed 1, storage file
+400 orders: 400 attempts, 296 committed, 0 conflicts (retries), 0 rejected by conflict, 104 rejected by constraint, 0 errors
+commit latency p50 100.1 ms, p95 145.49 ms; 54.88 commits/s over 5.3941 s
+history verifier: 299 versions, 0 violations, 0 aggregate mismatches
+verified: every order's outcome reconciles with the final state and the history
+exit 0 2026-11-16T06:56:20-03:00
+== direct-gil0-r2 2026-11-16T06:56:20-03:00
+ 06:56:20 up 5 days, 16:02,  1 user,  load average: 3,40, 2,86, 2,67
+Mem:           63671       38252       22527        1520        5095       25418
+Inter:          2047        2047           0
+credit experiment at 9a8ce75 (clean: True), mode direct, gil=0, 8 threads, 8 customers, 4 products, seed 1, storage file
+400 orders: 895 attempts, 317 committed, 529 conflicts (retries), 34 rejected by conflict, 49 rejected by constraint, 0 errors
+commit latency p50 10.3 ms, p95 17.05 ms; 57.77 commits/s over 5.4869 s
+history verifier: 320 versions, 0 violations, 0 aggregate mismatches
+verified: every order's outcome reconciles with the final state and the history
+exit 0 2026-11-16T06:56:49-03:00
+== intents-gil0-r2 2026-11-16T06:56:49-03:00
+ 06:56:49 up 5 days, 16:03,  1 user,  load average: 3,87, 3,04, 2,74
+Mem:           63671       38314       22464        1524        5100       25356
+Inter:          2047        2047           0
+credit experiment at 9a8ce75 (clean: True), mode intents, gil=0, 8 threads, 8 customers, 4 products, seed 1, storage file
+400 orders: 400 attempts, 295 committed, 0 conflicts (retries), 0 rejected by conflict, 105 rejected by constraint, 0 errors
+commit latency p50 79.24 ms, p95 111.65 ms; 80.17 commits/s over 3.6796 s
+history verifier: 298 versions, 0 violations, 0 aggregate mismatches
+verified: every order's outcome reconciles with the final state and the history
+exit 0 2026-11-16T06:57:12-03:00
+== direct-gil1-r2 2026-11-16T06:57:12-03:00
+ 06:57:13 up 5 days, 16:03,  1 user,  load average: 3,81, 3,11, 2,77
+Mem:           63671       38376       22402        1523        5099       25294
+Inter:          2047        2047           0
+credit experiment at 9a8ce75 (clean: True), mode direct, gil=1, 8 threads, 8 customers, 4 products, seed 1, storage file
+400 orders: 1021 attempts, 304 committed, 672 conflicts (retries), 51 rejected by conflict, 45 rejected by constraint, 0 errors
+commit latency p50 26.39 ms, p95 75.43 ms; 25.36 commits/s over 11.9895 s
+history verifier: 307 versions, 0 violations, 0 aggregate mismatches
+verified: every order's outcome reconciles with the final state and the history
+exit 0 2026-11-16T06:57:45-03:00
+== intents-gil1-r2 2026-11-16T06:57:45-03:00
+ 06:57:45 up 5 days, 16:04,  1 user,  load average: 3,66, 3,16, 2,80
+Mem:           63671       38308       22469        1527        5104       25362
+Inter:          2047        2047           0
+credit experiment at 9a8ce75 (clean: True), mode intents, gil=1, 8 threads, 8 customers, 4 products, seed 1, storage file
+400 orders: 400 attempts, 295 committed, 0 conflicts (retries), 0 rejected by conflict, 105 rejected by constraint, 0 errors
+commit latency p50 99.02 ms, p95 135.34 ms; 55.06 commits/s over 5.3575 s
+history verifier: 298 versions, 0 violations, 0 aggregate mismatches
+verified: every order's outcome reconciles with the final state and the history
+exit 0 2026-11-16T06:58:11-03:00
+== direct-gil0-r3 2026-11-16T06:58:11-03:00
+ 06:58:11 up 5 days, 16:04,  1 user,  load average: 3,20, 3,10, 2,79
+Mem:           63671       38381       22396        1526        5103       25289
+Inter:          2047        2047           0
+credit experiment at 9a8ce75 (clean: True), mode direct, gil=0, 8 threads, 8 customers, 4 products, seed 1, storage file
+400 orders: 854 attempts, 323 committed, 489 conflicts (retries), 35 rejected by conflict, 42 rejected by constraint, 0 errors
+commit latency p50 10.02 ms, p95 16.69 ms; 59.19 commits/s over 5.4567 s
+history verifier: 326 versions, 0 violations, 0 aggregate mismatches
+verified: every order's outcome reconciles with the final state and the history
+exit 0 2026-11-16T06:58:40-03:00
+== intents-gil0-r3 2026-11-16T06:58:40-03:00
+ 06:58:40 up 5 days, 16:05,  1 user,  load average: 2,46, 2,93, 2,75
+Mem:           63671       38284       22493        1525        5102       25386
+Inter:          2047        2047           0
+credit experiment at 9a8ce75 (clean: True), mode intents, gil=0, 8 threads, 8 customers, 4 products, seed 1, storage file
+400 orders: 400 attempts, 295 committed, 0 conflicts (retries), 0 rejected by conflict, 105 rejected by constraint, 0 errors
+commit latency p50 79.47 ms, p95 110.48 ms; 80.5 commits/s over 3.6648 s
+history verifier: 298 versions, 0 violations, 0 aggregate mismatches
+verified: every order's outcome reconciles with the final state and the history
+exit 0 2026-11-16T06:59:04-03:00
+== direct-gil1-r3 2026-11-16T06:59:04-03:00
+ 06:59:04 up 5 days, 16:05,  1 user,  load average: 3,04, 3,02, 2,78
+Mem:           63671       38289       22489        1519        5096       25381
+Inter:          2047        2047           0
+== resume 2026-11-16T08:55:39-03:00: driver stopped during direct-gil1-r3 (no exit line); resuming
+== direct-gil1-r3 2026-11-16T08:55:39-03:00
+ 08:55:39 up 1 min,  1 user,  load average: 7,34, 3,74, 1,43
+Mem:           63671       11280       49984         398        3488       52390
+Inter:          2047           0        2047
+credit experiment at 9a8ce75 (clean: True), mode direct, gil=1, 8 threads, 8 customers, 4 products, seed 1, storage file
+400 orders: 990 attempts, 301 committed, 636 conflicts (retries), 46 rejected by conflict, 53 rejected by constraint, 0 errors
+commit latency p50 23.2 ms, p95 94.34 ms; 24.37 commits/s over 12.3513 s
+history verifier: 304 versions, 0 violations, 0 aggregate mismatches
+verified: every order's outcome reconciles with the final state and the history
+exit 0 2026-11-16T08:56:11-03:00
+== intents-gil1-r3 2026-11-16T08:56:11-03:00
+ 08:56:11 up 2 min,  1 user,  load average: 5,57, 3,65, 1,47
+Mem:           63671       13734       46735         449        4335       49937
+Inter:          2047           0        2047
+credit experiment at 9a8ce75 (clean: True), mode intents, gil=1, 8 threads, 8 customers, 4 products, seed 1, storage file
+400 orders: 400 attempts, 298 committed, 0 conflicts (retries), 0 rejected by conflict, 102 rejected by constraint, 0 errors
+commit latency p50 91.3 ms, p95 136.23 ms; 59.48 commits/s over 5.0099 s
+history verifier: 301 versions, 0 violations, 0 aggregate mismatches
+verified: every order's outcome reconciles with the final state and the history
+exit 0 2026-11-16T08:56:34-03:00
+== direct-gil0-r4 2026-11-16T08:56:34-03:00
+ 08:56:34 up 2 min,  1 user,  load average: 4,88, 3,63, 1,53
+Mem:           63671       15228       44533         468        5061       48442
+Inter:          2047           0        2047
+credit experiment at 9a8ce75 (clean: True), mode direct, gil=0, 8 threads, 8 customers, 4 products, seed 1, storage file
+400 orders: 882 attempts, 310 committed, 517 conflicts (retries), 35 rejected by conflict, 55 rejected by constraint, 0 errors
+commit latency p50 8.84 ms, p95 24.96 ms; 59.45 commits/s over 5.2141 s
+history verifier: 313 versions, 0 violations, 0 aggregate mismatches
+verified: every order's outcome reconciles with the final state and the history
+exit 0 2026-11-16T08:57:00-03:00
+== intents-gil0-r4 2026-11-16T08:57:00-03:00
+ 08:57:00 up 3 min,  1 user,  load average: 4,87, 3,71, 1,61
+Mem:           63671       16902       42259         468        5661       46768
+Inter:          2047           0        2047
+credit experiment at 9a8ce75 (clean: True), mode intents, gil=0, 8 threads, 8 customers, 4 products, seed 1, storage file
+400 orders: 400 attempts, 295 committed, 0 conflicts (retries), 0 rejected by conflict, 105 rejected by constraint, 0 errors
+commit latency p50 90.49 ms, p95 141.59 ms; 64.26 commits/s over 4.591 s
+history verifier: 298 versions, 0 violations, 0 aggregate mismatches
+verified: every order's outcome reconciles with the final state and the history
+exit 0 2026-11-16T08:57:27-03:00
+== direct-gil1-r4 2026-11-16T08:57:27-03:00
+ 08:57:27 up 3 min,  1 user,  load average: 7,61, 4,46, 1,93
+Mem:           63671       17419       41444         468        5960       46252
+Inter:          2047           0        2047
+credit experiment at 9a8ce75 (clean: True), mode direct, gil=1, 8 threads, 8 customers, 4 products, seed 1, storage file
+400 orders: 979 attempts, 305 committed, 625 conflicts (retries), 46 rejected by conflict, 49 rejected by constraint, 0 errors
+commit latency p50 20.79 ms, p95 70.52 ms; 29.15 commits/s over 10.4625 s
+history verifier: 308 versions, 0 violations, 0 aggregate mismatches
+verified: every order's outcome reconciles with the final state and the history
+exit 0 2026-11-16T08:57:57-03:00
+== intents-gil1-r4 2026-11-16T08:57:57-03:00
+ 08:57:57 up 4 min,  1 user,  load average: 5,69, 4,31, 1,96
+Mem:           63671       17642       41220         468        5960       46029
+Inter:          2047           0        2047
+credit experiment at 9a8ce75 (clean: True), mode intents, gil=1, 8 threads, 8 customers, 4 products, seed 1, storage file
+400 orders: 400 attempts, 296 committed, 0 conflicts (retries), 0 rejected by conflict, 104 rejected by constraint, 0 errors
+commit latency p50 103.29 ms, p95 137.39 ms; 53.19 commits/s over 5.565 s
+history verifier: 299 versions, 0 violations, 0 aggregate mismatches
+verified: every order's outcome reconciles with the final state and the history
+exit 0 2026-11-16T08:58:21-03:00
+== direct-gil0-r5 2026-11-16T08:58:21-03:00
+ 08:58:21 up 4 min,  1 user,  load average: 5,44, 4,34, 2,02
+Mem:           63671       17526       41336         468        5961       46145
+Inter:          2047           0        2047
+credit experiment at 9a8ce75 (clean: True), mode direct, gil=0, 8 threads, 8 customers, 4 products, seed 1, storage file
+400 orders: 939 attempts, 318 committed, 579 conflicts (retries), 40 rejected by conflict, 42 rejected by constraint, 0 errors
+commit latency p50 9.96 ms, p95 29.25 ms; 49.47 commits/s over 6.4278 s
+history verifier: 321 versions, 0 violations, 0 aggregate mismatches
+verified: every order's outcome reconciles with the final state and the history
+exit 0 2026-11-16T08:59:01-03:00
+== intents-gil0-r5 2026-11-16T08:59:01-03:00
+ 08:59:01 up 5 min,  1 user,  load average: 9,71, 5,50, 2,50
+Mem:           63671       24966       32527         652        7514       38705
+Inter:          2047           0        2047
+credit experiment at 9a8ce75 (clean: True), mode intents, gil=0, 8 threads, 8 customers, 4 products, seed 1, storage file
+400 orders: 400 attempts, 300 committed, 0 conflicts (retries), 0 rejected by conflict, 100 rejected by constraint, 0 errors
+commit latency p50 86.07 ms, p95 180.14 ms; 61.09 commits/s over 4.9105 s
+history verifier: 303 versions, 0 violations, 0 aggregate mismatches
+verified: every order's outcome reconciles with the final state and the history
+exit 0 2026-11-16T08:59:48-03:00
+== direct-gil1-r5 2026-11-16T08:59:48-03:00
+ 08:59:48 up 6 min,  1 user,  load average: 15,20, 7,66, 3,40
+Mem:           63671       29991       27433         728        7658       33679
+Inter:          2047           0        2047
+credit experiment at 9a8ce75 (clean: True), mode direct, gil=1, 8 threads, 8 customers, 4 products, seed 1, storage file
+400 orders: 1495 attempts, 306 committed, 1173 conflicts (retries), 78 rejected by conflict, 16 rejected by constraint, 0 errors
+commit latency p50 86.56 ms, p95 172.84 ms; 8.31 commits/s over 36.8026 s
+history verifier: 309 versions, 0 violations, 0 aggregate mismatches
+verified: every order's outcome reconciles with the final state and the history
+exit 0 2026-11-16T09:00:50-03:00
+== intents-gil1-r5 2026-11-16T09:00:50-03:00
+ 09:00:50 up 7 min,  1 user,  load average: 13,94, 8,88, 4,10
+Mem:           63671       32020       25134         827        8028       31651
+Inter:          2047           0        2047
+credit experiment at 9a8ce75 (clean: True), mode intents, gil=1, 8 threads, 8 customers, 4 products, seed 1, storage file
+400 orders: 400 attempts, 293 committed, 0 conflicts (retries), 0 rejected by conflict, 107 rejected by constraint, 0 errors
+commit latency p50 114.7 ms, p95 165.12 ms; 47.34 commits/s over 6.1898 s
+history verifier: 296 versions, 0 violations, 0 aggregate mismatches
+verified: every order's outcome reconciles with the final state and the history
+exit 0 2026-11-16T09:01:18-03:00
+== done 2026-11-16T09:01:18-03:00

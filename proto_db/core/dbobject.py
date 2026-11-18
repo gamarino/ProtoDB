@@ -26,6 +26,15 @@ tells a definition (even ``None``) anywhere along the linearization from a miss;
 index paths keep reading own attributes only.  Writes never reach a parent: ``with_`` sets own
 attributes.
 
+Semantic classes (spec section 4, :mod:`proto_db.semantic.classes`): a subclass whose body holds a
+semantic element -- a semantic descriptor (``Field``, ``Computed``, ``Relation``, ...), an intent,
+one of :data:`SEMANTIC_DUNDERS` or ``__validity__`` -- or one of whose bases is a semantic class is
+checked whole by :func:`proto_db.semantic.classes.prepare_semantic_class` before its type name is
+registered (a refused class registers nothing), then handed to
+:func:`~proto_db.semantic.classes.apply_semantic_class`, which moves its semantic elements into the
+registry.  Its instances resolve its ``__type_name__`` as an implicit last parent
+(``_implicit_parent``), never persisted.  Every other subclass is untouched.
+
 ``list`` and ``dict`` values are stored as ``FrozenList`` and ``FrozenDict``
 (by :func:`proto_db.values.canonical`, D25): attempts to mutate them raise
 ``ProtoValidationError``; use ``.copy()`` to get a mutable copy.
@@ -38,13 +47,43 @@ gives versions of a record a shared entity identity (D18).  The class is defined
 from __future__ import annotations
 
 import sys
+import threading
+import types
+import weakref
 
 from .. import resolution
 from ..errors import ProtoAttributeNameError, ProtoUserError, ProtoValidationError
 from ..values import FrozenDict, MutableObject, canonical, check_text
-from .atom import _ABSENT, RESERVED_NAMES, Atom, PersistenceContext, _check_context, class_defines
+from .atom import _ABSENT, RESERVED_NAMES, Atom, PersistenceContext, _check_context, _forget_atom_class, class_defines
 
 __all__ = ["DBObject", "MutableObject"]
+
+#: The semantic dunders of a class body (spec section 4): entity-level semantic declarations.  The
+#: registry keeps them apart from definitions (``proto_db.registry.Extension.semantic``).
+SEMANTIC_DUNDERS = frozenset({"__meaning__", "__label__", "__help__", "__synonyms__", "__key__",
+                              "__certification__", "__constraints__"})
+#: A semantic dunder the MVP refuses (D72): its presence still makes the class semantic, so the
+#: semantic layer names the refusal.
+_DEFERRED_DUNDERS = frozenset({"__validity__"})
+
+
+def deferred_dunder_refusal(where: str, name: str) -> Exception:
+    """The refusal of the deferred semantic dunder ``name`` in a declaration, the same in every spelling
+    (a semantic class, an ``Extension`` subclass, the ``extends`` decorator)."""
+    from ..errors import ProtoNotSupportedError
+    return ProtoNotSupportedError(
+        f"{where}: {name} declares the Validity descriptor (valid time, D72), which is designed and deferred: "
+        f"it is not part of the MVP")
+
+#: The checked declaration of each semantic class being created, from its check (before its type name is
+#: registered) to its application (after): keyed by the class, within the one ``class`` statement.
+_PREPARED: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
+_PREPARED_LOCK = threading.Lock()
+
+
+def _take_prepared(cls):
+    with _PREPARED_LOCK:
+        return _PREPARED.pop(cls, None)
 
 _osa = object.__setattr__
 
@@ -93,6 +132,21 @@ def _checked_parents(parents) -> tuple:
     return tuple(parents)
 
 
+def _is_semantic(cls) -> bool:
+    """Whether the new subclass ``cls`` is a semantic class (spec section 4, R280, preflight F2): one
+    of its bases is one, or its own body holds a semantic element.  Only the class's own namespace
+    and its bases are read."""
+    if any(getattr(base, "_implicit_parent", None) is not None for base in cls.__bases__):
+        return True
+    for name, value in cls.__dict__.items():
+        if name in SEMANTIC_DUNDERS or name in _DEFERRED_DUNDERS:
+            return True
+        if getattr(type(value), "__proto_descriptor__", False) or (
+                type(value) is types.FunctionType and value.__dict__.get("__proto_intent__") is not None):
+            return True
+    return False
+
+
 class DBObject(Atom):
     """Immutable record of named canonical values, with optional parents.
 
@@ -108,6 +162,37 @@ class DBObject(Atom):
 
     __type_name__ = "proto_db.core.dbobject.DBObject"
     _parented = True
+    #: The registry name an instance resolves as its implicit last parent, never persisted: the
+    #: ``__type_name__`` of a semantic class (set by :mod:`proto_db.semantic.classes`), ``None`` for
+    #: every other class.
+    _implicit_parent = None
+
+    def __init_subclass__(cls, **kwargs):
+        try:
+            super().__init_subclass__(**kwargs)     # checks, then registers the type name (F39)
+        except BaseException:
+            _take_prepared(cls)
+            raise
+        plan = _take_prepared(cls)
+        if plan is None:
+            return
+        from ..semantic.classes import apply_semantic_class
+        try:
+            apply_semantic_class(cls, plan)
+        except BaseException:
+            _forget_atom_class(cls)     # not reached unless the module was reloaded meanwhile
+            raise
+
+    @classmethod
+    def _before_registration(cls) -> None:
+        """A semantic class is checked whole (:func:`proto_db.semantic.classes.prepare_semantic_class`)
+        before its type name is registered: a refused declaration registers nothing and changes nothing."""
+        if not _is_semantic(cls):
+            return
+        from ..semantic.classes import prepare_semantic_class
+        plan = prepare_semantic_class(cls)
+        with _PREPARED_LOCK:
+            _PREPARED[cls] = plan
     #: Fields that format-4 records may hold under the names of the parents API (ruling R157):
     #: they load and are carried over by ``with_``, but no new value is ever written under them.
     _legacy_fields = {"parents": "_legacy_parents", "with_parents": "_legacy_with_parents"}
@@ -176,7 +261,7 @@ class DBObject(Atom):
     def _absent_attribute(self, name: str):
         # Python found no member and no own attribute: resolution over the parents (a miss is
         # None, R150; an object without parents answers None at once, as before parents existed).
-        if self._probe("_parents") is _ABSENT:
+        if self._probe("_parents") is _ABSENT and type(self)._implicit_parent is None:
             return None
         return resolution._resolve_inherited(self, name)[0]
 

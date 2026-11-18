@@ -179,6 +179,29 @@ A mismatch is an error (Q2)
     ``reload_registry`` (R202): Python does not cache a failed import, and every commit would retry it. A
     failed reload is not itself remembered: the next lookup tries the import once more.
 
+    The space keeps the lists it **adopted** for each database: the one its first transaction bound, each one
+    its own install commits published (or ended with an unknown outcome), and each one ``reload_registry``
+    bound. A transaction whose snapshot lists an adopted list resolves with that list's registry, whatever its
+    version and whatever the order of its snapshot read and the space's commits (a commit publishes and then
+    rebinds, a transaction reads and then binds, and no clock decides which comes first, R82); while an install
+    commit is between its publish and its rebind, its list counts as adopted. A list never adopted is the
+    mismatch above. The database's binding, which a loaded object resolved outside any block uses, moves only
+    forward in the order of the database's versions, (label, version), the cluster's root order, in which a
+    later lineage orders after the one it replaced: concurrent installs never move it back, and a transaction
+    on an earlier version gets a binding of its own. ``reload_registry`` always rebinds it to the list it
+    reloads (unless an install of the space bound a newer version meanwhile, which it then reloads), also to a
+    version below the bound one: the explicit recovery after a cluster failover beyond the failure model. A
+    space without a coordinator gives every root label 0, cluster labels included, so a cluster's storage
+    opened locally orders its versions alone and its own installs move the binding. In cluster mode, when a
+    transaction on an earlier version finds the node's committed root ordered below the root the binding came
+    from (``force_rejoin()`` on a survivor forgot that root), the binding belongs to a lineage the node no longer
+    follows: the database binds to the transaction's list if its snapshot is that committed root, and is
+    otherwise marked stale, so a loaded object resolved outside any block raises the mismatch until
+    ``reload_registry``, or until a later transaction whose snapshot is the committed root binds the database
+    again. The check runs when a transaction starts: beyond the failure model, between a ``force_rejoin()`` and
+    the next transaction, a loaded object resolved outside any block still uses the forgotten lineage's list.
+    The adopted lists are never pruned; they are bounded by the space's installs and reloads.
+
 **The invariant behind the caches: what a cache entry is keyed by never changes.** The linearization of a
 tuple of saved parents is cached by the parents' pointers and the registry. A record at a pointer never
 changes (P1), its own parents are fixed, and a built registry is immutable, so an entry is never stale and

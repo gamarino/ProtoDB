@@ -181,7 +181,11 @@ __all__ = ["PROTOCOL_VERSION", "MAX_FRAME_BYTES", "CHUNK_BYTES", "MAX_RECORD_BYT
 #: versions must not exchange messages.  Also 14: ``fetched`` and ``commit_info`` may carry the
 #: optional ``unknown`` (R240L), the reply of a member that cannot tell whether it holds what was
 #: asked.
-PROTOCOL_VERSION = 14
+#: 15: the records those messages carry may be format-6 records (the feature ``catalog``, built-in types
+#: with aliases 24 to 34).  The layout of every message is unchanged: a protocol-14 node does not know
+#: those aliases, so it would derive a version-4 header for a segment opened by a catalog record and read
+#: its records as unknown types; as from 13 to 14, the two versions must not exchange messages.
+PROTOCOL_VERSION = 15
 #: Largest accepted frame payload, in bytes (a replicate message carries a commit's records).
 MAX_FRAME_BYTES = 64 * 1024 * 1024
 #: Record bytes a replication puts in one frame at most (a single record may fill one alone).

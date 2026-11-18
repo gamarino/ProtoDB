@@ -1,0 +1,64 @@
+{
+ "plain_then_catalog": {
+  "plain": {
+   "trivial_write": {
+    "n": 30,
+    "median_ms": 6.445,
+    "min_ms": 5.339,
+    "max_ms": 12.576
+   },
+   "install_plain_module": {
+    "n": 30,
+    "median_ms": 6.767,
+    "min_ms": 5.483,
+    "max_ms": 24.702
+   },
+   "trivial_write_after": {
+    "n": 30,
+    "median_ms": 6.146,
+    "min_ms": 5.249,
+    "max_ms": 7.087
+   },
+   "modules": 31
+  },
+  "catalog": {
+   "trivial_write": {
+    "n": 30,
+    "median_ms": 6.201,
+    "min_ms": 5.272,
+    "max_ms": 7.917
+   },
+   "first_install_acme_sales": {
+    "n": 1,
+    "median_ms": 20.201,
+    "min_ms": 20.201,
+    "max_ms": 20.201
+   },
+   "first_install_acme_delivery": {
+    "n": 1,
+    "median_ms": 18.461,
+    "min_ms": 18.461,
+    "max_ms": 18.461
+   },
+   "idempotent_reinstall": {
+    "n": 30,
+    "median_ms": 1.079,
+    "min_ms": 1.028,
+    "max_ms": 1.56
+   },
+   "install_plain_module": {
+    "n": 30,
+    "median_ms": 24.873,
+    "min_ms": 17.797,
+    "max_ms": 43.58
+   },
+   "trivial_write_after": {
+    "n": 30,
+    "median_ms": 6.471,
+    "min_ms": 5.569,
+    "max_ms": 8.031
+   },
+   "modules": 33
+  }
+ }
+}

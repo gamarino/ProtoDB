@@ -21,6 +21,7 @@ from proto_db.cluster.protocol import ClusterProtocolError
 from proto_db.errors import ProtoCorruptionError, ProtoNotSupportedError, ProtoValidationError
 from proto_db.storage import cloud, format as fmt, logfile, tiered
 from proto_db.storage.file import FileStorage
+from proto_db.tools import notation
 from proto_db.transactions import ObjectSpace
 from tests.conformance import typed
 from tests.conformance.generate import describe_database, saved_pointer, stub
@@ -360,9 +361,120 @@ def test_registry_database_contents_through_the_public_api(tmp_path):
         space.close()
 
 
+def test_catalog_database_segments():
+    """A format-4 segment, then the format-6 segment the catalog's first record opened (R151): every
+    record of the catalog's types (feature ``catalog``, aliases 24 to 34) is there, none with parents."""
+    db = MANIFEST["catalog_database"]
+    assert [s["format"] for s in db["segments"]] == [4, 6]
+    for segment in db["segments"]:
+        _check_segment(f"{db['dir']}/{segment['segment']}", segment["records"])
+        assert int.from_bytes(_bytes(f"{db['dir']}/{segment['segment']}")[8:10], "little") == segment["format"]
+        assert all(r["canonical"] for r in segment["records"])
+    first, second = db["segments"]
+    catalog_types = set(fmt.CATALOG_TYPES)
+    assert not any(r.get("type") in catalog_types for r in first["records"])
+    assert second["records"][0]["type"] in catalog_types       # the catalog's first record opened the segment
+    assert {r.get("type") for r in second["records"]} >= catalog_types
+    for record in second["records"]:
+        if record.get("type") in catalog_types:
+            assert record["tag"] == fmt.CATALOG_TYPES[record["type"]] and "parents" not in record
+    root = fmt.decode_root(_bytes(f"{db['dir']}/space.root"))
+    assert root.version == 6 and db["root"]["version"] == 6
+    assert fmt.encode_root(root) == _bytes(f"{db['dir']}/space.root")
+
+
+def test_catalog_database_contents_through_the_public_api(tmp_path):
+    from proto_db.catalog.atoms import intent_log_root, intent_records, semantic_catalog_root
+    from proto_db.catalog.model import from_atoms
+    db = MANIFEST["catalog_database"]
+    work = tmp_path / "db"
+    shutil.copytree(HERE / "vectors" / db["dir"], work)
+    space = ObjectSpace(FileStorage(str(work)))
+    try:
+        assert space.open_database("db").run(describe_database) == db["contents"]
+
+        def check(tx):
+            assert from_atoms(semantic_catalog_root(tx._objects)) == json.loads((HERE / db["model"]).read_text())
+            records = intent_records(intent_log_root(tx._objects))
+            assert [r.intent for r in records] == [("conformance.sales.Order", "add_line"),
+                                                   ("conformance.sales.Order", "confirm")]
+            assert {r.transaction for r in records} == {db["intent_log_version"]} == {tx._db_root.version}
+        space.open_database("db").run(check)
+    finally:
+        space.close()
+
+
+def test_catalog_canonical_form_vector(tmp_path):
+    """The canonical form of the catalog (R258) is the vector's bytes, from the model and from the
+    records stored in the vector space; it decodes to a map of the three catalog fields."""
+    from proto_db.catalog.atoms import semantic_catalog_root
+    from proto_db.catalog.model import canonical_form, from_atoms
+    db = MANIFEST["catalog_database"]
+    expected = _bytes(db["canonical"])
+    assert canonical_form(json.loads((HERE / db["model"]).read_text())) == expected
+    work = tmp_path / "db"
+    shutil.copytree(HERE / "vectors" / db["dir"], work)
+    space = ObjectSpace(FileStorage(str(work)))
+    try:
+        stored = space.open_database("db").run(lambda tx: from_atoms(semantic_catalog_root(tx._objects)))
+    finally:
+        space.close()
+    assert canonical_form(stored) == expected
+    decoded = _decode(expected)
+    assert list(decoded) == ["entities", "module_set", "modules"] and _reencode(decoded) == expected
+
+
+def test_declared_fixture_composes_to_the_catalog_vector():
+    """The catalog vector's model declared in Python (``catalog_fixture.py``, the brief's spelling)
+    composes, through the registry, to the vector's canonical form byte for byte (R258; Task 4): the
+    declaration API, the module contributions and the composition agree with the format."""
+    from proto_db.catalog.model import canonical_form
+    from proto_db.registry import Registry
+    from proto_db.semantic.compose import compose
+    from tests.conformance.catalog_fixture import MAPPING
+    db = MANIFEST["catalog_database"]
+    registry = Registry.build(("base", "conformance.catalog_base", "conformance.catalog_sales"), mapping=MAPPING)
+    model = compose(registry)
+    assert model == json.loads((HERE / db["model"]).read_text())
+    assert canonical_form(model) == _bytes(db["canonical"])
+
+
+# -- the expression language (format spec, "The expression language") ---------------------------
+
+@pytest.mark.parametrize("vector", MANIFEST["expressions"], ids=lambda v: v["id"])
+def test_expression_vector(vector):
+    """README step 14: the tree, checked outside a query and evaluated on the described element with the
+    vector's cells and defaults, gives the expected value (its exact description: a decimal keeps its
+    exponent) or error; the descriptions of the tree and the element are exact round trips."""
+    from tests.conformance.generate import evaluate_vector
+    ast = typed.build_ast(vector["ast"])
+    assert typed.describe_ast(ast) == vector["ast"]
+    element = typed.build_object(vector["element"])
+    assert notation.describe_object(element) == vector["element"]
+    cells = {name: typed.build_object(desc) for name, desc in vector.get("cells", [])}
+    defaults = {name: typed.build(desc) for name, desc in vector.get("defaults", [])}
+    assert evaluate_vector(ast, element, cells, defaults) == vector["expected"]
+
+
+def test_expression_vectors_cover_every_operator():
+    """Every operator of the language appears in a vector, and the refusals the chapter names do."""
+    from proto_db.semantic.expressions import ARITHMETIC, COMPARISONS
+    seen, stack = set(), [v["ast"] for v in MANIFEST["expressions"]]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, list) and node and isinstance(node[0], str):
+            seen.add(node[0])
+            stack.extend(node[1:] if node[0] != "const" else [])
+    assert ARITHMETIC | COMPARISONS | {"const", "attr", "and", "or", "not", "sum", "count", "via", "self", "root",
+                                       "cell"} <= seen
+    errors = {v["expected"].get("error") for v in MANIFEST["expressions"]}
+    assert {"validation", "not_supported"} <= errors
+
+
 def test_every_persistable_builtin_type_appears():
     seen = {r["type"] for r in MANIFEST["database"]["records"] + MANIFEST["cluster"]["segment"]["records"]}
     seen |= {r["type"] for r in MANIFEST["registry_database"]["segments"][1]["records"]}
+    seen |= {r["type"] for r in MANIFEST["catalog_database"]["segments"][1]["records"]}
     abstract = {"proto_db.collections.IndexedCollection", "proto_db.collections.sets._HashBuckets",
                 "proto_db.indexing.Index", "proto_db.indexing.keyed.KeyGroupIndex", "proto_db.avl._Node"}
     assert set(BUILTIN_TYPE_ALIASES) - abstract <= seen

@@ -21,7 +21,7 @@ from proto_db.errors import ProtoCorruptionError
 
 ROOT = Path(__file__).resolve().parents[2]
 BUILTIN_PACKAGES = ("proto_db.core", "proto_db.collections", "proto_db.indexing", "proto_db.storage",
-                    "proto_db.query")
+                    "proto_db.query", "proto_db.catalog")
 BUILTIN_MODULES = ("proto_db.transactions",)
 
 

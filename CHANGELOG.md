@@ -5,6 +5,94 @@ All notable changes to `proto_db` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+**The semantic model (MVP)**: a database that describes itself (decisions D63-D72; design
+`docs/superpowers/specs/2026-11-15-semantic-model-mvp-design.md`; demo `docs/kit/semantic/README.md`). Additive:
+code that uses no semantic layer keeps today's API, bytes and behaviour.
+
+- **Format 6, feature `catalog`** (format spec, "Semantic catalog (format 6)"): eleven built-in types, aliases 24
+  to 34, for the roots `__semanticCatalog` (the composed catalog, written when a module is installed and verified
+  on use) and `__intentLog`. A record of one of them is version 6; data that uses none of them keeps version 4 or
+  5, byte for byte. A reader of format 5 refuses a format-6 segment or root (`ProtoNotSupportedError`), never
+  misreads it. Catalog and expression vectors join the conformance vectors.
+- **Cluster protocol 15**, raised with format 6: a node of protocol 14 does not know the catalog's aliases and
+  would write a version-4 header over a segment opened by a catalog record. Every node of a cluster runs the same
+  protocol version.
+- **`proto_db.semantic`**: entities declared as classes (`Field`, `Enum`, `Computed`, `Aggregate`, `Relation`,
+  `RelationTo`, `Role`, `Relationship`, `Extension`, `Invariant`, `intent`, `Certified`) in registry modules;
+  composition with provenance, the same catalog in any installation order; a neutral expression language;
+  relations with inverses navigable from both ends, relationships with data, roles bound by version, maintained
+  keys and aggregates, `index_by`; the semantic session `semantic(transaction or snapshot)` with `describe`,
+  `query` and atomic operations. A query term naming an attribute the members' type does not declare is refused
+  before anything is read, never read as missing; a row the catalog does not type, and every row over stored
+  structure alone, is read by what it stores (an absent attribute is refused).
+- **Reserved class attributes**: a `DBObject` subclass whose own body defines `__meaning__`, `__label__`,
+  `__help__`, `__synonyms__`, `__key__`, `__certification__`, `__constraints__` or `__validity__` is a semantic
+  class and needs a registry module; rc4 accepted such a class as a plain one, and now its creation is refused
+  ("declares no registry module"). Python reserves `__*__` names; no other name changes meaning.
+- **Direct-mode semantic writes read the catalog**: a transaction's first semantic write enters
+  `__currentModules`, `__catalog` and `__semanticCatalog` in its read set, so a concurrent install makes its
+  commit conflict and `Database.run` retries it against the new catalog (its writes were checked against the
+  catalog of its snapshot). A transaction that only reads through the session is unaffected.
+- **Catalog evolution over existing entities**: a maintained aggregate a later module adds to a type with
+  entities reads as computed from the relation's current members, and the first write that moves it stores it,
+  seeded by that computation. A `required` field or an enforced invariant a later module adds is **not**
+  checked against the entities that exist at install: it binds the operations after the install as everywhere
+  (a `required` field at creation, an invariant when an operation changes its operands). Migrations are
+  designed, not built.
+- **Intent transactions behind a flag**: `new_transaction(intents=True)` and `run(fn, intents=True)` log the
+  semantic operations and replay them at commit on the cells current then, so independent concurrent operations
+  do not conflict. One node only: a space with a cluster coordinator refuses the flag (`ProtoNotSupportedError`).
+  The intent names `create`, `update`, `link`, `unlink` and `relate` are reserved.
+- **Constraints**: role cardinality and enforced invariants are checked on the combined result; a violation
+  raises the new `ProtoConstraintError` (a `ProtoValidationError`, never retried), which carries the rule's name,
+  meaning and rendered message (`describe()`). An enforced invariant may read only its own entity.
+- **A semantic object outside a registry**: an attribute it does not hold resolves through the registry of the
+  database it was read from; with none current, `getattr(o, "x", None)` raises `ProtoNotSupportedError` instead
+  of returning `None` (its own fields read normally).
+- **`proto_db.agent`**: the agent interface, operations `list_entities`, `describe`, `check_answerable` and
+  `query` over one version, JSON-ready. Personal and secret attributes are listed by `describe` and never
+  returned by `query`, nor disclosed through an error or tested by a `where`, also through a path that crosses
+  a record the catalog does not describe (on the safe side: an uncatalogued attribute sharing the name of a
+  catalogued personal one is withheld too). A role or a cell written outside the semantic layer that holds
+  another type than the catalog declares refuses every agent query that reaches it (`ProtoCorruptionError`,
+  content-free), never serves or tests what it holds. A raw mode exposes the stored structure only (the agent
+  experiment's control group: it sees the stored type and attribute names, not their meaning); it withholds
+  what the stored catalog marks personal or secret without needing the modules' code, and a catalog it cannot
+  decode or check makes it refuse, never serve everything. Sensitivity is today's policy: a query with `as_of`
+  withholds what the version read or the current version withholds. Agents never write.
+- **Agent queries refuse the two silent empty answers** (spec section 11, R283): in both modes, a comparison
+  the agent wrote between present values of different kinds (a date with a text, a number with a text) and a
+  `root` or `cell` origin absent from the version read raise `ProtoValidationError` (naming the kinds, or the
+  origin) where the expression language answers false or no members. Int and decimal stay comparable; MISSING and
+  nil keep their meaning; origins are checked on the query before evaluation. Constraints, derived fields (also
+  those read during an agent query), maintained aggregates, the session's own `query` and the conformance vectors
+  are unchanged.
+  `python -m proto_db.agent --path P --database D [--raw] [--log FILE]` serves the operations as MCP tools
+  over stdio; the operator's log (the original messages the agent is not told) goes to `--log FILE` or
+  nowhere, never to the server's stderr, which the MCP client collects. `python -m proto_db.agent.step6`
+  writes the expected output of the protoBaseST step.
+- **New optional extra `agent`**: `pip install proto_db[agent]` installs the MCP SDK, pinned
+  `mcp>=1.30.0,<2` (the tested 1.x line). It is imported only when the server starts; `import proto_db.agent`
+  needs nothing beyond the core.
+- New public read accessors: `iter_root_names(after=)` and `iter_mutable_names(after=)` on `Snapshot` and
+  `HistoryEntry`, and `Dictionary.keys(after=)`: name-ordered cursors that never sort every name.
+- The demo (`docs/kit/semantic/semantic_demo.py`: six steps, one command, checking itself), the concurrency
+  experiment (`benchmarks/semantic/credit_experiment.py`, in `docs/source/performance.rst`) and the agent
+  experiment's harness and questions (`benchmarks/semantic/agent_experiment.py`; results pending,
+  `docs/kit/semantic/agent-experiment.md`).
+
+### Fixed (defects of 2.0.0rc4; candidates for a backport)
+
+- **Concurrent installs in one space**: an older registry rebind landing after a newer one left the database
+  bound to an older module list, so the next transaction failed with a registry mismatch. The database's binding
+  now moves only forward in the order of its versions, so concurrent installs never move it back.
+- **Publish-then-rebind window**: a transaction that started between an install's publish and its rebind got a
+  registry mismatch, depending on timing. The space adopts the list being committed under the root lock before
+  the publish, and a transaction whose snapshot lists an adopted list binds to it (design guide, "The runtime
+  registry").
+
 ## [2.0.0rc4] - 2026-11-15
 
 - A read on a cluster owner after its term lease expired, but before the lease was released, no longer asks its

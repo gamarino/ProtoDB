@@ -1,0 +1,31 @@
+{
+  "id": "q20",
+  "mode": "catalog",
+  "argv": [
+    "claude",
+    "-p",
+    "You are answering one question about a company's business database.  Use only the tools of the MCP server 'proto_db'; do not use files, the web or any other source.\nQuestion: What is the total amount of the orders placed from July to December 2026?\nWhen you are done, end your reply with exactly one line of the form\nANSWER: <answer>\nwhere <answer> is a plain number (digits, an optional minus sign and decimal point; no units, currency signs or thousands separators), a date as YYYY-MM-DD, the cell name of an entity exactly as the database gives it (when the question asks which entity), or NOT ANSWERABLE when the database does not hold what the question needs.",
+    "--mcp-config",
+    "/home/gamarino/Documentos/proyectos/scratch-8.3n/agent-exp-work/server-1/mcp.json",
+    "--strict-mcp-config",
+    "--tools",
+    "",
+    "--allowedTools",
+    "mcp__proto_db__list_entities",
+    "mcp__proto_db__describe",
+    "mcp__proto_db__query",
+    "mcp__proto_db__check_answerable",
+    "--setting-sources",
+    "",
+    "--disable-slash-commands",
+    "--no-session-persistence",
+    "--model",
+    "claude-sonnet-5-5"
+  ],
+  "prompt": "You are answering one question about a company's business database.  Use only the tools of the MCP server 'proto_db'; do not use files, the web or any other source.\nQuestion: What is the total amount of the orders placed from July to December 2026?\nWhen you are done, end your reply with exactly one line of the form\nANSWER: <answer>\nwhere <answer> is a plain number (digits, an optional minus sign and decimal point; no units, currency signs or thousands separators), a date as YYYY-MM-DD, the cell name of an entity exactly as the database gives it (when the question asks which entity), or NOT ANSWERABLE when the database does not hold what the question needs.",
+  "stdout": "The orders dated from 2026-07-01 to 2026-12-31 add up to 1165.50. That covers 18 orders, and all of them are in the \"open\" state. I included every order in the date range, and none are cancelled. I summed each order's stored total by hand from the query results.\n\nANSWER: 1165.50\n",
+  "stderr": "Warning: this sign-in ends between 2026-11-20 and 2026-11-23 (in 2 days at the earliest). Renewing it does not move those dates. Run claude auth login before then, or use claude setup-token for unattended jobs.\n",
+  "exit_code": 0,
+  "timed_out": false,
+  "seconds": 9.234
+}
