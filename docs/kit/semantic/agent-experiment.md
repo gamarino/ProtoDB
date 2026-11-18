@@ -98,6 +98,70 @@ the optional extra `agent` (`pip install -e .[agent]`).
 
 ## Results
 
-**Results pending: the real-agent run has not been performed yet.** No answer, score or model is reported
-here until that run is made; this section will then give, per mode, each question's answer and correctness, the
-counts of correct answers and of unanswerable questions detected, the model, the commit, and the results file.
+One run per question and mode, made on 2026-11-18 at commit `6b0697a` (clean tree):
+
+- **Agent:** Claude Code 2.1.326 in headless mode (`claude -p`), model **`claude-sonnet-5-5`**. It ran with no
+  built-in tools (`--tools ""`), only the server's four tools allowed, no user or project settings
+  (`--setting-sources ""`), and no slash commands. The exact command is in the results file.
+- **Server:** Python 3.14.6, database version 11, built by the demo.
+- **Results file:** `benchmarks/results/2026-11-18-6b0697a-agent/full-6b0697a.json`, with each run's transcript
+  next to it. `--verify` re-scores it from the transcripts: "the report verifies".
+
+| Mode | Correct | Not answerable detected | Verdicts |
+|---|---|---|---|
+| catalog | 23 of 24 | 4 of 4 | 23 correct, 1 wrong |
+| raw (control) | 24 of 24 | 4 of 4 | 24 correct |
+
+| Id | Expected | Catalog | Raw |
+|---|---|---|---|
+| q01 | `8` | `8` | `8` |
+| q02 | `acme.sales.Customer#570d7c4587bb4734bdc5f7be5fbf80b7` | `acme.sales.Customer#570d7c4587bb4734bdc5f7be5fbf80b7` | `acme.sales.Customer#570d7c4587bb4734bdc5f7be5fbf80b7` |
+| q03 | `99229.00` | `99229` | `99229` |
+| q04 | `30` | `30` | `30` |
+| q05 | `1930.00` | `1930.00` | `1930.00` |
+| q06 | `6` | `6` | `6` |
+| q07 | `200400.00` | `200400.00` | `200400` |
+| q08 | `12.00` | `12.00` | `12.00` |
+| q09 | `100.00` | `100.00` | `100.00` |
+| q10 | `36` | `36` | `36` |
+| q11 | `200.00` | `200` | `200` |
+| q12 | `868.00` | `868.00` | `868` |
+| q13 | `16` | `16` | `16` |
+| q14 | `18` | `18` | `18` |
+| q15 | `118.50` | `118.50` | `118.50` |
+| q16 | `2026-03-20` | `2026-03-20` | `2026-03-20` |
+| q17 | `78` | `78` | `78` |
+| q18 | `2` | `2` | `2` |
+| q19 | `2026-12-17` | `2026-12-17` | `2026-12-17` |
+| q20 | `1165.00` | `1165.50` (wrong) | `1165.00` |
+| q21 | `NOT ANSWERABLE` | `NOT ANSWERABLE` | `NOT ANSWERABLE` |
+| q22 | `NOT ANSWERABLE` | `NOT ANSWERABLE` | `NOT ANSWERABLE` |
+| q23 | `NOT ANSWERABLE` | `NOT ANSWERABLE` | `NOT ANSWERABLE` |
+| q24 | `NOT ANSWERABLE` | `NOT ANSWERABLE` | `NOT ANSWERABLE` |
+
+**What this run shows, and what it does not.**
+
+- **Both arms detect the four unanswerable questions**, the advertising question (q21) among them, and neither
+  arm declares any answerable question not answerable.
+- **The catalog shows no measured advantage in correctness on this question set.** The raw arm answered every
+  question: the stored type and attribute names (`price`, `quantity`, `total`, `credit_limit`, `date`) are
+  descriptive enough for these questions, and the model reads them as a person would. The catalog's own content
+  (meanings, the price agreed at the sale, the computed `amount`, units) is not needed to answer any of them. A
+  question set that separates the arms needs questions whose answer depends on what the stored names do not
+  say. This run does not test that.
+- **The catalog arm's one miss (q20) is the agent's own arithmetic.** It listed the 18 orders with their correct
+  totals, then added them by hand to `1165.50`; they sum to `1165.00`. The server's own `sum` gives `1165.00`
+  for that query. The same wrong total came back in all three catalog runs of q20 (at `74d314c`, `a14cf8b` and
+  `6b0697a`). The raw arm reached the right total in each of the runs where it could see the attributes. Both
+  arms added by hand, not with the `sum` aggregate. One possible reason, not confirmed (the transcripts keep only
+  the agent's final text, not its tool calls): an ordering comparison of a date with a string constant
+  (`date >= "2026-07-01"` instead of `{"date": "2026-07-01"}`) is false by D28's type ranks, so such a query
+  returns no rows without an error.
+- **One run per question and mode.** No repetition, so nothing here measures the agent's variance.
+
+**An earlier run measured a defect, not the catalog.** At `74d314c` the raw server read no stored attribute at
+all. It never imports the model's code, so its records load as opaque atoms, and raw mode only read the fields
+of classes it had. The raw arm then answered 7 of 24 (17 declared not answerable), against 23 of 24 for the
+catalog arm. That run is kept as the evidence of the defect, not as a result:
+`benchmarks/results/2026-11-18-74d314c-agent-control-defect/`. Fixed in `a14cf8b`, `e3bad96` and `6b0697a`,
+with tests that read the database in a process without the model's code.

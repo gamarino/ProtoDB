@@ -1,0 +1,1286 @@
+{
+  "model": "claude-sonnet-5-5",
+  "commit": {
+    "sha": "6b0697a0bd44136613882c206fbb7b0c90039e6b",
+    "dirty": false
+  },
+  "agent_command": "claude -p {question} --mcp-config {mcp_config} --strict-mcp-config --tools \"\" --allowedTools mcp__proto_db__list_entities mcp__proto_db__describe mcp__proto_db__query mcp__proto_db__check_answerable --setting-sources \"\" --disable-slash-commands --no-session-persistence --model claude-sonnet-5-5",
+  "python": "3.14.6 (main, Jun 11 2026, 04:03:53) [Clang 22.1.3 ]",
+  "started": "2026-11-18T07:36:43+00:00",
+  "finished": "2026-11-18T07:45:22+00:00",
+  "database": {
+    "workdir": "/home/gamarino/Documentos/proyectos/scratch-8.3n/agent-exp-work",
+    "version": 11
+  },
+  "modes": [
+    "catalog",
+    "raw"
+  ],
+  "question_ids": [
+    "q01",
+    "q02",
+    "q03",
+    "q04",
+    "q05",
+    "q06",
+    "q07",
+    "q08",
+    "q09",
+    "q10",
+    "q11",
+    "q12",
+    "q13",
+    "q14",
+    "q15",
+    "q16",
+    "q17",
+    "q18",
+    "q19",
+    "q20",
+    "q21",
+    "q22",
+    "q23",
+    "q24"
+  ],
+  "ground_truth": {
+    "q01": {
+      "query": {
+        "from": [
+          "via",
+          [
+            "cell",
+            "acme.catalog.Product#3c2687a37b8549e3b70db7dbcd07b332"
+          ],
+          "order_lines"
+        ],
+        "where": [
+          "and",
+          [
+            ">=",
+            [
+              "attr",
+              "order",
+              "date"
+            ],
+            [
+              "const",
+              {
+                "date": "2026-06-01"
+              }
+            ]
+          ],
+          [
+            "<=",
+            [
+              "attr",
+              "order",
+              "date"
+            ],
+            [
+              "const",
+              {
+                "date": "2026-06-30"
+              }
+            ]
+          ]
+        ],
+        "aggregate": [
+          "sum",
+          [
+            "attr",
+            "quantity"
+          ]
+        ]
+      },
+      "post": null
+    },
+    "q02": {
+      "query": {
+        "from": [
+          "via",
+          [
+            "cell",
+            "acme.core.Company#83eb42ff3d814483872b520a618084e9"
+          ],
+          "customers"
+        ],
+        "select": [
+          "name",
+          "committed",
+          "credit_limit"
+        ]
+      },
+      "post": "argmin(credit_limit - committed)"
+    },
+    "q03": {
+      "query": {
+        "from": [
+          "via",
+          [
+            "cell",
+            "acme.core.Company#83eb42ff3d814483872b520a618084e9"
+          ],
+          "customers"
+        ],
+        "select": [
+          "name",
+          "committed",
+          "credit_limit"
+        ]
+      },
+      "post": "max(credit_limit - committed)"
+    },
+    "q04": {
+      "query": {
+        "from": [
+          "via",
+          [
+            "cell",
+            "acme.core.Company#83eb42ff3d814483872b520a618084e9"
+          ],
+          "orders"
+        ],
+        "aggregate": [
+          "count"
+        ]
+      },
+      "post": null
+    },
+    "q05": {
+      "query": {
+        "from": [
+          "via",
+          [
+            "cell",
+            "acme.core.Company#83eb42ff3d814483872b520a618084e9"
+          ],
+          "orders"
+        ],
+        "aggregate": [
+          "sum",
+          [
+            "attr",
+            "total"
+          ]
+        ]
+      },
+      "post": null
+    },
+    "q06": {
+      "query": {
+        "from": [
+          "via",
+          [
+            "cell",
+            "acme.core.Company#83eb42ff3d814483872b520a618084e9"
+          ],
+          "customers"
+        ],
+        "aggregate": [
+          "count"
+        ]
+      },
+      "post": null
+    },
+    "q07": {
+      "query": {
+        "from": [
+          "via",
+          [
+            "cell",
+            "acme.core.Company#83eb42ff3d814483872b520a618084e9"
+          ],
+          "customers"
+        ],
+        "aggregate": [
+          "sum",
+          [
+            "attr",
+            "credit_limit"
+          ]
+        ]
+      },
+      "post": null
+    },
+    "q08": {
+      "query": {
+        "from": [
+          "via",
+          [
+            "cell",
+            "acme.core.Company#83eb42ff3d814483872b520a618084e9"
+          ],
+          "products"
+        ],
+        "where": [
+          "==",
+          [
+            "attr",
+            "name"
+          ],
+          [
+            "const",
+            "widget"
+          ]
+        ],
+        "select": [
+          "list_price"
+        ]
+      },
+      "post": "only(list_price)"
+    },
+    "q09": {
+      "query": {
+        "from": [
+          "via",
+          [
+            "cell",
+            "acme.catalog.Product#3c2687a37b8549e3b70db7dbcd07b332"
+          ],
+          "order_lines"
+        ],
+        "select": [
+          "price"
+        ]
+      },
+      "post": "max(price)"
+    },
+    "q10": {
+      "query": {
+        "from": [
+          "via",
+          [
+            "cell",
+            "acme.catalog.Product#f2c539ac26c24e988293220369083527"
+          ],
+          "order_lines"
+        ],
+        "aggregate": [
+          "sum",
+          [
+            "attr",
+            "quantity"
+          ]
+        ]
+      },
+      "post": null
+    },
+    "q11": {
+      "query": {
+        "from": [
+          "via",
+          [
+            "cell",
+            "acme.catalog.Product#3465c2939fca42bd8533d72ad2b62aa6"
+          ],
+          "order_lines"
+        ],
+        "where": [
+          "and",
+          [
+            ">=",
+            [
+              "attr",
+              "order",
+              "date"
+            ],
+            [
+              "const",
+              {
+                "date": "2026-01-01"
+              }
+            ]
+          ],
+          [
+            "<=",
+            [
+              "attr",
+              "order",
+              "date"
+            ],
+            [
+              "const",
+              {
+                "date": "2026-03-31"
+              }
+            ]
+          ]
+        ],
+        "aggregate": [
+          "sum",
+          [
+            "attr",
+            "amount"
+          ]
+        ]
+      },
+      "post": null
+    },
+    "q12": {
+      "query": {
+        "from": [
+          "via",
+          [
+            "cell",
+            "acme.catalog.Product#3c2687a37b8549e3b70db7dbcd07b332"
+          ],
+          "order_lines"
+        ],
+        "aggregate": [
+          "sum",
+          [
+            "attr",
+            "amount"
+          ]
+        ]
+      },
+      "post": null
+    },
+    "q13": {
+      "query": {
+        "from": [
+          "via",
+          [
+            "cell",
+            "acme.catalog.Product#f2c539ac26c24e988293220369083527"
+          ],
+          "order_lines"
+        ],
+        "aggregate": [
+          "count"
+        ]
+      },
+      "post": null
+    },
+    "q14": {
+      "query": {
+        "from": [
+          "via",
+          [
+            "cell",
+            "acme.core.Company#83eb42ff3d814483872b520a618084e9"
+          ],
+          "orders"
+        ],
+        "where": [
+          "and",
+          [
+            ">=",
+            [
+              "attr",
+              "date"
+            ],
+            [
+              "const",
+              {
+                "date": "2026-07-01"
+              }
+            ]
+          ],
+          [
+            "<=",
+            [
+              "attr",
+              "date"
+            ],
+            [
+              "const",
+              {
+                "date": "2026-12-31"
+              }
+            ]
+          ]
+        ],
+        "aggregate": [
+          "count"
+        ]
+      },
+      "post": null
+    },
+    "q15": {
+      "query": {
+        "from": [
+          "via",
+          [
+            "cell",
+            "acme.core.Company#83eb42ff3d814483872b520a618084e9"
+          ],
+          "orders"
+        ],
+        "where": [
+          "==",
+          [
+            "attr",
+            "number"
+          ],
+          [
+            "const",
+            7
+          ]
+        ],
+        "select": [
+          "total"
+        ]
+      },
+      "post": "only(total)"
+    },
+    "q16": {
+      "query": {
+        "from": [
+          "via",
+          [
+            "cell",
+            "acme.core.Company#83eb42ff3d814483872b520a618084e9"
+          ],
+          "orders"
+        ],
+        "where": [
+          "==",
+          [
+            "attr",
+            "number"
+          ],
+          [
+            "const",
+            15
+          ]
+        ],
+        "select": [
+          "date"
+        ]
+      },
+      "post": "only(date)"
+    },
+    "q17": {
+      "query": {
+        "from": [
+          "via",
+          [
+            "cell",
+            "acme.core.Company#83eb42ff3d814483872b520a618084e9"
+          ],
+          "orders",
+          "lines"
+        ],
+        "aggregate": [
+          "count"
+        ]
+      },
+      "post": null
+    },
+    "q18": {
+      "query": {
+        "from": [
+          "via",
+          [
+            "cell",
+            "acme.core.Company#83eb42ff3d814483872b520a618084e9"
+          ],
+          "customers"
+        ],
+        "where": [
+          ">",
+          [
+            "*",
+            [
+              "attr",
+              "committed"
+            ],
+            [
+              "const",
+              2
+            ]
+          ],
+          [
+            "attr",
+            "credit_limit"
+          ]
+        ],
+        "aggregate": [
+          "count"
+        ]
+      },
+      "post": null
+    },
+    "q19": {
+      "query": {
+        "from": [
+          "via",
+          [
+            "cell",
+            "acme.core.Company#83eb42ff3d814483872b520a618084e9"
+          ],
+          "orders"
+        ],
+        "select": [
+          "number",
+          "date"
+        ]
+      },
+      "post": "max(date)"
+    },
+    "q20": {
+      "query": {
+        "from": [
+          "via",
+          [
+            "cell",
+            "acme.core.Company#83eb42ff3d814483872b520a618084e9"
+          ],
+          "orders"
+        ],
+        "where": [
+          "and",
+          [
+            ">=",
+            [
+              "attr",
+              "date"
+            ],
+            [
+              "const",
+              {
+                "date": "2026-07-01"
+              }
+            ]
+          ],
+          [
+            "<=",
+            [
+              "attr",
+              "date"
+            ],
+            [
+              "const",
+              {
+                "date": "2026-12-31"
+              }
+            ]
+          ]
+        ],
+        "aggregate": [
+          "sum",
+          [
+            "attr",
+            "total"
+          ]
+        ]
+      },
+      "post": null
+    },
+    "q21": {
+      "query": null,
+      "post": null
+    },
+    "q22": {
+      "query": null,
+      "post": null
+    },
+    "q23": {
+      "query": null,
+      "post": null
+    },
+    "q24": {
+      "query": null,
+      "post": null
+    }
+  },
+  "runs": [
+    {
+      "id": "q01",
+      "mode": "catalog",
+      "question": "How many units of the widget did we sell in June 2026?",
+      "answer_kind": "number",
+      "expected": "8",
+      "answer": "8",
+      "correct": true,
+      "verdict": "correct",
+      "exit_code": 0,
+      "timed_out": false,
+      "seconds": 11.158,
+      "transcript": "full-6b0697a.transcripts/catalog-q01.json"
+    },
+    {
+      "id": "q02",
+      "mode": "catalog",
+      "question": "Which customer is closest to its credit limit?",
+      "answer_kind": "cell",
+      "expected": "acme.sales.Customer#570d7c4587bb4734bdc5f7be5fbf80b7",
+      "answer": "acme.sales.Customer#570d7c4587bb4734bdc5f7be5fbf80b7",
+      "correct": true,
+      "verdict": "correct",
+      "exit_code": 0,
+      "timed_out": false,
+      "seconds": 8.398,
+      "transcript": "full-6b0697a.transcripts/catalog-q02.json"
+    },
+    {
+      "id": "q03",
+      "mode": "catalog",
+      "question": "What is the largest amount of credit that any customer still has available?",
+      "answer_kind": "number",
+      "expected": "99229.00",
+      "answer": "99229",
+      "correct": true,
+      "verdict": "correct",
+      "exit_code": 0,
+      "timed_out": false,
+      "seconds": 8.182,
+      "transcript": "full-6b0697a.transcripts/catalog-q03.json"
+    },
+    {
+      "id": "q04",
+      "mode": "catalog",
+      "question": "How many orders has the company received?",
+      "answer_kind": "number",
+      "expected": "30",
+      "answer": "30",
+      "correct": true,
+      "verdict": "correct",
+      "exit_code": 0,
+      "timed_out": false,
+      "seconds": 6.384,
+      "transcript": "full-6b0697a.transcripts/catalog-q04.json"
+    },
+    {
+      "id": "q05",
+      "mode": "catalog",
+      "question": "What is the total amount of all the company's orders?",
+      "answer_kind": "number",
+      "expected": "1930.00",
+      "answer": "1930.00",
+      "correct": true,
+      "verdict": "correct",
+      "exit_code": 0,
+      "timed_out": false,
+      "seconds": 8.102,
+      "transcript": "full-6b0697a.transcripts/catalog-q05.json"
+    },
+    {
+      "id": "q06",
+      "mode": "catalog",
+      "question": "How many customers does the company have?",
+      "answer_kind": "number",
+      "expected": "6",
+      "answer": "6",
+      "correct": true,
+      "verdict": "correct",
+      "exit_code": 0,
+      "timed_out": false,
+      "seconds": 5.855,
+      "transcript": "full-6b0697a.transcripts/catalog-q06.json"
+    },
+    {
+      "id": "q07",
+      "mode": "catalog",
+      "question": "What is the sum of the credit limits of all customers?",
+      "answer_kind": "number",
+      "expected": "200400.00",
+      "answer": "200400.00",
+      "correct": true,
+      "verdict": "correct",
+      "exit_code": 0,
+      "timed_out": false,
+      "seconds": 6.998,
+      "transcript": "full-6b0697a.transcripts/catalog-q07.json"
+    },
+    {
+      "id": "q08",
+      "mode": "catalog",
+      "question": "What is the current list price of the widget?",
+      "answer_kind": "number",
+      "expected": "12.00",
+      "answer": "12.00",
+      "correct": true,
+      "verdict": "correct",
+      "exit_code": 0,
+      "timed_out": false,
+      "seconds": 6.763,
+      "transcript": "full-6b0697a.transcripts/catalog-q08.json"
+    },
+    {
+      "id": "q09",
+      "mode": "catalog",
+      "question": "What is the highest unit price ever agreed for the widget on an order?",
+      "answer_kind": "number",
+      "expected": "100.00",
+      "answer": "100.00",
+      "correct": true,
+      "verdict": "correct",
+      "exit_code": 0,
+      "timed_out": false,
+      "seconds": 9.326,
+      "transcript": "full-6b0697a.transcripts/catalog-q09.json"
+    },
+    {
+      "id": "q10",
+      "mode": "catalog",
+      "question": "How many units of the gizmo have we sold in total?",
+      "answer_kind": "number",
+      "expected": "36",
+      "answer": "36",
+      "correct": true,
+      "verdict": "correct",
+      "exit_code": 0,
+      "timed_out": false,
+      "seconds": 13.601,
+      "transcript": "full-6b0697a.transcripts/catalog-q10.json"
+    },
+    {
+      "id": "q11",
+      "mode": "catalog",
+      "question": "What is the value of the gadget sold in the first quarter of 2026, at the prices agreed on the orders?",
+      "answer_kind": "number",
+      "expected": "200.00",
+      "answer": "200",
+      "correct": true,
+      "verdict": "correct",
+      "exit_code": 0,
+      "timed_out": false,
+      "seconds": 12.118,
+      "transcript": "full-6b0697a.transcripts/catalog-q11.json"
+    },
+    {
+      "id": "q12",
+      "mode": "catalog",
+      "question": "How much have the widget's sales amounted to, at the prices agreed on the orders?",
+      "answer_kind": "number",
+      "expected": "868.00",
+      "answer": "868.00",
+      "correct": true,
+      "verdict": "correct",
+      "exit_code": 0,
+      "timed_out": false,
+      "seconds": 14.9,
+      "transcript": "full-6b0697a.transcripts/catalog-q12.json"
+    },
+    {
+      "id": "q13",
+      "mode": "catalog",
+      "question": "How many order lines include the gizmo?",
+      "answer_kind": "number",
+      "expected": "16",
+      "answer": "16",
+      "correct": true,
+      "verdict": "correct",
+      "exit_code": 0,
+      "timed_out": false,
+      "seconds": 11.257,
+      "transcript": "full-6b0697a.transcripts/catalog-q13.json"
+    },
+    {
+      "id": "q14",
+      "mode": "catalog",
+      "question": "How many orders were placed from July to December 2026?",
+      "answer_kind": "number",
+      "expected": "18",
+      "answer": "18",
+      "correct": true,
+      "verdict": "correct",
+      "exit_code": 0,
+      "timed_out": false,
+      "seconds": 12.682,
+      "transcript": "full-6b0697a.transcripts/catalog-q14.json"
+    },
+    {
+      "id": "q15",
+      "mode": "catalog",
+      "question": "What is the total of order number 7?",
+      "answer_kind": "number",
+      "expected": "118.50",
+      "answer": "118.50",
+      "correct": true,
+      "verdict": "correct",
+      "exit_code": 0,
+      "timed_out": false,
+      "seconds": 8.272,
+      "transcript": "full-6b0697a.transcripts/catalog-q15.json"
+    },
+    {
+      "id": "q16",
+      "mode": "catalog",
+      "question": "On what date was order number 15 placed?",
+      "answer_kind": "date",
+      "expected": "2026-03-20",
+      "answer": "2026-03-20",
+      "correct": true,
+      "verdict": "correct",
+      "exit_code": 0,
+      "timed_out": false,
+      "seconds": 7.079,
+      "transcript": "full-6b0697a.transcripts/catalog-q16.json"
+    },
+    {
+      "id": "q17",
+      "mode": "catalog",
+      "question": "How many order lines are there in all the company's orders?",
+      "answer_kind": "number",
+      "expected": "78",
+      "answer": "78",
+      "correct": true,
+      "verdict": "correct",
+      "exit_code": 0,
+      "timed_out": false,
+      "seconds": 7.142,
+      "transcript": "full-6b0697a.transcripts/catalog-q17.json"
+    },
+    {
+      "id": "q18",
+      "mode": "catalog",
+      "question": "How many customers have committed more than half of their credit limit?",
+      "answer_kind": "number",
+      "expected": "2",
+      "answer": "2",
+      "correct": true,
+      "verdict": "correct",
+      "exit_code": 0,
+      "timed_out": false,
+      "seconds": 7.511,
+      "transcript": "full-6b0697a.transcripts/catalog-q18.json"
+    },
+    {
+      "id": "q19",
+      "mode": "catalog",
+      "question": "What is the date of the most recently dated order?",
+      "answer_kind": "date",
+      "expected": "2026-12-17",
+      "answer": "2026-12-17",
+      "correct": true,
+      "verdict": "correct",
+      "exit_code": 0,
+      "timed_out": false,
+      "seconds": 7.179,
+      "transcript": "full-6b0697a.transcripts/catalog-q19.json"
+    },
+    {
+      "id": "q20",
+      "mode": "catalog",
+      "question": "What is the total amount of the orders placed from July to December 2026?",
+      "answer_kind": "number",
+      "expected": "1165.00",
+      "answer": "1165.50",
+      "correct": false,
+      "verdict": "wrong",
+      "exit_code": 0,
+      "timed_out": false,
+      "seconds": 9.234,
+      "transcript": "full-6b0697a.transcripts/catalog-q20.json"
+    },
+    {
+      "id": "q21",
+      "mode": "catalog",
+      "question": "How much did we spend on advertising in 2026?",
+      "answer_kind": null,
+      "expected": "not_answerable",
+      "answer": "NOT ANSWERABLE",
+      "correct": true,
+      "verdict": "correct",
+      "exit_code": 0,
+      "timed_out": false,
+      "seconds": 5.399,
+      "transcript": "full-6b0697a.transcripts/catalog-q21.json"
+    },
+    {
+      "id": "q22",
+      "mode": "catalog",
+      "question": "How many units of the gizmo are in stock in the warehouse?",
+      "answer_kind": null,
+      "expected": "not_answerable",
+      "answer": "NOT ANSWERABLE",
+      "correct": true,
+      "verdict": "correct",
+      "exit_code": 0,
+      "timed_out": false,
+      "seconds": 6.473,
+      "transcript": "full-6b0697a.transcripts/catalog-q22.json"
+    },
+    {
+      "id": "q23",
+      "mode": "catalog",
+      "question": "What profit margin did we make on the gadget?",
+      "answer_kind": null,
+      "expected": "not_answerable",
+      "answer": "NOT ANSWERABLE",
+      "correct": true,
+      "verdict": "correct",
+      "exit_code": 0,
+      "timed_out": false,
+      "seconds": 9.159,
+      "transcript": "full-6b0697a.transcripts/catalog-q23.json"
+    },
+    {
+      "id": "q24",
+      "mode": "catalog",
+      "question": "Which supplier provides the widget?",
+      "answer_kind": null,
+      "expected": "not_answerable",
+      "answer": "NOT ANSWERABLE",
+      "correct": true,
+      "verdict": "correct",
+      "exit_code": 0,
+      "timed_out": false,
+      "seconds": 6.142,
+      "transcript": "full-6b0697a.transcripts/catalog-q24.json"
+    },
+    {
+      "id": "q01",
+      "mode": "raw",
+      "question": "How many units of the widget did we sell in June 2026?",
+      "answer_kind": "number",
+      "expected": "8",
+      "answer": "8",
+      "correct": true,
+      "verdict": "correct",
+      "exit_code": 0,
+      "timed_out": false,
+      "seconds": 14.302,
+      "transcript": "full-6b0697a.transcripts/raw-q01.json"
+    },
+    {
+      "id": "q02",
+      "mode": "raw",
+      "question": "Which customer is closest to its credit limit?",
+      "answer_kind": "cell",
+      "expected": "acme.sales.Customer#570d7c4587bb4734bdc5f7be5fbf80b7",
+      "answer": "acme.sales.Customer#570d7c4587bb4734bdc5f7be5fbf80b7",
+      "correct": true,
+      "verdict": "correct",
+      "exit_code": 0,
+      "timed_out": false,
+      "seconds": 16.294,
+      "transcript": "full-6b0697a.transcripts/raw-q02.json"
+    },
+    {
+      "id": "q03",
+      "mode": "raw",
+      "question": "What is the largest amount of credit that any customer still has available?",
+      "answer_kind": "number",
+      "expected": "99229.00",
+      "answer": "99229",
+      "correct": true,
+      "verdict": "correct",
+      "exit_code": 0,
+      "timed_out": false,
+      "seconds": 14.36,
+      "transcript": "full-6b0697a.transcripts/raw-q03.json"
+    },
+    {
+      "id": "q04",
+      "mode": "raw",
+      "question": "How many orders has the company received?",
+      "answer_kind": "number",
+      "expected": "30",
+      "answer": "30",
+      "correct": true,
+      "verdict": "correct",
+      "exit_code": 0,
+      "timed_out": false,
+      "seconds": 6.706,
+      "transcript": "full-6b0697a.transcripts/raw-q04.json"
+    },
+    {
+      "id": "q05",
+      "mode": "raw",
+      "question": "What is the total amount of all the company's orders?",
+      "answer_kind": "number",
+      "expected": "1930.00",
+      "answer": "1930.00",
+      "correct": true,
+      "verdict": "correct",
+      "exit_code": 0,
+      "timed_out": false,
+      "seconds": 11.987,
+      "transcript": "full-6b0697a.transcripts/raw-q05.json"
+    },
+    {
+      "id": "q06",
+      "mode": "raw",
+      "question": "How many customers does the company have?",
+      "answer_kind": "number",
+      "expected": "6",
+      "answer": "6",
+      "correct": true,
+      "verdict": "correct",
+      "exit_code": 0,
+      "timed_out": false,
+      "seconds": 5.001,
+      "transcript": "full-6b0697a.transcripts/raw-q06.json"
+    },
+    {
+      "id": "q07",
+      "mode": "raw",
+      "question": "What is the sum of the credit limits of all customers?",
+      "answer_kind": "number",
+      "expected": "200400.00",
+      "answer": "200400",
+      "correct": true,
+      "verdict": "correct",
+      "exit_code": 0,
+      "timed_out": false,
+      "seconds": 12.179,
+      "transcript": "full-6b0697a.transcripts/raw-q07.json"
+    },
+    {
+      "id": "q08",
+      "mode": "raw",
+      "question": "What is the current list price of the widget?",
+      "answer_kind": "number",
+      "expected": "12.00",
+      "answer": "12.00",
+      "correct": true,
+      "verdict": "correct",
+      "exit_code": 0,
+      "timed_out": false,
+      "seconds": 11.161,
+      "transcript": "full-6b0697a.transcripts/raw-q08.json"
+    },
+    {
+      "id": "q09",
+      "mode": "raw",
+      "question": "What is the highest unit price ever agreed for the widget on an order?",
+      "answer_kind": "number",
+      "expected": "100.00",
+      "answer": "100.00",
+      "correct": true,
+      "verdict": "correct",
+      "exit_code": 0,
+      "timed_out": false,
+      "seconds": 15.041,
+      "transcript": "full-6b0697a.transcripts/raw-q09.json"
+    },
+    {
+      "id": "q10",
+      "mode": "raw",
+      "question": "How many units of the gizmo have we sold in total?",
+      "answer_kind": "number",
+      "expected": "36",
+      "answer": "36",
+      "correct": true,
+      "verdict": "correct",
+      "exit_code": 0,
+      "timed_out": false,
+      "seconds": 11.56,
+      "transcript": "full-6b0697a.transcripts/raw-q10.json"
+    },
+    {
+      "id": "q11",
+      "mode": "raw",
+      "question": "What is the value of the gadget sold in the first quarter of 2026, at the prices agreed on the orders?",
+      "answer_kind": "number",
+      "expected": "200.00",
+      "answer": "200",
+      "correct": true,
+      "verdict": "correct",
+      "exit_code": 0,
+      "timed_out": false,
+      "seconds": 18.505,
+      "transcript": "full-6b0697a.transcripts/raw-q11.json"
+    },
+    {
+      "id": "q12",
+      "mode": "raw",
+      "question": "How much have the widget's sales amounted to, at the prices agreed on the orders?",
+      "answer_kind": "number",
+      "expected": "868.00",
+      "answer": "868",
+      "correct": true,
+      "verdict": "correct",
+      "exit_code": 0,
+      "timed_out": false,
+      "seconds": 19.072,
+      "transcript": "full-6b0697a.transcripts/raw-q12.json"
+    },
+    {
+      "id": "q13",
+      "mode": "raw",
+      "question": "How many order lines include the gizmo?",
+      "answer_kind": "number",
+      "expected": "16",
+      "answer": "16",
+      "correct": true,
+      "verdict": "correct",
+      "exit_code": 0,
+      "timed_out": false,
+      "seconds": 13.342,
+      "transcript": "full-6b0697a.transcripts/raw-q13.json"
+    },
+    {
+      "id": "q14",
+      "mode": "raw",
+      "question": "How many orders were placed from July to December 2026?",
+      "answer_kind": "number",
+      "expected": "18",
+      "answer": "18",
+      "correct": true,
+      "verdict": "correct",
+      "exit_code": 0,
+      "timed_out": false,
+      "seconds": 16.553,
+      "transcript": "full-6b0697a.transcripts/raw-q14.json"
+    },
+    {
+      "id": "q15",
+      "mode": "raw",
+      "question": "What is the total of order number 7?",
+      "answer_kind": "number",
+      "expected": "118.50",
+      "answer": "118.50",
+      "correct": true,
+      "verdict": "correct",
+      "exit_code": 0,
+      "timed_out": false,
+      "seconds": 11.779,
+      "transcript": "full-6b0697a.transcripts/raw-q15.json"
+    },
+    {
+      "id": "q16",
+      "mode": "raw",
+      "question": "On what date was order number 15 placed?",
+      "answer_kind": "date",
+      "expected": "2026-03-20",
+      "answer": "2026-03-20",
+      "correct": true,
+      "verdict": "correct",
+      "exit_code": 0,
+      "timed_out": false,
+      "seconds": 15.564,
+      "transcript": "full-6b0697a.transcripts/raw-q16.json"
+    },
+    {
+      "id": "q17",
+      "mode": "raw",
+      "question": "How many order lines are there in all the company's orders?",
+      "answer_kind": "number",
+      "expected": "78",
+      "answer": "78",
+      "correct": true,
+      "verdict": "correct",
+      "exit_code": 0,
+      "timed_out": false,
+      "seconds": 12.625,
+      "transcript": "full-6b0697a.transcripts/raw-q17.json"
+    },
+    {
+      "id": "q18",
+      "mode": "raw",
+      "question": "How many customers have committed more than half of their credit limit?",
+      "answer_kind": "number",
+      "expected": "2",
+      "answer": "2",
+      "correct": true,
+      "verdict": "correct",
+      "exit_code": 0,
+      "timed_out": false,
+      "seconds": 15.119,
+      "transcript": "full-6b0697a.transcripts/raw-q18.json"
+    },
+    {
+      "id": "q19",
+      "mode": "raw",
+      "question": "What is the date of the most recently dated order?",
+      "answer_kind": "date",
+      "expected": "2026-12-17",
+      "answer": "2026-12-17",
+      "correct": true,
+      "verdict": "correct",
+      "exit_code": 0,
+      "timed_out": false,
+      "seconds": 25.223,
+      "transcript": "full-6b0697a.transcripts/raw-q19.json"
+    },
+    {
+      "id": "q20",
+      "mode": "raw",
+      "question": "What is the total amount of the orders placed from July to December 2026?",
+      "answer_kind": "number",
+      "expected": "1165.00",
+      "answer": "1165.00",
+      "correct": true,
+      "verdict": "correct",
+      "exit_code": 0,
+      "timed_out": false,
+      "seconds": 16.094,
+      "transcript": "full-6b0697a.transcripts/raw-q20.json"
+    },
+    {
+      "id": "q21",
+      "mode": "raw",
+      "question": "How much did we spend on advertising in 2026?",
+      "answer_kind": null,
+      "expected": "not_answerable",
+      "answer": "NOT ANSWERABLE",
+      "correct": true,
+      "verdict": "correct",
+      "exit_code": 0,
+      "timed_out": false,
+      "seconds": 6.344,
+      "transcript": "full-6b0697a.transcripts/raw-q21.json"
+    },
+    {
+      "id": "q22",
+      "mode": "raw",
+      "question": "How many units of the gizmo are in stock in the warehouse?",
+      "answer_kind": null,
+      "expected": "not_answerable",
+      "answer": "NOT ANSWERABLE",
+      "correct": true,
+      "verdict": "correct",
+      "exit_code": 0,
+      "timed_out": false,
+      "seconds": 6.291,
+      "transcript": "full-6b0697a.transcripts/raw-q22.json"
+    },
+    {
+      "id": "q23",
+      "mode": "raw",
+      "question": "What profit margin did we make on the gadget?",
+      "answer_kind": null,
+      "expected": "not_answerable",
+      "answer": "NOT ANSWERABLE",
+      "correct": true,
+      "verdict": "correct",
+      "exit_code": 0,
+      "timed_out": false,
+      "seconds": 8.729,
+      "transcript": "full-6b0697a.transcripts/raw-q23.json"
+    },
+    {
+      "id": "q24",
+      "mode": "raw",
+      "question": "Which supplier provides the widget?",
+      "answer_kind": null,
+      "expected": "not_answerable",
+      "answer": "NOT ANSWERABLE",
+      "correct": true,
+      "verdict": "correct",
+      "exit_code": 0,
+      "timed_out": false,
+      "seconds": 5.728,
+      "transcript": "full-6b0697a.transcripts/raw-q24.json"
+    }
+  ],
+  "summary": {
+    "catalog": {
+      "runs": 24,
+      "correct": 23,
+      "failed_runs": 0,
+      "not_answerable": 4,
+      "not_answerable_detected": 4,
+      "verdicts": {
+        "correct": 23,
+        "wrong": 1
+      }
+    },
+    "raw": {
+      "runs": 24,
+      "correct": 24,
+      "failed_runs": 0,
+      "not_answerable": 4,
+      "not_answerable_detected": 4,
+      "verdicts": {
+        "correct": 24
+      }
+    }
+  },
+  "verified": true
+}

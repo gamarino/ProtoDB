@@ -1,0 +1,31 @@
+{
+  "id": "q01",
+  "mode": "raw",
+  "argv": [
+    "claude",
+    "-p",
+    "You are answering one question about a company's business database.  Use only the tools of the MCP server 'proto_db'; do not use files, the web or any other source.\nQuestion: How many units of the widget did we sell in June 2026?\nWhen you are done, end your reply with exactly one line of the form\nANSWER: <answer>\nwhere <answer> is a plain number (digits, an optional minus sign and decimal point; no units, currency signs or thousands separators), a date as YYYY-MM-DD, the cell name of an entity exactly as the database gives it (when the question asks which entity), or NOT ANSWERABLE when the database does not hold what the question needs.",
+    "--mcp-config",
+    "/home/gamarino/Documentos/proyectos/scratch-8.3n/agent-exp-work/server-2/mcp.json",
+    "--strict-mcp-config",
+    "--tools",
+    "",
+    "--allowedTools",
+    "mcp__proto_db__list_entities",
+    "mcp__proto_db__describe",
+    "mcp__proto_db__query",
+    "mcp__proto_db__check_answerable",
+    "--setting-sources",
+    "",
+    "--disable-slash-commands",
+    "--no-session-persistence",
+    "--model",
+    "claude-sonnet-5-5"
+  ],
+  "prompt": "You are answering one question about a company's business database.  Use only the tools of the MCP server 'proto_db'; do not use files, the web or any other source.\nQuestion: How many units of the widget did we sell in June 2026?\nWhen you are done, end your reply with exactly one line of the form\nANSWER: <answer>\nwhere <answer> is a plain number (digits, an optional minus sign and decimal point; no units, currency signs or thousands separators), a date as YYYY-MM-DD, the cell name of an entity exactly as the database gives it (when the question asks which entity), or NOT ANSWERABLE when the database does not hold what the question needs.",
+  "stdout": "The widget sold 8 units in June 2026. Two orders contain widget lines in that month, and each order has two widget lines:\n\n- Order c7e092ce\u2026 (2026-06-23): 1 + 3 = 4 units\n- Order 450a43a1\u2026 (2026-06-11): 1 + 3 = 4 units\n\nI added these up by hand from the order lines listed under the widget product. The widget's list price changed from 10.00 to 12.00 in some later records, but that doesn't affect unit counts.\n\nANSWER: 8\n",
+  "stderr": "Warning: this sign-in ends between 2026-11-20 and 2026-11-23 (in 2 days at the earliest). Renewing it does not move those dates. Run claude auth login before then, or use claude setup-token for unattended jobs.\n",
+  "exit_code": 0,
+  "timed_out": false,
+  "seconds": 14.302
+}
