@@ -87,7 +87,10 @@ another repository; the demo says so and points at `docs/kit/semantic/protoBaseS
 - Raw mode (`python -m proto_db.agent ... --raw`) is the agent experiment's control group: it exposes the stored
   structure only. The control agent still sees the stored type and attribute names (`acme.sales.Customer`,
   `credit_limit`), not their meaning, labels, synonyms, units or computed attributes.
-- Personal and secret attributes are listed by `describe` and never returned by `query`, in either mode.
+- Personal and secret attributes are listed by `describe` and never returned by `query`, in either mode, also
+  through a path that crosses a record the catalog does not describe. The check errs on the safe side: an
+  attribute of an uncatalogued record that has the same name as a catalogued personal or secret attribute is
+  withheld too.
 - Agents never write: intent execution through the agent interface is outside the MVP.
 - The MCP server keeps the operator's log (`proto_db.agent`: the original messages an agent is not told) off its
   stderr, which the MCP client collects: pass `--log FILE` to keep it. The log can be noisy: a failure that

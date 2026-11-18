@@ -1170,3 +1170,53 @@ def test_an_inherited_intermediate_step_of_an_uncatalogued_row_is_refused_for_wh
         query(db, {"from": items, "select": ["link.v"]})
     message = str(refused.value)
     assert "'link'" in message and "inherited" in message and "last step" in message, message
+
+
+# -- final re-review C1-b: a step the catalog does not declare never hides what follows it -----------------
+
+def _notes_db(storage):
+    """A database whose root ``notes`` holds an uncatalogued record ``{who: <Bob's handle>, n: 1}``; Bob's ``name``
+    is personal."""
+    from proto_db.core.dbobject import DBObject
+    space = ObjectSpace(storage, modules_mapping=MAPPING)
+    db = space.new_database("db")
+    db.run(lambda tr: tr.install_module("acme_sales"))
+
+    def build(tr):
+        s = semantic(tr)
+        company = s.create("acme.core.Company", name="ACME")
+        bob = s.create(CUSTOMER, name=f"{MARK}-Bob", credit_limit=Decimal("1000"), company=company)
+        tr.set_root_object("notes", tr.new_list().append_last(DBObject(who=bob, n=1)))
+    db.run(build)
+    return space, db
+
+
+@pytest.mark.parametrize("mode", ["catalog", "raw", "raw without the code"])
+def test_a_path_through_an_undeclared_step_is_checked_after_it(mode):
+    """C1-b: after a step the catalog does not declare (an uncatalogued record's attribute), the members' type is
+    unknown, so the next step is checked against every catalogued type that declares it: a personal attribute
+    is withheld from a selection and refused in a where (no yes/no oracle), in every mode."""
+    storage = MemoryStorage()
+    space, db = _notes_db(storage)
+    reader = ObjectSpace(storage, modules_mapping={}) if mode == "raw without the code" else None
+    try:
+        target = db if reader is None else reader.open_database("db")
+        raw = mode != "catalog"
+        selected = query(target, {"from": ["root", "notes"], "select": ["who.name", "n"]}, raw=raw)
+        assert MARK not in json.dumps(selected)
+        assert selected["rows"][0]["values"] == {"n": 1}
+        through = query(target, {"from": ["via", ["root", "notes"], "who"]}, raw=raw)
+        assert MARK not in json.dumps(through) and "name" not in through["rows"][0]["values"]
+        for tree in ({"from": ["root", "notes"], "where": ["==", ["attr", "who", "name"], ["const", f"{MARK}-Bob"]],
+                      "aggregate": ["count"]},
+                     {"from": ["via", ["root", "notes"], "who"],
+                      "where": ["==", ["attr", "name"], ["const", f"{MARK}-Bob"]], "aggregate": ["count"]},
+                     {"from": ["via", ["root", "notes"], "who"], "aggregate": ["sum", ["attr", "name"]]}):
+            with pytest.raises(ProtoValidationError) as refused:
+                query(target, tree, raw=raw)
+            assert MARK not in str(refused.value)
+    finally:
+        if reader is not None:
+            reader.close()
+        space.close()
+

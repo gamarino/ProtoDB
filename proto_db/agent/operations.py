@@ -45,7 +45,12 @@ Sensitivity (spec section 11; ``describe`` lists every attribute, ``query`` omit
       read (``ProtoValidationError`` naming it): a filter or a sum over a personal value discloses it.  The
       check is static and conservative: where the members' type is not known (a ``root`` origin), every type
       of the catalog is a candidate, and a step is withheld when it is withheld in any candidate type (a
-      subtype included).
+      subtype included).  A step reaches known types only when every candidate declares it as a role to a
+      catalogued type; after any other step (one the catalog does not declare, as on an uncatalogued record,
+      or a field, whose value is not type-checked) the type is unknown again, so a step never hides what
+      follows it: ``who.name`` through an uncatalogued record holding a customer is withheld, and a ``where``
+      on it refused (no yes/no oracle).  The cost is on the safe side: an uncatalogued record's attribute that
+      shares its name with a catalogued personal or secret one is withheld too.
     - A value a row would show is checked against that row's own type before anything is evaluated: a
       selected path that reads a withheld attribute is left out of that row's selection (the default
       selection the same way) and is never evaluated, so a withheld Python-only computed attribute never
@@ -355,13 +360,21 @@ class _Withholding:
     def path(self, types, steps, seen: frozenset = frozenset()) -> tuple:
         """``(finding, types reached)`` for the path ``steps`` read on members of ``types`` (``None``: any):
         the first withheld ``(type, name, sensitivity)`` the path reads (``sensitivity`` is ``None`` for a
-        Python-only computed attribute), else ``None``; and the types its
-        last step reaches when every step is a role (``None`` when not known)."""
+        Python-only computed attribute), else ``None``; and the types its last step reaches (``None`` when not
+        known).
+
+        A step reaches known types only when every candidate type declares it as a role whose target the catalog
+        describes.  Otherwise (a step some candidate does not declare, as on an uncatalogued record, or one that
+        is not such a role: a field may hold anything, field values are not type-checked) what it reaches is
+        unknown, ``None``, and the next step is checked against every catalogued type: a step never hides what
+        follows it.  This is the safe side: an attribute name a non-sensitive record shares with a catalogued
+        personal one is withheld too."""
         for step in steps:
-            following = set()
+            following, known = set(), True
             for type_name in self.candidates(types):
                 element = self.elements.get(type_name, {}).get(step)
                 if element is None:
+                    known = False
                     continue
                 sensitivity = element.get("sensitivity")
                 if sensitivity in WITHHELD:
@@ -372,7 +385,9 @@ class _Withholding:
                         return finding, None
                 if "target" in element and element["target"] in self.entities:
                     following |= self.subtypes(element["target"])
-            types = frozenset(following)
+                else:
+                    known = False
+            types = frozenset(following) if known and types is not None else None
         return None, types
 
     def computed(self, type_name: str, name: str, seen: frozenset):
