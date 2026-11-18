@@ -15,7 +15,8 @@ Sources:
     from the registry's `__catalog`);
   - modules are never uninstalled: they evolve, and the database is perennial.
 
-Section 17 lists the confirmed rulings (R258-R280); section 17a lists the two subclass rulings, confirmed on 2026-11-15.
+Section 17 lists the confirmed rulings (R258-R280); section 17a lists the two subclass rulings, confirmed on 2026-11-15;
+section 17b the agent-query ruling R283, confirmed on 2026-11-18.
 
 **Scope rule (the script).** The MVP is a demo script, and only what the script needs is built. Everything else
 in the brief is respected, and nothing built may contradict it: incomplete but coherent, never lame. The catalog
@@ -329,7 +330,8 @@ it reaches).
   - then MISSING in gives MISSING;
   - division is deferred.
 - Comparison `["==", "!=", "<", "<=", ">", ">=", a, b]`: D28's semantics (`values_equal`, type ranks,
-  `order_key`). A comparison involving MISSING is false.
+  `order_key`). A comparison involving MISSING is false. An agent query refuses a comparison across type ranks
+  instead (section 11, R283).
 - Logic `["and", a, ...]`, `["or", a, ...]` (one operand or more), `["not", a]`. Logic operands are booleans, evaluated left to right, `and` stopping at the first false and `or` at the first
   true. A MISSING operand counts as false (as in a comparison), so `not` of MISSING is true. Any other
   non-boolean operand that is reached raises `ProtoValidationError`.
@@ -342,7 +344,7 @@ it reaches).
 - Traversal `["via", origin, role, role...]` (one role or more): the set reached through each end's own
   collection. Origins *(R265)*: `["self"]`; in queries only, `["root", name]` and `["cell", name]`; in a query
   `["root", name]` is also a bare root, the members of that root. An absent root, like an absent cell, has no
-  members.
+  members; an agent query refuses it instead (section 11, R283).
   - Members come in first-reached order (each member of the previous hop in its order, then its end's collection
     in its iteration order); a member reached twice counts once, identified by its handle's cell name, a
     version-bound reference by (entity cell name, version oid), a record by its oid; any other value in a role
@@ -558,6 +560,23 @@ Rules:
 - `personal` and `secret` attributes are listed by `describe` and omitted by `query`.
 - Agents never write: intent execution and `propose` are outside the MVP.
 - A violated constraint is reported with its `name`, `meaning` and `message`.
+- **Agent queries refuse the silent empty answers** *(R283)*. These rules hold for the agent operations only (in
+  catalog and raw mode alike); the expression language of section 7 is unchanged for constraints, derived fields,
+  maintained aggregates and the session's own `query`, which stay total functions (and the conformance vectors
+  with them).
+  - A comparison (`==`, `!=`, `<`, `<=`, `>`, `>=`) anywhere in the query (`from`, `where`, an aggregate's
+    term) whose two evaluated operands are both present (neither MISSING nor nil) and orderable, and have
+    different D28 type ranks, raises `ProtoValidationError` naming the operator and the two kinds (int and
+    decimal are one rank, the number), never a value. A comparison with MISSING or nil keeps D28's semantics. A
+    comparison the planner answers through an index is held to the same rule: each element of the collection is
+    evaluated against it as the planner reads it, so whether a query is refused never depends on its plan.
+  - A `["root", name]` or `["cell", name]` origin anywhere in the query that does not exist in the version read
+    (with `as_of`, the version it names) raises `ProtoValidationError` naming the origin and saying that version.
+    The catalog declares no roots, so existence in the version read is the rule; an existing empty root answers
+    no rows. The reserved roots keep their own refusal.
+  - Withholding comes first: a `from`, `where` or aggregate reading a withheld attribute is refused before
+    anything is evaluated, so neither refusal can test a withheld value; a kind refusal is decided by the kinds of
+    reachable values the agent may see, an origin refusal by a name the agent supplied.
 - A **raw mode** of the server exposes only the stored structure (root and cell names, raw records, the same
   `query`), for the agent experiment's control group.
 
@@ -670,3 +689,10 @@ Conflicts with the brief found while writing, resolved above:
 - the brief calls the expression tree "the one the planner already uses", but D36's syntax differs (section 7);
 - block 7's `where="state in (...)"` needs `in`, which is outside the script's subset;
 - the brief's validation section expects write skew in the current mode (R275).
+
+### 17b. Agent-query ruling (confirmed 2026-11-18)
+
+- **R283** (maintainer, changes this specification) An agent query refuses, with `ProtoValidationError`, a
+  comparison across D28 type ranks between present operands and a `root` or `cell` origin absent from the version
+  read, where the expression language answers false and no members (section 11). The expression language itself
+  (D28, R265) and the conformance vectors are unchanged.

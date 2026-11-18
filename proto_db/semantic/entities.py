@@ -153,7 +153,7 @@ from . import compose as _compose
 from . import constraints as _constraints
 from .classes import IntentContext
 from .descriptors import RegistryReader
-from .expressions import (Reader, _arithmetic, checking, reached, _identity, _number, _operand_error, _truth, check_ast, describe_operand,
+from .expressions import (Reader, _arithmetic, check_origin, checking, reached, refusing, _identity, _number, _operand_error, _truth, check_ast, describe_operand,
                           evaluate, to_planner, unwrap_entry)
 
 __all__ = ["Version", "Members", "BoundIntent", "SessionContext", "Operations", "Schema", "StoredReader", "check_query",
@@ -1444,11 +1444,14 @@ class Operations:
         stored value (the handle) beside the record it designates."""
         if origin[0] == "cell":
             found = self.reader.cell(origin[1])
+            check_origin("cell", origin[1], found)
             current = [] if found is None else [(MutableObject(origin[1]), found)]
             if found is not None:
                 reached(None, origin[1], found)
         else:
-            current = self._reached(self.reader.members(self.reader.root(origin[1])))
+            found = self.reader.root(origin[1])
+            check_origin("root", origin[1], found)
+            current = self._reached(self.reader.members(found))
         for role in roles:
             out, seen = [], {}
             for _, record in current:
@@ -1537,7 +1540,7 @@ class Operations:
         when some conjunct could plan.  ``holder`` is the record whose attribute ``step`` holds the collection:
         while a check of reached members is held (:func:`~proto_db.semantic.expressions.checking_reached`),
         every member of the collection is reported, before the plan runs."""
-        planned, indexed, residual = [], [], []
+        planned, candidates, indexed, residual = [], [], [], []
         allowed = None
         if info is None:
             # No catalog says what the collection holds, and no stored metadata does: its elements do.  It
@@ -1564,6 +1567,7 @@ class Operations:
                 residual.append(conjunct)
             else:
                 planned.append(term)
+                candidates.append(candidate)
                 indexed.append(conjunct)
         if collection is None:
             return [], {**source, "plan": None, "indexed": copy.deepcopy(indexed), "residual": copy.deepcopy(residual)}
@@ -1572,6 +1576,12 @@ class Operations:
             # must not depend on what the where selects (no yes/no answer about a member it would refuse).
             _tagged(_FROM, self._reached, [unwrap_entry(element) if entries else element
                                            for element in collection.elements()], holder, step)
+        if candidates and refusing():
+            # Under the agent-query rules a comparison across kinds is refused (spec section 11, R283), but the
+            # planner answers a planned conjunct without the evaluator: each element of the collection is
+            # evaluated against the planned conjuncts as the planner reads it (its stored values, no default),
+            # so whether a query is refused never depends on its plan.  One pass over the end, agent queries only.
+            _tagged(_WHERE, self._check_kinds, collection, candidates)
         query = from_collection(collection)
         if planned:
             query = query.where(planned[0] if len(planned) == 1 else And(*planned))
@@ -1580,6 +1590,14 @@ class Operations:
         reached = _tagged(_FROM, self._reached, [unwrap_entry(element) if entries else element for element in listed])
         members = _tagged(_WHERE, self._satisfying, reached, residual)
         return members, {**source, "plan": plan, "indexed": copy.deepcopy(indexed), "residual": copy.deepcopy(residual)}
+
+    @staticmethod
+    def _check_kinds(collection, candidates) -> None:
+        """Evaluate each planned conjunct of ``candidates`` on every element of ``collection`` as the planner reads
+        it, for the refusal of a comparison across kinds (:func:`~proto_db.semantic.expressions.check_kinds`)."""
+        for element in collection.elements():
+            for candidate in candidates:
+                evaluate(candidate, element)
 
     def _terms(self, used: list, types: list, reads: list) -> list:
         """The catalog elements the query used, with their certification: the roles it crossed and the

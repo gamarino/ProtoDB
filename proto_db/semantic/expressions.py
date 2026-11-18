@@ -42,9 +42,10 @@ from ..errors import ProtoNotSupportedError, ProtoUserError, ProtoValidationErro
 from ..indexing.keyspec import _step as _stored_step
 from ..query.expressions import And, Expression, Not, Or
 from ..query.terms import MIRRORED, Term, compare
-from ..values import MISSING, MutableObject, canonical, is_atom
+from ..values import MISSING, MutableObject, canonical, is_atom, is_orderable, order_key
 
-__all__ = ["Reader", "checking", "checking_reached", "reached", "check_ast", "evaluate", "to_planner", "dependencies", "parse", "unwrap_entry", "describe_operand",
+__all__ = ["Reader", "checking", "checking_reached", "reached", "agent_rules", "refusing", "check_kinds",
+           "check_origin", "check_ast", "evaluate", "to_planner", "dependencies", "parse", "unwrap_entry", "describe_operand",
            "ARITHMETIC", "COMPARISONS", "RESERVED", "MAX_EXPRESSION_DEPTH"]
 
 #: The arithmetic operators (R264); division is not specified.
@@ -149,6 +150,69 @@ def reached(holder, step: str, member) -> None:
     check = _REACHED.get()
     if check is not None and member is not MISSING:
         check(holder, step, member)
+
+
+#: While :func:`agent_rules` holds it, how an absent origin's refusal names the version read (else ``None``).
+_AGENT: contextvars.ContextVar = contextvars.ContextVar("proto_db_semantic_agent", default=None)
+
+#: The name of each D28 type rank, as a refusal names an operand's kind (by its rank, never its value).
+_RANK_NAMES = ("missing", "nil", "boolean", "number", "text", "bytes", "date", "time", "time with a time zone",
+               "datetime", "datetime with a time zone", "duration", "uuid", "tuple", "record", "identity handle")
+
+
+@contextlib.contextmanager
+def agent_rules(version: str = "the version read"):
+    """While the block runs in this context, evaluation follows the agent-query rules (spec section 11, R283)
+    instead of being a total function: a comparison whose present operands have different D28 type ranks
+    raises (:func:`check_kinds`), and so does a ``root`` or ``cell`` origin absent from the version read
+    (:func:`check_origin`; ``version`` is how its message names that version).  Outside the block (constraints,
+    derived fields, maintained aggregates, the session's own query) D28 and R265 hold unchanged: such a
+    comparison is false and such an origin has no members."""
+    token = _AGENT.set(version)
+    try:
+        yield
+    finally:
+        _AGENT.reset(token)
+
+
+def refusing() -> bool:
+    """Whether the agent-query rules (:func:`agent_rules`) hold in this context."""
+    return _AGENT.get() is not None
+
+
+def _plain_refusal(message: str) -> ProtoValidationError:
+    """A refusal whose message names only what the query names and kinds: the agent boundary reports it as is
+    (``semantic_plain``, :func:`proto_db.semantic.entities.scrubbed`)."""
+    error = ProtoValidationError(message)
+    error.semantic_plain = True
+    return error
+
+
+def check_kinds(op: str, left, right) -> None:
+    """Under :func:`agent_rules`, refuse the comparison ``left op right`` when both operands are present (neither
+    MISSING nor nil), orderable, and of different D28 type ranks: D28 makes it false for every value, so an
+    agent would read a plausible empty answer.  The message names the operator and the two kinds only.  A
+    MISSING or nil operand, an operand no rank orders (a list, a map, NaN) and every comparison outside the
+    rules keep D28's semantics."""
+    if _AGENT.get() is None or left is MISSING or right is MISSING or left is None or right is None:
+        return
+    if not (is_orderable(left) and is_orderable(right)):
+        return
+    lrank, rrank = order_key(left)[0], order_key(right)[0]
+    if lrank != rrank:
+        raise _plain_refusal(f"Operator {op!r} compares a {_RANK_NAMES[lrank]} with a {_RANK_NAMES[rrank]}: values "
+                             f"of different kinds are never equal or ordered, so an agent query refuses the "
+                             f"comparison instead of answering it as false (spec section 11, R283)")
+
+
+def check_origin(kind: str, name: str, found) -> None:
+    """Under :func:`agent_rules`, refuse the ``root`` or ``cell`` origin ``name`` (``kind``) when ``found``, what
+    the version read holds under it, is ``None``: R265 gives an absent origin no members, so a misspelled name
+    would answer 0 rows.  The name came from the agent; no stored value is named."""
+    version = _AGENT.get()
+    if version is not None and found is None:
+        raise _plain_refusal(f"The {kind} {name!r} does not exist in {version}; an agent query refuses an absent "
+                             f"origin instead of answering it as empty (spec section 11, R283)")
 
 
 # -- the static check -------------------------------------------------------------------------------
@@ -301,7 +365,9 @@ def _eval(node, element, reader: Reader, depth: int):
     if op in ARITHMETIC:
         return _arithmetic(op, _eval(operands[0], element, reader, below), _eval(operands[1], element, reader, below))
     if op in COMPARISONS:
-        return compare(_eval(operands[0], element, reader, below), op, _eval(operands[1], element, reader, below))
+        left, right = _eval(operands[0], element, reader, below), _eval(operands[1], element, reader, below)
+        check_kinds(op, left, right)
+        return compare(left, op, right)
     if op == "and":
         return all(_truth(op, _eval(operand, element, reader, below)) for operand in operands)
     if op == "or":
@@ -435,11 +501,14 @@ def _members_of(node, element, reader: Reader) -> tuple:
         current = [element]
     elif kind == "cell":
         found = reader.cell(origin[1])
+        check_origin("cell", origin[1], found)
         current = [] if found is None else [found]
         if found is not None:
             reached(None, origin[1], found)
     else:
-        _reach(reader.members(reader.root(origin[1])), current, {}, reader)
+        found = reader.root(origin[1])
+        check_origin("root", origin[1], found)
+        _reach(reader.members(found), current, {}, reader)
     for role in roles:
         hop, seen = [], {}
         for member in current:

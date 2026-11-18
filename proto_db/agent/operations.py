@@ -23,6 +23,15 @@ Every answer is JSON-ready (:func:`to_json`).  This module imports no third-part
   ``{"number", "ref"}`` (F23; ``as_of`` takes that ``ref``).  The tree's shape is checked by the engine's
   own check (:func:`~proto_db.semantic.entities.check_query`).
 
+Refusals instead of silent empty answers (spec section 11, R283)
+    While a query is evaluated, the expression language follows the agent-query rules
+    (:func:`~proto_db.semantic.expressions.agent_rules`), in both modes: a comparison whose present operands
+    (neither MISSING nor nil) have different D28 type ranks (a date with a text) raises ``ProtoValidationError``
+    naming the operator and the two kinds, where the language answers false, also when the planner answers it
+    through an index; a ``root`` or ``cell`` origin absent from the version read raises one naming it, where the
+    language gives no members.  Both are decided after the withholding screen, by kinds of values the agent may
+    see or by a name it supplied, so neither tests a withheld value.
+
 Rows
     A row of a query without an aggregate is ``{"entity": {"cell": name} | None, "type_name", "values"}``:
     the cell of the entity it reads (``None`` for a relationship atom, which has no identity), its type, and
@@ -133,7 +142,7 @@ from ..semantic import semantic
 from ..semantic import compose as _compose
 from ..semantic.entities import check_query, is_evaluation_failure, query_stored, scrubbed
 from ..semantic.store import checked_stored_model
-from ..semantic.expressions import checking_reached, unwrap_entry
+from ..semantic.expressions import agent_rules, checking_reached, unwrap_entry
 from ..values import MutableObject, check_text, is_atom
 
 __all__ = ["list_entities", "describe", "check_answerable", "query", "to_json", "from_json"]
@@ -942,7 +951,8 @@ def query(db, tree: Mapping, *, raw: bool = False) -> dict:
         answer = query_stored(snapshot, run, with_members=True, selection=use) if raw else \
             session.query(run, members=True, selection=use)
         return _answer(answer, tree, policy, raw)
-    with checking_reached(policy.check_member):
+    version = "the version read (the one 'as_of' names)" if "as_of" in tree else "the version read"
+    with checking_reached(policy.check_member), agent_rules(version):
         return scrubbed("the query", answered, log=_LOG)
 
 

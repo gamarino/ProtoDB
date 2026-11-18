@@ -63,6 +63,9 @@ byte ("Composition and the canonical form"; bytes in `tests/conformance/vectors/
     collections chapter), so rows over a Set (`customer_limits`, `widget`) are not in cell-name order; a List end is walked in stored order.
 - Reading entities as "Entity data" specifies (cells, parentless records, bound references, absent and nil
   ends as empty, defaults for absent fields, maintained values compared by value).
+- The expression vectors follow D28 and R265 (a comparison across kinds is false, an absent root has no
+  members); only the agent interface's `query` refuses those two cases (design spec section 11, R283), which the
+  step-6 queries never reach.
 
 ## What not to implement
 

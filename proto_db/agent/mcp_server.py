@@ -32,7 +32,8 @@ _INSTRUCTIONS = (
     "the catalog names every term of a question; a term it does not match cannot be answered from this "
     "database (suggestions are only suggestions).  query runs a query tree on one version and answers its "
     "rows, explain(), the version read and the catalog terms used; personal and secret attributes are never "
-    "returned.  Agents never write.")
+    "returned; it refuses, rather than answering as empty, a comparison between values of different kinds and "
+    "a root or a cell that does not exist in the version read.  Agents never write.")
 
 _QUERY_HELP = (
     "Run a query tree (spec section 11): {\"from\": [\"via\", [\"cell\", <cell name>], <role>, ...] or "
@@ -42,6 +43,9 @@ _QUERY_HELP = (
     "[\"const\", value], [\"==\" | \"!=\" | \"<\" | \"<=\" | \">\" | \">=\", a, b], [\"+\" | \"-\" | \"*\", a, b], "
     "[\"and\", ...], [\"or\", ...], [\"not\", a].  A constant that JSON cannot spell is a one-key object: "
     "{\"decimal\": \"10.50\"}, {\"date\": \"2026-06-01\"}, {\"datetime\": ...}, {\"time\": ...}, {\"cell\": name}.  "
+    "A comparison between values of different kinds (a date with a text: spell a date as {\"date\": ...}) and a "
+    "[\"root\", name] or [\"cell\", name] that does not exist in the version read are refused, never answered "
+    "as false or empty.  "
     "Answers decimals as strings and dates in ISO 8601.  'terms' lists the catalog elements the query used, each "
     "with its own 'sensitivity' (public, internal, personal or secret); one whose values were kept from you adds "
     "\"withheld\": true and 'withheld_because': {\"reads\": {type_name, name, sensitivity}} or "

@@ -62,6 +62,12 @@ code that uses no semantic layer keeps today's API, bytes and behaviour.
   what the stored catalog marks personal or secret without needing the modules' code, and a catalog it cannot
   decode or check makes it refuse, never serve everything. Sensitivity is today's policy: a query with `as_of`
   withholds what the version read or the current version withholds. Agents never write.
+- **Agent queries refuse the two silent empty answers** (spec section 11, R283): in both modes, a comparison
+  between present values of different kinds (a date with a text, a number with a text) and a `root` or `cell`
+  origin absent from the version read raise `ProtoValidationError` (naming the kinds, or the origin) where the
+  expression language answers false or no members. Int and decimal stay comparable; MISSING and nil keep their
+  meaning. Constraints, derived fields, maintained aggregates, the session's own `query` and the conformance
+  vectors are unchanged.
   `python -m proto_db.agent --path P --database D [--raw] [--log FILE]` serves the operations as MCP tools
   over stdio; the operator's log (the original messages the agent is not told) goes to `--log FILE` or
   nowhere, never to the server's stderr, which the MCP client collects. `python -m proto_db.agent.step6`

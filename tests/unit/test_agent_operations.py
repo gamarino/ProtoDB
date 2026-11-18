@@ -1532,3 +1532,216 @@ def test_a_record_inside_a_plain_container_is_summarized_in_a_process_without_th
     assert MARK not in json.dumps(seen)
     assert seen["rows"][0]["values"]["extra"] == [{"record": CUSTOMER}]
     assert seen["rows"][0]["values"]["extra_map"] == {"k": {"record": CUSTOMER}}
+
+
+# -- agent queries refuse the two silent-zero footguns (spec section 11, ruling R283) ------------------------
+
+def _orders_of(world) -> list:
+    return ["via", ["cell", world["company"].name], "orders"]
+
+
+def _refused(db, tree, raw, *needles) -> str:
+    """The message of the ``ProtoValidationError`` ``query`` raises for ``tree``; it names every needle."""
+    with pytest.raises(ProtoValidationError) as refused:
+        query(db, tree, raw=raw)
+    message = str(refused.value)
+    for needle in needles:
+        assert needle in message, message
+    return message
+
+
+@pytest.mark.parametrize("raw", [False, True])
+def test_an_agent_query_refuses_a_comparison_across_kinds(db, raw):
+    """A date compared with a text, or a number with a text, would match nothing (D28): an agent query refuses
+    it, naming the operator and both kinds, never a stored value.  Int and decimal are one kind: answered."""
+    world = _load(db)
+    orders = _orders_of(world)
+    for where in ([">=", ["attr", "date"], ["const", "2026-01-01"]],
+                  [">=", ["const", "2026-01-01"], ["attr", "date"]],
+                  ["and", ["==", ["attr", "number"], ["const", 1]], ["<", ["attr", "date"], ["const", "x"]]]):
+        message = _refused(db, {"from": orders, "where": where}, raw, "date", "text")
+        assert "2026-0" not in message and "06-03" not in message, message
+    message = _refused(db, {"from": orders, "where": ["==", ["attr", "number"], ["const", "1"]]}, raw,
+                       "number", "text", "'=='")
+    assert _refused(db, {"from": orders, "aggregate": ["count"], "where": ["!=", ["attr", "date"], ["const", 3]]},
+                    raw, "date", "number", "'!='")
+    answered = query(db, {"from": orders, "where": ["==", ["attr", "number"], ["const", Decimal("1.0")]],
+                          "select": ["number"]}, raw=raw)
+    assert [row["values"]["number"] for row in answered["rows"]] == [1]
+    june = query(db, {"from": orders, "where": [">=", ["attr", "date"], ["const", date(2026, 6, 1)]],
+                      "aggregate": ["count"]}, raw=raw)
+    assert june["rows"] == [{"count": 3}]
+
+
+def test_an_index_answered_comparison_across_kinds_is_refused_too(db):
+    """A comparison the planner answers through an index never reaches the evaluator: the refusal must not
+    depend on the plan (catalog mode plans ``order.date`` over the widget's entries)."""
+    world = _load(db)
+    tree = {"from": ["via", ["cell", world["widget"].name], "order_lines"], "select": ["quantity"],
+            "where": [">=", ["attr", "order", "date"], ["const", "2026-06-01"]]}
+    _refused(db, tree, False, "date", "text")
+    planned = query(db, {**tree, "where": JUNE})
+    assert len(planned["explain"]["indexed"]) == 2 and planned["explain"]["residual"] == []   # given to the planner
+    assert sorted(row["values"]["quantity"] for row in planned["rows"]) == ["2", "5"]
+
+
+@pytest.mark.parametrize("raw", [False, True])
+def test_a_raw_planned_comparison_across_kinds_is_refused(db, raw):
+    """Raw planning over a stored collection of records answers a one-attribute comparison by the planner too."""
+    from proto_db.core.dbobject import DBObject
+
+    def build(tr):
+        items = tr.new_list().append_last(DBObject(x=date(2026, 6, 3))).append_last(DBObject(x=date(2026, 7, 1)))
+        tr.new_mutable("holder", DBObject(items=items))
+    db.run(build)
+    items = ["via", ["cell", "holder"], "items"]
+    message = _refused(db, {"from": items, "where": [">=", ["attr", "x"], ["const", "2026-06-01"]]}, raw,
+                       "date", "text")
+    assert "2026-06-03" not in message and "2026-07-01" not in message
+    answered = query(db, {"from": items, "where": [">=", ["attr", "x"], ["const", date(2026, 6, 15)]]}, raw=raw)
+    assert len(answered["rows"]) == 1
+
+
+def test_a_missing_or_nil_operand_keeps_its_meaning_in_an_agent_query(db):
+    """A comparison with MISSING is false and one with nil keeps D28's semantics: neither is refused."""
+    db.run(lambda tr: tr.install_module("acme_rush"))
+    world = _load(db, rush=True)
+    orders = ["via", ["cell", world["bob"].name], "orders"]
+    # priority is MISSING on plain orders (false), an int on the rush order: compared with an int, answered
+    urgent = query(db, {"from": orders, "where": ["==", ["attr", "priority"], ["const", 1]], "select": ["number"]})
+    assert [r["values"]["number"] for r in urgent["rows"]] == [5]
+
+    def unset(tr):
+        semantic(tr).create("acme.catalog.Product", name="gizmo", company=world["company"])     # no list_price
+    db.run(unset)
+    products = ["via", ["cell", world["company"].name], "products"]
+    # the gizmo's MISSING price is false; the priced products' decimals against a text are refused
+    _refused(db, {"from": products, "where": ["==", ["attr", "list_price"], ["const", "free"]],
+                  "aggregate": ["count"]}, False, "number", "text")
+    db.run(lambda tr: tr.set_mutable(world["bob"].name, tr.get_mutable(world["bob"].name).with_(credit_limit=None)))
+    customers = ["via", ["cell", world["company"].name], "customers"]
+    for raw in (False, True):
+        nil = query(db, {"from": customers, "where": ["==", ["attr", "credit_limit"], ["const", None]],
+                         "aggregate": ["count"]}, raw=raw)
+        assert nil["rows"] == [{"count": 1}]
+        bob = query(db, {"from": ["via", ["cell", world["bob"].name], "orders"], "aggregate": ["count"],
+                         "where": ["<", ["attr", "customer", "credit_limit"], ["const", "text"]]}, raw=raw)
+        assert bob["rows"] == [{"count": 0}]                     # nil against a text: false, as before
+
+
+def test_a_missing_attribute_compared_across_kinds_is_false_not_refused(db):
+    world = _load(db)
+
+    def unset(tr):
+        semantic(tr).create("acme.catalog.Product", name="gizmo", company=world["company"])     # no list_price
+    db.run(unset)
+    products = ["via", ["cell", world["company"].name], "products"]
+    priced = ["and", ["==", ["attr", "name"], ["const", "gizmo"]], ["==", ["attr", "list_price"], ["const", "free"]]]
+    assert query(db, {"from": products, "where": priced, "aggregate": ["count"]})["rows"] == [{"count": 0}]
+
+
+def test_outside_agent_queries_a_comparison_across_kinds_stays_false(db):
+    """The expression language is unchanged for constraints, derived fields and the session's own query
+    (D28; shared with protoBaseST through the conformance vectors)."""
+    from proto_db.semantic.expressions import evaluate
+    world = _load(db)
+    assert evaluate([">=", ["const", date(2026, 6, 1)], ["const", "2026-01-01"]], None) is False
+    snapshot = semantic(db.snapshot_at(_current_ref(db)))
+    answer = snapshot.query({"from": _orders_of(world), "where": [">=", ["attr", "date"], ["const", "2026-01-01"]],
+                             "aggregate": ["count"]})
+    assert answer["rows"] == [{"count": 0}]
+    absent = snapshot.query({"from": ["root", "ordrs"], "aggregate": ["count"]})
+    assert absent["rows"] == [{"count": 0}]                       # R265: an absent root has no members
+
+
+def _current_ref(db):
+    tr = db.new_transaction()
+    try:
+        return tr.snapshot_ref
+    finally:
+        tr.abort()
+
+
+@pytest.mark.parametrize("raw", [False, True])
+def test_an_agent_query_refuses_an_absent_root_or_cell(db, raw):
+    world = _load(db)
+    _refused(db, {"from": ["root", "ordrs"]}, raw, "'ordrs'", "version read")
+    _refused(db, {"from": ["root", "ordrs"], "aggregate": ["count"]}, raw, "'ordrs'")
+    missing = ORDER + "#" + "0" * 32
+    _refused(db, {"from": ["via", ["cell", missing], "lines"]}, raw, repr(missing))
+    _refused(db, {"from": _orders_of(world), "where": ["==", ["count", ["root", "nope"]], ["const", 0]]}, raw,
+             "'nope'")
+    _refused(db, {"from": _orders_of(world), "where": ["==", ["count", ["via", ["cell", missing], "lines"]],
+                                                       ["const", 0]]}, raw, repr(missing))
+    _refused(db, {"from": _orders_of(world), "aggregate": ["sum", ["count", ["root", "nope"]]]}, raw, "'nope'")
+    db.run(lambda tr: tr.set_root_object("empty", tr.new_list()))
+    assert query(db, {"from": ["root", "empty"]}, raw=raw)["rows"] == []
+    assert query(db, {"from": ["root", "empty"], "aggregate": ["count"]}, raw=raw)["rows"] == [{"count": 0}]
+
+
+@pytest.mark.parametrize("raw", [False, True])
+def test_an_origin_absent_from_the_version_read_is_refused_naming_it(db, raw):
+    world = _load(db)
+    before = query(db, {"from": _orders_of(world), "aggregate": ["count"]}, raw=raw)["version"]["ref"]
+    db.run(lambda tr: tr.set_root_object("later", tr.new_list().append_last(world["bob"])))
+    assert query(db, {"from": ["root", "later"], "aggregate": ["count"]}, raw=raw)["rows"] == [{"count": 1}]
+    message = _refused(db, {"from": ["root", "later"], "aggregate": ["count"], "as_of": before}, raw, "'later'",
+                       "version read")
+    assert "as_of" in message
+
+
+@pytest.mark.parametrize("raw", [False, True])
+def test_a_withheld_attribute_compared_across_kinds_is_refused_as_withheld(db, raw):
+    """No oracle: the withholding refusal comes first, whatever kind the agent compares the value with."""
+    world = _load(db)
+    customers = ["via", ["cell", world["company"].name], "customers"]
+    for literal in (5, "Ann", date(2026, 1, 1)):
+        message = _refused(db, {"from": customers, "where": ["==", ["attr", "name"], ["const", literal]]}, raw)
+        assert "kind" not in message and "text" not in message, message
+        assert ("not available" in message) if raw else ("personal" in message), message
+
+
+_CROSS_KIND_READER = r"""
+import json, sys
+from proto_db import FileStorage, ObjectSpace
+from proto_db.agent import operations
+from proto_db.core.atom import OpaqueAtom
+space = ObjectSpace(FileStorage(sys.argv[1]), modules_mapping=json.loads(sys.argv[2]))
+try:
+    db = space.open_database(sys.argv[3])
+    cells = operations.list_entities(db, raw=True)["cells"]
+    company = next(name for name in cells if name.startswith("acme.core.Company#"))
+    order = next(name for name in cells if name.startswith("acme.sales.Order#"))
+    seen = {"opaque": isinstance(operations._snapshot(db).get_mutable(order), OpaqueAtom)}
+    for name, tree in (("date", {"from": ["via", ["cell", company], "orders"],
+                                 "where": [">=", ["attr", "date"], ["const", "2026-01-01"]]}),
+                       ("root", {"from": ["root", "ordrs"]})):
+        try:
+            operations.query(db, tree, raw=True)
+            seen[name] = None
+        except Exception as error:
+            seen[name] = [type(error).__name__, str(error)]
+    print(json.dumps(seen))
+finally:
+    space.close()
+"""
+
+
+def test_the_code_less_raw_server_refuses_the_footguns_too(tmp_path):
+    import os
+    import subprocess
+    import sys
+    from benchmarks.semantic import agent_experiment
+    from docs.kit.semantic import queries
+    path = agent_experiment.build_database(str(tmp_path / "work"))
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    done = subprocess.run([sys.executable, "-c", _CROSS_KIND_READER, path, json.dumps(queries.MAPPING),
+                           queries.DATABASE], capture_output=True, text=True, timeout=120, cwd=root,
+                          env={**os.environ, "PYTHONPATH": root})
+    assert done.returncode == 0, done.stderr
+    seen = json.loads(done.stdout.splitlines()[-1])
+    assert seen["opaque"]
+    kind, message = seen["date"]
+    assert kind == "ProtoValidationError" and "date" in message and "text" in message, message
+    kind, message = seen["root"]
+    assert kind == "ProtoValidationError" and "'ordrs'" in message, message
