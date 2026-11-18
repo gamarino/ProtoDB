@@ -1243,3 +1243,101 @@ def test_serve_restores_the_operator_log_after_it_returns(tmp_path, monkeypatch,
     mcp_server.serve(path, "acme", log=str(tmp_path / "operator.log") if log else None)
     assert seen == [(False, len(before[2]) + 1)]
     assert (logger.propagate, logger.level, list(logger.handlers)) == before
+
+
+# -- final verification: a member of another type than its role or cell declares refuses the query -------------
+
+def _mistyped_db(storage):
+    """A database whose order's ``company`` role holds Bob's customer handle and two spoofed cells named like
+    orders, written raw (outside the semantic layer): ``acme.sales.Order#spoof`` holds the mistyped order,
+    ``acme.sales.Order#bob`` holds Bob's customer record.  Bob's ``name`` is personal; a company's is not."""
+    space = ObjectSpace(storage, modules_mapping=MAPPING)
+    db = space.new_database("db")
+    db.run(lambda tr: tr.install_module("acme_sales"))
+
+    def build(tr):
+        s = semantic(tr)
+        company = s.create("acme.core.Company", name="ACME")
+        bob = s.create(CUSTOMER, name=f"{MARK}-Bob", credit_limit=Decimal("1000"), company=company)
+        order = s.create(ORDER, number=1, date=date(2026, 6, 1), company=company, customer=bob)
+        return company, bob, order
+    company, bob, order = db.run(build)
+
+    def damage(tr):
+        tr.set_mutable(order.name, tr.get_mutable(order.name).with_(company=bob))
+        tr.new_mutable("acme.sales.Order#spoof", tr.get_mutable(order.name))
+        tr.new_mutable("acme.sales.Order#bob", tr.get_mutable(bob.name))
+    db.run(damage)
+    return space, db, company, order
+
+
+@pytest.mark.parametrize("mode", ["catalog", "raw", "raw without the code"])
+def test_a_member_of_another_type_than_its_role_or_cell_declares_refuses_the_query(mode, caplog):
+    """A role value or a cell written outside the semantic layer may hold another type than the catalog
+    declares; the static check assumed the declared one, so the query is refused (by kind only), never answered
+    with what the real member's personal attribute holds, and never with a yes/no answer about it."""
+    import logging
+    from proto_db.errors import ProtoCorruptionError
+    storage = MemoryStorage()
+    space, db, company, order = _mistyped_db(storage)
+    reader = ObjectSpace(storage, modules_mapping={}) if mode == "raw without the code" else None
+    try:
+        target = db if reader is None else reader.open_database("db")
+        raw = mode != "catalog"
+        orders, of_order = ["via", ["cell", company.name], "orders"], ["via", ["cell", order.name], "company"]
+        trees = [{"from": orders, "select": ["company.name", "number"]},
+                 {"from": of_order, "where": ["==", ["attr", "name"], ["const", f"{MARK}-Bob"]], "aggregate": ["count"]},
+                 {"from": of_order, "select": ["name"]},
+                 {"from": orders, "where": ["==", ["attr", "company", "name"], ["const", f"{MARK}-Bob"]],
+                  "aggregate": ["count"]},
+                 {"from": ["via", ["cell", "acme.sales.Order#spoof"], "company"],
+                  "where": ["==", ["attr", "name"], ["const", f"{MARK}-Bob"]], "aggregate": ["count"]},
+                 {"from": ["via", ["cell", "acme.sales.Order#bob"], "company"], "aggregate": ["count"]}]
+        for tree in trees:
+            for guess in (f"{MARK}-Bob", "someone else"):
+                probe = json.loads(json.dumps(tree).replace(f"{MARK}-Bob", guess))
+                with caplog.at_level(logging.ERROR, logger="proto_db.agent"):
+                    with pytest.raises(ProtoCorruptionError) as refused:
+                        query(target, probe, raw=raw)
+                assert MARK not in str(refused.value) and "Bob" not in str(refused.value), refused.value
+    finally:
+        if reader is not None:
+            reader.close()
+        space.close()
+
+
+@pytest.mark.parametrize("mode", ["catalog", "raw", "raw without the code"])
+def test_an_undeclared_attribute_holding_a_handle_stays_withheld_not_refused(mode):
+    """An attribute the catalog does not declare (written raw on a catalogued company) makes no type
+    assumption, so it is not a mistyped role: what follows it is withheld (C1-b) in raw mode, refused as
+    undeclared in catalog mode, never refused as a damaged database."""
+    from proto_db.errors import ProtoCorruptionError
+    storage = MemoryStorage()
+    space = ObjectSpace(storage, modules_mapping=MAPPING)
+    reader = ObjectSpace(storage, modules_mapping={}) if mode == "raw without the code" else None
+    try:
+        db = space.new_database("db")
+        db.run(lambda tr: tr.install_module("acme_sales"))
+        company = _customers_of_bob(db)
+
+        def extra(tr):
+            bob = next(name for name in tr.mutable_names() if name.startswith(CUSTOMER))
+            tr.set_mutable(company.name, tr.get_mutable(company.name).with_(extra=MutableObject(bob)))
+        db.run(extra)
+        target = db if reader is None else reader.open_database("db")
+        raw = mode != "catalog"
+        root = {"from": ["via", ["cell", company.name], "customers"]}
+        selected = dict(root, select=["company.extra.name"])
+        if raw:
+            answer = query(target, selected, raw=raw)
+            assert MARK not in json.dumps(answer) and answer["rows"][0]["values"] == {}
+        else:
+            with pytest.raises(ProtoValidationError, match="declares no attribute or role 'extra'"):
+                query(target, selected)
+        with pytest.raises(ProtoValidationError) as refused:
+            query(target, dict(root, where=["==", ["attr", "company", "extra", "name"], ["const", "x"]]), raw=raw)
+        assert MARK not in str(refused.value) and not isinstance(refused.value, ProtoCorruptionError)
+    finally:
+        if reader is not None:
+            reader.close()
+        space.close()

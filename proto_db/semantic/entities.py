@@ -153,7 +153,7 @@ from . import compose as _compose
 from . import constraints as _constraints
 from .classes import IntentContext
 from .descriptors import RegistryReader
-from .expressions import (Reader, _arithmetic, _identity, _number, _operand_error, _truth, check_ast, describe_operand,
+from .expressions import (Reader, _arithmetic, checking, reached, _identity, _number, _operand_error, _truth, check_ast, describe_operand,
                           evaluate, to_planner, unwrap_entry)
 
 __all__ = ["Version", "Members", "BoundIntent", "SessionContext", "Operations", "Schema", "StoredReader", "check_query",
@@ -1445,23 +1445,34 @@ class Operations:
         if origin[0] == "cell":
             found = self.reader.cell(origin[1])
             current = [] if found is None else [(MutableObject(origin[1]), found)]
+            if found is not None:
+                reached(None, origin[1], found)
         else:
             current = self._reached(self.reader.members(self.reader.root(origin[1])))
         for role in roles:
-            current = self._reached(unwrap_entry(raw) for _, record in current
-                                    for raw in self.reader.members(_stored_step(record, role)))
+            out, seen = [], {}
+            for _, record in current:
+                self._reached((unwrap_entry(raw) for raw in self.reader.members(_stored_step(record, role))),
+                              record, role, out, seen)
+            current = out
         return current
 
-    def _reached(self, raws) -> list:
-        out, seen = [], set()
+    def _reached(self, raws, holder=None, step=None, out=None, seen=None) -> list:
+        """Append to ``out`` each ``(stored value, member)`` of ``raws`` not yet ``seen``, followed; with a
+        ``holder``, every member is reported as reached through its ``step``
+        (:func:`~proto_db.semantic.expressions.reached`)."""
+        out = [] if out is None else out
+        seen = {} if seen is None else seen
         for raw in raws:
             key = _identity(raw)
             if key in seen:
-                continue
-            seen.add(key)
-            followed = self.reader.follow(raw)
-            if followed is not MISSING:
-                out.append((raw, followed))
+                followed = seen[key]
+            else:
+                followed = seen[key] = self.reader.follow(raw)
+                if followed is not MISSING:
+                    out.append((raw, followed))
+            if holder is not None and followed is not MISSING:
+                reached(holder, step, followed)
         return out
 
     def _static_types(self, origin) -> tuple:
@@ -1492,18 +1503,19 @@ class Operations:
                 collection = _stored_step(record, last)
                 if self.schema is None:
                     if isinstance(collection, (List, Set)):
-                        return (*self._indexed(collection, None, conjuncts, source), None, used)
+                        return (*self._indexed(collection, None, conjuncts, source, record, last), None, used)
                 else:
                     owner_type = getattr(type(record), "__type_name__", None)
                     element = self.schema.element(owner_type, last) if self.schema.has(owner_type) else None
                     if element is not None and "target" in element and not _single(element):
                         info = self.schema.end_index(owner_type, last)
-                        return (*self._indexed(None if _unset(collection) else collection, info, conjuncts, source),
+                        return (*self._indexed(None if _unset(collection) else collection, info, conjuncts,
+                                               source, record, last),
                                 member_type or info.member_type, used)
-            reached = _tagged(_FROM, self._traverse, origin[1], origin[2:])
+            pairs = _tagged(_FROM, self._traverse, origin[1], origin[2:])
         else:
-            reached = _tagged(_FROM, self._traverse, origin, ())
-        kept = _tagged(_WHERE, self._satisfying, [(raw, m) for raw, m in reached if is_atom(m)], conjuncts)
+            pairs = _tagged(_FROM, self._traverse, origin, ())
+        kept = _tagged(_WHERE, self._satisfying, [(raw, m) for raw, m in pairs if is_atom(m)], conjuncts)
         return kept, {**source, "plan": None, "indexed": [], "residual": copy.deepcopy(conjuncts)}, member_type, used
 
     def _row_version(self, raw, member) -> Version:
@@ -1516,13 +1528,15 @@ class Operations:
     def _holds(self, conjunct, member) -> bool:
         return _truth("where", evaluate(conjunct, member, reader=self.reader), "a conjunct of the where")
 
-    def _indexed(self, collection, info: _EndIndex | None, conjuncts, source) -> tuple:
+    def _indexed(self, collection, info: _EndIndex | None, conjuncts, source, holder=None, step=None) -> tuple:
         """The members of the stored ``collection`` of the end ``info`` that satisfy ``conjuncts``: what the
         planner can answer exactly goes to it over the collection (its indexes), the rest is a residual.
         With ``info=None`` (no catalog) the collection's stored structure decides: over records, a conjunct
         on one stored attribute plans (evaluation reads stored values only, as the planner does); over
         entries or handles, nothing does.  Deciding that costs one pass over the elements' kinds, made only
-        when some conjunct could plan."""
+        when some conjunct could plan.  ``holder`` is the record whose attribute ``step`` holds the collection:
+        while a check of reached members is held (:func:`~proto_db.semantic.expressions.checking_reached`),
+        every member of the collection is reported, before the plan runs."""
         planned, indexed, residual = [], [], []
         allowed = None
         if info is None:
@@ -1553,6 +1567,11 @@ class Operations:
                 indexed.append(conjunct)
         if collection is None:
             return [], {**source, "plan": None, "indexed": copy.deepcopy(indexed), "residual": copy.deepcopy(residual)}
+        if holder is not None and checking():
+            # Every member of the end is checked, not only those the plan keeps: whether the check refuses
+            # must not depend on what the where selects (no yes/no answer about a member it would refuse).
+            _tagged(_FROM, self._reached, [unwrap_entry(element) if entries else element
+                                           for element in collection.elements()], holder, step)
         query = from_collection(collection)
         if planned:
             query = query.where(planned[0] if len(planned) == 1 else And(*planned))

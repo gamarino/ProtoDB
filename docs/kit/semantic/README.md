@@ -91,6 +91,9 @@ another repository; the demo says so and points at `docs/kit/semantic/protoBaseS
   through a path that crosses a record the catalog does not describe. The check errs on the safe side: an
   attribute of an uncatalogued record that has the same name as a catalogued personal or secret attribute is
   withheld too.
+- The agent interface does not trust that the stored data matches the catalog: a role or a cell written outside
+  the semantic layer that holds another type than the catalog declares makes every agent query reaching it
+  refuse (`ProtoCorruptionError`, naming no value), never serve or test what that member holds.
 - Agents never write: intent execution through the agent interface is outside the MVP.
 - The MCP server keeps the operator's log (`proto_db.agent`: the original messages an agent is not told) off its
   stderr, which the MCP client collects: pass `--log FILE` to keep it. The log can be noisy: a failure that

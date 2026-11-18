@@ -27,6 +27,8 @@ agent interface) can still name the operand's type.
 """
 from __future__ import annotations
 
+import contextlib
+import contextvars
 import keyword
 from collections.abc import Collection
 from decimal import Context, Decimal, DecimalException, Inexact, InvalidOperation, MAX_EMAX, MAX_PREC, MIN_EMIN, \
@@ -42,7 +44,7 @@ from ..query.expressions import And, Expression, Not, Or
 from ..query.terms import MIRRORED, Term, compare
 from ..values import MISSING, MutableObject, canonical, is_atom
 
-__all__ = ["Reader", "check_ast", "evaluate", "to_planner", "dependencies", "parse", "unwrap_entry", "describe_operand",
+__all__ = ["Reader", "checking", "checking_reached", "reached", "check_ast", "evaluate", "to_planner", "dependencies", "parse", "unwrap_entry", "describe_operand",
            "ARITHMETIC", "COMPARISONS", "RESERVED", "MAX_EXPRESSION_DEPTH"]
 
 #: The arithmetic operators (R264); division is not specified.
@@ -117,6 +119,36 @@ class Reader:
 
 
 _NO_READER = Reader()
+
+#: The check of every member a traversal reaches, while :func:`checking_reached` holds it (else ``None``).
+_REACHED: contextvars.ContextVar = contextvars.ContextVar("proto_db_semantic_reached", default=None)
+
+
+@contextlib.contextmanager
+def checking_reached(check):
+    """While the block runs in this context, call ``check(holder, step, member)`` for every member a path or a
+    traversal reaches, before anything of the member is read: ``holder`` is the record whose attribute
+    ``step`` held it (``None`` for a ``cell`` origin, ``step`` then being the cell's name) and ``member`` the
+    record reached (a handle followed, a version-bound reference's version, or a record held inline).  A
+    check that raises stops the evaluation.  The agent interface uses it to verify that a member has the type
+    its role or its cell declares (:mod:`proto_db.agent.operations`, "Sensitivity")."""
+    token = _REACHED.set(check)
+    try:
+        yield
+    finally:
+        _REACHED.reset(token)
+
+
+def checking() -> bool:
+    """Whether a check of reached members is held (:func:`checking_reached`) in this context."""
+    return _REACHED.get() is not None
+
+
+def reached(holder, step: str, member) -> None:
+    """Report ``member``, reached through ``step`` of ``holder``, to the check :func:`checking_reached` holds."""
+    check = _REACHED.get()
+    if check is not None and member is not MISSING:
+        check(holder, step, member)
 
 
 # -- the static check -------------------------------------------------------------------------------
@@ -289,9 +321,10 @@ def _read_path(element, steps, reader: Reader):
         stored = _stored_step(value, step)
         if stored is MISSING and is_atom(value):
             stored = reader.absent(value, step)
-        value = reader.follow(stored)
+        holder, value = value, reader.follow(stored)
         if value is MISSING:
             return MISSING
+        reached(holder, step, value)
     found = _stored_step(value, steps[-1])
     return reader.default(value, steps[-1]) if found is MISSING and is_atom(value) else found
 
@@ -376,17 +409,20 @@ def _identity(member):
                          f"not {describe_operand(member)}", member)
 
 
-def _reach(raws, reached: list, seen: set, reader: Reader) -> None:
-    """Append to ``reached`` each member of ``raws`` not yet ``seen``, followed; a handle whose cell is
-    absent contributes nothing."""
+def _reach(raws, found: list, seen: dict, reader: Reader, holder=None, step=None) -> None:
+    """Append to ``found`` each member of ``raws`` not yet ``seen``, followed; a handle whose cell is absent
+    contributes nothing.  With a ``holder``, every member (also one already reached from another holder) is
+    reported as reached through its ``step`` (:func:`reached`)."""
     for raw in raws:
         key = _identity(raw)
         if key in seen:
-            continue
-        seen.add(key)
-        followed = reader.follow(raw)
-        if followed is not MISSING:
-            reached.append(followed)
+            followed = seen[key]
+        else:
+            followed = seen[key] = reader.follow(raw)
+            if followed is not MISSING:
+                found.append(followed)
+        if holder is not None and followed is not MISSING:
+            reached(holder, step, followed)
 
 
 def _members_of(node, element, reader: Reader) -> tuple:
@@ -400,13 +436,15 @@ def _members_of(node, element, reader: Reader) -> tuple:
     elif kind == "cell":
         found = reader.cell(origin[1])
         current = [] if found is None else [found]
+        if found is not None:
+            reached(None, origin[1], found)
     else:
-        _reach(reader.members(reader.root(origin[1])), current, set(), reader)
+        _reach(reader.members(reader.root(origin[1])), current, {}, reader)
     for role in roles:
-        reached, seen = [], set()
+        hop, seen = [], {}
         for member in current:
-            _reach(map(unwrap_entry, reader.members(_stored_step(member, role))), reached, seen, reader)
-        current = reached
+            _reach(map(unwrap_entry, reader.members(_stored_step(member, role))), hop, seen, reader, member, role)
+        current = hop
     return tuple(current)
 
 

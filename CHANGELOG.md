@@ -55,7 +55,9 @@ code that uses no semantic layer keeps today's API, bytes and behaviour.
   `query` over one version, JSON-ready. Personal and secret attributes are listed by `describe` and never
   returned by `query`, nor disclosed through an error or tested by a `where`, also through a path that crosses
   a record the catalog does not describe (on the safe side: an uncatalogued attribute sharing the name of a
-  catalogued personal one is withheld too). A raw mode exposes the stored structure only (the agent
+  catalogued personal one is withheld too). A role or a cell written outside the semantic layer that holds
+  another type than the catalog declares refuses every agent query that reaches it (`ProtoCorruptionError`,
+  content-free), never serves or tests what it holds. A raw mode exposes the stored structure only (the agent
   experiment's control group: it sees the stored type and attribute names, not their meaning); it withholds
   what the stored catalog marks personal or secret without needing the modules' code, and a catalog it cannot
   decode or check makes it refuse, never serve everything. Sensitivity is today's policy: a query with `as_of`

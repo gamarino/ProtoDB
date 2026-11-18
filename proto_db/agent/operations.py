@@ -51,6 +51,17 @@ Sensitivity (spec section 11; ``describe`` lists every attribute, ``query`` omit
       follows it: ``who.name`` through an uncatalogued record holding a customer is withheld, and a ``where``
       on it refused (no yes/no oracle).  The cost is on the safe side: an uncatalogued record's attribute that
       shares its name with a catalogued personal or secret one is withheld too.
+    - The static check assumes that a declared role holds its declared target type (or a subtype) and that a
+      cell holds the type its ``Type#`` name prefix names (R260).  The semantic layer keeps both true, but a
+      write outside it (the plain transaction API, a legacy writer) can break them, so the guarantee does not
+      rest on them: while a query is evaluated, every member it reaches through a declared role or a
+      catalogued cell (in the ``from``, the ``where``, an aggregate, a selected path, the default selection) is
+      checked against the type the static check assumed there, every member of a ``many`` end, not only those
+      a ``where`` keeps.  A member of another type refuses the whole query with ``ProtoCorruptionError``, whose
+      message names neither a value nor the member (the operator's log names the role and the types).  The
+      cost: a type comparison per member reached; for a ``via`` ending in an indexed ``many`` end, one pass
+      over the whole end, whatever the plan selects (agent queries only).  A damaged part of a database
+      refuses agent queries that reach it (on the safe side).
     - A value a row would show is checked against that row's own type before anything is evaluated: a
       selected path that reads a withheld attribute is left out of that row's selection (the default
       selection the same way) and is never evaluated, so a withheld Python-only computed attribute never
@@ -115,12 +126,12 @@ from ..collections.lists import List
 from ..collections.sets import Set
 from ..core.dbobject import DBObject
 from ..catalog.atoms import SEMANTIC_CATALOG_ROOT, semantic_catalog_value
-from ..errors import ProtoUserError, ProtoValidationError
+from ..errors import ProtoCorruptionError, ProtoUserError, ProtoValidationError
 from ..semantic import semantic
 from ..semantic import compose as _compose
 from ..semantic.entities import check_query, is_evaluation_failure, query_stored, scrubbed
 from ..semantic.store import checked_stored_model
-from ..semantic.expressions import unwrap_entry
+from ..semantic.expressions import checking_reached, unwrap_entry
 from ..values import MutableObject, check_text, is_atom
 
 __all__ = ["list_entities", "describe", "check_answerable", "query", "to_json", "from_json"]
@@ -352,6 +363,27 @@ class _Withholding:
         """The types an entity cell may hold, from its name (R260); ``None`` (any) when not catalogued."""
         type_name = name.rsplit("#", 1)[0] if "#" in name else None
         return self.subtypes(type_name) if type_name in self.entities else None
+
+    def assumed(self, holder, step: str):
+        """The types the static check assumes for a member reached through ``step`` of the record ``holder``
+        (a declared role to a catalogued type: its target and subtypes) or, with no ``holder``, held by the
+        cell named ``step`` (its ``Type#`` prefix, R260); ``None`` when it assumes nothing (an undeclared or
+        uncatalogued step, a field: what follows is checked against every catalogued type, C1-b)."""
+        if holder is None:
+            return self.cell_type(step)
+        element = self.elements.get(_stored_type(holder), {}).get(step)
+        if element is not None and element.get("target") in self.entities:
+            return self.subtypes(element["target"])
+        return None
+
+    def check_member(self, holder, step: str, member) -> None:
+        """Refuse a member whose real type is not one :meth:`assumed` gives (see "Sensitivity": fail closed)."""
+        expected = self.assumed(holder, step)
+        if expected is not None and _stored_type(member) not in expected:
+            where = "the cell it was read from" if holder is None else f"the role {_stored_type(holder)}.{step}"
+            raise ProtoCorruptionError(f"A member reached through {where} is a {_stored_type(member)!r}, not of the "
+                                       f"type the catalog declares there; the database holds data the semantic "
+                                       f"layer did not write, and the agent query is refused")
 
     def sensitivity(self, type_name: str, name: str) -> str:
         """The element's own declared sensitivity (``internal`` when not stated)."""
@@ -804,6 +836,11 @@ class _Strictest:
     def withheld(self, type_name: str, steps) -> bool:
         return any(policy.withheld(type_name, steps) for policy in self.policies)
 
+    def check_member(self, holder, step: str, member) -> None:
+        """Each policy's :meth:`_Withholding.check_member`: a member must have a type every policy assumed."""
+        for policy in self.policies:
+            policy.check_member(holder, step, member)
+
     def allowed(self, type_name: str) -> list:
         return [name for name in self.read.allowed(type_name)
                 if not any(policy.withheld(type_name, [name]) for policy in self.policies[1:])]
@@ -866,7 +903,8 @@ def query(db, tree: Mapping, *, raw: bool = False) -> dict:
         answer = query_stored(snapshot, run, with_members=True, selection=use) if raw else \
             session.query(run, members=True, selection=use)
         return _answer(answer, tree, policy, raw)
-    return scrubbed("the query", answered, log=_LOG)
+    with checking_reached(policy.check_member):
+        return scrubbed("the query", answered, log=_LOG)
 
 
 def _answer(answer: dict, tree: Mapping, policy: _Strictest, raw: bool) -> dict:

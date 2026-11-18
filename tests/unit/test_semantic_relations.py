@@ -1033,11 +1033,11 @@ def test_a_query_from_another_thread_sees_a_semantic_operation_entirely_before_o
     tr._lock = _Blocking(tr._lock, "A", a_waits_or_done)
     original = entities.Operations._reached
 
-    def reached(self, raws):
+    def reached(self, raws, *args):
         if threading.current_thread().name == "B" and not between.is_set():
             between.set()
             assert a_waits_or_done.wait(60), "thread A neither waited for the lock nor finished"
-        return original(self, raws)
+        return original(self, raws, *args)
     monkeypatch.setattr(entities.Operations, "_reached", reached)
     out = {}
 
