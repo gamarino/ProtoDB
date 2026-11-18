@@ -328,8 +328,26 @@ def test_a_ten_thousand_version_chain_is_described_and_verifies(tmp_path, capsys
     assert note[0] == {"int": "5000"} and _chain_values(note[1]["list"][0]) == list(range(4999, -1, -1))
 
 
+def _depth(value) -> int:
+    if isinstance(value, dict):
+        return 1 + max(map(_depth, value.values()), default=0)
+    if isinstance(value, list):
+        return 1 + max(map(_depth, value), default=0)
+    return 0
+
+
+# The manifest within the indented levels: its expression vectors include the depth-limit cases,
+# which nest past ``INDENTED_LEVELS`` and are written on one line by design (covered below).
+SHALLOW_MANIFEST = {k: v for k, v in MANIFEST.items() if _depth(v) < verify.INDENTED_LEVELS}
+
+
+def test_the_dump_writer_keeps_the_whole_manifest_as_the_same_json_value():
+    assert _depth(MANIFEST) > verify.INDENTED_LEVELS     # the one-line layout is exercised here
+    assert json.loads(verify.dump_text(MANIFEST)) == MANIFEST
+
+
 @pytest.mark.parametrize("value", [
-    MANIFEST, {}, [], {"a": []}, [{}], {"k": [1, 2.5, None, True, "ñ\U0001F600", {"x": {"y": [[]]}}]},
+    SHALLOW_MANIFEST, {}, [], {"a": []}, [{}], {"k": [1, 2.5, None, True, "ñ\U0001F600", {"x": {"y": [[]]}}]},
     {"esc": "quote \" back \\ nl \n tab \t ctl \x01"}, 0, "s", None, float("nan"),
 ])
 def test_the_dump_writer_writes_what_json_dumps_writes(value):
