@@ -1,0 +1,266 @@
+{
+ "all_clean": true,
+ "cells": {
+  "direct gil=0": {
+   "attempts": {
+    "max": 983,
+    "median": 925,
+    "min": 881
+   },
+   "commit_latency_p50_ms": {
+    "max": 12.9,
+    "median": 12.07,
+    "min": 11.84
+   },
+   "commit_latency_p95_ms": {
+    "max": 22.91,
+    "median": 21.43,
+    "min": 19.49
+   },
+   "commits": {
+    "max": 316,
+    "median": 314,
+    "min": 313
+   },
+   "commits_per_s": {
+    "max": 51.31,
+    "median": 49.83,
+    "min": 46.8
+   },
+   "conflicts": {
+    "max": 621,
+    "median": 562,
+    "min": 517
+   },
+   "orders_per_s": {
+    "max": 64.95,
+    "median": 63.47,
+    "min": 59.61
+   },
+   "rejected_by_conflict": {
+    "max": 38,
+    "median": 36,
+    "min": 34
+   },
+   "rejected_by_constraint": {
+    "max": 51,
+    "median": 50,
+    "min": 47
+   },
+   "runs": 5,
+   "verified_runs": 5,
+   "violations": {
+    "max": 0,
+    "median": 0,
+    "min": 0
+   },
+   "wall_s": {
+    "max": 6.71,
+    "median": 6.3019,
+    "min": 6.1587
+   }
+  },
+  "direct gil=1": {
+   "attempts": {
+    "max": 1509,
+    "median": 1277,
+    "min": 1203
+   },
+   "commit_latency_p50_ms": {
+    "max": 66.46,
+    "median": 45.65,
+    "min": 43.45
+   },
+   "commit_latency_p95_ms": {
+    "max": 113.38,
+    "median": 108.28,
+    "min": 94.9
+   },
+   "commits": {
+    "max": 307,
+    "median": 303,
+    "min": 298
+   },
+   "commits_per_s": {
+    "max": 17.53,
+    "median": 17.38,
+    "min": 13.18
+   },
+   "conflicts": {
+    "max": 1193,
+    "median": 944,
+    "min": 863
+   },
+   "orders_per_s": {
+    "max": 23.1,
+    "median": 22.77,
+    "min": 17.69
+   },
+   "rejected_by_conflict": {
+    "max": 84,
+    "median": 66,
+    "min": 60
+   },
+   "rejected_by_constraint": {
+    "max": 39,
+    "median": 31,
+    "min": 18
+   },
+   "runs": 5,
+   "verified_runs": 5,
+   "violations": {
+    "max": 0,
+    "median": 0,
+    "min": 0
+   },
+   "wall_s": {
+    "max": 22.6121,
+    "median": 17.5666,
+    "min": 17.3176
+   }
+  },
+  "intents gil=0": {
+   "attempts": {
+    "max": 400,
+    "median": 400,
+    "min": 400
+   },
+   "commit_latency_p50_ms": {
+    "max": 106.91,
+    "median": 85.66,
+    "min": 84.86
+   },
+   "commit_latency_p95_ms": {
+    "max": 156.09,
+    "median": 127.69,
+    "min": 118.53
+   },
+   "commits": {
+    "max": 296,
+    "median": 295,
+    "min": 295
+   },
+   "commits_per_s": {
+    "max": 75.2,
+    "median": 73.35,
+    "min": 55.78
+   },
+   "conflicts": {
+    "max": 0,
+    "median": 0,
+    "min": 0
+   },
+   "orders_per_s": {
+    "max": 101.97,
+    "median": 99.46,
+    "min": 75.38
+   },
+   "rejected_by_conflict": {
+    "max": 0,
+    "median": 0,
+    "min": 0
+   },
+   "rejected_by_constraint": {
+    "max": 105,
+    "median": 105,
+    "min": 104
+   },
+   "runs": 5,
+   "verified_runs": 5,
+   "violations": {
+    "max": 0,
+    "median": 0,
+    "min": 0
+   },
+   "wall_s": {
+    "max": 5.3062,
+    "median": 4.0217,
+    "min": 3.9227
+   }
+  },
+  "intents gil=1": {
+   "attempts": {
+    "max": 400,
+    "median": 400,
+    "min": 400
+   },
+   "commit_latency_p50_ms": {
+    "max": 117.3,
+    "median": 113.58,
+    "min": 104.86
+   },
+   "commit_latency_p95_ms": {
+    "max": 169.05,
+    "median": 163.37,
+    "min": 145.51
+   },
+   "commits": {
+    "max": 296,
+    "median": 296,
+    "min": 296
+   },
+   "commits_per_s": {
+    "max": 51.69,
+    "median": 48.15,
+    "min": 46.98
+   },
+   "conflicts": {
+    "max": 0,
+    "median": 0,
+    "min": 0
+   },
+   "orders_per_s": {
+    "max": 69.85,
+    "median": 65.07,
+    "min": 63.49
+   },
+   "rejected_by_conflict": {
+    "max": 0,
+    "median": 0,
+    "min": 0
+   },
+   "rejected_by_constraint": {
+    "max": 104,
+    "median": 104,
+    "min": 104
+   },
+   "runs": 5,
+   "verified_runs": 5,
+   "violations": {
+    "max": 0,
+    "median": 0,
+    "min": 0
+   },
+   "wall_s": {
+    "max": 6.3006,
+    "median": 6.147,
+    "min": 5.7264
+   }
+  }
+ },
+ "commits_measured": [
+  "6b0697a"
+ ],
+ "files": [
+  "direct-none-gil0-r1.json",
+  "direct-none-gil0-r2.json",
+  "direct-none-gil0-r3.json",
+  "direct-none-gil0-r4.json",
+  "direct-none-gil0-r5.json",
+  "direct-none-gil1-r1.json",
+  "direct-none-gil1-r2.json",
+  "direct-none-gil1-r3.json",
+  "direct-none-gil1-r4.json",
+  "direct-none-gil1-r5.json",
+  "intents-none-gil0-r1.json",
+  "intents-none-gil0-r2.json",
+  "intents-none-gil0-r3.json",
+  "intents-none-gil0-r4.json",
+  "intents-none-gil0-r5.json",
+  "intents-none-gil1-r1.json",
+  "intents-none-gil1-r2.json",
+  "intents-none-gil1-r3.json",
+  "intents-none-gil1-r4.json",
+  "intents-none-gil1-r5.json"
+ ]
+}

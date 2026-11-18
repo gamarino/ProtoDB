@@ -1,0 +1,140 @@
+{
+ "attempts": 400,
+ "check": {
+  "checked_at": "2026-11-18T05:01:42-0300",
+  "foreign_processes": [
+   "2521638 timeout 86400 /home/gamarino/Documentos/proyectos/worktrees/protoBaseST-cluster/.superpowers/sdd/2026-11-13-cluster-mode/t31-tmp/bin/protost --print-last sim_rejoin.st",
+   "2521639 /home/gamarino/Documentos/proyectos/worktrees/pinned-360/protoST/build_release/protost --print-last sim_rejoin.st"
+  ],
+  "load_average": [
+   4.123046875,
+   4.919921875,
+   4.935546875
+  ],
+  "stray_processes": [],
+  "workdir_free_bytes": 1028205314048
+ },
+ "clean": true,
+ "commit": "6b0697a",
+ "commit_attempt_latency_ms": {
+  "p50": 102.04,
+  "p95": 152.23
+ },
+ "commit_latency_ms": {
+  "p50": 112.17,
+  "p95": 153.89
+ },
+ "commits": 296,
+ "commits_per_s": 47.98,
+ "conflicts": 0,
+ "customers": 8,
+ "demand": "43292",
+ "durability": "none",
+ "environment": {
+  "cpu_affinity": 12,
+  "cpu_count": 12,
+  "cpu_frequency": {
+   "boost": "1",
+   "driver": "amd-pstate-epp",
+   "energy_performance_preference": "balance_power",
+   "governor": "powersave"
+  },
+  "cpu_model": "AMD Ryzen 5 5500U with Radeon Graphics",
+  "free_threaded_build": true,
+  "gil_enabled": true,
+  "interpreter": "/home/gamarino/Documentos/proyectos/ProtoBase/.venv314t/bin/python",
+  "platform": "Linux-7.0.0-43-generic-x86_64-desconocido-with-glibc2.43",
+  "proto_db": "2.0.0rc4",
+  "proto_db_path": "/home/gamarino/Documentos/proyectos/scratch-8.3n/credit-6b0697a/export-6b0697a/proto_db",
+  "python": "3.14.6",
+  "timestamp": "2026-11-18T05:02:19-0300",
+  "workdir": "/home/gamarino/Documentos/proyectos/scratch-8.3n/credit-6b0697a/work-intents-none-gil1-r5",
+  "workdir_fs": "zfs",
+  "xoptions": {
+   "gil": "1"
+  }
+ },
+ "error_samples": [],
+ "errors": 0,
+ "experiment": "semantic credit: intents against direct mode",
+ "gil": true,
+ "limit_fraction": 0.75,
+ "limits": {
+  "0": "4998",
+  "1": "3615",
+  "2": "4531",
+  "3": "4389",
+  "4": "5121",
+  "5": "3113",
+  "6": "3805",
+  "7": "2895"
+ },
+ "mode": "intents",
+ "orders": 400,
+ "orders_per_s": 64.84,
+ "products": 4,
+ "reads": "none",
+ "reconciliation": [],
+ "rejected_by_conflict": 0,
+ "rejected_by_constraint": 104,
+ "retries": 10,
+ "seed": 1,
+ "settings": {
+  "customers": 8,
+  "durability": "none",
+  "limit_fraction": 0.75,
+  "mode": "intents",
+  "orders": 400,
+  "products": 4,
+  "reads": "none",
+  "retries": 10,
+  "seed": 1,
+  "storage": "file",
+  "threads": 8
+ },
+ "source": {
+  "added": [],
+  "changed": [],
+  "clean": true,
+  "commit": "6b0697a",
+  "commit_full": "6b0697a0bd44136613882c206fbb7b0c90039e6b",
+  "dirty": false,
+  "missing": [],
+  "source": "git archive export"
+ },
+ "storage": "file",
+ "threads": 8,
+ "timing_checks": [],
+ "timings": {
+  "commits_not_reached": 0,
+  "lock_occupancy": 0.7755,
+  "replay_ms": {
+   "p50": 3.58,
+   "p95": 13.6
+  },
+  "samples": 400,
+  "under_lock_ms": {
+   "p50": 10.8,
+   "p95": 25.65
+  },
+  "validate_ms": {
+   "p50": 0.02,
+   "p95": 0.03
+  },
+  "wait_ms": {
+   "p50": 89.68,
+   "p95": 137.35
+  },
+  "what": "per commit attempt: under_lock = Transaction._build_root; validate = the reads' validation in it; replay = IntentLog.replay without validation (0 in direct mode); wait = latency - under_lock; lock_occupancy = sum(under_lock) / wall_s"
+ },
+ "verified": true,
+ "verifier": {
+  "aggregate_mismatches": [],
+  "seconds": 30.179,
+  "versions": 299,
+  "violations": []
+ },
+ "versions_added": 296,
+ "violations": 0,
+ "wall_s": 6.169
+}

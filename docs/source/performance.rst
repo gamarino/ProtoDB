@@ -1061,6 +1061,83 @@ A run takes about 25 seconds, most of it the history verifier's walk of about 30
 integration re-measurement adds ``--reads credit-limit`` runs of both modes, and reports the stage timings
 (``timings`` in each JSON file) of both variants.
 
+Re-measurement at ``6b0697a``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**Measured at commit** ``6b0697a`` (clean export: every results file records ``"clean": true``), on
+2026-11-18, same machine, interpreter and limits as above, with ``--threads 8 --orders 400 --customers 8
+--products 4 --seed 1``. The driver alternated mode, GIL mode and read variant run by run (``none`` then
+``credit-limit``; GIL off then on; ``direct`` then ``intents``; 5 repetitions): 40 runs, all verified, all
+reconciled (``all_clean``). Results: ``benchmarks/results/2026-11-18-6b0697a-credit/`` (one JSON file per run,
+``summary-none.json``, ``summary-credit-limit.json``, ``driver.log`` with the load before every run).
+
+**The machine was shared.** Another session's 24-hour protoBaseST simulation ran throughout (about 1.5 cores),
+and the 1-minute load at the start of the runs was 3.65-6.64. No quiet window was available. The counts and the
+verification below do not depend on the load; the times do, so they are not comparable with the ``9a8ce75``
+cost table (runs started below 4), and no speed change between the two commits is claimed.
+
+Counts, median [min-max] of 5 runs:
+
+=======================  =============  ==============  ==========  =============  ==========
+Cell                     committed      conflicts       refused by  refused by     verifier
+                                        (retries)       conflict    the rule       violations
+=======================  =============  ==============  ==========  =============  ==========
+direct, GIL off          314 [313-316]  562 [517-621]   36 [34-38]  50 [47-51]     0
+direct, GIL on           303 [298-307]  944 [863-1193]  66 [60-84]  31 [18-39]     0
+intents, GIL off         295 [295-296]  0               0           105 [104-105]  0
+intents, GIL on          296            0               0           104            0
+direct, GIL off, reads   313 [312-318]  598 [492-651]   40 [34-43]  44 [42-54]     0
+direct, GIL on, reads    305 [294-312]  805 [599-967]   58 [43-72]  40 [23-56]     0
+intents, GIL off, reads  295 [295-300]  0               0           105 [100-105]  0
+intents, GIL on, reads   295 [294-296]  0               0           105 [104-106]  0
+=======================  =============  ==============  ==========  =============  ==========
+
+("reads" is ``--reads credit-limit``.) The results of ``9a8ce75`` hold at ``6b0697a``, now also with a non-empty
+fine read set: intent mode refused no order by conflict and conflicted on no attempt in any of the 20 runs, and
+no version of any history holds a customer above its limit (0 violations in all 40 runs). Direct mode refused
+34-84 valid orders per run by conflict.
+
+Cost, median [min-max] of 5 runs (times measured on the shared machine):
+
+=======================  ===================  ===================  =================  ================
+Cell                     commit p50 (ms)      commit p95 (ms)      orders/s           committed/s
+=======================  ===================  ===================  =================  ================
+direct, GIL off          12.1 [11.8-12.9]     21.4 [19.5-22.9]     63.5 [59.6-65.0]   49.8 [46.8-51.3]
+direct, GIL on           45.6 [43.5-66.5]     108.3 [94.9-113.4]   22.8 [17.7-23.1]   17.4 [13.2-17.5]
+intents, GIL off         85.7 [84.9-106.9]    127.7 [118.5-156.1]  99.5 [75.4-102.0]  73.3 [55.8-75.2]
+intents, GIL on          113.6 [104.9-117.3]  163.4 [145.5-169.1]  65.1 [63.5-69.8]   48.1 [47.0-51.7]
+direct, GIL off, reads   12.2 [11.3-13.0]     20.3 [17.5-26.9]     62.3 [58.2-68.3]   49.5 [45.5-53.3]
+direct, GIL on, reads    34.7 [27.2-52.9]     92.5 [91.6-112.1]    26.4 [19.7-31.5]   20.6 [15.0-23.7]
+intents, GIL off, reads  90.8 [85.3-109.3]    126.4 [117.7-172.2]  96.4 [77.9-98.7]   71.1 [57.5-73.8]
+intents, GIL on, reads   113.9 [110.5-139.4]  159.0 [150.4-197.5]  64.8 [51.6-67.5]   47.9 [38.0-49.9]
+=======================  ===================  ===================  =================  ================
+
+Stage timings per commit attempt, median over the 5 runs of each run's p50 (ms), and the share of the window
+the root lock was held (``timings`` in each file; ``under_lock`` is ``Transaction._build_root``, ``validate`` the
+reads' validation inside it, ``replay`` the intent replay, ``wait`` the latency minus ``under_lock``):
+
+=======================  ==========  ========  ======  ====  ==============
+Cell                     under lock  validate  replay  wait  lock occupancy
+=======================  ==========  ========  ======  ====  ==============
+direct, GIL off          0.11        0.02      0.00    11.7  0.17
+intents, GIL off         10.15       0.02      3.12    70.0  0.97
+direct, GIL off, reads   0.12        0.02      0.00    11.6  0.17
+intents, GIL off, reads  10.28       0.06      3.16    71.8  0.97
+direct, GIL on           0.07        0.01      0.00    41.9  0.08
+intents, GIL on          10.59       0.02      3.38    89.7  0.75
+direct, GIL on, reads    0.08        0.01      0.00    37.9  0.07
+intents, GIL on, reads   10.47       0.06      3.47    91.5  0.76
+=======================  ==========  ========  ======  ====  ==============
+
+*What the timings say.* **The fine read set costs little here:** reading the customer's ``credit_limit`` raised
+the validation from 0.02 to 0.06 ms per intent commit, and it caused no conflict (no order changes a limit). That
+answers the spec's question on the read set's granularity (section 16) for this workload only: one stored field
+per order, never written concurrently. **The intent commit's latency is mostly the wait for the root lock**:
+with the GIL off the lock was held 97 % of the window, each intent commit held it about 10 ms, and the replay was
+about 3 ms of those. What the remaining 7 ms under the lock are (writing the replayed records, the maintained
+aggregates, the history) is not separated by these probes and is not measured. The probes' own overhead is not
+measured either.
+
 **Not measured yet.** These costs of the semantic model have no numbers on this page; each is for the final
 integration runs, and none is quoted until it is measured:
 

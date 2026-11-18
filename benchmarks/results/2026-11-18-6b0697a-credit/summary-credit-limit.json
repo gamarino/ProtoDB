@@ -1,0 +1,266 @@
+{
+ "all_clean": true,
+ "cells": {
+  "direct gil=0": {
+   "attempts": {
+    "max": 1008,
+    "median": 958,
+    "min": 858
+   },
+   "commit_latency_p50_ms": {
+    "max": 12.97,
+    "median": 12.15,
+    "min": 11.35
+   },
+   "commit_latency_p95_ms": {
+    "max": 26.87,
+    "median": 20.26,
+    "min": 17.48
+   },
+   "commits": {
+    "max": 318,
+    "median": 313,
+    "min": 312
+   },
+   "commits_per_s": {
+    "max": 53.29,
+    "median": 49.53,
+    "min": 45.51
+   },
+   "conflicts": {
+    "max": 651,
+    "median": 598,
+    "min": 492
+   },
+   "orders_per_s": {
+    "max": 68.32,
+    "median": 62.3,
+    "min": 58.16
+   },
+   "rejected_by_conflict": {
+    "max": 43,
+    "median": 40,
+    "min": 34
+   },
+   "rejected_by_constraint": {
+    "max": 54,
+    "median": 44,
+    "min": 42
+   },
+   "runs": 5,
+   "verified_runs": 5,
+   "violations": {
+    "max": 0,
+    "median": 0,
+    "min": 0
+   },
+   "wall_s": {
+    "max": 6.8776,
+    "median": 6.421,
+    "min": 5.8552
+   }
+  },
+  "direct gil=1": {
+   "attempts": {
+    "max": 1295,
+    "median": 1147,
+    "min": 956
+   },
+   "commit_latency_p50_ms": {
+    "max": 52.9,
+    "median": 34.68,
+    "min": 27.23
+   },
+   "commit_latency_p95_ms": {
+    "max": 112.06,
+    "median": 92.49,
+    "min": 91.58
+   },
+   "commits": {
+    "max": 312,
+    "median": 305,
+    "min": 294
+   },
+   "commits_per_s": {
+    "max": 23.68,
+    "median": 20.56,
+    "min": 15.02
+   },
+   "conflicts": {
+    "max": 967,
+    "median": 805,
+    "min": 599
+   },
+   "orders_per_s": {
+    "max": 31.47,
+    "median": 26.35,
+    "min": 19.7
+   },
+   "rejected_by_conflict": {
+    "max": 72,
+    "median": 58,
+    "min": 43
+   },
+   "rejected_by_constraint": {
+    "max": 56,
+    "median": 40,
+    "min": 23
+   },
+   "runs": 5,
+   "verified_runs": 5,
+   "violations": {
+    "max": 0,
+    "median": 0,
+    "min": 0
+   },
+   "wall_s": {
+    "max": 20.306,
+    "median": 15.1784,
+    "min": 12.7098
+   }
+  },
+  "intents gil=0": {
+   "attempts": {
+    "max": 400,
+    "median": 400,
+    "min": 400
+   },
+   "commit_latency_p50_ms": {
+    "max": 109.33,
+    "median": 90.76,
+    "min": 85.3
+   },
+   "commit_latency_p95_ms": {
+    "max": 172.21,
+    "median": 126.43,
+    "min": 117.69
+   },
+   "commits": {
+    "max": 300,
+    "median": 295,
+    "min": 295
+   },
+   "commits_per_s": {
+    "max": 73.81,
+    "median": 71.1,
+    "min": 57.47
+   },
+   "conflicts": {
+    "max": 0,
+    "median": 0,
+    "min": 0
+   },
+   "orders_per_s": {
+    "max": 98.74,
+    "median": 96.4,
+    "min": 77.93
+   },
+   "rejected_by_conflict": {
+    "max": 0,
+    "median": 0,
+    "min": 0
+   },
+   "rejected_by_constraint": {
+    "max": 105,
+    "median": 105,
+    "min": 100
+   },
+   "runs": 5,
+   "verified_runs": 5,
+   "violations": {
+    "max": 0,
+    "median": 0,
+    "min": 0
+   },
+   "wall_s": {
+    "max": 5.1328,
+    "median": 4.1492,
+    "min": 4.0512
+   }
+  },
+  "intents gil=1": {
+   "attempts": {
+    "max": 400,
+    "median": 400,
+    "min": 400
+   },
+   "commit_latency_p50_ms": {
+    "max": 139.43,
+    "median": 113.91,
+    "min": 110.5
+   },
+   "commit_latency_p95_ms": {
+    "max": 197.53,
+    "median": 159.04,
+    "min": 150.36
+   },
+   "commits": {
+    "max": 296,
+    "median": 295,
+    "min": 294
+   },
+   "commits_per_s": {
+    "max": 49.92,
+    "median": 47.94,
+    "min": 38.03
+   },
+   "conflicts": {
+    "max": 0,
+    "median": 0,
+    "min": 0
+   },
+   "orders_per_s": {
+    "max": 67.46,
+    "median": 64.79,
+    "min": 51.57
+   },
+   "rejected_by_conflict": {
+    "max": 0,
+    "median": 0,
+    "min": 0
+   },
+   "rejected_by_constraint": {
+    "max": 106,
+    "median": 105,
+    "min": 104
+   },
+   "runs": 5,
+   "verified_runs": 5,
+   "violations": {
+    "max": 0,
+    "median": 0,
+    "min": 0
+   },
+   "wall_s": {
+    "max": 7.7568,
+    "median": 6.1742,
+    "min": 5.9296
+   }
+  }
+ },
+ "commits_measured": [
+  "6b0697a"
+ ],
+ "files": [
+  "direct-credit-limit-gil0-r1.json",
+  "direct-credit-limit-gil0-r2.json",
+  "direct-credit-limit-gil0-r3.json",
+  "direct-credit-limit-gil0-r4.json",
+  "direct-credit-limit-gil0-r5.json",
+  "direct-credit-limit-gil1-r1.json",
+  "direct-credit-limit-gil1-r2.json",
+  "direct-credit-limit-gil1-r3.json",
+  "direct-credit-limit-gil1-r4.json",
+  "direct-credit-limit-gil1-r5.json",
+  "intents-credit-limit-gil0-r1.json",
+  "intents-credit-limit-gil0-r2.json",
+  "intents-credit-limit-gil0-r3.json",
+  "intents-credit-limit-gil0-r4.json",
+  "intents-credit-limit-gil0-r5.json",
+  "intents-credit-limit-gil1-r1.json",
+  "intents-credit-limit-gil1-r2.json",
+  "intents-credit-limit-gil1-r3.json",
+  "intents-credit-limit-gil1-r4.json",
+  "intents-credit-limit-gil1-r5.json"
+ ]
+}
