@@ -377,8 +377,6 @@ def test_applications_cannot_write_semantic_roots():
         with pytest.raises(ProtoValidationError, match="reserved"):
             tr.set_root_object(name, 1)
         with pytest.raises(ProtoValidationError, match="reserved"):
-            tr.set_root_object(name, 1, replace=True)
-        with pytest.raises(ProtoValidationError, match="reserved"):
             tr.remove_root_object(name)
     tr.abort()
     space.close()

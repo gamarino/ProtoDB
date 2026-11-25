@@ -40,6 +40,7 @@ from proto_db.transactions import ObjectSpace
 from tests.support.outcomes import CommitTokens, assert_outcomes_resolved, blind_snapshot_of
 from tests.support import stress
 from tests.support.cluster import Cluster, DriftClock
+from tests.support.roots import counted_set_root
 
 pytestmark = [pytest.mark.freethreaded, pytest.mark.timeout(stress.budget(240))]
 
@@ -222,7 +223,7 @@ def _run_schedule(schedule):
                 uid = next(uids)
                 try:
                     db = space_of(node_id).open_database("db")
-                    db.run(lambda tr: tr.set_root_object("ids", tr.new_counted_set().add(uid)),
+                    db.run(lambda tr: tr.set_root_object("ids", counted_set_root(tr, "ids").add(uid)),
                            retries=3, backoff=(0.001, 0.01))
                 except (ProtoTimeoutError, ProtoConflictError, ProtoValidationError):
                     continue      # not committed: no quorum, retries exhausted, or the node stopped

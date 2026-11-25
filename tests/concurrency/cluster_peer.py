@@ -46,6 +46,7 @@ from proto_db.storage.tiered import TieredStorage  # noqa: E402
 from proto_db.transactions import ObjectSpace  # noqa: E402
 from tests.support.cluster import CasCountingStorage  # noqa: E402
 from tests.support.dir_object_store import DirObjectStore  # noqa: E402
+from tests.support.roots import counted_set_root  # noqa: E402
 
 
 def _storage(space: str):
@@ -163,7 +164,7 @@ def main():
 
                     def fn(tr, uid=uid):
                         tr.set_root_object("n", (tr.get_root_object("n") or 0) + 1)
-                        tr.set_root_object("ids", tr.new_counted_set().add(uid))
+                        tr.set_root_object("ids", counted_set_root(tr, "ids").add(uid))
                     if commit(fn, uid):
                         done += 1
                         done_by[index] = done
@@ -172,7 +173,8 @@ def main():
                 while time.monotonic() < stop_at:
                     uid = base + attempts
                     attempts += 1
-                    if commit(lambda tr, uid=uid: tr.set_root_object("ids", tr.new_counted_set().add(uid)), uid):
+                    if commit(lambda tr, uid=uid: tr.set_root_object("ids", counted_set_root(tr, "ids").add(uid)),
+                              uid):
                         done += 1
                         done_by[index] = done
 

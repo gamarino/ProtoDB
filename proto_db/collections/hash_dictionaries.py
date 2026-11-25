@@ -29,12 +29,12 @@ from collections.abc import Iterable, Iterator
 
 from ..core.atom import PersistenceContext
 from ..errors import ProtoValidationError
-from ..preconditions import ABSENT
+from ..preconditions import ABSENT, UnitKind, token
 from ..values import canonical, canonical_for, check_wrapped, hash_key, order_key
 from . import avl
 from .base import ConcurrentOptimized, IndexedCollection, repair_pairs, same_value
 from .dictionaries import sorted_unique_pairs
-from .linking import engine_reads, record_key, register_fine_grained
+from .linking import NOT_A_UNIT, engine_reads, record_key, register_fine_grained
 
 __all__ = ["HashDictionary"]
 
@@ -62,7 +62,8 @@ class HashDictionary(ConcurrentOptimized, IndexedCollection):
         """Bucket hash of a key (``hash_key``).
 
         Subclasses may override it to force collisions, but must keep it a pure
-        function of the key's value: persisted trees are ordered by it.
+        function of the key's value: persisted trees are ordered by it.  Such a
+        subclass is an object root (N5: the hook would run under the root lock).
         """
         return hash_key(key)
 
@@ -125,6 +126,13 @@ class HashDictionary(ConcurrentOptimized, IndexedCollection):
         with engine_reads():
             _, bucket, position = self._find(key)
         return ABSENT if position < 0 else bucket[position][1]
+
+    def _unit_token(self, kind, key):
+        """The token of unit ``kind`` for the canonical ``key``: for ``KEY`` the token of
+        :meth:`_stored_at`; ``NOT_A_UNIT`` for any other kind."""
+        if kind is not UnitKind.KEY:
+            return NOT_A_UNIT
+        return token(self._stored_at(key))
 
     def items(self) -> Iterator[tuple]:
         """``(key, value)`` pairs in bucket-hash order."""
@@ -234,11 +242,12 @@ class HashDictionary(ConcurrentOptimized, IndexedCollection):
             return f"<HashDictionary count={self.count}>"
 
 
-#: The operations of a HashDictionary the precondition model lists or relies on (N5); overriding
-#: ``_bucket_hash`` (a pure function of the key) keeps the treatment.
+#: The operations of a HashDictionary the precondition model lists or relies on (N5).  ``_bucket_hash``
+#: is among them: validating a key's unit and reapplying an intention run it under the root lock,
+#: so an overriding subclass would run user code there (P-C); it is an object root.
 HASH_DICTIONARY_OPERATIONS = ("get_at", "has", "__contains__", "set_at", "remove_at", "_set_at", "_remove_at",
-                              "_stored_at", "_find", "elements", "items", "keys", "values", "__iter__",
-                              "__len__", "content_equals", "_same_content", "_scan_window", "_replay_op",
-                              "_net_ops", "_op_key", "_reapplied_on", "_with")
+                              "_stored_at", "_unit_token", "_find", "_bucket_hash", "elements", "items", "keys",
+                              "values", "__iter__", "__len__", "content_equals", "_same_content", "_scan_window",
+                              "_replay_op", "_net_ops", "_op_key", "_reapplied_on", "_with")
 
 register_fine_grained(HashDictionary, HASH_DICTIONARY_OPERATIONS)

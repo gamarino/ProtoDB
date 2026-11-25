@@ -5,18 +5,18 @@
 
 * a plain ``int`` root read and rewritten (read set -> conflicts -> retries);
 * the key ``"n"`` of a ``Dictionary`` root, read-modify-write (same conflict path:
-  the root was read, so it is never merged);
-* a ``CountedSet`` root receiving blind adds (never read -> intent merge, D33):
-  no attempt may conflict;
-* one key of a ``RepeatedKeysDictionary`` root receiving blind adds of distinct and
-  shared records: the final bucket is the multiset union of every add.
+  the key's precondition);
+* a ``CountedSet`` root receiving adds through its linked root (no precondition: the
+  increments compose, D26): no attempt may conflict;
+* one key of a ``RepeatedKeysDictionary`` root receiving adds of distinct and shared
+  records through its linked root: the final bucket is the multiset union of every add.
 
 Each test also checks the version chain (one ``DatabaseRoot`` per commit) and
 reports runtime and conflict rate.
 
 Catches: lost updates (a commit published over a concurrent one), a read set that
-misses a change, a merge applied to a read root, a blind merge that drops or
-duplicates an intent, and deadlocks between the root lock and atom stripes.
+misses a change, a reapplication that drops or duplicates an intention, and deadlocks
+between the root lock and atom stripes.
 """
 from collections import Counter
 
@@ -101,14 +101,14 @@ def test_dictionary_key_counter(space, request):
     report(request.node.name, elapsed, attempts)
 
 
-def test_counted_set_blind_adds_merge_without_conflicts(space, request):
+def test_counted_set_linked_adds_compose_without_conflicts(space, request):
     db = space.new_database("db")
     with db.new_transaction() as tr:
         tr.set_root_object("hits", tr.new_counted_set().add("seed"))
     attempts = Attempts()
 
     def hit(tr):
-        tr.set_root_object("hits", tr.new_counted_set().add("hit"))
+        tr.set_root_object("hits", tr.get_root_object("hits").add("hit"))
 
     elapsed = _hammer(db, hit, attempts)
     hits = _read(db, lambda tr: tr.get_root_object("hits"))
@@ -116,14 +116,14 @@ def test_counted_set_blind_adds_merge_without_conflicts(space, request):
     assert hits.count_of("seed") == 1
     assert hits.total_count == TOTAL + 1 and hits.count == 2
     assert attempts.commits == TOTAL
-    # Nothing was read, so the read set is empty: every commit merges, none conflicts.
+    # Only the root's presence and class were read: every commit composes its increment, none conflicts.
     assert attempts.conflicts == 0, attempts
     _check_versions(db, 1)
     report(request.node.name, elapsed, attempts)
 
 
-def test_repeated_keys_blind_adds_merge(space, request):
-    """Concurrent blind adds to ONE key of a RepeatedKeysDictionary all survive (0.1 test_102/097/098).
+def test_repeated_keys_linked_adds_compose(space, request):
+    """Concurrent adds to ONE key of a RepeatedKeysDictionary all survive (0.1 test_102/097/098).
 
     Every thread commits its own distinct records plus one record shared by all, so the final
     bucket must be the multiset union of every add: each distinct record once, the shared one
@@ -138,7 +138,7 @@ def test_repeated_keys_blind_adds_merge(space, request):
         def worker():
             for i in range(PER_THREAD):
                 def add(tr, i=i):
-                    tr.set_root_object("tags", tr.new_repeated_keys_dictionary()
+                    tr.set_root_object("tags", tr.get_root_object("tags")
                                        .set_at("k", (t, i)).set_at("k", "shared"))
                 attempts.run(db, add, **RUN_KW)
         return worker
@@ -151,7 +151,7 @@ def test_repeated_keys_blind_adds_merge(space, request):
     assert dict(tags.get_at("other").items()) == {"seed": 1}
     assert sorted(tags.keys()) == ["k", "other"]
     assert attempts.commits == TOTAL
-    # Nothing was read: every commit merges by intent, none conflicts.
+    # No record was read: every commit composes its intentions (D26), none conflicts.
     assert attempts.conflicts == 0, attempts
     _check_versions(db, 1)
     report(request.node.name, elapsed, attempts)

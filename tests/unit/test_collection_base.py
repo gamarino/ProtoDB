@@ -4,7 +4,7 @@ import random
 import pytest
 
 from proto_db.collections.base import ConcurrentOptimized, IndexedCollection, IndexSet, net_effect
-from proto_db.errors import ProtoConflictError, ProtoUserError, ProtoValidationError
+from proto_db.errors import ProtoUserError, ProtoValidationError
 from proto_db.storage.memory import MemoryStorage
 from tests.contracts.collection_contract import CollectionFactory, check_mutator
 from tests.support.persistence import DirectContext
@@ -106,11 +106,15 @@ class TestIndexedCollection:
         s2 = toy(1, 2).add_index(preloaded)
         assert s2.get_index("i").events == (("build", (1, 2)),)
 
-    def test_rebase_rebuilds_added_index_from_empty(self):
+    def test_index_change_is_whole_and_never_reapplied(self):
+        """R34, P-B: an index change marks the version whole (published as is under a
+        whole-collection precondition); reapplying it is refused, never half done."""
         stored = _snapshot(toy(1))
         preloaded = RecordingIndex("i").build([1, 99])
-        merged = stored.add_index(preloaded).rebase_onto(stored.add(2))
-        assert merged.get_index("i").events == (("build", (1, 2)),)
+        mine = stored.add_index(preloaded)
+        assert mine._whole and mine.get_index("i").events == (("build", (1,)),)
+        with pytest.raises(ProtoValidationError):
+            mine._reapplied_on(stored.add(2))
 
     def test_with_rejects_non_indexset_indexes(self):
         with pytest.raises(ProtoValidationError):
@@ -253,7 +257,7 @@ class TestNetEffect:
         assert net_effect(()) == []
 
 
-class TestRebase:
+class TestReapply:
     def test_logged_is_immutable_extension(self):
         s1 = toy(1)
         s2 = s1.add(2)
@@ -268,72 +272,53 @@ class TestRebase:
 
     def test_blind_discard_wins_over_concurrent_add(self):
         stored = _snapshot(toy(1))
-        assert list(stored.discard(5).rebase_onto(stored.add(5))) == [1]
+        assert list(stored.discard(5)._reapplied_on(stored.add(5))) == [1]
 
     def test_blind_add_wins_over_concurrent_discard(self):
         stored = _snapshot(toy(1, indexes=("i",)))
-        merged = stored.add(1).rebase_onto(stored.discard(1))
+        merged = stored.add(1)._reapplied_on(stored.discard(1))
         assert list(merged) == [1]
         assert merged.get_index("i").live() == RecordingIndex("x", (("build", (1,)),)).live()
 
-    def test_rebase_replays_net_effect(self):
+    def test_reapply_replays_net_effect(self):
         base = toy(1, 2, 3)
         ctx = DirectContext(MemoryStorage())
         stored = ctx.load(ctx.save(base), ToySet.__type_name__)  # snapshot: empty op log
         mine = stored.add(10).discard(1).add(1).discard(2).add(11).discard(11)
         theirs = stored.add(20).discard(3)
-        merged = mine.rebase_onto(theirs)
+        merged = mine._reapplied_on(theirs)
         assert list(merged) == [1, 10, 20]
         assert list(theirs) == [1, 2, 20] and list(mine) == [1, 3, 10]
 
-    def test_rebase_maintains_indexes(self):
+    def test_reapply_maintains_indexes(self):
         stored = _snapshot(toy(1, 2, indexes=("i",)))
         mine = stored.add(5).discard(1)
         theirs = stored.add(7)
-        merged = mine.rebase_onto(theirs)
+        merged = mine._reapplied_on(theirs)
         assert list(merged) == [2, 5, 7]
         assert merged.get_index("i").live() == RecordingIndex("x", (("build", (2, 5, 7)),)).live()
 
-    def test_rebase_onto_other_type_raises(self):
+    def test_reapply_on_other_type_raises(self):
         with pytest.raises(ProtoValidationError):
-            toy(1).rebase_onto(IndexSet())
+            toy(1)._reapplied_on(IndexSet())
 
-    def test_rebase_replays_index_addition(self):
-        stored = _snapshot(toy(1, 2))
-        mine = stored.add_index(RecordingIndex("i")).add(3)
-        theirs = stored.add(4)
-        merged = mine.rebase_onto(theirs)
-        assert merged.index_names() == ["i"] and list(merged) == [1, 2, 3, 4]
-        assert merged.get_index("i").live() == RecordingIndex("x", (("build", (1, 2, 3, 4)),)).live()
-
-    def test_rebase_index_added_on_both_sides_conflicts(self):
-        stored = _snapshot(toy(1))
-        mine = stored.add_index(RecordingIndex("i"))
-        theirs = stored.add_index(RecordingIndex("i"))
-        with pytest.raises(ProtoConflictError):
-            mine.rebase_onto(theirs)
-
-    def test_rebase_index_removal(self):
-        stored = _snapshot(toy(1, indexes=("i", "j")))
-        mine = stored.remove_index("i")
-        assert mine.rebase_onto(stored.add(2)).index_names() == ["j"]
-        # Already removed concurrently: a no-op.
-        assert mine.rebase_onto(stored.remove_index("i")).index_names() == ["j"]
-
-    def test_rebase_index_redefinition(self):
+    @pytest.mark.parametrize("change", [
+        lambda c: c.add_index(RecordingIndex("k")),
+        lambda c: c.remove_index("i"),
+        lambda c: c.remove_index("i").add_index(RecordingIndex("i")),
+        lambda c: c.add_index(RecordingIndex("k")).remove_index("k"),
+    ], ids=["add", "remove", "redefine", "add_then_remove"])
+    def test_index_changes_are_whole_not_reapplied(self, change):
+        """The retired index replay of the op-log merge: every index-definition change marks the
+        version whole (section 5, Indexes), so the commit publishes it as is when the collection
+        did not change and conflicts on ``Unit(WHOLE)`` otherwise; it is never reapplied."""
         stored = _snapshot(toy(1, indexes=("i",)))
-        mine = stored.remove_index("i").add_index(RecordingIndex("i"))
-        merged = mine.rebase_onto(stored.add(2))
-        assert merged.index_names() == ["i"]
-        assert merged.get_index("i").events == (("build", (1, 2)),)
+        mine = change(stored).add(3)
+        assert mine._whole
+        with pytest.raises(ProtoValidationError):
+            mine._reapplied_on(stored.add(2))
 
-    def test_rebase_index_added_then_removed_is_no_op(self):
-        stored = _snapshot(toy(1))
-        mine = stored.add_index(RecordingIndex("i")).remove_index("i")
-        theirs = stored.add_index(RecordingIndex("i"))
-        assert mine.rebase_onto(theirs).index_names() == ["i"]
-
-    def test_rebase_random_against_model(self):
+    def test_reapply_random_against_model(self):
         for seed in range(20):
             rng = random.Random(seed)
             start = {rng.randrange(30) for _ in range(10)}
@@ -354,7 +339,7 @@ class TestRebase:
             expected = set(theirs)
             for e, present in model_mine.items():
                 (expected.add if present else expected.discard)(e)
-            merged = mine.rebase_onto(theirs)
+            merged = mine._reapplied_on(theirs)
             assert list(merged) == sorted(expected)
             assert merged.get_index("i").live() == RecordingIndex("x", (("build", tuple(merged)),)).live()
 

@@ -87,7 +87,7 @@ def _plain_workload(directory) -> str:
             tx.set_root_object("plain", DBObject(n=2, tags=["a", "b"]))
 
         def update(tx):
-            tx.set_root_object("notes", tx.get_root_object("notes").with_(number=2), replace=True)
+            tx.set_root_object("notes", tx.get_root_object("notes").with_(number=2))
 
         db.run(fill)
         db.run(update)

@@ -11,7 +11,10 @@ intentions, ``_changes`` (R43); reads are recorded in the transaction (R44).
 What a read records (spec section 6):
 
 * the operations a collection class lists record their own units (a Dictionary's ``get_at(k)``
-  records ``Unit(KEY, root, key=k)``), through :func:`record_read`;
+  records ``Unit(KEY, root, key=k)``, a Set's ``has(e)`` ``Unit(ELEMENT, root, key=e)``, a
+  CountedSet's ``count_of(e)`` ``Unit(COUNT, root, key=e)``, a RepeatedKeysDictionary's
+  ``get_at(k)`` ``Unit(RECORDS, root, key=k)``), through :func:`record_key`; the expected value
+  is what the collection's ``_unit_token(kind, key)`` gives;
 * every other read by user code of a linked instance -- a persisted field (``count``, ``root``,
   ``indexes``, ...), iteration, ``len`` -- records ``Unit(WHOLE, root)`` through
   :func:`record_whole` (P-B, R18, B3);
@@ -22,9 +25,10 @@ A link is valid while its transaction is active (R46, R47): :func:`link_of` retu
 afterwards, and nothing is recorded any more.
 
 Classification (R1, N5): a class is **fine-grained** (:func:`fine_grained`) if it is one of the
-classes registered with :func:`register_fine_grained` (Dictionary and HashDictionary here; the
-other collections of R1 join with their units) or a subclass of one that overrides none of its
-listed operations, compared by method identity.  Any other root is an object root.
+classes registered with :func:`register_fine_grained` (Dictionary, HashDictionary, Set,
+CountedSet and RepeatedKeysDictionary; List joins with its units) or a subclass of one that
+overrides none of its listed operations, compared by method identity.  Any other root is an
+object root.
 
 Nothing here runs user code (P-C).
 """
@@ -37,12 +41,14 @@ from typing import TYPE_CHECKING, Any, Optional
 from ..core.atom import AtomPointer
 from ..preconditions import Unit, UnitKind, token
 from ..values import order_key
+from . import avl
 
 if TYPE_CHECKING:
     from ..transactions import Transaction
 
 __all__ = ["Link", "ExactKey", "linked_copy", "link_of", "record_read", "record_whole", "record_key",
-           "engine_reads", "engine_reading", "fine_grained", "register_fine_grained", "unit_key", "lookup_key"]
+           "engine_reads", "engine_reading", "fine_grained", "register_fine_grained", "unit_key", "lookup_key",
+           "NOT_A_UNIT", "wrote", "written_with"]
 
 
 @dataclass(frozen=True)
@@ -109,6 +115,7 @@ def linked_copy(atom, link: Link):
     osa(copy, "_link", link)
     osa(copy, "_changes", ())
     osa(copy, "_whole", False)
+    osa(copy, "_written", None)
     return copy
 
 
@@ -159,26 +166,57 @@ def record_whole(collection) -> None:
             log.record(Unit(UnitKind.WHOLE, link.root), _whole_expected(link))
 
 
-def record_key(collection, key) -> None:
-    """Record ``Unit(KEY, root, key)`` for an operation of the linked ``collection`` on ``key`` (a
-    read, or a write: section 5's precondition), expecting the stored form of ``key`` in the base,
-    ABSENT included (D51: a large value by its box's pointer).  Nothing is recorded when the unit
-    or the whole root is recorded already (R9: a key this transaction wrote was recorded by its
-    first write, so the version's stored form is the base's whenever the unit is new).  A version
-    marked whole (an unlisted operation produced it) records the whole collection instead."""
+def record_key(collection, key, kind: UnitKind = UnitKind.KEY, *, from_base: bool = False) -> None:
+    """Record ``Unit(kind, root, key)`` for an operation of the linked ``collection`` on ``key`` (a
+    read, or a write: section 5's precondition), expecting the unit's token in the base
+    (``_unit_token``, ABSENT included; D51: a large value by its box's pointer).
+
+    ``key`` is validated first (``order_key``: ``ProtoValidationError`` for a list, a dict or a NaN),
+    so an invalid key raises the documented error, never a ``TypeError`` from building the Unit.
+
+    Nothing is recorded when the unit or the whole root is recorded already (R9).  Without
+    ``from_base`` the token is taken from ``collection`` itself: right when the caller knows that
+    this version did not write the unit (a Dictionary key: its first write recorded it; a Set
+    element: the version's ``_written`` does not hold it).  With ``from_base`` it is taken from the
+    root's base collection: for units whose value in the version composes the base's with the
+    version's own changes (a CountedSet count, the records of a RepeatedKeysDictionary key, R18).
+    A version marked whole (an unlisted operation produced it) records the whole collection instead."""
     link = _recording_link(collection)
     if link is None:
         return
+    order_key(key)                      # ruling: validate before the Unit is built
     if collection._whole:
         record_whole(collection)
         return
     log = link.transaction._read_log
-    unit = Unit(UnitKind.KEY, link.root, key=unit_key(key))
+    unit = Unit(kind, link.root, key=unit_key(key))
     if unit in log or log.whole(link.root):
         return
+    source = link.transaction._base_root_value(link.root) if from_base else collection
     with engine_reads():
-        stored = collection._stored_at(key)
-    log.record(unit, token(stored))
+        expected = source._unit_token(kind, key)
+    log.record(unit, expected)
+
+
+def wrote(collection, key) -> bool:
+    """Whether the linked version ``collection`` determines the unit of ``key`` by its own writes
+    (its ``_written`` holds ``key``): a read of that unit reveals nothing of the base and records
+    nothing (R9).  ``key`` is validated (``order_key``) when there is something to look up."""
+    written = collection._written
+    return written is not None and avl.key_get(written, key, False)
+
+
+def written_with(collection, key) -> dict:
+    """The ``_with`` change adding ``key`` to the linked ``collection``'s ``_written`` (a runtime
+    persistent tree, O(log n) per write); nothing for an unlinked collection."""
+    if collection._link is None:
+        return {}
+    return {"_written": avl.key_put(collection._written, key, True)[0]}
+
+
+#: What ``_unit_token`` returns for a unit kind the collection does not have: equal to no token,
+#: so a precondition on a root whose class no longer has the unit fails (R12).
+NOT_A_UNIT = type("_NotAUnit", (), {"__slots__": (), "__repr__": lambda self: "NOT_A_UNIT"})()
 
 
 # -- unit keys ------------------------------------------------------------------------------

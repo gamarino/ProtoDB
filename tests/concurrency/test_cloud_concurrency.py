@@ -111,7 +111,7 @@ def test_plain_int_counter_across_instances(request, faults):
         s.close()
 
 
-def test_counted_set_blind_adds_across_instances(request):
+def test_counted_set_linked_adds_across_instances(request):
     store = FakeObjectStore()
     spaces = _spaces(store)
     db = spaces[0].new_database("db")
@@ -120,7 +120,7 @@ def test_counted_set_blind_adds_across_instances(request):
     attempts = Attempts()
 
     def hit(tr):
-        tr.set_root_object("hits", tr.new_counted_set().add("hit"))
+        tr.set_root_object("hits", tr.get_root_object("hits").add("hit"))
 
     elapsed = _hammer(spaces, hit, attempts)
     hits = _read(spaces[1], lambda tr: tr.get_root_object("hits"))

@@ -169,13 +169,13 @@ class TestIndexEvents:
         assert d.remove_at("zz").indexes is d.indexes
 
 
-class TestRebase:
+class TestReapply:
     @both
-    def test_rebase_per_key(self, cls):
+    def test_reapply_per_key(self, cls):
         snapshot = reload(make([("k", 1), ("j", 5)], indexes=("i",), cls=cls))
         theirs = snapshot.set_at("k", 2).set_at("x", 9)
         mine = snapshot.set_at("k", 3).remove_at("j").set_at("y", 4).remove_at("nope")
-        merged = mine.rebase_onto(theirs)
+        merged = mine._reapplied_on(theirs)
         assert dict(merged.items()) == {"k": 3, "x": 9, "y": 4}
         assert merged.get_index("i").live() == Counter(order_key(v) for v in merged.values())
 

@@ -130,7 +130,7 @@ vectors (k-means, stored in the index) and searches only the ``nprobe`` nearest 
                                                      backend="ivf_flat", nlist=16, nprobe=nprobe))
            for i, topic, vec in docs:
                ivf = ivf.append_last(tr.new_object(i=i, topic=topic, vec=vec))
-           tr.set_root_object("ivf", ivf, replace=True)
+           tr.set_root_object("ivf", ivf)
        tr = db.new_transaction()
        coll, hits = tr.get_root_object("ivf"), 0
        for q in range(queries):

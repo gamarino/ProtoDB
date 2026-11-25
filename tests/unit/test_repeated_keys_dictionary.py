@@ -155,12 +155,12 @@ class TestIndexEvents:
         assert d.get_index("i").live() == Counter(order_key(v) for v in ["a", "b", "a"])
 
 
-class TestRebase:
-    def test_rebase_nested_deltas(self):
+class TestReapply:
+    def test_reapply_nested_deltas(self):
         snapshot = reload(make([("k", "a"), ("j", "x")], indexes=("i",)))
         theirs = snapshot.set_at("k", "a").set_at("n", 1).remove_at("j")
         mine = snapshot.set_at("k", "a").set_at("k", "b").remove_record("j", "x").set_at("m", 2)
-        merged = mine.rebase_onto(theirs)
+        merged = mine._reapplied_on(theirs)
         assert content(merged) == literal(content(theirs), mine._changes)
         assert merged.get_at("k").count_of("a") == 3 and merged.get_at("k").count_of("b") == 1
         assert not merged.has("j") and merged.has("n") and merged.has("m")
@@ -170,10 +170,10 @@ class TestRebase:
         snapshot = reload(make([("k", "a"), ("k", "a")]))
         theirs = snapshot.set_at("k", "b")
         mine = snapshot.remove_at("k").set_at("k", "c")
-        merged = mine.rebase_onto(theirs)
+        merged = mine._reapplied_on(theirs)
         assert content(merged) == {order_key("k"): {order_key("c"): 1}}
 
-    def test_rebase_matches_serial_replay(self):
+    def test_reapply_matches_serial_replay(self):
         rng = random.Random(11)
 
         def step(d):
@@ -192,7 +192,7 @@ class TestRebase:
                 theirs = step(theirs)
             for _ in range(rng.randrange(10)):
                 mine = step(mine)
-            merged = mine.rebase_onto(theirs)
+            merged = mine._reapplied_on(theirs)
             assert content(merged) == literal(content(theirs), mine._changes)
             assert merged.total_count == sum(n for _, cs in merged.items() for _, n in cs.items())
             assert merged.count == sum(1 for _ in merged)
@@ -249,6 +249,6 @@ class TestReviewFixes:
         snapshot = reload(make([("k", "a"), ("k", "b")], indexes=("i",)))
         theirs = snapshot.set_at("j", 1)
         mine = snapshot.remove_record("k", "a").set_at("k", "a").remove_record("k", "b").remove_record("k", "b")
-        merged = mine.rebase_onto(theirs)
+        merged = mine._reapplied_on(theirs)
         assert merged.get_index("i").events_since(theirs.get_index("i")) == (("remove", "b"),)
         assert merged.get_at("k").count_of("a") == 1

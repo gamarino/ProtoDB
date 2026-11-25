@@ -82,7 +82,11 @@ def concurrent_commits(ctx, p):
                                 if variant == "conflicting":
                                     tr.set_root_object("n", tr.get_root_object("n") + 1)
                                 elif variant == "blind merge":
-                                    tr.set_root_object("ids", tr.new_counted_set().add(uid))
+                                    # Through the linked root: CountedSet adds compose without a
+                                    # precondition (spec section 5, D26).
+                                    ids = tr.get_root_object("ids")
+                                    ids = ids if ids is not None else tr.new_counted_set()
+                                    tr.set_root_object("ids", ids.add(uid))
                                 elif variant == "blind merge, indexed dict":
                                     # Through the linked root: per-key preconditions (spec section 5).
                                     tr.set_root_object("people", tr.get_root_object("people").set_at(

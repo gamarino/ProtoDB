@@ -28,9 +28,12 @@ commit its changes are reapplied, last intention per key, on the current diction
 :class:`~proto_db.collections.sets.CountedSet` of records (values must therefore
 be orderable).  ``elements()`` yields each distinct record of each key once, in
 key order; indexes see a record when it first appears under a key and lose it
-when its last occurrence under that key goes.  Its concurrent merge replays,
-per key, a ``remove_key`` if the log has one and then the counter transform of
-the record ops after it (D26).
+when its last occurrence under that key goes.  Its writes have no precondition:
+at commit a linked version's intentions are reapplied per key as a ``remove_key``
+if the version has one and then the counter transform of the record ops after it
+(D26).  ``get_at(k)``, ``get(k)``, ``has(k)`` and ``k in r`` record
+``Unit(RECORDS, root, key=k)`` with the token of k's CountedSet in the base,
+unless the version cleared k (R9); the CountedSet returned has no units (R5).
 
 Thread safety: a version is immutable once built and may be shared between
 threads; lazily loaded nodes are published atomically by the atom layer.
@@ -42,11 +45,11 @@ from itertools import islice
 
 from ..core.atom import PersistenceContext
 from ..errors import ProtoValidationError
-from ..preconditions import ABSENT
+from ..preconditions import ABSENT, UnitKind, token
 from ..values import canonical, canonical_for, check_wrapped, order_key
 from . import avl
 from .base import ConcurrentOptimized, IndexedCollection, check_sorted_keys, repair_pairs, same_value
-from .linking import engine_reads, record_key, record_whole, register_fine_grained
+from .linking import NOT_A_UNIT, engine_reads, record_key, record_whole, register_fine_grained, wrote, written_with
 from .sets import CountedSet, counter_net_effect, counter_transform
 
 __all__ = ["Dictionary", "RepeatedKeysDictionary"]
@@ -150,6 +153,13 @@ class Dictionary(ConcurrentOptimized, IndexedCollection):
         as is, never loaded) or ABSENT: what ``Unit(KEY, ...)`` compares (D51).  Records nothing."""
         with engine_reads():
             return avl.key_get_stored(self.root, key, ABSENT)
+
+    def _unit_token(self, kind, key):
+        """The token of unit ``kind`` for the canonical ``key`` (what a precondition compares): for
+        ``KEY`` the token of :meth:`_stored_at`; ``NOT_A_UNIT`` for any other kind."""
+        if kind is not UnitKind.KEY:
+            return NOT_A_UNIT
+        return token(self._stored_at(key))
 
     def key_at_position(self, i: int):
         """The key at position ``i`` in key order (a negative ``i`` counts from the end), in
@@ -268,7 +278,7 @@ class Dictionary(ConcurrentOptimized, IndexedCollection):
 #: The operations of a Dictionary the precondition model lists (spec sections 5 and 6) or relies
 #: on to validate and reapply them: a subclass overriding one is an object root (N5).
 DICTIONARY_OPERATIONS = ("get_at", "has", "__contains__", "set_at", "remove_at", "_set_at", "_remove_at",
-                         "_stored_at", "elements", "items", "keys", "values", "__iter__", "__len__",
+                         "_stored_at", "_unit_token", "elements", "items", "keys", "values", "__iter__", "__len__",
                          "content_equals", "_same_content", "_scan_window", "key_at_position", "position_of",
                          "_replay_op", "_net_ops", "_op_key", "_reapplied_on", "_with")
 
@@ -331,16 +341,42 @@ class RepeatedKeysDictionary(ConcurrentOptimized, IndexedCollection):
         """The CountedSet of records under ``key`` (an empty one when absent).
 
         The returned set is a value: deriving versions from it never changes
-        this multimap.
+        this multimap, and it has no units of its own (R5).  On a linked version it records
+        ``Unit(RECORDS, root, key=key)`` with the token of the key's CountedSet in the base (the
+        version's records compose the base's with its own changes, R18), unless this version
+        cleared the key with :meth:`remove_at` (R9).
         """
-        records = avl.key_get(self.root, _canonical_key(key))
-        return records if records is not None else CountedSet(context=self.context)
+        key = self._recorded_key(key)
+        with engine_reads():
+            records = avl.key_get(self.root, key)
+            return records if records is not None else CountedSet(context=self.context)
 
     def has(self, key) -> bool:
-        """True iff ``key`` (canonicalized) holds at least one record."""
-        return avl.key_get(self.root, _canonical_key(key)) is not None
+        """True iff ``key`` (canonicalized) holds at least one record; on a linked version it
+        records ``Unit(RECORDS, root, key=key)`` as :meth:`get_at` does."""
+        key = self._recorded_key(key)
+        with engine_reads():
+            return avl.key_get(self.root, key) is not None
 
     __contains__ = has
+
+    def _recorded_key(self, key):
+        """``key`` canonical (refused when not orderable), its read recorded on a linked version."""
+        key = _canonical_key(key, f"{type(self).__name__} key")
+        if self._link is not None and not wrote(self, key):
+            record_key(self, key, UnitKind.RECORDS, from_base=True)
+        return key
+
+    def _unit_token(self, kind, key):
+        """The token of unit ``kind`` for the canonical ``key``: for ``RECORDS`` the token of the
+        key's CountedSet (compared by storage pointer, never loaded) or ABSENT; ``NOT_A_UNIT`` for
+        any other kind.  A CountedSet not saved has no identity yet: its token equals no other."""
+        if kind is not UnitKind.RECORDS:
+            return NOT_A_UNIT
+        records = avl.key_get(self.root, key, ABSENT)
+        if records is not ABSENT and records.atom_pointer is None:
+            return object()
+        return token(records)
 
     def keys(self) -> Iterator:
         """Keys in order."""
@@ -387,6 +423,10 @@ class RepeatedKeysDictionary(ConcurrentOptimized, IndexedCollection):
         """
         order_key(record)
         log = self._logged(op)
+        with engine_reads():
+            return self._record_stepped(key, record, removes, adds, log)
+
+    def _record_stepped(self, key, record, removes: int, adds: int, log: tuple) -> "RepeatedKeysDictionary":
         records = avl.key_get(self.root, key)
         if records is None:
             if not adds:
@@ -432,23 +472,27 @@ class RepeatedKeysDictionary(ConcurrentOptimized, IndexedCollection):
         return self._record_step(key, record, 1, 0, (_REMOVE_RECORD, key, record))
 
     def _transform_record(self, key, record, removes: int, adds: int) -> "RepeatedKeysDictionary":
-        """Apply a composed counter transform to one record as one adjustment (concurrent merge, D26)."""
+        """Apply a composed counter transform to one record as one adjustment (reapplication, D26)."""
         key, record = self._key(key), self._record(record)
         return self._record_step(key, record, removes, adds, (_TRANSFORM_RECORD, key, record, removes, adds))
 
     def remove_at(self, key) -> "RepeatedKeysDictionary":
         """Return a multimap without ``key`` and all its records (one remove event per distinct record).
 
-        An absent key yields a new version with the same content.
+        An absent key yields a new version with the same content.  No precondition: the clear
+        is an intention, serializable after any concurrent change of the key (D26); after it the
+        key's records are this version's own (R9).
         """
         key = self._key(key)
         log = self._logged((_REMOVE_KEY, key))
-        root, removed, records = avl.key_remove(self.root, key)
-        if not removed:
-            return self._with(_changes=log)
-        return self._with(root=root, count=self.count - records.count,
-                          total_count=self.total_count - records.total_count,
-                          indexes=self._after_removes(records.elements()), _changes=log)
+        with engine_reads():
+            written = written_with(self, key)
+            root, removed, records = avl.key_remove(self.root, key)
+            if not removed:
+                return self._with(_changes=log, **written)
+            return self._with(root=root, count=self.count - records.count,
+                              total_count=self.total_count - records.total_count,
+                              indexes=self._after_removes(records.elements()), _changes=log, **written)
 
     def _same_content(self, other) -> bool:
         """Equal keys in key order, each with an equal CountedSet of records."""
@@ -461,7 +505,7 @@ class RepeatedKeysDictionary(ConcurrentOptimized, IndexedCollection):
     remove_key = remove_at
     get = get_at
 
-    # -- concurrent merge -----------------------------------------------------------------
+    # -- reapplication (R34, D26) ---------------------------------------------------------
 
     def _net_ops(self, element_ops: list) -> list:
         """Per key, in order of last occurrence: ``("net", key, cleared, transforms)`` (D26).
@@ -505,7 +549,19 @@ class RepeatedKeysDictionary(ConcurrentOptimized, IndexedCollection):
     def __repr__(self):
         if not self._loaded_now():
             return super().__repr__()  # never load a stub to describe it
-        return f"<RepeatedKeysDictionary keys={0 if self.root is None else self.root.count} count={self.count}>"
+        with engine_reads():           # describing it is not a read of the transaction
+            return f"<RepeatedKeysDictionary keys={0 if self.root is None else self.root.count} count={self.count}>"
+
+
+#: The operations of a RepeatedKeysDictionary the precondition model lists (spec sections 5 and 6)
+#: or relies on to record, validate and reapply them (N5): a subclass overriding one is an object root.
+REPEATED_KEYS_DICTIONARY_OPERATIONS = (
+    "get_at", "get", "has", "__contains__", "_recorded_key", "set_at", "add", "remove_record", "remove_at",
+    "remove_key", "_transform_record", "_record_step", "_record_stepped", "_key", "_record", "_unit_token",
+    "elements", "items", "keys", "__iter__", "__len__", "content_equals", "_same_content", "_replay_op",
+    "_net_ops", "_op_key", "_reapplied_on", "_with")
+
+register_fine_grained(RepeatedKeysDictionary, REPEATED_KEYS_DICTIONARY_OPERATIONS)
 
 
 class _Absent:

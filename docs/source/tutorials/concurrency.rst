@@ -139,18 +139,21 @@ then. Writers of different keys do not conflict; two writers of the same key do.
 
 The commit applies the *intent* of each transaction (set this key to this value), never a guess about what a
 value means: there is no "add the two numbers" for an integer, because ``proto_db`` cannot know that you meant a
-counter. For counting, use a ``CountedSet`` (``add`` and ``remove`` are counter operations that merge), or
+counter. For counting, use a ``CountedSet`` (``add`` and ``remove`` are counter operations that compose), or
 read-modify-write under ``run``.
 
-A ``CountedSet`` merges its counts, so concurrent writers can count without retrying:
+A ``CountedSet`` composes its counts, so concurrent writers that add through the root can count without
+retrying:
 
 .. code-block:: python
 
+   with db.new_transaction() as tr:
+       tr.set_root_object("visits", tr.new_counted_set())
    first, second = db.new_transaction(), db.new_transaction()
-   first.set_root_object("visits", first.new_counted_set().add("home").add("home"))
-   second.set_root_object("visits", second.new_counted_set().add("home").add("about"))
+   first.set_root_object("visits", first.get_root_object("visits").add("home").add("home"))
+   second.set_root_object("visits", second.get_root_object("visits").add("home").add("about"))
    first.commit()
-   second.commit()                                       # no conflict: neither read "visits"
+   second.commit()                                       # no conflict: neither read a count
    visits = db.new_transaction().get_root_object("visits")
    print(visits.count_of("home"), visits.count_of("about"), visits.total_count)
 

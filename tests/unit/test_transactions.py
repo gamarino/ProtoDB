@@ -478,21 +478,37 @@ def test_blind_write_over_a_concurrent_change_conflicts(db):
     assert dict(read_root(db, "d").items()) == {"a": 1, "k": 5}
 
 
-def test_blind_set_and_counted_set_merge_by_intent(db):
+def test_set_and_counted_set_writes_compose_through_linked_roots(db):
+    """Sections 5 and 9: Set adds and removes of other elements and CountedSet increments, written
+    through the linked roots, both publish (D26)."""
     with db.new_transaction() as tr:
         tr.set_root_object("s", tr.new_set().add(1))
         tr.set_root_object("c", tr.new_counted_set().add("x"))
     tr1, tr2 = db.new_transaction(), db.new_transaction()
-    tr1.set_root_object("s", tr1.new_set().add(2).remove(1))
-    tr1.set_root_object("c", tr1.new_counted_set().add("x"))
-    tr2.set_root_object("s", tr2.new_set().add(3))
-    tr2.set_root_object("c", tr2.new_counted_set().add("x"))
+    tr1.set_root_object("s", tr1.get_root_object("s").add(2).remove(1))
+    tr1.set_root_object("c", tr1.get_root_object("c").add("x"))
+    tr2.set_root_object("s", tr2.get_root_object("s").add(3))
+    tr2.set_root_object("c", tr2.get_root_object("c").add("x"))
     tr1.commit()
     tr2.commit()
     tr = db.new_transaction()
     assert sorted(tr.get_root_object("s")) == [2, 3]
     assert tr.get_root_object("c").count_of("x") == 3
     tr.abort()
+
+
+def test_separately_built_sets_replace_and_conflict(db):
+    """Section 5, R11: a Set or CountedSet built separately is not linked: it replaces the root,
+    compared against the base, so two such writers conflict."""
+    with db.new_transaction() as tr:
+        tr.set_root_object("c", tr.new_counted_set().add("x"))
+    tr1, tr2 = db.new_transaction(), db.new_transaction()
+    tr1.set_root_object("c", tr1.new_counted_set().add("y"))
+    tr2.set_root_object("c", tr2.new_counted_set().add("z"))
+    tr1.commit()
+    with pytest.raises(ProtoConflictError):
+        tr2.commit()
+    assert dict(read_root(db, "c").items()) == {"y": 1}
 
 
 def test_blind_write_of_a_new_root_stores_it_as_written(db):
@@ -549,12 +565,12 @@ def test_rebase_conflict_is_a_conflict_and_publishes_nothing(space, db):
     assert space.storage.read_root() == before
 
 
-def test_merge_always_rebases_the_original_version(db):
-    """A conflict-free commit after several concurrent commits replays the original log once."""
+def test_reapplication_applies_the_original_intentions_once(db):
+    """R34: a commit after several concurrent commits reapplies its version's intentions once."""
     with db.new_transaction() as tr:
         tr.set_root_object("c", tr.new_counted_set())
     blind = db.new_transaction()
-    blind.set_root_object("c", blind.new_counted_set().add("x"))
+    blind.set_root_object("c", blind.get_root_object("c").add("x"))
     for _ in range(3):
         with db.new_transaction() as tr:
             tr.set_root_object("c", tr.get_root_object("c").add("x"))
@@ -1018,7 +1034,7 @@ def test_concurrent_counters_lose_no_update(space):
             for _ in range(per_thread):
                 db.run(lambda tr: tr.set_root_object("n", tr.get_root_object("n") + 1),
                        retries=1000, backoff=(0, 0.002))
-                db.run(lambda tr: tr.set_root_object("c", tr.new_counted_set().add("hit")),
+                db.run(lambda tr: tr.set_root_object("c", tr.get_root_object("c").add("hit")),
                        retries=1000, backoff=(0, 0.002))
         except ProtoDBError as e:  # pragma: no cover - reported below
             errors.append(e)
@@ -1129,50 +1145,35 @@ def test_remove_then_set_replaces(db):
     assert dict(read_root(db, "x").items()) == {"c": 3}
 
 
-def test_set_with_replace_substitutes_a_blind_root(db):
-    with db.new_transaction() as tr:
-        tr.set_root_object("x", tr.new_dictionary().set_at("a", 1))
-    with db.new_transaction() as tr:
-        tr.set_root_object("x", tr.new_dictionary().set_at("c", 3), replace=True)
-    assert dict(read_root(db, "x").items()) == {"c": 3}
-
-
-def test_set_with_replace_compares_against_the_base(db):
+def test_unlinked_set_compares_against_the_base(db):
     """Section 5: a replacement compares against the base; a concurrent change conflicts."""
     with db.new_transaction() as tr:
         tr.set_root_object("x", tr.new_dictionary().set_at("a", 1))
     tr1, tr2 = db.new_transaction(), db.new_transaction()
     tr1.set_root_object("x", tr1.new_dictionary().set_at("b", 2))
-    tr2.set_root_object("x", tr2.new_dictionary().set_at("c", 3), replace=True)
+    tr2.set_root_object("x", tr2.new_dictionary().set_at("c", 3))
     tr1.commit()
     with pytest.raises(ProtoConflictError):
         tr2.commit()
     assert dict(read_root(db, "x").items()) == {"b": 2}         # tr1 replaced the root (R11)
 
 
-def test_replace_mark_is_sticky_within_the_transaction(db):
+def test_second_set_of_a_root_in_one_transaction_wins(db):
     with db.new_transaction() as tr:
         tr.set_root_object("x", tr.new_dictionary().set_at("a", 1))
     with db.new_transaction() as tr:
-        tr.set_root_object("x", tr.new_dictionary().set_at("b", 2), replace=True)
+        tr.set_root_object("x", tr.new_dictionary().set_at("b", 2))
         tr.set_root_object("x", tr.new_dictionary().set_at("c", 3))
     assert dict(read_root(db, "x").items()) == {"c": 3}
 
 
-def test_set_without_replace_replaces_an_unlinked_dictionary(db):
-    """R11: a Dictionary is never merged; built separately, it replaces the root."""
+def test_set_replaces_an_unlinked_dictionary(db):
+    """R11: a Dictionary built separately is not linked: it replaces the root."""
     with db.new_transaction() as tr:
         tr.set_root_object("x", tr.new_dictionary().set_at("a", 1))
     with db.new_transaction() as tr:
-        tr.set_root_object("x", tr.new_dictionary().set_at("c", 3), replace=False)
+        tr.set_root_object("x", tr.new_dictionary().set_at("c", 3))
     assert dict(read_root(db, "x").items()) == {"c": 3}
-
-
-def test_replace_must_be_a_bool(db):
-    tr = db.new_transaction()
-    with pytest.raises(ProtoValidationError):
-        tr.set_root_object("x", 1, replace=1)
-    tr.abort()
 
 
 def test_committed_value_reused_later_does_not_replay_its_ops(db):

@@ -239,8 +239,6 @@ def test_applications_still_cannot_write_dunder_roots(db):
         with pytest.raises(ProtoValidationError, match="reserved"):
             tr.set_root_object(name, 1)
         with pytest.raises(ProtoValidationError, match="reserved"):
-            tr.set_root_object(name, 1, replace=True)
-        with pytest.raises(ProtoValidationError, match="reserved"):
             tr.remove_root_object(name)
     tr.abort()
 

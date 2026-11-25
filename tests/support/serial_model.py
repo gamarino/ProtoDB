@@ -18,27 +18,44 @@ and ``d_set`` a collection over an object, so a linked collection write can meet
 class change (R12).  Every operation looks at the root's current kind; one that does not apply
 to it reads ``("kind", <kind>)`` and writes nothing.
 
-The operation set is closed: Tasks 2-4 (object roots, mutable cells, Dictionary and
-HashDictionary roots).  A later task adds its collections to :data:`COLLECTIONS`, its kinds to
-an ops tuple and to :data:`ALL_OPS`, and each operation as a ``@_real``-registered function
-plus a ``Model._<kind>`` method; the import-time check below rejects a kind missing either.
+The operation set is closed: Tasks 2-4 and 6 (object roots, mutable cells, Dictionary,
+HashDictionary, Set, CountedSet and RepeatedKeysDictionary roots).  A later task adds its
+collections to :data:`COLLECTIONS`, its kinds to an ops tuple and to :data:`ALL_OPS`, and each
+operation as a ``@_real``-registered function plus a ``Model._<kind>`` method; the import-time
+check below rejects a kind missing either.
+
+Each collection family has its operations (``d_*`` dictionaries, ``s_*`` Set, ``cs_*``
+CountedSet, ``r_*`` RepeatedKeysDictionary).  A read of a root holding another kind reads the
+marker; a write that creates (``d_set``, ``s_add``, ``cs_add``, ``r_add``) replaces an absent or
+object root with a new collection of the family; any other write on a root of another kind
+writes nothing.  Model contents: a dictionary ``{key: value}``, a Set ``{element: True}``, a
+CountedSet ``{element: count}``, a RepeatedKeysDictionary ``{key: {record: count}}``.
 """
 import copy
 from collections import namedtuple
 from dataclasses import dataclass, field
 
-from proto_db.collections.dictionaries import Dictionary
+from proto_db.collections.dictionaries import Dictionary, RepeatedKeysDictionary
 from proto_db.collections.hash_dictionaries import HashDictionary
+from proto_db.collections.sets import CountedSet, Set
 from proto_db.errors import ProtoValidationError
 
 #: The kind of an object root (R1: any value that is not a collection).
 OBJECT = "object"
 #: The collection kinds of fine-grained roots, by class name.
-COLLECTIONS = {"Dictionary": Dictionary, "HashDictionary": HashDictionary}
+COLLECTIONS = {"Dictionary": Dictionary, "HashDictionary": HashDictionary, "Set": Set, "CountedSet": CountedSet,
+               "RepeatedKeysDictionary": RepeatedKeysDictionary}
 #: Every kind a root can hold.
 KINDS = (OBJECT,) + tuple(COLLECTIONS)
 #: Collection kinds whose keys have a position (R17).
 POSITIONAL = ("Dictionary",)
+#: The kinds each family of collection operations acts on (the first is its default home).
+DICTIONARIES = ("Dictionary", "HashDictionary")
+SETS = ("Set",)
+COUNTED_SETS = ("CountedSet",)
+MULTIMAPS = ("RepeatedKeysDictionary",)
+#: How many distinct records a RepeatedKeysDictionary operation draws from (collisions on purpose).
+RECORDS = 3
 
 #: One operation of a program: ``kind`` names it; ``target`` is a root or cell name; ``key``
 #: a key, an attribute name, a position or (``root_reset``) the kind written; ``value`` the
@@ -51,8 +68,18 @@ OBJECT_OPS = ("obj_get", "obj_set")
 DICTIONARY_OPS = ("d_get", "d_has", "d_set", "d_remove", "d_len", "d_items", "d_key_at", "d_pos")
 CELL_OPS = ("c_get", "c_put", "c_inc", "c_remove", "c_names")
 DICTIONARY_AND_CELL_OPS = ROOT_OPS + OBJECT_OPS + DICTIONARY_OPS + CELL_OPS
+#: The operations of Task 6.
+SET_OPS = ("s_has", "s_add", "s_remove", "s_union", "s_difference", "s_intersection", "s_len")
+COUNTED_SET_OPS = ("cs_count", "cs_has", "cs_add", "cs_remove", "cs_items")
+MULTIMAP_OPS = ("r_get", "r_has", "r_add", "r_remove_record", "r_remove_key", "r_len")
 #: Every operation kind the model knows (each must have a real and a model implementation).
-ALL_OPS = DICTIONARY_AND_CELL_OPS
+ALL_OPS = DICTIONARY_AND_CELL_OPS + SET_OPS + COUNTED_SET_OPS + MULTIMAP_OPS
+#: The kinds each family's operations act on, by operation prefix.
+_FAMILIES = {"d_": DICTIONARIES, "s_": SETS, "cs_": COUNTED_SETS, "r_": MULTIMAPS}
+#: Operations that read or write several elements at once (``value`` is a tuple of keys).
+_MULTI = ("s_union", "s_difference", "s_intersection")
+#: Operations that only read the whole collection, or the root (no key).
+_KEYLESS = ("root_get", "root_remove", "d_len", "d_items", "s_len", "cs_items", "r_len")
 
 #: Operations that need no target.
 _UNTARGETED = ("root_names", "c_names")
@@ -68,21 +95,24 @@ class StateNames:
     cells: tuple
     values: range = range(100)
 
-    def collection_home(self, root: str) -> str:
-        """The collection kind a collection write creates on ``root`` when it holds no collection."""
+    def collection_home(self, root: str, family=DICTIONARIES) -> str:
+        """The collection kind a write of ``family`` creates on ``root`` when it holds no collection:
+        the root's home kind if it belongs to the family, else the family's first kind."""
         kind = self.roots[root]
-        return kind if kind in COLLECTIONS else next(iter(COLLECTIONS))
+        return kind if kind in family else family[0]
 
 
 @dataclass
 class Record:
     """One committed transaction: ``version`` is the database version it published (its place
-    in the commit order) or, when it published nothing (``read_only``), the version it read."""
+    in the commit order) or, when it published nothing (``read_only``), the version it read;
+    ``base`` is the version its snapshot read (for statistics: what it was reapplied over)."""
     version: int
     program: list
     reads: list
     read_only: bool = False
     thread: int = -1
+    base: int = -1
 
 
 # -- program generation -------------------------------------------------------------------------
@@ -110,21 +140,37 @@ def random_program(rng, state_names: StateNames, ops, max_length: int = 6) -> li
     return [_draw(rng, state_names, rng.choice(drawable)) for _ in range(rng.randint(1, max_length))]
 
 
+def family_of(kind: str):
+    """The collection kinds operation ``kind`` acts on, or None (root, object and cell operations)."""
+    for prefix, family in _FAMILIES.items():
+        if kind.startswith(prefix):
+            return family
+    return None
+
+
 def _draw(rng, names: StateNames, kind: str) -> Op:
     if kind in _UNTARGETED:
         return Op(kind)
     if kind in CELL_OPS:
         return Op(kind, rng.choice(names.cells), value=rng.choice(names.values) if kind == "c_put" else None)
-    target = rng.choice(tuple(names.roots))
+    roots = tuple(names.roots)
+    family = family_of(kind)
+    homes = tuple(name for name in roots if names.roots[name] in (family or ()))
+    # A family operation mostly targets a root of its family, sometimes any root (class changes).
+    target = rng.choice(homes if homes and rng.random() < 0.8 else roots)
     key = rng.choice(names.keys)
     value = rng.choice(names.values)
     if kind == "root_reset":
         chosen = rng.sample(names.keys, rng.randint(0, len(names.keys)))
         return Op(kind, target, rng.choice(KINDS), tuple(sorted((k, rng.choice(names.values)) for k in chosen)))
-    if kind in ("root_get", "root_remove", "d_len", "d_items"):
+    if kind in _KEYLESS:
         return Op(kind, target)
     if kind == "d_key_at":
         return Op(kind, target, rng.randrange(len(names.keys)))
+    if kind in _MULTI:
+        return Op(kind, target, value=tuple(sorted(rng.sample(names.keys, rng.randint(0, 3)))))
+    if kind in ("r_add", "r_remove_record"):
+        return Op(kind, target, key, rng.randrange(RECORDS))
     return Op(kind, target, key, value if kind in ("obj_set", "d_set") else None)
 
 
@@ -153,14 +199,45 @@ def _attributes(obj, keys) -> tuple:
     return tuple((k, obj[k]) for k in sorted(keys) if obj[k] is not None)
 
 
+def fresh_content(kind: str, items: dict) -> dict:
+    """The model content of a new value of ``kind`` built from ``items`` (key -> value), as
+    :func:`_fresh` builds it: a Set holds the keys, a CountedSet each key ``value % 3 + 1``
+    times, a RepeatedKeysDictionary the record ``value % RECORDS`` under each key."""
+    if kind == "Set":
+        return {k: True for k in items}
+    if kind == "CountedSet":
+        return {k: v % 3 + 1 for k, v in items.items()}
+    if kind == "RepeatedKeysDictionary":
+        return {k: {v % RECORDS: 1} for k, v in items.items()}
+    return dict(items)
+
+
 def _fresh(tr, kind: str, items: dict):
-    """A new value of ``kind`` holding ``items``, not linked to any root (R11)."""
+    """A new value of ``kind`` holding ``items`` (see :func:`fresh_content`), not linked to any root (R11)."""
     if kind == OBJECT:
         return tr.new_object(**items)
     collection = COLLECTIONS[kind](context=tr)
     for k, v in sorted(items.items()):
-        collection = collection.set_at(k, v)
+        if kind == "Set":
+            collection = collection.add(k)
+        elif kind == "CountedSet":
+            for _ in range(v % 3 + 1):
+                collection = collection.add(k)
+        elif kind == "RepeatedKeysDictionary":
+            collection = collection.set_at(k, v % RECORDS)
+        else:
+            collection = collection.set_at(k, v)
     return collection
+
+
+def content_of(value) -> dict:
+    """The model content of a collection value."""
+    kind = kind_of(value)
+    if kind == "Set":
+        return {e: True for e in value.elements()}
+    if kind == "RepeatedKeysDictionary":
+        return {k: dict(records.items()) for k, records in value.items()}
+    return dict(value.items())
 
 
 def execute(tr, program: list, names: StateNames) -> list:
@@ -211,7 +288,7 @@ def _real_obj_set(tr, op, names):
     tr.set_root_object(op.target, obj)
 
 
-def _collection(tr, op, kinds=tuple(COLLECTIONS)):
+def _collection(tr, op, kinds=DICTIONARIES):
     """``(root value, marker)``: the marker is what the operation reads when the root does not
     hold one of ``kinds`` (None when absent, ``("kind", <kind>)`` otherwise), else None."""
     d = tr.get_root_object(op.target)
@@ -235,14 +312,28 @@ def _real_d_has(tr, op, names):
     return marker if d is None else d.has(op.key)
 
 
+def _creating_write(tr, op, names, family, write, items):
+    """A write that creates: through the root's linked collection when it holds one of ``family``
+    (``write(collection)``), a new collection of the family holding ``items`` (see
+    :func:`fresh_content`) when the root is absent or an object, nothing on another collection."""
+    value = tr.get_root_object(op.target)
+    kind = kind_of(value)
+    if kind in family:
+        tr.set_root_object(op.target, write(value))
+    elif kind in (None, OBJECT):
+        tr.set_root_object(op.target, _fresh(tr, names.collection_home(op.target, family), items))
+
+
+def _plain_write(tr, op, family, write):
+    """A write through the root's linked collection when it holds one of ``family``; else nothing."""
+    value, _ = _collection(tr, op, family)
+    if value is not None:
+        tr.set_root_object(op.target, write(value))
+
+
 @_real
 def _real_d_set(tr, op, names):
-    d = tr.get_root_object(op.target)
-    if kind_of(d) in COLLECTIONS:
-        d = d.set_at(op.key, op.value)
-    else:
-        d = _fresh(tr, names.collection_home(op.target), {op.key: op.value})    # absent or an object
-    tr.set_root_object(op.target, d)
+    _creating_write(tr, op, names, DICTIONARIES, lambda d: d.set_at(op.key, op.value), {op.key: op.value})
 
 
 @_real
@@ -283,6 +374,106 @@ def _real_d_pos(tr, op, names):
     if d is None:
         return marker
     return d.position_of(op.key) if d.has(op.key) else -1
+
+
+@_real
+def _real_s_has(tr, op, names):
+    s, marker = _collection(tr, op, SETS)
+    return marker if s is None else s.has(op.key)
+
+
+@_real
+def _real_s_add(tr, op, names):
+    # A new Set over an absent or object root: fresh_content's Set of {key}.
+    _creating_write(tr, op, names, SETS, lambda s: s.add(op.key), {op.key: 0})
+
+
+@_real
+def _real_s_remove(tr, op, names):
+    _plain_write(tr, op, SETS, lambda s: s.remove(op.key))
+
+
+@_real
+def _real_s_union(tr, op, names):
+    _plain_write(tr, op, SETS, lambda s: s.union(op.value))
+
+
+@_real
+def _real_s_difference(tr, op, names):
+    _plain_write(tr, op, SETS, lambda s: s.difference(op.value))
+
+
+@_real
+def _real_s_intersection(tr, op, names):
+    _plain_write(tr, op, SETS, lambda s: s.intersection(op.value))
+
+
+@_real
+def _real_s_len(tr, op, names):
+    s, marker = _collection(tr, op, SETS)
+    return marker if s is None else len(s)
+
+
+@_real
+def _real_cs_count(tr, op, names):
+    c, marker = _collection(tr, op, COUNTED_SETS)
+    return marker if c is None else c.count_of(op.key)
+
+
+@_real
+def _real_cs_has(tr, op, names):
+    c, marker = _collection(tr, op, COUNTED_SETS)
+    return marker if c is None else c.has(op.key)
+
+
+@_real
+def _real_cs_add(tr, op, names):
+    # A new CountedSet over an absent or object root: fresh_content's {key: 1}.
+    _creating_write(tr, op, names, COUNTED_SETS, lambda c: c.add(op.key), {op.key: 0})
+
+
+@_real
+def _real_cs_remove(tr, op, names):
+    _plain_write(tr, op, COUNTED_SETS, lambda c: c.remove(op.key))
+
+
+@_real
+def _real_cs_items(tr, op, names):
+    c, marker = _collection(tr, op, COUNTED_SETS)
+    return marker if c is None else tuple(sorted(c.items()))
+
+
+@_real
+def _real_r_get(tr, op, names):
+    r, marker = _collection(tr, op, MULTIMAPS)
+    return marker if r is None else tuple(sorted(r.get_at(op.key).items()))
+
+
+@_real
+def _real_r_has(tr, op, names):
+    r, marker = _collection(tr, op, MULTIMAPS)
+    return marker if r is None else r.has(op.key)
+
+
+@_real
+def _real_r_add(tr, op, names):
+    _creating_write(tr, op, names, MULTIMAPS, lambda r: r.set_at(op.key, op.value), {op.key: op.value})
+
+
+@_real
+def _real_r_remove_record(tr, op, names):
+    _plain_write(tr, op, MULTIMAPS, lambda r: r.remove_record(op.key, op.value))
+
+
+@_real
+def _real_r_remove_key(tr, op, names):
+    _plain_write(tr, op, MULTIMAPS, lambda r: r.remove_key(op.key))
+
+
+@_real
+def _real_r_len(tr, op, names):
+    r, marker = _collection(tr, op, MULTIMAPS)
+    return marker if r is None else len(r)
 
 
 @_real
@@ -353,7 +544,7 @@ class Model:
         """Apply one operation with its serial semantics (sections 5 and 6); return what it read."""
         return getattr(self, "_" + op.kind)(op)
 
-    def _content(self, op, kinds=tuple(COLLECTIONS)):
+    def _content(self, op, kinds=DICTIONARIES):
         """``(content, marker)`` as :func:`_collection` gives them for the real root."""
         kind, content = self.roots.get(op.target, (None, None))
         if kind is None:
@@ -375,7 +566,7 @@ class Model:
         self.roots.pop(op.target, None)
 
     def _root_reset(self, op):
-        self.roots[op.target] = (op.key, dict(op.value))
+        self.roots[op.target] = (op.key, fresh_content(op.key, dict(op.value)))
 
     def _obj_get(self, op):
         content, marker = self._content(op, (OBJECT,))
@@ -396,11 +587,22 @@ class Model:
         content, marker = self._content(op)
         return marker if content is None else op.key in content
 
+    def _creating(self, op, family):
+        """The content a creating write of ``family`` changes, as :func:`_creating_write`: the
+        root's, a new empty one over an absent or object root (the write then adds what
+        ``_creating_write``'s fresh collection holds), or None on another collection."""
+        kind, content = self.roots.get(op.target, (None, None))
+        if kind in family:
+            return content
+        if kind in (None, OBJECT):
+            home = self.names.collection_home(op.target, family)
+            self.roots[op.target] = (home, fresh_content(home, {}))
+            return self.roots[op.target][1]
+        return None
+
     def _d_set(self, op):
-        content, _ = self._content(op)
-        if content is None:
-            self.roots[op.target] = (self.names.collection_home(op.target), {op.key: op.value})
-        else:
+        content = self._creating(op, DICTIONARIES)
+        if content is not None:
             content[op.key] = op.value
 
     def _d_remove(self, op):
@@ -428,6 +630,98 @@ class Model:
         if content is None:
             return marker
         return sorted(content).index(op.key) if op.key in content else -1
+
+    def _s_has(self, op):
+        content, marker = self._content(op, SETS)
+        return marker if content is None else op.key in content
+
+    def _s_add(self, op):
+        content = self._creating(op, SETS)
+        if content is not None:
+            content[op.key] = True
+
+    def _s_remove(self, op):
+        content, _ = self._content(op, SETS)
+        if content is not None:
+            content.pop(op.key, None)
+
+    def _s_union(self, op):
+        content, _ = self._content(op, SETS)
+        if content is not None:
+            content.update((k, True) for k in op.value)
+
+    def _s_difference(self, op):
+        content, _ = self._content(op, SETS)
+        if content is not None:
+            for k in op.value:
+                content.pop(k, None)
+
+    def _s_intersection(self, op):
+        content, _ = self._content(op, SETS)
+        if content is not None:
+            for k in [k for k in content if k not in op.value]:
+                del content[k]
+
+    def _s_len(self, op):
+        content, marker = self._content(op, SETS)
+        return marker if content is None else len(content)
+
+    def _cs_count(self, op):
+        content, marker = self._content(op, COUNTED_SETS)
+        return marker if content is None else content.get(op.key, 0)
+
+    def _cs_has(self, op):
+        content, marker = self._content(op, COUNTED_SETS)
+        return marker if content is None else op.key in content
+
+    def _cs_add(self, op):
+        content = self._creating(op, COUNTED_SETS)
+        if content is not None:
+            content[op.key] = content.get(op.key, 0) + 1
+
+    def _cs_remove(self, op):
+        content, _ = self._content(op, COUNTED_SETS)
+        if content is not None and op.key in content:    # a decrement never goes below 0 (D26)
+            content[op.key] -= 1
+            if not content[op.key]:
+                del content[op.key]
+
+    def _cs_items(self, op):
+        content, marker = self._content(op, COUNTED_SETS)
+        return marker if content is None else tuple(sorted(content.items()))
+
+    def _r_get(self, op):
+        content, marker = self._content(op, MULTIMAPS)
+        return marker if content is None else tuple(sorted(content.get(op.key, {}).items()))
+
+    def _r_has(self, op):
+        content, marker = self._content(op, MULTIMAPS)
+        return marker if content is None else op.key in content
+
+    def _r_add(self, op):
+        content = self._creating(op, MULTIMAPS)
+        if content is not None:
+            records = content.setdefault(op.key, {})
+            records[op.value] = records.get(op.value, 0) + 1
+
+    def _r_remove_record(self, op):
+        content, _ = self._content(op, MULTIMAPS)
+        records = None if content is None else content.get(op.key)
+        if records is not None and op.value in records:
+            records[op.value] -= 1
+            if not records[op.value]:
+                del records[op.value]
+            if not records:
+                del content[op.key]
+
+    def _r_remove_key(self, op):
+        content, _ = self._content(op, MULTIMAPS)
+        if content is not None:
+            content.pop(op.key, None)
+
+    def _r_len(self, op):
+        content, marker = self._content(op, MULTIMAPS)
+        return marker if content is None else sum(len(records) for records in content.values())
 
     def _c_get(self, op):
         return self.cells.get(op.target)
@@ -473,7 +767,7 @@ def capture(tr, names: StateNames) -> Model:
         if kind == OBJECT:
             model.roots[name] = (kind, dict(_attributes(value, names.keys)))
         else:
-            model.roots[name] = (kind, dict(value.items()))
+            model.roots[name] = (kind, content_of(value))
     for name in tr.mutable_names():
         model.cells[name] = tr.get_mutable(name)
     return model
@@ -542,6 +836,17 @@ def check_history(records: list, initial: Model, *, final: Model) -> None:
             check(reader, model.copy())
     assert model.state() == final.state(), \
         f"final state differs from the serial one:\n  database: {final.state()}\n  serial:   {model.state()}"
+
+
+def roots_by_version(records: list, initial: Model) -> dict:
+    """Version -> a copy of the roots (name -> (kind, content)) after that version's commit
+    (``initial.version`` included), from a serial replay of the published records."""
+    model = initial.copy()
+    roots = {model.version: copy.deepcopy(model.roots)}
+    for record in _writers(records, initial):
+        model.run(record.program)
+        roots[record.version] = copy.deepcopy(model.roots)
+    return roots
 
 
 def kinds_by_version(records: list, initial: Model) -> dict:

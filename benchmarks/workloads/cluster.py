@@ -119,7 +119,9 @@ def _drive(dbs, threads_per_db: int, seconds: float, mode: str, batch: int = 1):
                     tries[0] += 1
                     if mode == "increment":
                         tr.set_root_object("n", (tr.get_root_object("n") or 0) + 1)
-                    s = tr.new_counted_set()
+                    # Through the linked root: CountedSet adds compose (spec section 5, D26).
+                    s = tr.get_root_object("ids")
+                    s = s if s is not None else tr.new_counted_set()
                     for x in batch_ids:
                         s = s.add(x)
                     tr.set_root_object("ids", s)

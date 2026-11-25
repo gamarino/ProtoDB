@@ -1,15 +1,18 @@
 """Serializability checker over the closed set of operations (spec section 12 item 2).
 
 Threads run randomly generated programs (fixed seed) on a small state: an object root, a
-Dictionary root, a HashDictionary root, a key space shared by the three, and mutable cells.
-A root's kind changes too: ``root_reset`` writes a value of any kind, ``obj_set`` an object
-over a collection and ``d_set`` a collection over an object, so linked Dictionary and
-HashDictionary writes meet concurrent class changes (R12).  Each thread starts at one barrier
+Dictionary, a HashDictionary, a Set, a CountedSet and a RepeatedKeysDictionary root, a key space
+shared by all, and mutable cells.  A root's kind changes too: ``root_reset`` writes a value of
+any kind, ``obj_set`` an object over a collection and a creating collection write (``d_set``,
+``s_add``, ``cs_add``, ``r_add``) a collection over an object, so linked collection writes meet
+concurrent class changes (R12).  Each thread starts at one barrier
 and retries a conflicting program in a fresh transaction (no sleep).  For each committed transaction the test records the database
 version it published (``Transaction.committed_version``, its place in the commit order), its
 program and every value it read; a transaction that published nothing (R23) records the
 version it read.  :func:`tests.support.serial_model.check_history` then re-runs the programs in
-commit order on the serial model: every value read and the final state must match.
+commit order on the serial model: every value read and the final state must match.  The
+CountedSet and RepeatedKeysDictionary writes have no precondition: the checker proves their
+composition (D26) serializable, including a decrement past 0.
 
 The interleaving is nondeterministic; the assertion is not: whatever order the commits took,
 the history must be serializable in that order (spec section 2).
@@ -18,7 +21,10 @@ Catches: a precondition missing for a read or a write (a lost update or a stale 
 commits), an intention reapplied wrongly (a key or cell value the serial run does not give),
 a linked write reapplied over a root whose class changed (R12), a commit order that does not
 match the published versions, and a read-only transaction that sees no consistent prefix.  The
-report line counts the class changes committed and the R12 conflicts they caused.  Later tasks (6, 7, 9, 10) add their operations to the mix.
+report line counts the class changes committed and the R12 conflicts they caused, the conflicts
+by unit and root kind, and the commits whose collection intentions were reapplied over a
+concurrent change of the same root (composed).  Later tasks (7, 9, 10) add their operations to
+the mix.
 """
 import random
 import threading
@@ -33,23 +39,29 @@ from proto_db.preconditions import UnitKind
 from proto_db.storage.memory import MemoryStorage
 from proto_db.transactions import ObjectSpace
 from tests.concurrency.harness import report, run_threads
-from tests.support.serial_model import (COLLECTIONS, DICTIONARY_AND_CELL_OPS, OBJECT, Op, Record, StateNames,
-                                        capture, check_history, execute, kinds_by_version, random_program)
+from tests.support.serial_model import (COLLECTIONS, COUNTED_SET_OPS, DICTIONARY_AND_CELL_OPS, MULTIMAP_OPS,
+                                        OBJECT, RECORDS, SET_OPS, Op, Record, StateNames, capture, check_history,
+                                        execute, family_of, kinds_by_version, random_program, roots_by_version)
 
 SEED = 20261124
 THREADS = 4
 PER_THREAD = 200
 
 NAMES = StateNames(
-    roots={"obj": OBJECT, "dict": "Dictionary", "hdict": "HashDictionary"},
+    roots={"obj": OBJECT, "dict": "Dictionary", "hdict": "HashDictionary", "set": "Set", "cset": "CountedSet",
+           "rkd": "RepeatedKeysDictionary"},
     keys=tuple(f"k{i}" for i in range(6)),
     cells=tuple(f"c{i}" for i in range(4)),
 )
 
-#: The draw: every operation of Tasks 2-4, with the keyed Dictionary/HashDictionary operations
-#: (the fine units) drawn three times as often, so the class changes that root_reset, obj_set
-#: and d_set make do not crowd out the key-level interleavings.
-MIX = DICTIONARY_AND_CELL_OPS + ("d_get", "d_has", "d_set", "d_remove") * 2
+#: The draw: every operation of Tasks 2-4 and 6, with the operations on fine units (keys,
+#: elements, counts, records) and the name-set reads drawn more often, so the class changes that
+#: root_reset, obj_set and the creating writes, and the six roots, do not crowd out the
+#: unit-level interleavings (each dropped precondition kind was detected in 5 of 5 runs).
+MIX = (DICTIONARY_AND_CELL_OPS + ("root_names", "c_names") * 2 + ("d_get", "d_has", "d_set", "d_remove") * 4
+       + SET_OPS + ("s_has", "s_add", "s_remove") * 3
+       + COUNTED_SET_OPS + ("cs_count", "cs_has", "cs_add", "cs_remove") * 4
+       + MULTIMAP_OPS + ("r_get", "r_has", "r_add", "r_remove_record") * 3)
 
 pytestmark = [pytest.mark.freethreaded, pytest.mark.timeout(240)]
 
@@ -70,6 +82,19 @@ def _seed_state(db, rng):
             for k in rng.sample(NAMES.keys, 3):
                 d = d.set_at(k, rng.choice(NAMES.values))
             tr.set_root_object(name, d)
+        s = tr.new_set()
+        for k in rng.sample(NAMES.keys, 3):
+            s = s.add(k)
+        tr.set_root_object("set", s)
+        c = tr.new_counted_set()
+        for k in rng.sample(NAMES.keys, 3):
+            for _ in range(rng.randint(1, 2)):
+                c = c.add(k)
+        tr.set_root_object("cset", c)
+        r = tr.new_repeated_keys_dictionary()
+        for k in rng.sample(NAMES.keys, 3):
+            r = r.set_at(k, rng.randrange(RECORDS))
+        tr.set_root_object("rkd", r)
         for name in NAMES.cells[:3]:
             tr.new_mutable(name, rng.choice(NAMES.values))
     db.run(build)
@@ -86,7 +111,8 @@ def _capture(db):
 #: Bound on the attempts of one program: a hang shows as a failure, not a timeout.
 MAX_ATTEMPTS = 100_000
 #: Operations that write a collection through its linked copy when the root holds one.
-_COLLECTION_WRITES = ("d_set", "d_remove")
+_COLLECTION_WRITES = ("d_set", "d_remove", "s_add", "s_remove", "s_union", "s_difference", "s_intersection",
+                      "cs_add", "cs_remove", "r_add", "r_remove_record", "r_remove_key")
 
 
 class Stats:
@@ -135,10 +161,11 @@ def _worker(db, thread, programs, records, stats):
         for program in programs:
             tr, reads = _run(db, program, stats)
             version = tr.committed_version
+            base = db.snapshot_at(tr.snapshot_ref).version
             read_only = version is None
             if read_only:
-                version = db.snapshot_at(tr.snapshot_ref).version
-            records.append(Record(version, program, reads, read_only, thread))
+                version = base
+            records.append(Record(version, program, reads, read_only, thread, base))
     return work
 
 
@@ -171,7 +198,39 @@ def class_change_counts(records, initial, stats) -> dict:
     return {"class_changes": changes, "r12_conflicts": r12, "r12_linked_write_conflicts": linked}
 
 
-def test_serializability_dictionary_and_cells(db):
+def composed_counts(records, initial) -> dict:
+    """Per collection kind, the published commits whose linked writes of a root were reapplied
+    over a concurrent change of that root (its content at the commit's base differs from the
+    content just before the commit): the intentions composed with another commit's."""
+    roots = roots_by_version(records, initial)
+    counts = Counter()
+    for record in records:
+        if record.read_only:
+            continue
+        before = roots[record.version - 1]
+        at_base = roots[record.base]
+        for name in {op.target for op in record.program if op.kind in _COLLECTION_WRITES}:
+            kind = at_base.get(name, (None,))[0]
+            family = next(family_of(op.kind) for op in record.program if op.target == name
+                          and op.kind in _COLLECTION_WRITES)
+            if kind in family and before.get(name) != at_base.get(name):
+                counts[kind] += 1
+    return dict(sorted(counts.items()))
+
+
+def conflicts_by_root_kind(records, initial, stats) -> dict:
+    """``"<unit kind>@<root kind at the attempt's base>"`` -> number of conflicts."""
+    kinds = kinds_by_version(records, initial)
+    counts = Counter()
+    for unit, base, _ in stats.conflicts:
+        if unit is None:
+            counts["none"] += 1
+            continue
+        counts[f"{unit.kind.name}@{kinds[base].get(unit.root) if unit.root else '-'}"] += 1
+    return dict(sorted(counts.items()))
+
+
+def test_serializability_over_the_closed_operation_set(db):
     rng = random.Random(SEED)
     _seed_state(db, rng)
     initial = _capture(db)
@@ -187,10 +246,12 @@ def test_serializability_dictionary_and_cells(db):
     read_only = sum(r.read_only for r in records)
     check_history(records, initial, final=_capture(db))
     by_unit = Counter(unit.kind.name if unit is not None else "none" for unit, _, _ in stats.conflicts)
-    report("serializability dictionary+cells", elapsed,
+    report("serializability collections+cells", elapsed,
            f"{stats.commits} commits, {stats.attempts} attempts, {len(stats.conflicts)} conflicts",
            f"{len(records) - read_only} published, {read_only} read-only",
            f"conflicts by unit {dict(sorted(by_unit.items()))}",
+           f"by unit@root kind {conflicts_by_root_kind(records, initial, stats)}",
+           f"composed {composed_counts(records, initial)}",
            class_change_counts(records, initial, stats))
 
 

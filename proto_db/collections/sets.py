@@ -11,22 +11,33 @@ element is identified by its oid, so a reloaded stub of it is the same member.
 Iteration is in bucket-hash order: deterministic per content, not part of the API.
 
 :class:`Set` buckets hold elements.  ``add`` of a present element and ``remove``
-of an absent one change nothing (no index event) but, as intent, are logged.
-``union``, ``intersection`` and ``difference`` are folds of ``add``/``remove``
-over the operand, so indexes are maintained incrementally and the op log
-records each element's intent.  Concurrent merge replays the last intent per
-element (presence or absence).
+of an absent one change nothing (no index event) but, as intent, are logged in
+``_changes``.  ``union``, ``intersection`` and ``difference`` are folds of
+``add``/``remove`` over the operand, so indexes are maintained incrementally and
+the record holds each element's intent.  Under the precondition model (spec
+sections 5 and 6) a linked version -- one a transaction obtained from a root --
+records ``Unit(ELEMENT, root, key=e)`` with e's presence in the base for
+``has(e)``, ``e in s`` and ``remove(e)`` (a remove that found e absent expects it
+still absent), unless the version itself added or removed e (R9); ``add`` has no
+precondition; ``intersection`` takes the whole collection, as does every other read.
+At commit the last intention per element is reapplied on the current set (R34).
 
 :class:`CountedSet` buckets hold ``(element, count)`` pairs with ``count >= 1``.
 ``add`` increments, ``remove`` decrements (and deletes at zero; absent is a
 no-op).  ``count`` is the number of distinct elements, ``total_count`` the sum of
 counts; ``elements()`` yields each distinct element once, so indexes see an
 element when it first appears and lose it when its count drops to zero.
-Concurrent merge applies, per element, the composed counter transform of the
-transaction's ops (D26): ``c -> max(c - removes, 0) + adds``, which equals
-replaying the ops one by one after the concurrent version, so concurrent
-increments are all kept.  The transform is applied as one adjustment per
-element and logged as ``("transform", element, removes, adds)``.
+``add`` and ``remove`` have no precondition: at commit a linked version's
+intentions are reapplied as, per element, the composed counter transform of its
+ops (D26): ``c -> max(c - removes, 0) + adds``, which equals replaying the ops one
+by one after the concurrent commits, so concurrent increments are all kept and a
+decrement past 0 is the serial no-op.  The transform is applied as one adjustment
+per element and logged as ``("transform", element, removes, adds)``.  ``has(e)``
+and ``count_of(e)`` record ``Unit(COUNT, root, key=e)`` with e's count in the base
+(R18: the version's count composes the base's).
+
+A subclass that overrides an operation the model relies on (``SET_OPERATIONS``,
+``COUNTED_SET_OPERATIONS``; ``_bucket_hash`` included) is an object root (N5).
 
 Thread safety: a version is immutable once built (buckets are tuples) and may be
 shared between threads; lazily loaded nodes are published atomically by the
@@ -38,9 +49,11 @@ from collections.abc import Iterable, Iterator
 
 from ..core.atom import PersistenceContext
 from ..errors import ProtoValidationError
+from ..preconditions import UnitKind, token
 from ..values import canonical, canonical_for, check_wrapped, hash_key, order_key
 from . import avl
 from .base import ConcurrentOptimized, IndexedCollection
+from .linking import NOT_A_UNIT, engine_reads, record_key, register_fine_grained, wrote, written_with
 
 __all__ = ["Set", "CountedSet", "counter_net_effect", "counter_transform"]
 
@@ -113,7 +126,8 @@ class _HashBuckets(ConcurrentOptimized, IndexedCollection):
         """Bucket hash of an element (``hash_key``).
 
         Subclasses may override it to force collisions, but must keep it a pure
-        function of the element's value: persisted trees are ordered by it.
+        function of the element's value: persisted trees are ordered by it.  Such a
+        subclass is an object root (N5: the hook would run under the root lock).
         """
         return hash_key(element)
 
@@ -153,12 +167,6 @@ class _HashBuckets(ConcurrentOptimized, IndexedCollection):
             buckets.setdefault(empty._bucket_hash(cls._entry_element(entry)), []).append(entry)
         return avl.key_from_sorted((h, tuple(buckets[h])) for h in sorted(buckets))
 
-    def has(self, element) -> bool:
-        """True iff ``element`` (canonicalized, as stored elements are) is a member."""
-        return self._find(canonical(element))[2] >= 0
-
-    __contains__ = has
-
     def _check_placement(self) -> None:
         for h, bucket in avl.key_iter(self.root):
             for entry in bucket:
@@ -181,7 +189,8 @@ class _HashBuckets(ConcurrentOptimized, IndexedCollection):
     def __repr__(self):
         if not self._loaded_now():
             return super().__repr__()  # never load a stub to describe it
-        return f"<{type(self).__name__} count={self.count}>"
+        with engine_reads():           # describing it is not a read of the transaction
+            return f"<{type(self).__name__} count={self.count}>"
 
 
 class Set(_HashBuckets):
@@ -218,28 +227,65 @@ class Set(_HashBuckets):
         new = type(self).from_iterable(self.elements(), context=self.context)
         return self._with(root=new.root, count=new.count)
 
+    # -- reading ------------------------------------------------------------------------
+
+    def has(self, element) -> bool:
+        """True iff ``element`` (canonicalized, as stored elements are) is a member.
+
+        On a linked version it records ``Unit(ELEMENT, root, key=element)`` with the element's
+        presence in the base, unless this version added or removed it (spec section 6, R9)."""
+        element = canonical(element)
+        if self._link is not None and not wrote(self, element):
+            record_key(self, element, UnitKind.ELEMENT)
+        with engine_reads():
+            return self._find(element)[2] >= 0
+
+    __contains__ = has
+
+    def _unit_token(self, kind, key):
+        """The token of unit ``kind`` for the canonical element ``key``: for ``ELEMENT`` its
+        presence; ``NOT_A_UNIT`` for any other kind."""
+        if kind is not UnitKind.ELEMENT:
+            return NOT_A_UNIT
+        return token(self._find(key)[2] >= 0)
+
     # -- mutators -----------------------------------------------------------------------
 
     def add(self, element) -> "Set":
-        """Return a set containing ``element`` (add event unless already present)."""
+        """Return a set containing ``element`` (add event unless already present).
+
+        No precondition: on a linked version the intention "present" is recorded in
+        ``_changes`` and reapplied at commit (spec section 5)."""
         element = self._element(element)
-        h, bucket, position = self._find(element)
-        log = self._logged((_ADD, element))
-        if position >= 0:
-            return self._with(_changes=log)
-        root = avl.key_put(self.root, h, bucket + (element,))[0]
-        return self._with(root=root, count=self.count + 1, indexes=self._after_add(element), _changes=log)
+        with engine_reads():
+            h, bucket, position = self._find(element)
+            log = self._logged((_ADD, element))
+            written = written_with(self, element)
+            if position >= 0:
+                return self._with(_changes=log, **written)
+            root = avl.key_put(self.root, h, bucket + (element,))[0]
+            return self._with(root=root, count=self.count + 1, indexes=self._after_add(element), _changes=log,
+                              **written)
 
     def remove(self, element) -> "Set":
-        """Return a set without ``element``; an absent element yields a new version with the same content."""
+        """Return a set without ``element``; an absent element yields a new version with the same content.
+
+        On a linked version it records ``Unit(ELEMENT, root, key=element)`` with the element's
+        presence in the base ("still present", or "still absent": then reapplying the intention
+        changes nothing), unless this version added or removed it (spec section 5, R9)."""
         element = canonical_for(element, f"{type(self).__name__} element")
-        h, bucket, position = self._find(element)
-        log = self._logged((_REMOVE, element))
-        if position < 0:
-            return self._with(_changes=log)
-        old = bucket[position]
-        root = self._put_bucket(h, bucket[:position] + bucket[position + 1:])
-        return self._with(root=root, count=self.count - 1, indexes=self._after_remove(old), _changes=log)
+        if self._link is not None and not wrote(self, element):
+            record_key(self, element, UnitKind.ELEMENT)
+        with engine_reads():
+            h, bucket, position = self._find(element)
+            log = self._logged((_REMOVE, element))
+            written = written_with(self, element)
+            if position < 0:
+                return self._with(_changes=log, **written)
+            old = bucket[position]
+            root = self._put_bucket(h, bucket[:position] + bucket[position + 1:])
+            return self._with(root=root, count=self.count - 1, indexes=self._after_remove(old), _changes=log,
+                              **written)
 
     def union(self, other: Iterable) -> "Set":
         """Return this set plus every element of ``other`` (a Set or any iterable of elements).
@@ -328,9 +374,32 @@ class CountedSet(_HashBuckets):
     # -- reading ------------------------------------------------------------------------
 
     def count_of(self, element) -> int:
-        """Number of occurrences of ``element`` (canonicalized; 0 when absent)."""
-        _, bucket, position = self._find(canonical(element))
+        """Number of occurrences of ``element`` (canonicalized; 0 when absent).
+
+        On a linked version it records ``Unit(COUNT, root, key=element)`` with the element's count
+        in the base: the version's count composes the base's with its own changes (spec section 6,
+        R18)."""
+        element = canonical(element)
+        if self._link is not None:
+            record_key(self, element, UnitKind.COUNT, from_base=True)
+        with engine_reads():
+            _, bucket, position = self._find(element)
         return 0 if position < 0 else bucket[position][1]
+
+    def has(self, element) -> bool:
+        """True iff ``element`` occurs at least once; on a linked version it records
+        ``Unit(COUNT, root, key=element)`` as :meth:`count_of` does."""
+        return self.count_of(element) > 0
+
+    __contains__ = has
+
+    def _unit_token(self, kind, key):
+        """The token of unit ``kind`` for the canonical element ``key``: for ``COUNT`` its count;
+        ``NOT_A_UNIT`` for any other kind."""
+        if kind is not UnitKind.COUNT:
+            return NOT_A_UNIT
+        _, bucket, position = self._find(key)
+        return token(0 if position < 0 else bucket[position][1])
 
     def items(self) -> Iterator[tuple]:
         """``(element, count)`` pairs in bucket-hash order."""
@@ -379,26 +448,32 @@ class CountedSet(_HashBuckets):
         return self._retarget_at(found, element, counter_transform(n, removes, adds), self._logged(op))
 
     def add(self, element) -> "CountedSet":
-        """Return a counted set with one more occurrence of ``element`` (add event if it is new)."""
+        """Return a counted set with one more occurrence of ``element`` (add event if it is new).
+
+        No precondition: concurrent increments and decrements compose (D26)."""
         element = self._element(element)
-        return self._step(element, 0, 1, (_ADD, element))
+        with engine_reads():
+            return self._step(element, 0, 1, (_ADD, element))
 
     def remove(self, element) -> "CountedSet":
         """Return a counted set with one occurrence fewer (remove event when the last one goes).
 
-        An absent element yields a new version with the same content.
+        An absent element yields a new version with the same content: the count never goes below
+        0, also when the decrement is reapplied on a count a concurrent commit lowered (D26).
+        No precondition.
         """
         element = canonical_for(element, f"{type(self).__name__} element")
-        return self._step(element, 1, 0, (_REMOVE, element))
+        with engine_reads():
+            return self._step(element, 1, 0, (_REMOVE, element))
 
     def _transform(self, element, removes: int, adds: int) -> "CountedSet":
-        """Apply a composed counter transform as one adjustment (concurrent merge, D26).
+        """Apply a composed counter transform as one adjustment (reapplication, D26).
 
-        Logged as ``("transform", element, removes, adds)``, so a merged version
-        can itself be rebased.
+        Logged as ``("transform", element, removes, adds)``.
         """
         element = self._element(element)
-        return self._step(element, removes, adds, (_TRANSFORM, element, removes, adds))
+        with engine_reads():
+            return self._step(element, removes, adds, (_TRANSFORM, element, removes, adds))
 
     def _net_ops(self, element_ops: list) -> list:
         """Per-element counter transforms ``("net", element, removes, adds)`` (D26)."""
@@ -409,3 +484,22 @@ class CountedSet(_HashBuckets):
             raise ProtoValidationError(f"Unknown CountedSet net op {op!r}")
         _, element, removes, adds = op
         return target._transform(element, removes, adds)
+
+
+#: The operations of a Set the precondition model lists (spec sections 5 and 6) or relies on to
+#: record, validate and reapply them (N5): a subclass overriding one is an object root.
+#: ``_bucket_hash`` is among them: a unit's validation and an intention's reapplication run it
+#: under the root lock (P-C).
+SET_OPERATIONS = ("has", "__contains__", "add", "remove", "union", "difference", "intersection", "_find",
+                  "_bucket_hash", "_entry_element", "_element", "_put_bucket", "_unit_token", "elements",
+                  "__iter__", "__len__", "content_equals", "_same_content", "_replay_op", "_net_ops", "_op_key",
+                  "_reapplied_on", "_with")
+
+#: The operations of a CountedSet the precondition model lists or relies on (N5, as above).
+COUNTED_SET_OPERATIONS = ("has", "__contains__", "count_of", "add", "remove", "_transform", "_step",
+                          "_retarget_at", "_find", "_bucket_hash", "_entry_element", "_element", "_put_bucket",
+                          "_unit_token", "elements", "items", "__iter__", "__len__", "content_equals",
+                          "_same_content", "_replay_op", "_net_ops", "_op_key", "_reapplied_on", "_with")
+
+register_fine_grained(Set, SET_OPERATIONS)
+register_fine_grained(CountedSet, COUNTED_SET_OPERATIONS)

@@ -194,13 +194,13 @@ class TestIndexEvents:
         assert s.remove("zz").indexes is s.indexes
 
 
-class TestRebase:
+class TestReapply:
     @both
-    def test_rebase_per_element_last_intent(self, cls):
+    def test_reapply_per_element_last_intent(self, cls):
         snapshot = reload(make([1, 2, 3], indexes=("i",), cls=cls))
         theirs = snapshot.remove(1).add(7).remove(2)
         mine = snapshot.add(2).remove(3).add(8).remove(8).add(9).remove(77)
-        merged = mine.rebase_onto(theirs)
+        merged = mine._reapplied_on(theirs)
         assert keys(merged) == keys(make([2, 7, 9]))
         assert merged.get_index("i").live() == Counter(order_key(e) for e in merged)
 

@@ -111,7 +111,7 @@ def test_mixed_workload_keeps_every_invariant(space, request):
                     tr.set_root_object("transfers", tr.get_root_object("transfers").append_last(rec))
 
                 transfers_run.run(db, transfer, **RUN_KW)
-                hits_run.run(db, lambda tr: tr.set_root_object("hits", tr.new_counted_set().add(w)), **RUN_KW)
+                hits_run.run(db, lambda tr: tr.set_root_object("hits", tr.get_root_object("hits").add(w)), **RUN_KW)
                 i += 1
         return body
 

@@ -185,7 +185,9 @@ def main() -> None:
                     attempts[t] += 1
                     if cpu and cpu_work(cpu) != expected_cpu:
                         raise RuntimeError("the CPU-heavy body computed a wrong result")
-                    s = tr.new_counted_set()
+                    # Through the linked root: CountedSet adds compose (spec section 5, D26).
+                    s = tr.get_root_object("ids")
+                    s = s if s is not None else tr.new_counted_set()
                     for x in range(first, first + batch):
                         s = s.add(x)
                     tr.set_root_object("ids", s)

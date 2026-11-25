@@ -79,7 +79,7 @@ Looking inside a space
    for title in ("Dune", "Solaris", "Hyperion"):
        with db.new_transaction() as tr:
            books = tr.get_root_object("books") or tr.new_list()
-           tr.set_root_object("books", books.append_last(title), replace=True)
+           tr.set_root_object("books", books.append_last(title))
 
    print("databases:", space.list_databases())
    for entry in db.history():

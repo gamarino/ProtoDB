@@ -39,7 +39,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Iterator
 
 from ..core.atom import BUILTIN_TYPE_ALIASES, Atom, PersistenceContext
-from ..errors import ProtoConflictError, ProtoMisfiledError, ProtoUserError, ProtoValidationError
+from ..errors import ProtoMisfiledError, ProtoUserError, ProtoValidationError
 from ..query.plans import CollectionScanPlan
 from ..values import canonical, is_atom, order_key, values_equal
 from . import avl
@@ -268,7 +268,11 @@ class IndexedCollection(_Immutable, Atom):
     _link = None
     _changes: tuple = ()
     _whole: bool = False
-    _runtime_fields: tuple = ("_link", "_changes", "_whole")
+    #: The units whose value a linked version's own writes determine (a Set element it added or
+    #: removed, a RepeatedKeysDictionary key it cleared): a read of one records nothing (R9).  A
+    #: runtime keyed tree (``linking.written_with``), ``None`` when empty.
+    _written = None
+    _runtime_fields: tuple = ("_link", "_changes", "_whole", "_written")
     _all_runtime_fields: tuple = ()
 
     def __init_subclass__(cls, **kwargs):
@@ -578,55 +582,24 @@ class ConcurrentOptimized:
     replaying an op onto any version forces its key to the intended state.
 
     :meth:`_reapplied_on` applies the net intent of a linked version's changes on the current
-    collection (R34); :meth:`rebase_onto` (transitional) also replays index changes.
-    Subclasses implement :meth:`_replay_op` and, when ``op[1]`` is not the key an
+    collection (R34); an index-definition change marks the version whole (P-B), so it is
+    published as is, never reapplied.  Subclasses implement :meth:`_replay_op` and, when ``op[1]`` is not the key an
     op touches, override :meth:`_op_key`.  It must precede
     :class:`IndexedCollection` in the class bases.
 
     The record grows with every mutation of a version chain; it lives as long as the
     versions holding it (typically one transaction).
-
-    Transitional: removed when linked intentions land for every collection (precondition model,
-    Task 6).  :attr:`log_is_complete` tells whether the log describes the whole content of
-    the version (D33): true for a collection constructed empty in this process and
-    for versions derived from it only through logged mutators; false for loaded
-    versions, bulk-built ones (``from_items``/``from_iterable``) and rebased ones,
-    and for every version derived from those.  A transaction merges a written root
-    by replaying its log only when the log is complete; otherwise replaying would
-    drop content the log does not describe.
     """
 
-    _log_complete: bool = False     # Transitional (Task 6), with log_is_complete
-    _runtime_fields: tuple = ("_log_complete",)
-
-    def __init__(self, *args, **kwargs):
-        """Initialise the collection (cooperatively) and mark its empty log as complete."""
-        super().__init__(*args, **kwargs)
-        object.__setattr__(self, "_log_complete", True)
-
-    @property
-    def log_is_complete(self) -> bool:
-        """True iff replaying this version's op log onto an empty collection rebuilds its content (D33)."""
-        return self._log_complete
-
     def _with(self, **changes):
-        """See :meth:`IndexedCollection._with`; also maintains :attr:`log_is_complete`.
-
-        A change of persisted content keeps the log complete only when it also
-        extends the log; a version built from an incomplete one stays incomplete.
-
-        The same rule marks the version whole (P-B): a change of persisted content that
-        extends no ``_changes`` (an operation outside the listed ones, e.g. a subclass method
-        calling ``_with`` directly) cannot be reapplied at commit, so the version is published
-        as is under a whole-collection precondition instead of being silently dropped.
+        """See :meth:`IndexedCollection._with`; also marks the version whole (P-B) when a change
+        of persisted content extends no ``_changes`` (an operation outside the listed ones, e.g.
+        a subclass method calling ``_with`` directly): such a change cannot be reapplied at
+        commit, so the version is published as is under a whole-collection precondition instead
+        of being silently dropped.
         """
         content = any(name in type(self)._fields for name in changes)
         logged = len(changes.get("_changes", ())) > len(self._changes)
-        if "_log_complete" not in changes:
-            complete = self._log_complete
-            if complete and content:
-                complete = logged
-            changes["_log_complete"] = complete
         if content and not logged and "_whole" not in changes:
             changes["_whole"] = True
         return super()._with(**changes)
@@ -646,7 +619,7 @@ class ConcurrentOptimized:
         return order_key(op[1])
 
     def _net_ops(self, element_ops: list) -> list:
-        """Reduce this log's element ops to the ops :meth:`rebase_onto` replays, in replay order.
+        """Reduce this log's element ops to the ops :meth:`_reapplied_on` replays, in replay order.
 
         The default keeps the last op per key (:func:`net_effect` with
         :meth:`_op_key`): the right reduction for ops that force a key to a
@@ -672,43 +645,4 @@ class ConcurrentOptimized:
         target = current
         for op in self._net_ops(list(self._changes)):
             target = self._replay_op(target, op)
-        return target
-
-    def rebase_onto(self, current):
-        """Return ``current`` with the net effect of this version's op log applied.
-
-        Element ops: the net ops of :meth:`_net_ops` (by default the last op per
-        key, in order of last occurrence) are replayed unconditionally through
-        :meth:`_replay_op` (public, idempotent mutators, so ``current``'s indexes
-        are maintained and every touched key ends in its last intended state).
-        Index-definition changes are then replayed per index name: an index this
-        log created is added (``ProtoConflictError`` if ``current`` already has
-        one with that name), an index this log removed is removed if still
-        present, a removed-then-added index replaces ``current``'s, and an index
-        created and removed within the log leaves ``current`` untouched.  Added
-        indexes are built (from ``empty()``) over the merged elements.
-        """
-        if type(current) is not type(self):
-            raise ProtoValidationError(f"Cannot rebase a {type(self).__name__} onto a {type(current).__name__}")
-        element_ops, index_ops = [], []
-        for op in self._changes:
-            (index_ops if op[0] in (_INDEX_ADD, _INDEX_REMOVE) else element_ops).append(op)
-        target = current
-        for op in self._net_ops(element_ops):
-            target = self._replay_op(target, op)
-        first_kind: dict = {}
-        for op in index_ops:
-            first_kind.setdefault(op[1], op[0])
-        for op in net_effect(index_ops, key=lambda o: o[1]):
-            kind, name = op[0], op[1]
-            preexisting = first_kind[name] == _INDEX_REMOVE
-            if kind == _INDEX_REMOVE:
-                if preexisting and name in target.indexes:
-                    target = target.remove_index(name)
-                continue
-            if name in target.indexes:
-                if not preexisting:
-                    raise ProtoConflictError(f"Index {name!r} was created concurrently by another transaction")
-                target = target.remove_index(name)
-            target = target.add_index(op[2])
         return target

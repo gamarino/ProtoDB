@@ -1,8 +1,8 @@
 """ToySet: a minimal set-like IndexedCollection over a KeyNode tree, used to prove the contract.
 
 Members are scalar values (the key of each node; the node value is ``True``).
-It is ConcurrentOptimized so that the op-log and ``rebase_onto`` machinery is
-exercised before the real collections (Tasks 3.3a/3.3b) exist.
+It is ConcurrentOptimized so that the record of intentions (``_changes``) and its
+reapplication (``_reapplied_on``) are exercised independently of the real collections.
 """
 from proto_db.collections import avl
 from proto_db.collections.base import ConcurrentOptimized, IndexedCollection

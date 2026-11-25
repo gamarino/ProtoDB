@@ -131,12 +131,9 @@ def test_root_names_holds_when_only_values_change(db):
     assert read(db, "a") == 2 and read(db, "b") == 1
 
 
-_MERGE_KEPT = pytest.mark.xfail(strict=True, reason="merge removed in Task 6")
-
-
 def test_non_mergeable_collection_replaces_and_compares_base(db):
-    """A collection that the transitional merge does not take (bulk-built: incomplete log) replaces
-    the root, compared against the base (section 5)."""
+    """A bulk-built collection (not linked, R11) replaces the root, compared against the base
+    (section 5)."""
     from proto_db.collections.dictionaries import Dictionary
     db.run(lambda tr: tr.set_root_object("d", tr.new_dictionary().set_at("a", 1)))
     a, b = db.new_transaction(), db.new_transaction()
@@ -147,17 +144,6 @@ def test_non_mergeable_collection_replaces_and_compares_base(db):
         a.commit()
     assert e.value.unit == root("d")
     assert dict(read(db, "d").items()) == {"a": 1, "b": 2}
-
-
-def test_replace_true_compares_against_the_base(db):
-    db.run(lambda tr: tr.set_root_object("d", tr.new_dictionary().set_at("a", 1)))
-    a, b = db.new_transaction(), db.new_transaction()
-    a.set_root_object("d", a.new_dictionary().set_at("x", 1), replace=True)
-    b.set_root_object("d", b.get_root_object("d").set_at("b", 2))
-    b.commit()
-    with pytest.raises(ProtoConflictError) as e:
-        a.commit()
-    assert e.value.unit == root("d")
 
 
 def test_collection_over_a_concurrently_removed_root_conflicts(db):
@@ -188,8 +174,9 @@ def test_unlinked_collection_replaces_and_compares_base(db):
     assert dict(read(db, "d").items()) == {"x": 1}
 
 
-@_MERGE_KEPT
 def test_set_root_object_rejects_replace_keyword(db):
+    """Section 10: ``replace=`` is removed; assigning an unlinked value always replaces, compared
+    against the base."""
     tr = db.new_transaction()
     with pytest.raises(TypeError):
         tr.set_root_object("x", 1, replace=True)
@@ -253,7 +240,8 @@ def test_removed_collection_root_conflicts_with_its_reader(db):
 
 def test_reads_record_their_units(db):
     db.run(lambda tr: (tr.set_root_object("o", tr.new_object(v=1)), tr.set_root_object("plain", 3),
-                       tr.set_root_object("c", tr.new_dictionary()), tr.set_root_object("s", tr.new_set())))
+                       tr.set_root_object("c", tr.new_dictionary()), tr.set_root_object("s", tr.new_set()),
+                       tr.set_root_object("l", tr.new_list())))
     tr = db.new_transaction()
     o, c, s = tr.get_root_object("o"), tr.get_root_object("c"), tr.get_root_object("s")
     tr.get_root_object("plain")
@@ -264,13 +252,16 @@ def test_reads_record_their_units(db):
     assert pre[root("plain")] == exact_token(3)
     assert pre[root("missing")] is ABSENT
     assert pre[Unit(UnitKind.ROOT_PRESENCE, "c")] == type(c).__type_name__
-    # A linked collection (a Dictionary) records its content through its own reads (section 9).
+    # A linked collection (a Dictionary, a Set) records its content through its own reads (section 9).
     assert Unit(UnitKind.WHOLE, "c") not in pre
     assert root("c") not in pre
-    # Until the other collections are linked (Tasks 6/7), their read also records the whole root
-    # (P-A: coarser is safe).
     assert pre[Unit(UnitKind.ROOT_PRESENCE, "s")] == type(s).__type_name__
-    assert Unit(UnitKind.WHOLE, "s") in pre
+    assert Unit(UnitKind.WHOLE, "s") not in pre
+    # Until List is linked (Task 7), its read also records the whole root (P-A: coarser is safe).
+    lst = tr.get_root_object("l")
+    pre = tr._read_log.preconditions()
+    assert pre[Unit(UnitKind.ROOT_PRESENCE, "l")] == type(lst).__type_name__
+    assert Unit(UnitKind.WHOLE, "l") in pre
     assert Unit(UnitKind.ROOT_NAMES) in pre
     tr.abort()
 

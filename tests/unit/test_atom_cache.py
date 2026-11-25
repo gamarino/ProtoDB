@@ -153,10 +153,10 @@ def test_the_next_build_finds_the_atoms_the_previous_commit_wrote(tmp_path):
     db = space.open_database("db")
     db.run(lambda tr: tr.set_root_object("ids", tr.new_counted_set().add(0)))
     for i in range(1, 30):
-        db.run(lambda tr, i=i: tr.set_root_object("ids", tr.new_counted_set().add(i)))   # blind: merged
+        db.run(lambda tr, i=i: tr.set_root_object("ids", tr.get_root_object("ids").add(i)))   # linked
     reads = _count_reads(space.storage)
     for i in range(30, 60):
-        db.run(lambda tr, i=i: tr.set_root_object("ids", tr.new_counted_set().add(i)))
+        db.run(lambda tr, i=i: tr.set_root_object("ids", tr.get_root_object("ids").add(i)))
     assert reads == [], f"{len(reads)} atoms fetched although the previous commits had just written them"
     with db.new_transaction() as tr:
         assert sorted(tr.get_root_object("ids").elements()) == list(range(60))
@@ -179,7 +179,7 @@ def test_a_cached_saved_atom_is_what_a_load_produces(tmp_path):
     assert cached is not None and cached is not live and type(cached) is type(live)
     assert cached.__dict__.get("_loaded"), "the cached atom is decoded already"
     assert cached.context is space._atoms
-    assert cached._changes == () and cached.log_is_complete is False
+    assert cached._changes == () and cached._link is None and cached._written is None
     assert live._changes != ()                          # the live version keeps its own log
     assert cached.root is not live.root and cached.root is space._atoms._cache.get(live.root.atom_pointer)
     reference = ObjectSpace(space.storage, atom_cache_entries=0)
@@ -218,9 +218,9 @@ def test_cached_saved_atoms_are_never_mutated_afterwards(tmp_path):
 
 @pytest.mark.parametrize("entries", [0, 50_000])
 def test_a_committed_nested_collection_reused_blind_merges_as_if_loaded(entries):
-    """D33 with the cache filled on save: a collection committed nested in another object and
-    then reused for a blind write must behave as a loaded version (incomplete log: no replay of
-    the earlier commit's ops).  The outcome must not depend on whether the cache is enabled."""
+    """With the cache filled on save: a collection committed nested in another object and then
+    written to a root is not linked to that root (R11): it replaces the root as it is (no replay
+    of any earlier ops).  The outcome must not depend on whether the cache is enabled."""
     space = _space(atom_cache_entries=entries)
     db = space.open_database("db")
     db.run(lambda tr: tr.set_root_object("ids", tr.new_counted_set().add(0)))
