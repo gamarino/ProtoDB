@@ -42,7 +42,8 @@ the BASE stores for them.  A removal takes out the member the CURRENT collection
 concurrent commit may have replaced by an equal member of another exact form (``1`` by ``1.0``)
 whose keys nobody computed.  So on a collection with an index, the ``ELEMENT`` and ``COUNT``
 tokens also hold the exact stored member, and ``CountedSet.remove`` records
-``Unit(COUNT, root, key=e)`` from the base (``Set.remove`` already records ``ELEMENT``): such a
+``Unit(COUNT, root, key=e)`` from the base, and ``Set.remove`` ``Unit(ELEMENT, root, key=e)``
+from the base even after an own write of ``e`` (R9 does not exempt it there): such a
 concurrent change is a declared conflict on that unit (R36).  ``CountedSet.add`` needs none: on
 the current collection it either finds the element (no index event) or files the very element
 it names.  Unindexed collections keep D26 composition without any precondition.
@@ -299,10 +300,18 @@ class Set(_HashBuckets):
 
         On a linked version it records ``Unit(ELEMENT, root, key=element)`` with the element's
         presence in the base ("still present", or "still absent": then reapplying the intention
-        changes nothing), unless this version added or removed it (spec section 5, R9)."""
+        changes nothing), unless this version added or removed it (spec section 5, R9).  On an
+        indexed set it records the unit from the base also after such an own write: the
+        reapplication takes out the member the current collection stores, which must be the
+        one the preparation keyed (module docstring)."""
         element = canonical_for(element, f"{type(self).__name__} element")
-        if self._link is not None and not wrote(self, element):
-            record_key(self, element, UnitKind.ELEMENT)
+        if self._link is not None:
+            if self._indexed():
+                # Even after an own write of the element (R9 does not apply): the reapplication
+                # takes out the member the current collection stores (module docstring).
+                record_key(self, element, UnitKind.ELEMENT, from_base=True)
+            elif not wrote(self, element):
+                record_key(self, element, UnitKind.ELEMENT)
         with engine_reads():
             h, bucket, position = self._find(element)
             log = self._logged((_REMOVE, element))

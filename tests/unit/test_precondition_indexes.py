@@ -435,3 +435,66 @@ def test_indexed_counted_set_concurrent_counts_compose(db):
     with pytest.raises(ProtoConflictError) as e:
         a.commit()
     assert e.value.unit == Unit(UnitKind.COUNT, "c", key=10)
+
+
+# -- Own write, then a removal or replacement, against a concurrent exact-form swap ----------------
+# Each indexed class: A writes a key/element, then removes or replaces it (R9 would skip the
+# second recording); B swaps the stored 10 for 10.0 (or adds an equal member of another form).
+# The conflict must be declared on the unit before any reapplication, never the reapplication's
+# fail-closed WHOLE ("cannot take this transaction's changes").
+
+def _swap_cases():
+    k = lambda kind, key=None: (kind, key)
+    return [
+        ("Set", lambda tr: tr.new_set().add(10).add(20), lambda s: s.add(10).remove(10),
+         lambda s: s.remove(10).add(10.0), k(UnitKind.ELEMENT, 10)),
+        ("Set-union", lambda tr: tr.new_set().add(10).add(20), lambda s: s.union([10]).remove(10),
+         lambda s: s.remove(10).add(10.0), k(UnitKind.ELEMENT, 10)),
+        ("Set-absent", lambda tr: tr.new_set().add(10).add(20), lambda s: s.add(30).remove(30),
+         lambda s: s.add(30.0), k(UnitKind.ELEMENT, 30)),
+        ("CountedSet", lambda tr: tr.new_counted_set().add(10).add(20), lambda s: s.add(10).remove(10).remove(10),
+         lambda s: s.remove(10).add(10.0), k(UnitKind.COUNT, 10)),
+        ("Dictionary", lambda tr: tr.new_dictionary().set_at("a", 10), lambda d: d.set_at("a", 11).remove_at("a"),
+         lambda d: d.set_at("a", 10.0), k(UnitKind.KEY, "a")),
+        ("Dictionary-replace", lambda tr: tr.new_dictionary().set_at("a", 10),
+         lambda d: d.set_at("a", 11).set_at("a", 12), lambda d: d.set_at("a", 10.0), k(UnitKind.KEY, "a")),
+        ("HashDictionary", lambda tr: tr.new_hash_dictionary().set_at("a", 10),
+         lambda d: d.set_at("a", 11).remove_at("a"), lambda d: d.set_at("a", 10.0), k(UnitKind.KEY, "a")),
+        ("HashDictionary-replace", lambda tr: tr.new_hash_dictionary().set_at("a", 10),
+         lambda d: d.set_at("a", 11).set_at("a", 12), lambda d: d.set_at("a", 10.0), k(UnitKind.KEY, "a")),
+        ("RepeatedKeysDictionary", lambda tr: tr.new_repeated_keys_dictionary().set_at("k", 10),
+         lambda r: r.set_at("k", 10).remove_record("k", 10), lambda r: r.remove_record("k", 10).set_at("k", 10.0),
+         k(UnitKind.RECORDS, "k")),
+        ("RepeatedKeysDictionary-clear", lambda tr: tr.new_repeated_keys_dictionary().set_at("k", 10),
+         lambda r: r.remove_key("k").set_at("k", 1).remove_key("k"),
+         lambda r: r.remove_record("k", 10).set_at("k", 10.0), k(UnitKind.RECORDS, "k")),
+        ("List", lambda tr: tr.new_list().extend([10, 20]), lambda l: l.set_at(0, 11).set_at(0, 12),
+         lambda l: l.set_at(0, 10.0), k(UnitKind.POSITION, 0)),
+    ]
+
+
+@pytest.mark.parametrize("case", _swap_cases(), ids=lambda c: c[0])
+def test_own_write_then_removal_against_exact_form_swap(db, case):
+    _, build, write_a, write_b, (kind, key) = case
+    db.run(lambda tr: tr.set_root_object("x", build(tr).add_index(EqualityIndex("e", KeySpec.element()))))
+    a, b = db.new_transaction(), db.new_transaction()
+    a.set_root_object("x", write_a(a.get_root_object("x")))
+    b.set_root_object("x", write_b(b.get_root_object("x")))
+    b.commit()
+    with pytest.raises(ProtoConflictError) as e:
+        a.commit()
+    assert e.value.unit == Unit(kind, "x", key=key)
+    assert "cannot take this transaction" not in str(e.value)
+
+
+def test_unindexed_set_add_then_remove_keeps_r9(db):
+    """Unindexed: the removal after an own add records nothing (R9) and composes over the swap."""
+    db.run(lambda tr: tr.set_root_object("x", tr.new_set().add(10).add(20)))
+    a, b = db.new_transaction(), db.new_transaction()
+    a.set_root_object("x", a.get_root_object("x").add(10).remove(10))
+    assert Unit(UnitKind.ELEMENT, "x", key=10) not in a._read_log
+    b.set_root_object("x", b.get_root_object("x").remove(10).add(10.0))
+    b.commit()
+    a.commit()
+    with db.new_transaction() as tr:
+        assert sorted(tr.get_root_object("x").elements()) == [20]
