@@ -4165,12 +4165,19 @@ class Transaction:
         """One catch-up round (R69): bring each root of ``names`` to its collection in ``db_root``
         (:meth:`IndexedCollection._caught_up`: the changed elements applied to the indexes under
         construction, extractors outside the lock), write that version, and expect that
-        collection in the ``WHOLE`` precondition."""
+        collection in the ``WHOLE`` precondition.  A unique index the newer state holds a key twice
+        in conflicts on the whole collection (R29): the retry's ``add_index`` refuses it."""
         objects = db_root.objects
         for name in names:
             state = self._catch_ups[name]
             current = objects.get_at(name)
-            version = state.version._caught_up(state.previous, current, state.added, state.removed, name)
+            try:
+                version = state.version._caught_up(state.previous, current, state.added, state.removed, name)
+            except IntentionConflict as e:
+                unit = Unit(UnitKind.WHOLE, name)
+                raise ProtoConflictError(
+                    f"Root {name!r} of database {self._database.name!r} was changed by a concurrent commit: "
+                    f"{e.detail} (unit {unit.kind.name})", unit=unit, database=self._database.name) from None
             state.previous, state.version = current, version
             self._writes[name] = version
             self._read_log.caught_up(Unit(UnitKind.WHOLE, name), _token(current))

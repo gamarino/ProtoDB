@@ -57,8 +57,8 @@ from ..errors import ProtoCorruptionError, ProtoValidationError
 from ..preconditions import ABSENT, Unit, UnitKind, token
 from ..values import canonical, canonical_for, check_wrapped, order_key
 from . import avl, diff
-from .base import (ConcurrentOptimized, IndexedCollection, check_sorted_keys, prepared_parts, repair_pairs,
-                   same_value)
+from .base import (CATCH_UP_OPERATIONS, ConcurrentOptimized, IndexedCollection, check_sorted_keys, prepared_parts,
+                   repair_pairs, same_value)
 from .linking import (NOT_A_UNIT, engine_reads, record_key, record_range, record_whole, register_fine_grained, wrote,
                       unit_key, written_with)
 from .sets import CountedSet, counter_net_effect, counter_transform
@@ -366,8 +366,7 @@ DICTIONARY_OPERATIONS = ("get_at", "has", "__contains__", "set_at", "remove_at",
                          "content_equals", "_same_content", "_scan_window", "key_at_position", "position_of",
                          "_replay_op", "_net_ops", "_op_key", "_reapplied_on", "_with", "_intention_elements",
                          "prepare_changes", "_record_window", "_range_tree", "changed_units",
-                         "changed_index_groups",
-    "_definition_changes", "_caught_up", "_changed_element_units", "_unit_elements")
+                         "changed_index_groups") + CATCH_UP_OPERATIONS
 
 register_fine_grained(Dictionary, DICTIONARY_OPERATIONS)
 
@@ -693,8 +692,7 @@ REPEATED_KEYS_DICTIONARY_OPERATIONS = (
     "remove_key", "_transform_record", "_record_step", "_record_stepped", "_key", "_record", "_unit_token",
     "elements", "items", "keys", "__iter__", "__len__", "content_equals", "_same_content", "_replay_op",
     "_net_ops", "_op_key", "_reapplied_on", "_with", "_intention_elements", "prepare_changes", "_indexed",
-    "_record_removal", "changed_units", "changed_index_groups",
-    "_definition_changes", "_caught_up", "_changed_element_units", "_unit_elements")
+    "_record_removal", "changed_units", "changed_index_groups") + CATCH_UP_OPERATIONS
 
 register_fine_grained(RepeatedKeysDictionary, REPEATED_KEYS_DICTIONARY_OPERATIONS)
 

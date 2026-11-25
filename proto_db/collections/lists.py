@@ -49,7 +49,8 @@ from ..errors import ProtoValidationError
 from ..preconditions import Unit, UnitKind, token
 from ..values import canonical_for
 from . import avl, diff
-from .base import IndexedCollection, _Reapplying, check_unique_after, prepared_parts, whole_unless_logged
+from .base import (CATCH_UP_OPERATIONS, IndexedCollection, _Reapplying, check_unique_after, prepared_parts,
+                   whole_unless_logged)
 from .linking import NOT_A_UNIT, engine_reads, record_key, record_whole, register_fine_grained
 
 __all__ = ["List", "LIST_OPERATIONS"]
@@ -366,7 +367,6 @@ LIST_OPERATIONS = ("get_at", "set_at", "append_last", "extend", "insert_at", "re
                    "_unit_token", "elements", "_scan_window", "__iter__", "__len__", "__contains__",
                    "content_equals", "_same_content", "_net_ops", "_reapplied_on", "_with", "_current_indexes",
                    "_after_add", "_after_replace", "_after_remove", "_intention_elements", "prepare_changes",
-                   "changed_units", "changed_index_groups",
-    "_definition_changes", "_caught_up", "_changed_element_units", "_unit_elements")
+                   "changed_units", "changed_index_groups") + CATCH_UP_OPERATIONS
 
 register_fine_grained(List, LIST_OPERATIONS)

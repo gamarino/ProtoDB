@@ -23,6 +23,7 @@ from proto_db import transactions
 from proto_db.errors import ProtoConflictError, ProtoValidationError
 from proto_db.indexing.equality import EqualityIndex
 from proto_db.indexing.keyspec import KeySpec
+from proto_db.indexing.vector import VectorIndex
 from proto_db.preconditions import INDEX_CATCH_UP_ROUNDS, Unit, UnitKind
 from proto_db.query.planner import plan_query
 from proto_db.query.terms import EQ, Term
@@ -369,14 +370,130 @@ def _hundred(tr):
     return d
 
 
+def unique_index(name="u"):
+    return EqualityIndex(name, KeySpec.element(), unique=True)
+
+
 def test_unique_index_catch_up_refuses_a_concurrent_duplicate(db):
-    """A unique index caught up with a commit that stored a duplicate: the only serial order is
-    that commit first, after which the add_index itself is refused, so the commit raises the
-    same ``ProtoValidationError`` (not a conflict: a retry would fail the same way)."""
+    """R29: a commit that stored a duplicate key since the base makes the unique index's catch-up
+    a conflict on the whole collection; ``Database.run`` retries, and the retry's ``add_index``
+    meets the duplicate itself (``ProtoValidationError``, not retried)."""
     seed(db, a=1, b=2)
     a = db.new_transaction()
-    a.set_root_object("d", a.get_root_object("d").add_index(EqualityIndex("u", KeySpec.element(), unique=True)))
+    a.set_root_object("d", a.get_root_object("d").add_index(unique_index()))
     committed(db, lambda d: d.set_at("c", 1))
-    with pytest.raises(ProtoValidationError):
+    with pytest.raises(ProtoConflictError) as e:
         a.commit()
+    assert e.value.unit == whole()
+    committed(db, lambda d: d.remove_at("c"))
+
+    attempts = []
+
+    def fn(tr):
+        attempts.append(1)
+        tr.set_root_object("d", tr.get_root_object("d").add_index(unique_index()))
+        if len(attempts) == 1:
+            committed(db, lambda d: d.set_at("e", 2))        # a duplicate of b, after the base
+    with pytest.raises(ProtoValidationError, match="unique"):
+        db.run(fn, backoff=(0, 0))
+    assert len(attempts) == 2
     assert read(db, lambda d: d.index_names()) == []
+
+
+def test_unique_index_retry_succeeds_once_the_duplicate_is_gone(db):
+    """The duplicate a concurrent commit stored is removed by a later commit before the retry:
+    the retry builds the unique index."""
+    seed(db, a=1, b=2)
+    attempts, before_next = [], []
+    new_transaction = db.new_transaction
+
+    def started():
+        while before_next:
+            before_next.pop()()
+        return new_transaction()
+    db.new_transaction = started        # the retry's transaction starts after the removal
+
+    def fn(tr):
+        attempts.append(1)
+        tr.set_root_object("d", tr.get_root_object("d").add_index(unique_index()))
+        if len(attempts) == 1:
+            committed(db, lambda d: d.set_at("c", 1))        # the duplicate: attempt 1 conflicts
+            before_next.append(lambda: committed(db, lambda d: d.remove_at("c")))
+    db.run(fn, backoff=(0, 0))
+    assert len(attempts) == 2
+    with db.new_transaction() as tr:
+        d = tr.get_root_object("d")
+        assert dict(d.items()) == {"a": 1, "b": 2} and d.index_names() == ["u"]
+        assert_index_matches(d, "u")
+
+
+# Two units swap their elements: removals must all run before the additions, or the unique index
+# meets the moved element twice in between (fix round 1, Critical).
+SWAPS = {
+    "Dictionary": (lambda tr: tr.new_dictionary().set_at("k1", "b").set_at("k2", "a"),
+                   lambda c: c.set_at("k1", "a").set_at("k2", "b"),
+                   lambda c: dict(c.items()) == {"k1": "a", "k2": "b"}),
+    "List": (lambda tr: tr.new_list().append_last("b").append_last("a"),
+             lambda c: c.set_at(0, "a").set_at(1, "b"),
+             lambda c: list(c.elements()) == ["a", "b"]),
+}
+
+
+@pytest.mark.parametrize("kind", sorted(SWAPS))
+def test_unique_index_catch_up_over_a_swap(db, kind):
+    build, swap, expected = SWAPS[kind]
+    db.run(lambda tr: tr.set_root_object("c", build(tr)))
+    a = db.new_transaction()
+    a.set_root_object("c", a.get_root_object("c").add_index(unique_index()))
+    committed(db, swap, name="c")
+    a.commit()
+    with db.new_transaction() as tr:
+        c = tr.get_root_object("c")
+        assert expected(c) and c.index_names() == ["u"]
+        c.get_index("u").validate(list(c.elements()))
+
+
+def _vector(i):
+    return {"vec": [float((i * 7) % 11) + 0.5, float((i * 3) % 5) + 1.0], "n": i}
+
+
+VECTOR_INDEXES = {
+    "exact": lambda: VectorIndex("v", "vec", 2, backend="exact"),
+    "hnsw": lambda: VectorIndex("v", "vec", 2, backend="hnsw"),
+    "ivf_flat": lambda: VectorIndex("v", "vec", 2, backend="ivf_flat", nlist=4, nprobe=4),
+}
+VECTOR_KINDS = {
+    "Dictionary": (lambda tr: _dictionary_of(tr, [(f"k{i}", _vector(i)) for i in range(12)]),
+                   (lambda c: c.set_at("n", _vector(40)), lambda c: c.set_at("k1", _vector(41)),
+                    lambda c: c.remove_at("k2"))),
+    "List": (lambda tr: tr.new_list().extend(_vector(i) for i in range(12)),
+             (lambda c: c.append_last(_vector(40)), lambda c: c.set_at(1, _vector(41)),
+              lambda c: c.remove_at(2))),
+}
+
+
+def _dictionary_of(tr, items):
+    d = tr.new_dictionary()
+    for k, v in items:
+        d = d.set_at(k, v)
+    return d
+
+
+@pytest.mark.parametrize("backend", sorted(VECTOR_INDEXES))
+@pytest.mark.parametrize("kind", sorted(VECTOR_KINDS))
+def test_vector_index_catch_up(db, kind, backend):
+    build, writes = VECTOR_KINDS[kind]
+    db.run(lambda tr: tr.set_root_object("c", build(tr)))
+    a = db.new_transaction()
+    a.set_root_object("c", a.get_root_object("c").add_index(VECTOR_INDEXES[backend]()))
+    for write in writes:
+        committed(db, write, name="c")
+    a.commit()
+    with db.new_transaction() as tr:
+        c = tr.get_root_object("c")
+        assert c.index_names() == ["v"] and len(c) == 12
+        elements = list(c.elements())
+        index = c.get_index("v")
+        index.validate(elements)
+        fresh = VECTOR_INDEXES[backend]().build(elements)
+        assert getattr(index, "total_count", None) == getattr(fresh, "total_count", None)

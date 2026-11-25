@@ -49,7 +49,7 @@ from . import avl
 from .linking import engine_reading, engine_reads, link_of, lookup_key, record_read, record_whole
 
 __all__ = ["IndexSet", "IndexedCollection", "ConcurrentOptimized", "net_effect", "same_value",
-           "whole_unless_logged", "IntentionConflict", "prepared_parts"]
+           "whole_unless_logged", "IntentionConflict", "prepared_parts", "CATCH_UP_OPERATIONS"]
 
 #: The kind of the ``_changes`` entry holding the precomputed index keys of a prepared record of
 #: intentions (:meth:`IndexedCollection.prepare_changes`, spec R24); collection ops never start
@@ -606,32 +606,37 @@ class IndexedCollection(_Immutable, Atom):
         definitions as ``previous``) with ``current``'s indexes, those named in ``added`` and
         ``removed`` taken out, and each index of ``added`` brought from ``previous``'s elements to
         ``current``'s: the elements of every unit the diff ``previous -> current`` reports changed
-        are removed (as ``previous`` holds them) and added (as ``current`` does).  When the diff
-        cannot name the units (``Unit(WHOLE)``) or a class cannot list a unit's elements, the
-        index is rebuilt from ``current``'s elements."""
+        are removed (as ``previous`` holds them) and added (as ``current`` does).  Every removal
+        runs before any addition: an element that moved between units (two keys swapping their
+        values, two positions swapping their items) never meets itself in a unique index.  When
+        the diff cannot name the units (``Unit(WHOLE)``) or a class cannot list a unit's
+        elements, the index is rebuilt from ``current``'s elements.
+
+        A unique index that refuses ``current``'s elements (a concurrent commit stored a
+        duplicate key) raises ``IntentionConflict(WHOLE)``: the transaction reports a conflict on
+        the whole collection (R29), and its retry's ``add_index`` meets the duplicate itself."""
         with engine_reads():
             built = {name: self.indexes.get(name) for name in added}
             if built:
-                moves = []
+                removals, additions = [], []
                 for unit in previous._changed_element_units(current, root):
                     if unit.kind is UnitKind.WHOLE:
-                        moves = None
+                        removals = None
                         break
                     key = lookup_key(unit.key)
                     old, new = previous._unit_elements(unit.kind, key), current._unit_elements(unit.kind, key)
                     if old is None or new is None:
-                        moves = None
+                        removals = None
                         break
-                    moves.append((old, new))
+                    removals.extend(old)
+                    additions.extend(new)
                 for name, index in built.items():
-                    if moves is None:
-                        index = index.empty().build(current.elements())
+                    if removals is None:
+                        index = _unique_conflict(index, lambda i: i.empty().build(current.elements()))
                     else:
-                        for old, new in moves:
-                            for element in old:
-                                index = index.with_removed(element)
-                            for element in new:
-                                index = index.with_added(element)
+                        for element in removals:
+                            index = index.with_removed(element)
+                        index = _unique_conflict(index, lambda i: _with_all_added(i, additions))
                     built[name] = index
             indexes = current.indexes
             for name in set(added) | set(removed):
@@ -915,6 +920,25 @@ class IndexedCollection(_Immutable, Atom):
         return self._current_indexes().on_replace(old, new)
 
 
+def _with_all_added(index, elements: list):
+    """``index`` after ``with_added`` of each of ``elements``, in order."""
+    for element in elements:
+        index = index.with_added(element)
+    return index
+
+
+def _unique_conflict(index, step: Callable):
+    """``step(index)``; for a unique index, a ``ProtoValidationError`` it raises (a key held twice
+    in the newer state) becomes ``IntentionConflict(WHOLE)`` (R29, R69)."""
+    try:
+        return step(index)
+    except ProtoValidationError as e:
+        if getattr(index, "unique", False) is not True:
+            raise
+        raise IntentionConflict(UnitKind.WHOLE, f"the unique index {_index_name(index)!r} cannot take a concurrent "
+                                f"commit's elements: {e}") from None
+
+
 def _identical(a, b) -> bool:
     """Whether two persisted field values are the same value: the same object, the same saved
     atom (by storage pointer: an unsaved atom equals only itself), or equal plain values by token."""
@@ -924,6 +948,11 @@ def _identical(a, b) -> bool:
         return (isinstance(a, Atom) and isinstance(b, Atom) and a.atom_pointer is not None
                 and a.atom_pointer == b.atom_pointer)
     return same_token(token(a), token(b))
+
+
+#: The methods the index catch-up of R69 runs on a collection (outside the space root): part of
+#: every fine-grained class's listed operations (N5).
+CATCH_UP_OPERATIONS = ("_definition_changes", "_caught_up", "_changed_element_units", "_unit_elements")
 
 
 # -- ConcurrentOptimized -------------------------------------------------------------------

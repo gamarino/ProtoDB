@@ -32,7 +32,8 @@ from ..errors import ProtoValidationError
 from ..preconditions import ABSENT, Unit, UnitKind, token
 from ..values import canonical, canonical_for, check_wrapped, hash_key, order_key
 from . import avl, diff
-from .base import ConcurrentOptimized, IndexedCollection, prepared_parts, repair_pairs, same_value
+from .base import (CATCH_UP_OPERATIONS, ConcurrentOptimized, IndexedCollection, prepared_parts, repair_pairs,
+                   same_value)
 from .dictionaries import sorted_unique_pairs
 from .linking import NOT_A_UNIT, engine_reads, record_key, register_fine_grained, unit_key
 
@@ -282,7 +283,7 @@ HASH_DICTIONARY_OPERATIONS = ("get_at", "has", "__contains__", "set_at", "remove
                               "_stored_at", "_unit_token", "_find", "_bucket_hash", "elements", "items", "keys",
                               "values", "__iter__", "__len__", "content_equals", "_same_content", "_scan_window",
                               "_replay_op", "_net_ops", "_op_key", "_reapplied_on", "_with",
-                              "_intention_elements", "prepare_changes", "changed_units", "changed_index_groups",
-    "_definition_changes", "_caught_up", "_changed_element_units", "_unit_elements")
+                              "_intention_elements", "prepare_changes", "changed_units",
+                              "changed_index_groups") + CATCH_UP_OPERATIONS
 
 register_fine_grained(HashDictionary, HASH_DICTIONARY_OPERATIONS)
