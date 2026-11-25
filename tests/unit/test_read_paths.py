@@ -23,11 +23,14 @@ from proto_db.errors import ProtoConflictError
 from proto_db.indexing.equality import EqualityIndex
 from proto_db.indexing.keyspec import KeySpec
 from proto_db.preconditions import Unit, UnitKind
-from proto_db.query.cache import QueryCache
+from proto_db.errors import ProtoUnexpectedError
+from proto_db.query import plans as plan_nodes
+from proto_db.query.cache import SERVED_TYPES, QueryCache, cache_key, record_served_reads
 from proto_db.query.linq import from_collection
 from proto_db.query.pager import Pager
 from proto_db.query.planner import plan_query
-from proto_db.query.plans import CollectionScanPlan, Count, Filter, Limit
+from proto_db.query.plans import (CollectionScanPlan, Count, Distinct, Filter, GroupBy, Intersect, Join, Limit,
+                                  Project, PythonFilter, QueryPlan, Sort, Union, Unnest, ValuesScan)
 from proto_db.query.terms import EQ, Term
 from proto_db.semantic import semantic
 from proto_db.storage.memory import MemoryStorage
@@ -166,6 +169,120 @@ def test_cached_query_result_registers_same_reads(space, db, build, changed, uni
         assert got.kind is UnitKind.RANGE and got.root == "d"
     else:
         assert got == unit
+
+
+def _joined(d):
+    return Join(CollectionScanPlan(d), plan_query(d, ONE), None, None)
+
+
+def _union(d):
+    return Union(plan_query(d, ONE), plan_query(d, Term(None, EQ, 2)))
+
+
+def _nested_window(d):
+    return Limit(plan_query(d, limit=3), 1)        # executes rows 0..0 of a planned window of rows 0..2
+
+
+@pytest.mark.parametrize("build, changed, unit, covers", [
+    (_joined, {"z": 9}, whole("d"), False),
+    (_union, {"y": 2}, group("d", "e", 2), False),
+    (_nested_window, {"b": 3}, None, True),        # inside the planned window, after the executed row
+], ids=["join", "union", "nested_window"])
+def test_cached_composite_plans_register_reads(space, db, build, changed, unit, covers):
+    """A Join, a Union and a Limit over a planned window: a hit records the miss's reads; for the nested
+    window those cover the narrower range the miss's execution read (the outer Limit narrows it)."""
+    seed(db, a=1, b=2, c=1, e=7)
+    cache = QueryCache(1 << 20, space._space_load)
+    p = db.new_transaction()
+    cache.result(build(p.get_root_object("d")))
+    missed = reads(p)
+    p.abort()
+    a = db.new_transaction()
+    cache.result(build(a.get_root_object("d")))
+    assert cache.stats()["hits"] == 1
+    hit = reads(a)
+    assert hit[0] == missed[0]
+    if covers:
+        # The miss recorded its execution's narrower range too; the hit records the inner window's range,
+        # which contains it (both start at the first key; the hit's ends at or after the miss's).
+        assert hit[1] < missed[1] and len(hit[1]) == 1
+        [wide] = hit[1]
+        assert all(r.low is None and r.high <= wide.high for r in missed[1])
+    else:
+        assert hit == missed
+    write(db, **changed)
+    got = conflict_unit(a)
+    if unit is None:
+        assert got.kind is UnitKind.RANGE and got.root == "d"
+    else:
+        assert got == unit
+
+
+def _plan_classes() -> set:
+    """Every concrete QueryPlan class of proto_db.query.plans."""
+    found, stack = set(), [QueryPlan]
+    while stack:
+        cls = stack.pop()
+        for sub in cls.__subclasses__():
+            stack.append(sub)
+            if sub.__module__ == plan_nodes.__name__ and not getattr(sub, "__abstractmethods__", None) \
+                    and not sub.__name__.startswith("_"):
+                found.add(sub)
+    return found
+
+
+def test_record_served_reads_handles_every_cacheable_node(db):
+    """Parity: every plan node type the cache key accepts is handled by name by record_served_reads, and
+    the representative instances below cover every plan class (a new class fails here until added)."""
+    seed(db, a=1, b=2, c=1)
+    a = db.new_transaction()
+    d = a.get_root_object("d")
+    scan, lookup = CollectionScanPlan(d), plan_query(d, ONE)
+    samples = {
+        CollectionScanPlan: scan, ValuesScan: ValuesScan([1]), plan_nodes.IndexPlan: lookup,
+        Filter: Filter(scan, ONE), PythonFilter: PythonFilter(scan, bool, "bool"),
+        Union: Union(scan, lookup), Intersect: Intersect(scan, lookup), Project: Project(scan, {"v": "real"}),
+        Sort: Sort(scan, [None]), Limit: Limit(scan, 1), Count: Count(scan), Distinct: Distinct(scan),
+        GroupBy: GroupBy(scan, None, {"n": ("count", None)}), Join: Join(scan, lookup, None, None),
+        Unnest: Unnest(scan, "items"),
+    }
+    vector = plan_nodes.VectorSearch
+    missing = _plan_classes() - set(samples) - {vector}
+    assert not missing, f"add a sample of {missing} and handle it in record_served_reads"
+    assert vector in SERVED_TYPES       # its cache key needs a deterministic vector index; handled as an index plan
+    for cls, sample in samples.items():
+        key, reason = cache_key(sample)
+        if key is not None:
+            assert cls in SERVED_TYPES, f"{cls.__name__} is cacheable but not handled by name"
+    a.abort()
+
+
+def test_unknown_plan_node_records_whole_or_raises(db):
+    """Fail-closed (P-A): a node type record_served_reads does not know records the whole collection of every
+    scan reachable through its attributes, and raises when none is reachable; it never records nothing."""
+    seed(db, a=1, b=2, c=1)
+
+    class Wrapper(QueryPlan):
+        def __init__(self, inner):
+            self.parts = (inner,)
+            self._freeze()
+
+        def execute(self):
+            return self.parts[0].execute()
+
+        def explain(self):
+            return {}
+
+        def estimate(self):
+            return self.parts[0].estimate()
+
+    a = db.new_transaction()
+    d = a.get_root_object("d")
+    record_served_reads(Wrapper(Filter(CollectionScanPlan(d), ONE)))
+    assert whole("d") in a._read_log
+    with pytest.raises(ProtoUnexpectedError):
+        record_served_reads(Wrapper(ValuesScan([1])))
+    a.abort()
 
 
 @pytest.mark.parametrize("build", [_planned, _window], ids=["planned", "window"])
@@ -323,3 +440,68 @@ def test_semantic_describe_from_snapshot_records_nothing(sdb):
     assert reads(a) == (frozenset(), frozenset())
     _update(sdb, sixth, date=date(2026, 6, 12))
     commits(a)
+
+
+# -- N2: composing the semantic catalog runs no application code (R37, P-C) ----------------------------
+
+def test_semantic_catalog_merge_runs_no_user_code(sdb, monkeypatch):
+    """A commit that installs a module merges the semantic catalog under the space root, composing the
+    module's contributions there.  Its descriptor, invariant and intent spec subclasses override the methods
+    the composition reads: none is called, under the root or elsewhere in the composition, and the stored
+    catalog holds the engine's reading of the declarations, not the overrides'."""
+    from proto_db.semantic import store
+    from proto_db.semantic.descriptors import Field, Invariant
+    from proto_db.transactions import Transaction
+    from tests.unit.semantic_modules import acme_overrides
+
+    composed = []
+    contributions = store.module_contributions
+
+    def spy(registry, name):
+        composed.append((name, Transaction._holding_root_lock()))
+        return contributions(registry, name)
+    monkeypatch.setattr(store, "module_contributions", spy)
+    acme_overrides.CALLS.clear()
+    sdb.run(lambda tr: tr.install_module("acme_overrides"))
+    assert ("acme_overrides", True) in composed            # the merge composed the module under the root
+    assert [call for call in acme_overrides.CALLS if call[1]] == []
+    assert acme_overrides.CALLS == []
+    with sdb.new_transaction() as tr:
+        model, _ = store.read_stored(tr._objects)
+    [extension] = model["modules"]["acme_overrides"]["extensions"]
+    elements = {e["name"]: e for e in extension["elements"]}
+    assert elements["note"] == Field(str, meaning="A free note on the order").element("note")
+    engine_invariant = Invariant("number >= 0", name="number_not_negative", meaning="An order number is not negative")
+    assert elements["number_not_negative"] == engine_invariant.element("entity")
+    assert elements["review"]["meaning"] == "Mark the order as reviewed"
+
+
+class _NotedDict(dict):
+    copied = []
+
+    def __deepcopy__(self, memo):
+        _NotedDict.copied.append(True)
+        return _NotedDict(self)
+
+
+class _NotedStr(str):
+    def __deepcopy__(self, memo):
+        _NotedDict.copied.append(True)
+        return _NotedStr(self)
+
+
+@pytest.mark.parametrize("dunder, value", [("__label__", _NotedDict(und="Order")), ("__meaning__", _NotedStr("x"))],
+                         ids=["dict", "str"])
+def test_extension_item_never_deep_copies_a_module_value(dunder, value):
+    """A semantic dunder holding an object of a module's class (a ``__deepcopy__`` of its own) is refused,
+    never copied through it: the composition copies plain data only."""
+    from types import SimpleNamespace
+
+    from proto_db.errors import ProtoValidationError
+    from proto_db.semantic import compose
+    _NotedDict.copied.clear()
+    extension = SimpleNamespace(semantic={dunder: value}, definitions={}, registry_name="acme.sales.Order",
+                                module="acme_x")
+    with pytest.raises(ProtoValidationError):
+        compose._extension_item(None, extension, frozenset())
+    assert _NotedDict.copied == []

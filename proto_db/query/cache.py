@@ -50,7 +50,8 @@ logs; :func:`plan_digest` is the process-independent digest a pager token carrie
 
 A result served from the cache records in the running transaction the same reads as the query
 that produced it (spec R22): :meth:`QueryCache.result` records the reads of every cacheable plan
-it answers, hit or miss, from the plan's structure (:func:`record_served_reads`).
+it answers, hit or miss, from the plan's structure (:func:`record_served_reads`): reads that
+cover those its execution records.
 """
 from __future__ import annotations
 
@@ -65,7 +66,7 @@ import decimal
 from decimal import Decimal
 
 from ..core.atom import Atom
-from ..errors import ProtoUserError, ProtoValidationError
+from ..errors import ProtoUnexpectedError, ProtoUserError, ProtoValidationError
 from ..storage.cache import BoundedCache
 from ..values import MISSING, FrozenDict, FrozenList, MutableObject, exact_token, fold_hybrid
 from .expressions import And, Expression, Not, Or, PythonPredicate
@@ -74,7 +75,7 @@ from .plans import (CollectionScanPlan, Count, Distinct, Filter, GroupBy, IndexP
 from .terms import NearQuery, Term
 
 __all__ = ["QUERY_SEMANTICS_VERSION", "QUERY_CACHE_BYTES", "QueryCache", "QueryResult", "cache_key",
-           "as_plan", "plan_digest", "key_digest", "record_served_reads"]
+           "as_plan", "plan_digest", "key_digest", "record_served_reads", "SERVED_TYPES"]
 
 #: Version of the executors' observable behaviour (row order, ties, grouping).  Part of every
 #: key and of every pager token: raise it whenever a plan node's output changes for some input.
@@ -291,25 +292,41 @@ def plan_digest(source) -> tuple:
     return key_digest(structure), dict(sorted(seen.items()))
 
 
+#: Plan nodes with one ``source`` that :func:`record_served_reads` follows as they are (a ``Limit``
+#: directly over a scan is handled before).
+_PASS_THROUGH = frozenset({Filter, Project, Sort, Limit, Distinct, GroupBy, Unnest})
+#: Plan nodes that read no linked collection while they run: an index plan reads its index, whose
+#: reads were recorded when the plan was planned or the index obtained.
+_NO_COLLECTION = frozenset({IndexPlan, VectorSearch})
+#: Every node type :func:`record_served_reads` handles by name; any other type is handled fail-closed.
+SERVED_TYPES = _PASS_THROUGH | _NO_COLLECTION | {CollectionScanPlan, Count, Join, Union, Intersect}
+
+
 def record_served_reads(plan: QueryPlan) -> None:
     """Record, in the transaction of each linked collection ``plan`` scans, what running ``plan``
-    reads of it (spec R22: a result served from the cache records the same as the query that
-    produced it).
+    reads of it, or more (spec R22: a result served from the cache records reads that cover those
+    of the query that produced it).
 
     A cached result is shared by every transaction of the space, and a precondition names a
     transaction's root and expects that transaction's base, so a :class:`QueryResult` carries no
     precondition: the reads are derived from the plan being answered, by this one function, on a
     hit and on a miss alike.  Equal keys mean equal plan trees over the same collection versions,
-    so a hit records what the miss that stored the result recorded.
+    so a hit records what this function recorded for the miss that stored the result, and that
+    covers what the miss's execution recorded.
 
-    Only collection scans read a linked collection while a cacheable plan runs (an index plan reads
-    its index, recorded when the plan was planned or the index obtained: ``plan_query``,
+    Only collection scans read a linked collection while a cacheable plan runs (index plans read
+    their index, recorded when the plan was planned or the index obtained: ``plan_query``,
     ``get_index``; a cacheable plan runs no Python code).  A scan records the whole collection,
     except a positional window over it (a ``Limit`` directly above the scan, not under a ``Count``),
     which records what the collection's ``_record_window`` records (R68: a Dictionary's range from
     its first key to the window's last one); a collection without it records the whole collection.
-    This covers what executing the plan records: a window the executor narrows lies inside it, and
-    a ``Count`` reads the row count, the whole collection.  Nothing is recorded for an unlinked
+    The recorded reads cover what executing the plan records but may be wider: an outer ``Limit``
+    narrows the window the executor reads, inside the inner ``Limit``'s window recorded here; a
+    ``Count`` reads the row count, the whole collection.
+
+    A node type not in :data:`SERVED_TYPES` is handled fail-closed (P-A): every collection scan
+    reachable through its attributes records the whole collection; with none reachable it raises
+    ``ProtoUnexpectedError`` rather than record nothing.  Nothing is recorded for an unlinked
     collection, after its transaction ended, or inside ``engine_reads``."""
     from ..collections.linking import record_whole
     stack = [(plan, False)]
@@ -328,12 +345,39 @@ def record_served_reads(plan: QueryPlan) -> None:
             stack.append((node.source, True))
         elif t is Join:
             stack.extend(((node.left, counted), (node.right, counted)))
-        elif t in (Union, Intersect):
+        elif t is Union or t is Intersect:
             stack.extend((source, counted) for source in node.sources)
+        elif t in _PASS_THROUGH:
+            stack.append((node.source, counted))
+        elif t in _NO_COLLECTION:
+            pass
         else:
-            source = getattr(node, "source", None)
-            if isinstance(source, QueryPlan):
-                stack.append((source, counted))
+            _record_unknown(node, record_whole)
+
+
+def _record_unknown(node, record_whole) -> None:
+    """Fail-closed reads of a plan node of a type :func:`record_served_reads` does not know: the
+    whole collection of every ``CollectionScanPlan`` reachable through its attributes (plans, and
+    tuples, lists and dicts of them); ``ProtoUnexpectedError`` when none is reachable."""
+    scans, stack, seen = [], [node], set()
+    while stack:
+        item = stack.pop()
+        if id(item) in seen:
+            continue
+        seen.add(id(item))
+        if type(item) is CollectionScanPlan:
+            scans.append(item)
+        elif isinstance(item, QueryPlan):
+            stack.extend(vars(item).values())
+        elif type(item) in (tuple, list):
+            stack.extend(item)
+        elif type(item) is dict:
+            stack.extend(item.values())
+    if not scans:
+        raise ProtoUnexpectedError(f"The query cache cannot tell what a {type(node).__name__} plan reads: "
+                                   f"add it to record_served_reads")
+    for scan in scans:
+        record_whole(scan.collection)
 
 
 def _key_size(key) -> int:
@@ -522,7 +566,8 @@ class QueryCache:
         its key is cached, else executed now (and stored when cacheable and small enough).
 
         A cacheable plan records its reads (:func:`record_served_reads`) whether the result is
-        served or computed, so a hit registers the same preconditions as a miss (R22)."""
+        served or computed, so a hit registers the same preconditions as a miss, which cover what
+        the plan's execution records (R22)."""
         plan = as_plan(source)
         key, reason = cache_key(plan)
         if key is None:
