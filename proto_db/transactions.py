@@ -204,6 +204,7 @@ from .resolution import enter_reader, exit_reader, new_cache, reset_reader, set_
 from .storage.base import check_lock_timeout
 from .storage.cache import BoundedCache
 from .query.cache import QUERY_CACHE_BYTES, QueryCache
+from .indexing.purity import check_not_extracting
 from .indexing.vector_backends import DERIVED
 from .query.pager import check_resumed, decode_ref, encode_ref, pager_arguments, portable_pager
 from .storage.format import RootRecord, next_root_version
@@ -2836,6 +2837,7 @@ class Transaction:
     def load(self, ptr: AtomPointer, type_name: str) -> Atom:
         """Return the atom stored at ``ptr``: the space's shared decoded atom (R75), or a lazy
         stub of this transaction when the space's atom cache is disabled."""
+        check_not_extracting("load")
         atoms = self._atoms
         if atoms is not None:
             return atoms.load(ptr, type_name)
@@ -2887,6 +2889,7 @@ class Transaction:
         whole root is recorded, so a concurrent install makes this transaction's commit conflict
         (ruling R241); :meth:`installed_modules` and :meth:`catalog_object` read the same state
         without recording it."""
+        check_not_extracting("get_root_object")
         _check_name(name)
         if self._state != _ACTIVE:      # fails before the lock (see "Locks" in the class docstring)
             self._check_active()
@@ -2986,6 +2989,7 @@ class Transaction:
         creation or removal of any root makes the commit raise ``ProtoConflictError``; a
         change of a root's value does not (spec section 6).
         """
+        check_not_extracting("root_names")
         if self._state != _ACTIVE:      # fails before the lock (see "Locks" in the class docstring)
             self._check_active()
         with self._lock:
@@ -3087,6 +3091,7 @@ class Transaction:
         concurrent change, creation or removal of the cell makes the commit raise
         ``ProtoConflictError``.
         """
+        check_not_extracting("get_mutable")
         _check_name(name, "mutable")
         if self._state != _ACTIVE:      # fails before the lock (see "Locks" in the class docstring)
             self._check_active()
@@ -3103,6 +3108,7 @@ class Transaction:
         A caller that needs the read validated at commit reads the cell with :meth:`get_mutable` too.
         Raises ``ProtoUserError`` if the transaction is not active.
         """
+        check_not_extracting("snapshot_mutable")
         _check_name(name, "mutable")
         if self._state != _ACTIVE:      # fails before the lock (see "Locks" in the class docstring)
             self._check_active()
@@ -3316,6 +3322,7 @@ class Transaction:
         concurrent creation or removal of any cell makes the commit raise
         ``ProtoConflictError``; a change of a cell's value does not (spec section 6).
         """
+        check_not_extracting("mutable_names")
         if self._state != _ACTIVE:      # fails before the lock (see "Locks" in the class docstring)
             self._check_active()
         with self._lock:

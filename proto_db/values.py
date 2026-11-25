@@ -195,6 +195,8 @@ class MutableObject:
 
     def get(self, transaction):
         """Return the cell's value as seen by ``transaction`` (``None`` if the cell is absent)."""
+        from .indexing.purity import check_not_extracting
+        check_not_extracting("MutableObject.get")
         return transaction.get_mutable(self._name)
 
     def set(self, transaction, value) -> None:
