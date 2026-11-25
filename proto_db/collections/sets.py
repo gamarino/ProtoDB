@@ -211,6 +211,14 @@ class _HashBuckets(ConcurrentOptimized, IndexedCollection):
         for element in diff.changed_bucket_members(old, new, self._entry_element):
             yield Unit(kind, root, key=unit_key(element))
 
+    def _unit_elements(self, kind, key):
+        """See :meth:`IndexedCollection._unit_elements`: the stored member equal to ``key``, once
+        (an index holds each distinct member once, R69)."""
+        if kind is not self._MEMBER_UNIT:
+            return None
+        _, bucket, position = self._find(key)
+        return [] if position < 0 else [self._entry_element(bucket[position])]
+
     def _same_content(self, other) -> bool:
         """Order-independent: every member of this set is a member of ``other`` (counts are equal)."""
         return all(other.has(e) for e in self.elements())
@@ -557,7 +565,8 @@ SET_OPERATIONS = ("has", "__contains__", "add", "remove", "union", "difference",
                   "_bucket_hash", "_entry_element", "_element", "_put_bucket", "_unit_token", "elements",
                   "__iter__", "__len__", "content_equals", "_same_content", "_replay_op", "_net_ops", "_op_key",
                   "_reapplied_on", "_with", "_intention_elements", "prepare_changes", "_indexed",
-                  "changed_units", "changed_index_groups", "_MEMBER_UNIT")
+                  "changed_units", "changed_index_groups", "_MEMBER_UNIT",
+    "_definition_changes", "_caught_up", "_changed_element_units", "_unit_elements")
 
 #: The operations of a CountedSet the precondition model lists or relies on (N5, as above).
 COUNTED_SET_OPERATIONS = ("has", "__contains__", "count_of", "add", "remove", "_transform", "_step",
@@ -565,7 +574,8 @@ COUNTED_SET_OPERATIONS = ("has", "__contains__", "count_of", "add", "remove", "_
                           "_unit_token", "elements", "items", "__iter__", "__len__", "content_equals",
                           "_same_content", "_replay_op", "_net_ops", "_op_key", "_reapplied_on", "_with",
                           "_intention_elements", "prepare_changes", "_indexed", "changed_units",
-                          "changed_index_groups", "_MEMBER_UNIT")
+                          "changed_index_groups", "_MEMBER_UNIT",
+    "_definition_changes", "_caught_up", "_changed_element_units", "_unit_elements")
 
 register_fine_grained(Set, SET_OPERATIONS)
 register_fine_grained(CountedSet, COUNTED_SET_OPERATIONS)

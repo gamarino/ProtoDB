@@ -150,6 +150,13 @@ class HashDictionary(ConcurrentOptimized, IndexedCollection):
         for key in diff.changed_bucket_members(old, new, _entry_key):
             yield Unit(UnitKind.KEY, root, key=unit_key(key))
 
+    def _unit_elements(self, kind, key):
+        """See :meth:`IndexedCollection._unit_elements`: the value under ``key`` (R69)."""
+        if kind is not UnitKind.KEY:
+            return None
+        _, bucket, position = self._find(key)
+        return [] if position < 0 else [bucket[position][1]]
+
     def items(self) -> Iterator[tuple]:
         """``(key, value)`` pairs in bucket-hash order."""
         for _, bucket in avl.key_iter(self.root):
@@ -275,6 +282,7 @@ HASH_DICTIONARY_OPERATIONS = ("get_at", "has", "__contains__", "set_at", "remove
                               "_stored_at", "_unit_token", "_find", "_bucket_hash", "elements", "items", "keys",
                               "values", "__iter__", "__len__", "content_equals", "_same_content", "_scan_window",
                               "_replay_op", "_net_ops", "_op_key", "_reapplied_on", "_with",
-                              "_intention_elements", "prepare_changes", "changed_units", "changed_index_groups")
+                              "_intention_elements", "prepare_changes", "changed_units", "changed_index_groups",
+    "_definition_changes", "_caught_up", "_changed_element_units", "_unit_elements")
 
 register_fine_grained(HashDictionary, HASH_DICTIONARY_OPERATIONS)

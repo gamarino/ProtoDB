@@ -213,7 +213,8 @@ from .storage.format import RootRecord, next_root_version
 from .cluster.coordinator import REFOUND_TERM_STEP
 from .cluster.lease import Permission
 from .cluster.rootlog import compare_roots
-from .preconditions import ABSENT, ReadLog, Unit, UnitKind, range_holds, range_violated, same_token, token
+from .preconditions import (ABSENT, INDEX_CATCH_UP_ROUNDS, ReadLog, Unit, UnitKind, range_holds, range_violated,
+                            same_token, token)
 from .values import canonical_for, check_text, order_key
 
 __all__ = ["ObjectSpace", "Database", "Transaction", "HistoryEntry", "SpaceRoot", "DatabaseRoot"]
@@ -382,6 +383,21 @@ _SEMANTIC_CATALOG_ROOTS = (_registry.MODULES_ROOT, _registry.CATALOG_ROOT, SEMAN
 #: retry has strictly more of the merged list imported, so only installs committed concurrently
 #: without end reach the bound.
 _IMPORT_ROUNDS = 64
+
+
+class _CatchUp:
+    """The catch-up state of one collection root whose only operations in the transaction are
+    index definition changes (R69): the committed collection its written version was last
+    brought to (the base, then each caught-up R0), that version, and the names of the indexes
+    it adds (built over that collection's elements) and removes relative to the base."""
+
+    __slots__ = ("previous", "version", "added", "removed")
+
+    def __init__(self, previous, version, added: tuple, removed: tuple):
+        self.previous = previous
+        self.version = version
+        self.added = added
+        self.removed = removed
 
 
 class _released:
@@ -2940,6 +2956,10 @@ class Transaction:
         # The pre-pass result (R64), set by _commit before the lock step; None: no pre-pass (a
         # build then validates fully, R65).
         self._candidate: Optional[_Candidate] = None
+        # Root name -> _CatchUp: the linked writes the pre-pass may catch up (R69), decided in the
+        # preparation; and the catch-up rounds the pre-passes of this commit ran.
+        self._catch_ups: dict = {}
+        self._catch_up_rounds = 0
         record = database.space._snapshot_record()
         self._epoch = record.epoch if record is not None else 0
         self._snapshot_pointer = record.pointer if record is not None else None
@@ -3094,7 +3114,9 @@ class Transaction:
         A version of the linked collection this transaction got from root ``name`` (R46) records
         nothing here: its operations recorded their preconditions, and at commit its intentions
         are reapplied on the current collection (R34); a version marked whole (an unlisted
-        operation produced it, P-B) records ``Unit(WHOLE, name)`` and is published as is.
+        operation produced it, P-B) records ``Unit(WHOLE, name)`` and is published as is.  A
+        version that only ``add_index``/``remove_index`` produced records it at commit instead
+        (:meth:`_prepare_writes`), when the transaction's other reads of the root are known (R69).
 
         Any other write replaces the root and records ``Unit(ROOT, name)`` with the root's base
         value (ABSENT included), also when the root was not read: at commit the root must still
@@ -3114,7 +3136,7 @@ class Transaction:
             link = link_of(value, self)
             if link is not None and link.root == name:
                 self._linked_writes.add(name)
-                if value._whole:
+                if value._whole and not value._definitions_only:
                     unit = Unit(UnitKind.WHOLE, name)
                     if unit not in self._read_log:
                         self._read_log.record(unit, self._base_whole_token(name))
@@ -3982,6 +4004,9 @@ class Transaction:
                     space._registries.rebind(self._database.name, self._committed_modules,
                                              key=self._committed_key, origin=self._committed_origin)
         finally:
+            # A finished commit keeps neither R0 nor the candidate maps (nor the catch-up state).
+            self._candidate = None
+            self._catch_ups = {}
             if self._recorded:
                 # Published and rebound, or failed: no build is pending any more; the published one
                 # (or one of unknown outcome) is adopted.
@@ -4017,14 +4042,13 @@ class Transaction:
             return None
         reader = set_reader(self)
         try:
+            if self._catch_ups:
+                record, space, db_root = self._catch_up(record)
+            else:
+                space, db_root = self._published_database(record)
             if record.pointer == self._snapshot_pointer:
-                space, db_root = self._snapshot_space, self._db_root
                 plan = self._write_plan(db_root.objects, True)
             else:
-                space = _load_space(self, record)
-                db_root = space.databases.get_at(self._database.name) if space is not None else None
-                if db_root is None:
-                    raise ProtoConflictError(f"Database {self._database.name!r} no longer exists")
                 plan = self._write_plan(db_root.objects, False)
                 self._check_roots(db_root.objects)
                 self._check_mutables(db_root.mutables)
@@ -4059,6 +4083,11 @@ class Transaction:
         enumerate the elements, takes the whole collection instead: a stale index is rebuilt now,
         and the version is published as is."""
         log = self._read_log
+        self._catch_ups = {}
+        for name in sorted(self._linked_writes):
+            value = self._writes.get(name)
+            if value is not None and value is not _REMOVED and value._whole:
+                self._prepare_whole_write(name, value)
         for name in sorted(self._linked_writes):
             value = self._writes.get(name)
             if value is None or value is _REMOVED or value._whole or log.whole(name) or not value._changes:
@@ -4074,6 +4103,88 @@ class Transaction:
             unit = Unit(UnitKind.INDEX_DEFS, name)
             if unit not in log:
                 log.record(unit, base._index_definitions_token())
+
+    def _prepare_whole_write(self, name: str, value) -> None:
+        """The preparation of a linked write marked whole: record ``Unit(WHOLE, name)`` with the
+        base's token (P-B, R26), and when the version is the base with index definition changes
+        only and the transaction recorded no other read of the root (only its presence and its
+        index definitions), keep it for the catch-up of R69 (``_catch_ups``)."""
+        log = self._read_log
+        unit = Unit(UnitKind.WHOLE, name)
+        other_reads = log.whole(name) or any(r.root == name for r in log.ranges()) or any(
+            u.root == name and u.kind is not UnitKind.ROOT_PRESENCE and u.kind is not UnitKind.INDEX_DEFS
+            for u in log.preconditions())
+        if unit not in log:
+            log.record(unit, self._base_whole_token(name))
+        if other_reads or not value._definitions_only:
+            return
+        base = self._base_root_value(name)
+        changes = value._definition_changes(base)
+        if changes is not None:
+            self._catch_ups[name] = _CatchUp(base, value, *changes)
+
+    def _catch_up(self, record):
+        """The catch-up of R69, in the pre-pass (outside the space root): ``(record, space,
+        db_root)`` of the published root the pre-pass is to validate against.  While a root of
+        ``_catch_ups`` differs in that root from the value its ``WHOLE`` precondition expects
+        (same class and index definitions: otherwise validation reports the conflict), run a
+        round (:meth:`_catch_up_round`) and read the published root again; a commit that would
+        need more than ``INDEX_CATCH_UP_ROUNDS`` rounds raises ``ProtoConflictError`` on the
+        whole collection, which ``Database.run`` retries."""
+        while True:
+            space, db_root = self._published_database(record)
+            due = [name for name, state in self._catch_ups.items() if self._catch_up_due(name, state, db_root)]
+            if not due:
+                return record, space, db_root
+            if self._catch_up_rounds >= INDEX_CATCH_UP_ROUNDS:
+                unit = Unit(UnitKind.WHOLE, due[0])
+                raise ProtoConflictError(
+                    f"Root {due[0]!r} of database {self._database.name!r} was changed by concurrent commits "
+                    f"through {INDEX_CATCH_UP_ROUNDS} catch-up rounds of its index definition change (unit "
+                    f"{unit.kind.name})", unit=unit, database=self._database.name)
+            self._catch_up_rounds += 1
+            self._catch_up_round(due, db_root)
+            newer = self._database.space._published_record()
+            if newer is None or newer.pointer == record.pointer:
+                return record, space, db_root
+            record = newer
+
+    def _catch_up_due(self, name: str, state: _CatchUp, db_root: "DatabaseRoot") -> bool:
+        """Whether root ``name`` needs a catch-up round against ``db_root``: its collection there is
+        of the version's class, has the base's index definitions and is not the collection the
+        ``WHOLE`` precondition expects."""
+        current = db_root.objects.get_at(name, _ABSENT)
+        if current is _ABSENT or type(current) is not type(state.version):
+            return False
+        expected = self._read_log.preconditions().get(Unit(UnitKind.WHOLE, name))
+        if _same_token(expected, _token(current)):
+            return False
+        return _same_token(state.previous._index_definitions_token(), current._index_definitions_token())
+
+    def _catch_up_round(self, names: list, db_root: "DatabaseRoot") -> None:
+        """One catch-up round (R69): bring each root of ``names`` to its collection in ``db_root``
+        (:meth:`IndexedCollection._caught_up`: the changed elements applied to the indexes under
+        construction, extractors outside the lock), write that version, and expect that
+        collection in the ``WHOLE`` precondition."""
+        objects = db_root.objects
+        for name in names:
+            state = self._catch_ups[name]
+            current = objects.get_at(name)
+            version = state.version._caught_up(state.previous, current, state.added, state.removed, name)
+            state.previous, state.version = current, version
+            self._writes[name] = version
+            self._read_log.caught_up(Unit(UnitKind.WHOLE, name), _token(current))
+
+    def _published_database(self, record):
+        """``(space, db_root)`` of the published root ``record`` (the snapshot's own when it is the
+        snapshot); ``ProtoConflictError`` when the database no longer exists there."""
+        if record.pointer == self._snapshot_pointer:
+            return self._snapshot_space, self._db_root
+        space = _load_space(self, record)
+        db_root = space.databases.get_at(self._database.name) if space is not None else None
+        if db_root is None:
+            raise ProtoConflictError(f"Database {self._database.name!r} no longer exists")
+        return space, db_root
 
     def _scoped_build_root(self, current, stamp: Optional[_ClusterStamp] = None) -> AtomPointer:
         """:meth:`_build_root` with this transaction as the reader (review I1, ruling R201): what

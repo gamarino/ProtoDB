@@ -42,11 +42,11 @@ from types import MappingProxyType
 
 from ..core.atom import BUILTIN_TYPE_ALIASES, Atom, PersistenceContext
 from ..errors import ProtoMisfiledError, ProtoUserError, ProtoValidationError
-from ..preconditions import Unit, UnitKind, token
+from ..preconditions import Unit, UnitKind, same_token, token
 from ..query.plans import CollectionScanPlan
 from ..values import MISSING, canonical, is_atom, order_key, values_equal
 from . import avl
-from .linking import engine_reading, engine_reads, link_of, record_read, record_whole
+from .linking import engine_reading, engine_reads, link_of, lookup_key, record_read, record_whole
 
 __all__ = ["IndexSet", "IndexedCollection", "ConcurrentOptimized", "net_effect", "same_value",
            "whole_unless_logged", "IntentionConflict", "prepared_parts"]
@@ -419,7 +419,11 @@ class IndexedCollection(_Immutable, Atom):
     #: removed, a RepeatedKeysDictionary key it cleared): a read of one records nothing (R9).  A
     #: runtime keyed tree (``linking.written_with``), ``None`` when empty.
     _written = None
-    _runtime_fields: tuple = ("_link", "_changes", "_whole", "_written")
+    #: Whether this whole version differs from the linked version it derives from by index
+    #: definition changes only (``add_index``/``remove_index`` on a linked version with no other
+    #: operation): a candidate for the catch-up of R69 (:meth:`_definition_changes` decides).
+    _definitions_only: bool = False
+    _runtime_fields: tuple = ("_link", "_changes", "_whole", "_written", "_definitions_only")
     _all_runtime_fields: tuple = ()
 
     def __init_subclass__(cls, **kwargs):
@@ -539,19 +543,114 @@ class IndexedCollection(_Immutable, Atom):
         before building) or if the built index has another name.  It is built here, in the
         transaction's own thread, never under the space root; the version takes the whole
         collection (R26, P-B) and is published as is.
+
+        On a linked version it records the index definitions (R25) and nothing else: building
+        the index reveals no content to the caller.  Unless the transaction also reads or writes
+        the collection, the commit then catches the index up with concurrent commits instead of
+        conflicting (R69, :meth:`_definition_changes`).
         """
+        self._record_index_definitions()
         name = _index_name(index)
-        if name in self.indexes:
-            raise ProtoValidationError(f"An index named {name!r} already exists")
-        built = index.empty().build(self.elements())
-        if built is None or _index_name(built) != name:
-            raise ProtoValidationError(f"Index {name!r} build() returned {built!r}; expected the same name")
-        return self._with(indexes=self.indexes.with_index(built), _whole=True)
+        with engine_reads():
+            if name in self.indexes:
+                raise ProtoValidationError(f"An index named {name!r} already exists")
+            built = index.empty().build(self.elements())
+            if built is None or _index_name(built) != name:
+                raise ProtoValidationError(f"Index {name!r} build() returned {built!r}; expected the same name")
+            indexes = self.indexes.with_index(built)
+        return self._with(indexes=indexes, _whole=True, _definitions_only=self._only_definitions_so_far())
 
     def remove_index(self, name: str) -> "IndexedCollection":
         """Return a version without the index ``name``; ``ProtoValidationError`` if absent.
-        The version takes the whole collection (R26, P-B)."""
-        return self._with(indexes=self.indexes.without(name), _whole=True)
+        The version takes the whole collection (R26, P-B); on a linked version it records the
+        index definitions only, as :meth:`add_index` does (R25, R69)."""
+        self._record_index_definitions()
+        with engine_reads():
+            indexes = self.indexes.without(name)
+        return self._with(indexes=indexes, _whole=True, _definitions_only=self._only_definitions_so_far())
+
+    def _only_definitions_so_far(self) -> bool:
+        """Whether this version is a linked version with no operation but index definition
+        changes: the first version a transaction derives from a root, or one that only
+        ``add_index``/``remove_index`` produced since (R69)."""
+        if self._link is None or self._changes:
+            return False
+        return self._definitions_only or not self._whole
+
+    # -- index catch-up (spec R69): outside the space root --------------------------------------
+
+    def _definition_changes(self, base) -> tuple | None:
+        """``(added, removed)`` when this version is ``base`` (the root's base collection) with
+        index definition changes only: the names of the indexes it built (absent from ``base``,
+        or present there with another index) and of the indexes of ``base`` it dropped.  ``None``
+        when it is not: another operation ran (``_changes``), or the content differs from
+        ``base`` (an operation outside the listed ones), or the class differs.  Engine reads
+        only; a new index is unsaved, an index of ``base`` is saved, so they never compare equal."""
+        if not self._definitions_only or self._changes or type(base) is not type(self):
+            return None
+        with engine_reads():
+            for field in type(self)._fields:
+                if field != "indexes" and not _identical(self._probe(field), getattr(base, field)):
+                    return None
+            before = dict(avl.key_iter(base.indexes.root))
+            after = dict(avl.key_iter(self.indexes.root))
+        added = tuple(name for name, index in after.items()
+                      if name not in before or not _identical(index, before[name]))
+        removed = tuple(name for name in before if name not in after)
+        return added, removed
+
+    def _caught_up(self, previous, current, added: tuple, removed: tuple, root: str) -> "IndexedCollection":
+        """The catch-up of R69, in the pre-pass (outside the space root; extractors run here): this
+        version holds ``previous``'s content with the indexes ``added`` built over it; return
+        ``current``'s content (a newer committed version of root ``root``, same class and index
+        definitions as ``previous``) with ``current``'s indexes, those named in ``added`` and
+        ``removed`` taken out, and each index of ``added`` brought from ``previous``'s elements to
+        ``current``'s: the elements of every unit the diff ``previous -> current`` reports changed
+        are removed (as ``previous`` holds them) and added (as ``current`` does).  When the diff
+        cannot name the units (``Unit(WHOLE)``) or a class cannot list a unit's elements, the
+        index is rebuilt from ``current``'s elements."""
+        with engine_reads():
+            built = {name: self.indexes.get(name) for name in added}
+            if built:
+                moves = []
+                for unit in previous._changed_element_units(current, root):
+                    if unit.kind is UnitKind.WHOLE:
+                        moves = None
+                        break
+                    key = lookup_key(unit.key)
+                    old, new = previous._unit_elements(unit.kind, key), current._unit_elements(unit.kind, key)
+                    if old is None or new is None:
+                        moves = None
+                        break
+                    moves.append((old, new))
+                for name, index in built.items():
+                    if moves is None:
+                        index = index.empty().build(current.elements())
+                    else:
+                        for old, new in moves:
+                            for element in old:
+                                index = index.with_removed(element)
+                            for element in new:
+                                index = index.with_added(element)
+                    built[name] = index
+            indexes = current.indexes
+            for name in set(added) | set(removed):
+                if name in indexes:
+                    indexes = indexes.without(name)
+            for name in added:
+                indexes = indexes.with_index(built[name])
+            return current._with(indexes=indexes, _whole=True, _definitions_only=True)
+
+    def _changed_element_units(self, other, root: str) -> Iterator[Unit]:
+        """The units of root ``root`` whose elements may differ between this version and ``other``
+        (R69): :meth:`changed_units` by default, which covers every element of a keyed class."""
+        return self.changed_units(other, root)
+
+    def _unit_elements(self, kind: UnitKind, key) -> list | None:
+        """The elements (as :meth:`elements` yields them) that unit ``kind`` of the collection key
+        ``key`` holds in this version, for the catch-up of R69; ``None`` when the class cannot
+        tell (the default: the index is rebuilt instead).  Engine reads only."""
+        return None
 
     def get_index(self, name: str):
         """Return the index ``name`` or ``None``.  On a linked version it records the index
@@ -814,6 +913,17 @@ class IndexedCollection(_Immutable, Atom):
     def _after_replace(self, old, new) -> IndexSet:
         """The IndexSet after replacing element ``old`` by ``new``."""
         return self._current_indexes().on_replace(old, new)
+
+
+def _identical(a, b) -> bool:
+    """Whether two persisted field values are the same value: the same object, the same saved
+    atom (by storage pointer: an unsaved atom equals only itself), or equal plain values by token."""
+    if a is b:
+        return True
+    if isinstance(a, Atom) or isinstance(b, Atom):
+        return (isinstance(a, Atom) and isinstance(b, Atom) and a.atom_pointer is not None
+                and a.atom_pointer == b.atom_pointer)
+    return same_token(token(a), token(b))
 
 
 # -- ConcurrentOptimized -------------------------------------------------------------------

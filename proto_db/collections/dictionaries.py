@@ -206,6 +206,13 @@ class Dictionary(ConcurrentOptimized, IndexedCollection):
         for key in diff.changed_keys(old, new):
             yield Unit(UnitKind.KEY, root, key=unit_key(key))
 
+    def _unit_elements(self, kind, key):
+        """See :meth:`IndexedCollection._unit_elements`: the value under ``key`` (R69)."""
+        if kind is not UnitKind.KEY:
+            return None
+        value = avl.key_get(self.root, key, ABSENT)
+        return [] if value is ABSENT else [value]
+
     def key_at_position(self, i: int):
         """The key at position ``i`` in key order (a negative ``i`` counts from the end), in
         O(log n) by the node counts (R17).  ``ProtoValidationError`` for a position out of range.
@@ -359,7 +366,8 @@ DICTIONARY_OPERATIONS = ("get_at", "has", "__contains__", "set_at", "remove_at",
                          "content_equals", "_same_content", "_scan_window", "key_at_position", "position_of",
                          "_replay_op", "_net_ops", "_op_key", "_reapplied_on", "_with", "_intention_elements",
                          "prepare_changes", "_record_window", "_range_tree", "changed_units",
-                         "changed_index_groups")
+                         "changed_index_groups",
+    "_definition_changes", "_caught_up", "_changed_element_units", "_unit_elements")
 
 register_fine_grained(Dictionary, DICTIONARY_OPERATIONS)
 
@@ -469,6 +477,13 @@ class RepeatedKeysDictionary(ConcurrentOptimized, IndexedCollection):
             old, new = self.root, other.root
         for key in diff.changed_keys(old, new):
             yield Unit(UnitKind.RECORDS, root, key=unit_key(key))
+
+    def _unit_elements(self, kind, key):
+        """See :meth:`IndexedCollection._unit_elements`: each distinct record under ``key`` (R69)."""
+        if kind is not UnitKind.RECORDS:
+            return None
+        records = avl.key_get(self.root, key)
+        return [] if records is None else list(records.elements())
 
     def keys(self) -> Iterator:
         """Keys in order."""
@@ -678,7 +693,8 @@ REPEATED_KEYS_DICTIONARY_OPERATIONS = (
     "remove_key", "_transform_record", "_record_step", "_record_stepped", "_key", "_record", "_unit_token",
     "elements", "items", "keys", "__iter__", "__len__", "content_equals", "_same_content", "_replay_op",
     "_net_ops", "_op_key", "_reapplied_on", "_with", "_intention_elements", "prepare_changes", "_indexed",
-    "_record_removal", "changed_units", "changed_index_groups")
+    "_record_removal", "changed_units", "changed_index_groups",
+    "_definition_changes", "_caught_up", "_changed_element_units", "_unit_elements")
 
 register_fine_grained(RepeatedKeysDictionary, REPEATED_KEYS_DICTIONARY_OPERATIONS)
 

@@ -161,6 +161,25 @@ class List(IndexedCollection):
         for position in diff.changed_positions(old, new, old_count):
             yield Unit(UnitKind.POSITION, root, key=position)
 
+    def _changed_element_units(self, other, root: str) -> Iterator[Unit]:
+        """See :meth:`IndexedCollection._changed_element_units`: :meth:`changed_units`, and the
+        positions ``other`` appended past this version's end (no precondition names them, but
+        their items are new elements, R69)."""
+        units = list(self.changed_units(other, root))
+        yield from units
+        if any(unit.kind is UnitKind.WHOLE for unit in units):
+            return
+        with engine_reads():
+            old_count, new_count = self.count, other.count
+        for position in range(old_count, new_count):
+            yield Unit(UnitKind.POSITION, root, key=position)
+
+    def _unit_elements(self, kind, key):
+        """See :meth:`IndexedCollection._unit_elements`: the item at position ``key`` (R69)."""
+        if kind is not UnitKind.POSITION:
+            return None
+        return [avl.pos_get(self.root, key)] if 0 <= key < self.count else []
+
     # -- mutators -----------------------------------------------------------------------
 
     def set_at(self, index: int, value) -> "List":
@@ -347,6 +366,7 @@ LIST_OPERATIONS = ("get_at", "set_at", "append_last", "extend", "insert_at", "re
                    "_unit_token", "elements", "_scan_window", "__iter__", "__len__", "__contains__",
                    "content_equals", "_same_content", "_net_ops", "_reapplied_on", "_with", "_current_indexes",
                    "_after_add", "_after_replace", "_after_remove", "_intention_elements", "prepare_changes",
-                   "changed_units", "changed_index_groups")
+                   "changed_units", "changed_index_groups",
+    "_definition_changes", "_caught_up", "_changed_element_units", "_unit_elements")
 
 register_fine_grained(List, LIST_OPERATIONS)

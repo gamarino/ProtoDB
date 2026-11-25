@@ -43,6 +43,7 @@ from collections import Counter
 
 import pytest
 
+from proto_db import transactions
 from proto_db.collections.dictionaries import Dictionary
 from proto_db.collections.hash_dictionaries import HashDictionary
 from proto_db.errors import ProtoConflictError
@@ -50,6 +51,7 @@ from proto_db.preconditions import UnitKind
 from proto_db.storage.memory import MemoryStorage
 from proto_db.transactions import ObjectSpace
 from tests.concurrency.harness import report, run_threads
+from tests.support.stale_prepass import stale_prepass
 from tests.support.serial_model import (COLLECTIONS, COUNTED_SET_OPS, DICTIONARY_AND_CELL_OPS, LIST_OPS,
                                         LOOKUP_OPS, MULTIMAP_OPS, OBJECT, RANGE_OPS, RECORDS, SET_OPS, Op, Record,
                                         StateNames, capture, check_history, execute, extractor_calls_under_root,
@@ -371,6 +373,23 @@ def range_exposure(programs, initial) -> dict:
 
 
 def test_serializability_over_the_closed_operation_set(db):
+    _check_serializable(db, "serializability collections+cells")
+
+
+@pytest.mark.parametrize("r0", ["published", "stale"])
+def test_serializability_with_delta_verification(db, monkeypatch, r0):
+    """Task 12 review, minor a: the checker's seed with ``transactions._VERIFY_DELTA`` on, so each
+    delta validation under the space root (R65) is compared with a full validation of the same
+    root.  ``stale``: every pre-pass reads its own snapshot as R0 (:func:`stale_prepass`), so every
+    concurrent change is decided by delta validation under the lock, none by the pre-pass."""
+    monkeypatch.setattr(transactions, "_VERIFY_DELTA", True)
+    stats = stale_prepass(monkeypatch) if r0 == "stale" else None
+    _check_serializable(db, f"serializability with delta verification ({r0} R0)")
+    if stats is not None:
+        assert stats.forced > 0 and stats.delta_checks > 0, (stats.forced, stats.delta_checks)
+
+
+def _check_serializable(db, label):
     rng = random.Random(SEED)
     _seed_state(db, rng)
     initial = _capture(db)
@@ -399,7 +418,7 @@ def test_serializability_over_the_closed_operation_set(db):
     calls, held = (after - before for after, before in zip(extractor_calls_under_root(), calls_before))
     assert calls > 0 and held == 0, f"the index extractor ran {held} of {calls} times with the space root held"
     lookups = Counter(op.kind for r in records for op in r.program if op.kind in LOOKUP_OPS)
-    report("serializability collections+cells", elapsed,
+    report(label, elapsed,
            f"{stats.commits} commits, {stats.attempts} attempts, {len(stats.conflicts)} conflicts",
            f"{len(records) - read_only} published, {read_only} read-only",
            f"conflicts by unit {dict(sorted(by_unit.items()))}",

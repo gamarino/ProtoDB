@@ -22,7 +22,7 @@ from .core.atom import Atom
 from .values import exact_token, order_key
 
 __all__ = ["ABSENT", "UnitKind", "Unit", "KeyRange", "PRECONDITION_ESCALATION_LIMIT", "ReadLog", "token",
-           "same_token", "range_violated", "changed_keys", "range_holds"]
+           "same_token", "range_violated", "changed_keys", "range_holds", "INDEX_CATCH_UP_ROUNDS"]
 
 
 class _AbsentToken:
@@ -142,6 +142,11 @@ _NO_TOKEN = object()      # ReadLog.record: the escalation token is not computed
 PRECONDITION_ESCALATION_LIMIT = 1024
 """At most this many fine preconditions per collection root; the next one escalates (R66)."""
 
+INDEX_CATCH_UP_ROUNDS = 3
+"""At most this many pre-pass rounds catch an index definition change up with the commits
+published since its base (R69); a commit that would need one more conflicts on the whole
+collection, and ``Database.run`` retries it."""
+
 
 class ReadLog:
     """The preconditions and ranges one transaction recorded (thread-safe, R44).
@@ -246,6 +251,15 @@ class ReadLog:
                     self._make_whole(root, None if token is _NO_TOKEN else token)
                     return
             token = self._whole_token(root)         # outside the lock, as in record()
+
+    def caught_up(self, unit: Unit, expected) -> None:
+        """Replace the expected value of the recorded ``unit`` by ``expected``: the one exception
+        to R8, for the ``WHOLE`` unit of a collection whose index definition change the pre-pass
+        caught up with a newer published state (R69).  ``KeyError`` when ``unit`` is not recorded."""
+        with self._lock:
+            if unit not in self._preconditions:
+                raise KeyError(unit)
+            self._preconditions[unit] = expected
 
     def whole(self, root: str) -> bool:
         """Whether ``root`` has a whole-collection precondition."""

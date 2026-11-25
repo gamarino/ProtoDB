@@ -3,7 +3,8 @@
 Explicit interleavings only: open A, open B, B commits, A commits.
 
 Catches: a write reapplied with keys that do not cover a concurrently added index (R25), an
-index definition change composed with a concurrent write instead of conflicting (R26), an
+index definition change that read the collection composed with a concurrent write instead of
+conflicting (R26; one that read nothing catches up, R69), an
 equality lookup that conflicts with changes of other groups or misses changes of its own (R28,
 B4), a raw index read that records less than the whole collection (B5), a format-3 index
 rebuilt under the root lock instead of in preparation (B8), an ivf_flat index maintained under
@@ -92,9 +93,13 @@ def test_concurrent_add_index_conflicts_with_write(db):
         assert lookup(d, 5) == [5]
         d.get_index("e").validate(list(d.elements()))
 
-    # The other way round: the index change conflicts with a concurrent write (whole collection).
+    # The other way round: an index change that also read the collection conflicts with a
+    # concurrent write (whole collection, R26); one that read nothing catches up (R69,
+    # tests/unit/test_index_catch_up.py).
     a, b = db.new_transaction(), db.new_transaction()
-    a.set_root_object("d", a.get_root_object("d").add_index(RangeIndex("r", KeySpec.element())))
+    d = a.get_root_object("d")
+    assert d.get_at("a") == 5
+    a.set_root_object("d", d.add_index(RangeIndex("r", KeySpec.element())))
     b.set_root_object("d", b.get_root_object("d").set_at("c", 3))
     b.commit()
     with pytest.raises(ProtoConflictError) as e:

@@ -21,6 +21,7 @@ from proto_db.preconditions import Unit, UnitKind
 from proto_db.storage.memory import MemoryStorage
 from proto_db.transactions import ObjectSpace, Transaction
 from tests.support.counting_storage import CountingStorage
+from tests.support.stale_prepass import stale_prepass
 
 pytestmark = [pytest.mark.timeout(120)]
 
@@ -313,3 +314,31 @@ def test_delta_validation_of_root_and_cell_units(db, monkeypatch, scenario):
     with pytest.raises(ProtoConflictError) as e:
         t.commit()
     assert e.value.unit == unit
+
+
+def test_stale_prepass_delta_validation_decides_under_the_lock(db, storage, monkeypatch):
+    """Task 12 review, minor a: with every pre-pass forced onto its own snapshot (an older root),
+    the concurrent change is decided under the space root by delta validation (checked against
+    full validation by ``_VERIFY_DELTA``): an unrelated key composes, a read key conflicts."""
+    stats = stale_prepass(monkeypatch)
+    seed(db)
+    t = db.new_transaction()
+    assert t.get_root_object("d").get_at("k1") == 1
+    write(t, "new", 1)
+    committed(db, "k2", -2)
+    stats.delta_checks = 0
+    t.commit()
+    assert stats.delta_checks == 1
+    assert content(db)["new"] == 1 and content(db)["k2"] == -2
+
+    t = db.new_transaction()
+    assert t.get_root_object("d").get_at("k1") == 1
+    write(t, "other", 1)
+    committed(db, "k1", -1)
+    storage.root_locks = 0
+    stats.delta_checks = 0
+    with pytest.raises(ProtoConflictError) as e:
+        t.commit()
+    assert e.value.unit == Unit(UnitKind.KEY, "d", key="k1")
+    assert stats.delta_checks == 1 and storage.root_locks == 1      # decided under the lock
+    assert "other" not in content(db)
