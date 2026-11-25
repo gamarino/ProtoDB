@@ -210,6 +210,36 @@ def test_class_change_conflicts(db):
     assert e.value.unit == Unit(UnitKind.ROOT_PRESENCE, "c") and e.value.database == "db"
 
 
+@pytest.mark.parametrize("plain", [5, "s"])
+def test_class_change_to_a_plain_value_conflicts(db, plain):
+    """R12, R36: a collection root replaced by a plain value is a conflict, not an AttributeError."""
+    db.run(lambda tr: tr.set_root_object("c", tr.new_dictionary().set_at("k", 1)))
+    a, b = db.new_transaction(), db.new_transaction()
+    a.get_root_object("c")
+    b.set_root_object("c", plain)
+    b.commit()
+    a.new_mutable("m", 1)
+    with pytest.raises(ProtoConflictError) as e:
+        a.commit()
+    assert e.value.unit == Unit(UnitKind.ROOT_PRESENCE, "c") and e.value.database == "db"
+
+
+def test_blind_object_root_writes_conflict(db):
+    """R2 without a read: A and B write different attributes of one object root without reading it
+    (each builds a new object); the write alone declares the precondition, and the second conflicts."""
+    db.run(lambda tr: tr.set_root_object("o", tr.new_object(x=0, y=0)))
+    a, b = db.new_transaction(), db.new_transaction()
+    a.set_root_object("o", a.new_object(x=1, y=0))
+    b.set_root_object("o", b.new_object(x=0, y=1))
+    assert set(a._read_log.preconditions()) == {root("o")}         # declared by the write alone
+    b.commit()
+    with pytest.raises(ProtoConflictError) as e:
+        a.commit()
+    assert e.value.unit == root("o")
+    o = read(db, "o")
+    assert (o.x, o.y) == (0, 1)
+
+
 def test_removed_collection_root_conflicts_with_its_reader(db):
     db.run(lambda tr: tr.set_root_object("c", tr.new_set().add(1)))
     a, b = db.new_transaction(), db.new_transaction()

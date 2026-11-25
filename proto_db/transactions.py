@@ -3920,7 +3920,8 @@ class Transaction:
                 holds = _same_token(expected, _token(current.get_at(unit.root, _ABSENT)))
             elif kind is UnitKind.ROOT_PRESENCE:
                 value = current.get_at(unit.root, _ABSENT)
-                holds = value is not _ABSENT and type(value).__type_name__ == expected
+                # A plain value (int, str, ...) has no type name: never the expected class.
+                holds = value is not _ABSENT and getattr(type(value), "__type_name__", None) == expected
             elif kind is UnitKind.ROOT_NAMES:
                 if not _same_token(expected, _token(tuple(current.keys()))):
                     raise ProtoConflictError(
