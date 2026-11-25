@@ -625,6 +625,30 @@ class IndexedCollection(_Immutable, Atom):
             return NOT_A_UNIT
         return found.groups
 
+    # -- delta validation (spec R65) --------------------------------------------------------------
+
+    def changed_units(self, other, root: str) -> Iterator[Unit]:
+        """The conflict units of root ``root`` whose value may differ between this version and
+        ``other`` (a saved version of the same class): a superset of the units whose token
+        differs, computed by a structural diff that skips shared subtrees unloaded (R65).
+        ``Unit(WHOLE, root)`` means that every unit of the root is to be taken as changed; that
+        is the default, for a class without a structural diff.  Engine reads only (P-C)."""
+        yield Unit(UnitKind.WHOLE, root)
+
+    def changed_index_groups(self, other, index: str) -> Iterator:
+        """The keys whose group in the key-group index ``index`` differs between this version and
+        ``other`` (the ``groups`` trees diffed, shared subtrees skipped unloaded: exactly the
+        keys a group or range precondition on the index compares), or
+        :data:`~proto_db.collections.diff.EVERYTHING` when either version lacks that index or
+        it keeps no groups.  Engine reads only (P-C)."""
+        from .diff import EVERYTHING, changed_keys
+        with engine_reads():
+            old, new = self.indexes.get(index), other.indexes.get(index)
+        if getattr(old, "group_token_data", None) is None or getattr(new, "group_token_data", None) is None:
+            yield EVERYTHING
+            return
+        yield from changed_keys(old.groups, new.groups)
+
     def _intention_elements(self, base) -> Iterable | None:
         """Every element reapplying this version's intentions may add, remove or replace on a
         current collection that the preconditions keep equal to ``base`` where they constrain it:

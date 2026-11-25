@@ -46,9 +46,9 @@ from itertools import islice
 
 from ..core.atom import PersistenceContext
 from ..errors import ProtoValidationError
-from ..preconditions import UnitKind, token
+from ..preconditions import Unit, UnitKind, token
 from ..values import canonical_for
-from . import avl
+from . import avl, diff
 from .base import IndexedCollection, _Reapplying, check_unique_after, prepared_parts, whole_unless_logged
 from .linking import NOT_A_UNIT, engine_reads, record_key, record_whole, register_fine_grained
 
@@ -144,6 +144,22 @@ class List(IndexedCollection):
         if kind is not UnitKind.POSITION or not 0 <= key < self.count:
             return NOT_A_UNIT
         return token(avl.pos_get(self.root, key))
+
+    def changed_units(self, other, root: str) -> Iterator[Unit]:
+        """See :meth:`IndexedCollection.changed_units`: ``Unit(POSITION)`` of every position of
+        this version whose item differs in ``other`` when ``other`` is at least as long (appends,
+        replacements: the shared prefix is skipped unloaded); ``Unit(WHOLE)`` when ``other`` is
+        shorter (an item was removed: positions moved, R14)."""
+        if type(other) is not type(self):
+            yield Unit(UnitKind.WHOLE, root)
+            return
+        with engine_reads():
+            old, new, old_count, new_count = self.root, other.root, self.count, other.count
+        if new_count < old_count:
+            yield Unit(UnitKind.WHOLE, root)
+            return
+        for position in diff.changed_positions(old, new, old_count):
+            yield Unit(UnitKind.POSITION, root, key=position)
 
     # -- mutators -----------------------------------------------------------------------
 
@@ -330,6 +346,7 @@ LIST_OPERATIONS = ("get_at", "set_at", "append_last", "extend", "insert_at", "re
                    "slice", "head", "tail", "_position", "_recorded_position", "_structural", "_appended_with",
                    "_unit_token", "elements", "_scan_window", "__iter__", "__len__", "__contains__",
                    "content_equals", "_same_content", "_net_ops", "_reapplied_on", "_with", "_current_indexes",
-                   "_after_add", "_after_replace", "_after_remove", "_intention_elements", "prepare_changes")
+                   "_after_add", "_after_replace", "_after_remove", "_intention_elements", "prepare_changes",
+                   "changed_units", "changed_index_groups")
 
 register_fine_grained(List, LIST_OPERATIONS)

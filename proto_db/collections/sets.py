@@ -61,11 +61,11 @@ from collections.abc import Iterable, Iterator
 
 from ..core.atom import PersistenceContext
 from ..errors import ProtoValidationError
-from ..preconditions import UnitKind, token
+from ..preconditions import Unit, UnitKind, token
 from ..values import canonical, canonical_for, check_wrapped, hash_key, order_key
-from . import avl
+from . import avl, diff
 from .base import ConcurrentOptimized, IndexedCollection, prepared_parts
-from .linking import NOT_A_UNIT, engine_reads, record_key, register_fine_grained, wrote, written_with
+from .linking import NOT_A_UNIT, engine_reads, record_key, register_fine_grained, unit_key, wrote, written_with
 
 __all__ = ["Set", "CountedSet", "counter_net_effect", "counter_transform"]
 
@@ -194,6 +194,23 @@ class _HashBuckets(ConcurrentOptimized, IndexedCollection):
             for entry in bucket:
                 yield entry_element(entry)
 
+    #: The unit kind of one member (``ELEMENT`` for a Set, ``COUNT`` for a CountedSet).
+    _MEMBER_UNIT = UnitKind.WHOLE
+
+    def changed_units(self, other, root: str) -> Iterator[Unit]:
+        """See :meth:`IndexedCollection.changed_units`: the member unit of every member whose
+        entry (the exact member, and its count) differs in a bucket that changed between the two
+        bucket trees (R65).  When one version is indexed and the other is not, a member's token
+        has another form (the exact member is part of it only when indexed): every unit."""
+        if type(other) is not type(self) or self._indexed() != other._indexed():
+            yield Unit(UnitKind.WHOLE, root)
+            return
+        with engine_reads():
+            old, new = self.root, other.root
+        kind = self._MEMBER_UNIT
+        for element in diff.changed_bucket_members(old, new, self._entry_element):
+            yield Unit(kind, root, key=unit_key(element))
+
     def _same_content(self, other) -> bool:
         """Order-independent: every member of this set is a member of ``other`` (counts are equal)."""
         return all(other.has(e) for e in self.elements())
@@ -225,6 +242,8 @@ class Set(_HashBuckets):
     #: A bucket is a tuple of the elements (``@tup``: 2 containers).
     ELEMENT_WRAPPING = 2
     _WRAPPER = "its bucket tuple"
+
+    _MEMBER_UNIT = UnitKind.ELEMENT
 
     @staticmethod
     def _entry_element(entry):
@@ -383,6 +402,8 @@ class CountedSet(_HashBuckets):
         super().__init__(context=context)
         object.__setattr__(self, "total_count", 0)
 
+    _MEMBER_UNIT = UnitKind.COUNT
+
     @staticmethod
     def _entry_element(entry):
         return entry[0]
@@ -535,14 +556,16 @@ class CountedSet(_HashBuckets):
 SET_OPERATIONS = ("has", "__contains__", "add", "remove", "union", "difference", "intersection", "_find",
                   "_bucket_hash", "_entry_element", "_element", "_put_bucket", "_unit_token", "elements",
                   "__iter__", "__len__", "content_equals", "_same_content", "_replay_op", "_net_ops", "_op_key",
-                  "_reapplied_on", "_with", "_intention_elements", "prepare_changes", "_indexed")
+                  "_reapplied_on", "_with", "_intention_elements", "prepare_changes", "_indexed",
+                  "changed_units", "changed_index_groups", "_MEMBER_UNIT")
 
 #: The operations of a CountedSet the precondition model lists or relies on (N5, as above).
 COUNTED_SET_OPERATIONS = ("has", "__contains__", "count_of", "add", "remove", "_transform", "_step",
                           "_retarget_at", "_find", "_bucket_hash", "_entry_element", "_element", "_put_bucket",
                           "_unit_token", "elements", "items", "__iter__", "__len__", "content_equals",
                           "_same_content", "_replay_op", "_net_ops", "_op_key", "_reapplied_on", "_with",
-                          "_intention_elements", "prepare_changes", "_indexed")
+                          "_intention_elements", "prepare_changes", "_indexed", "changed_units",
+                          "changed_index_groups", "_MEMBER_UNIT")
 
 register_fine_grained(Set, SET_OPERATIONS)
 register_fine_grained(CountedSet, COUNTED_SET_OPERATIONS)

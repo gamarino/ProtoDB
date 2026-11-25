@@ -54,13 +54,13 @@ from itertools import islice
 
 from ..core.atom import PersistenceContext
 from ..errors import ProtoCorruptionError, ProtoValidationError
-from ..preconditions import ABSENT, UnitKind, token
+from ..preconditions import ABSENT, Unit, UnitKind, token
 from ..values import canonical, canonical_for, check_wrapped, order_key
-from . import avl
+from . import avl, diff
 from .base import (ConcurrentOptimized, IndexedCollection, check_sorted_keys, prepared_parts, repair_pairs,
                    same_value)
 from .linking import (NOT_A_UNIT, engine_reads, record_key, record_range, record_whole, register_fine_grained, wrote,
-                      written_with)
+                      unit_key, written_with)
 from .sets import CountedSet, counter_net_effect, counter_transform
 
 __all__ = ["Dictionary", "RepeatedKeysDictionary"]
@@ -194,6 +194,17 @@ class Dictionary(ConcurrentOptimized, IndexedCollection):
         if kind is not UnitKind.KEY:
             return NOT_A_UNIT
         return token(self._stored_at(key))
+
+    def changed_units(self, other, root: str) -> Iterator[Unit]:
+        """See :meth:`IndexedCollection.changed_units`: ``Unit(KEY)`` of every key whose stored
+        value differs between the two key trees (R65)."""
+        if type(other) is not type(self):
+            yield Unit(UnitKind.WHOLE, root)
+            return
+        with engine_reads():
+            old, new = self.root, other.root
+        for key in diff.changed_keys(old, new):
+            yield Unit(UnitKind.KEY, root, key=unit_key(key))
 
     def key_at_position(self, i: int):
         """The key at position ``i`` in key order (a negative ``i`` counts from the end), in
@@ -347,7 +358,8 @@ DICTIONARY_OPERATIONS = ("get_at", "has", "__contains__", "set_at", "remove_at",
                          "_stored_at", "_unit_token", "elements", "items", "keys", "values", "__iter__", "__len__",
                          "content_equals", "_same_content", "_scan_window", "key_at_position", "position_of",
                          "_replay_op", "_net_ops", "_op_key", "_reapplied_on", "_with", "_intention_elements",
-                         "prepare_changes", "_record_window", "_range_tree")
+                         "prepare_changes", "_record_window", "_range_tree", "changed_units",
+                         "changed_index_groups")
 
 register_fine_grained(Dictionary, DICTIONARY_OPERATIONS)
 
@@ -446,6 +458,17 @@ class RepeatedKeysDictionary(ConcurrentOptimized, IndexedCollection):
             raise ProtoCorruptionError(
                 f"The records of key {key!r} of a saved {type(self).__name__} are not saved: no token")
         return token(records)
+
+    def changed_units(self, other, root: str) -> Iterator[Unit]:
+        """See :meth:`IndexedCollection.changed_units`: ``Unit(RECORDS)`` of every key whose records
+        (a CountedSet, by pointer) differ between the two key trees (R65)."""
+        if type(other) is not type(self):
+            yield Unit(UnitKind.WHOLE, root)
+            return
+        with engine_reads():
+            old, new = self.root, other.root
+        for key in diff.changed_keys(old, new):
+            yield Unit(UnitKind.RECORDS, root, key=unit_key(key))
 
     def keys(self) -> Iterator:
         """Keys in order."""
@@ -655,7 +678,7 @@ REPEATED_KEYS_DICTIONARY_OPERATIONS = (
     "remove_key", "_transform_record", "_record_step", "_record_stepped", "_key", "_record", "_unit_token",
     "elements", "items", "keys", "__iter__", "__len__", "content_equals", "_same_content", "_replay_op",
     "_net_ops", "_op_key", "_reapplied_on", "_with", "_intention_elements", "prepare_changes", "_indexed",
-    "_record_removal")
+    "_record_removal", "changed_units", "changed_index_groups")
 
 register_fine_grained(RepeatedKeysDictionary, REPEATED_KEYS_DICTIONARY_OPERATIONS)
 
