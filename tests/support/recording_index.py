@@ -5,7 +5,13 @@ It implements the index hook names of ruling "Index hooks" (``build``, ``empty``
 ``events`` tuple: ``("build", elements_tuple)``, ``("add", e)``, ``("remove", e)``,
 ``("replace", old, new)``.  Every hook returns a NEW RecordingIndex; the receiver
 never changes.  It is an atom, so it persists with the collection it belongs to.
+
+:class:`RootRecordingExtractor` (spec section 12 item 3, P-C) is a key extractor registered under
+a name (``KeySpec.extractor(name)``) that records, per call, whether the calling thread held the
+space root (``Transaction._holding_root_lock()``): a test asserts that it ran and that no call saw
+the root held, a reapplication over a changed root included.
 """
+import threading
 from collections import Counter
 
 from proto_db.core.atom import Atom
@@ -84,3 +90,47 @@ class RecordingIndex(Atom):
             else:  # pragma: no cover - defensive
                 raise AssertionError(f"unknown event {event!r}")
         return +live
+
+
+class RootRecordingExtractor:
+    """``key(element)`` as an extractor named ``name`` that records, per call, whether the calling
+    thread held the space root.  A context manager: registered on entry, unregistered on exit."""
+
+    def __init__(self, name: str, key=lambda element: element):
+        self.name = name
+        self._key = key
+        self._lock = threading.Lock()
+        self.calls: list = []
+
+    def __call__(self, element):
+        from proto_db.transactions import Transaction
+        held = Transaction._holding_root_lock()
+        with self._lock:
+            self.calls.append(held)
+        return self._key(element)
+
+    @property
+    def key_spec(self):
+        """The key spec naming this extractor."""
+        from proto_db.indexing.keyspec import KeySpec
+        return KeySpec.extractor(self.name)
+
+    def held_calls(self) -> int:
+        """How many calls ran with the space root held (must be 0)."""
+        with self._lock:
+            return sum(1 for held in self.calls if held)
+
+    def reset(self) -> None:
+        """Forget the calls recorded so far."""
+        with self._lock:
+            self.calls.clear()
+
+    def __enter__(self):
+        from proto_db.indexing.keyspec import register_extractor
+        register_extractor(self.name, self)
+        return self
+
+    def __exit__(self, *exc):
+        from proto_db.indexing.keyspec import unregister_extractor
+        unregister_extractor(self.name)
+        return False

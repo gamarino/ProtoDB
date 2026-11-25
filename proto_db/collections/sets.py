@@ -52,7 +52,7 @@ from ..errors import ProtoValidationError
 from ..preconditions import UnitKind, token
 from ..values import canonical, canonical_for, check_wrapped, hash_key, order_key
 from . import avl
-from .base import ConcurrentOptimized, IndexedCollection
+from .base import ConcurrentOptimized, IndexedCollection, prepared_parts
 from .linking import NOT_A_UNIT, engine_reads, record_key, register_fine_grained, wrote, written_with
 
 __all__ = ["Set", "CountedSet", "counter_net_effect", "counter_transform"]
@@ -185,6 +185,18 @@ class _HashBuckets(ConcurrentOptimized, IndexedCollection):
     def _same_content(self, other) -> bool:
         """Order-independent: every member of this set is a member of ``other`` (counts are equal)."""
         return all(other.has(e) for e in self.elements())
+
+    def _intention_elements(self, base):
+        """See :meth:`IndexedCollection._intention_elements`: each element named, and the stored
+        element ``base`` holds for it (which a removal on the current collection takes; a
+        concurrent commit that stored another equal element leaves it without a precomputed key,
+        and the reapplication then conflicts)."""
+        entry_element = self._entry_element
+        for op in prepared_parts(self._changes)[0]:
+            yield op[1]
+            _, bucket, position = base._find(op[1])
+            if position >= 0:
+                yield entry_element(bucket[position])
 
     def __repr__(self):
         if not self._loaded_now():
@@ -493,13 +505,14 @@ class CountedSet(_HashBuckets):
 SET_OPERATIONS = ("has", "__contains__", "add", "remove", "union", "difference", "intersection", "_find",
                   "_bucket_hash", "_entry_element", "_element", "_put_bucket", "_unit_token", "elements",
                   "__iter__", "__len__", "content_equals", "_same_content", "_replay_op", "_net_ops", "_op_key",
-                  "_reapplied_on", "_with")
+                  "_reapplied_on", "_with", "_intention_elements", "prepare_changes")
 
 #: The operations of a CountedSet the precondition model lists or relies on (N5, as above).
 COUNTED_SET_OPERATIONS = ("has", "__contains__", "count_of", "add", "remove", "_transform", "_step",
                           "_retarget_at", "_find", "_bucket_hash", "_entry_element", "_element", "_put_bucket",
                           "_unit_token", "elements", "items", "__iter__", "__len__", "content_equals",
-                          "_same_content", "_replay_op", "_net_ops", "_op_key", "_reapplied_on", "_with")
+                          "_same_content", "_replay_op", "_net_ops", "_op_key", "_reapplied_on", "_with",
+                          "_intention_elements", "prepare_changes")
 
 register_fine_grained(Set, SET_OPERATIONS)
 register_fine_grained(CountedSet, COUNTED_SET_OPERATIONS)

@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 
 from ..core.atom import _ABSENT, RESERVED_NAMES, Atom
 from ..core.dbobject import DBObject
-from .purity import extracting
+from ..purity import extracting
 from ..errors import ProtoCorruptionError, ProtoValidationError
 from ..values import MISSING, canonical, check_text
 

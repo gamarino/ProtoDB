@@ -268,7 +268,8 @@ class TestReapply:
         for new, op in ((s.add(1), ("add", 1)), (s.discard(9), ("remove", 9))):
             assert new is not s and new._changes == s._changes + (op,)
             assert new.indexes is s.indexes and new.root is s.root and list(new) == [1]
-        assert s._changes[-1] == ("add", 1) and len(s._changes) == 2
+        # An index change is not an op of the record (Task 9: it marks the version whole, R26).
+        assert s._changes == (("add", 1),) and s._whole
 
     def test_blind_discard_wins_over_concurrent_add(self):
         stored = _snapshot(toy(1))

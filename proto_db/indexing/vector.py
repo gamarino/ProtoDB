@@ -135,6 +135,8 @@ class VectorIndex(Index):
     __type_name__ = "proto_db.indexing.VectorIndex"
     _definition = Index._definition + ("dim", "metric", "backend", "params")
     _plan_cacheable = True
+    #: The element hooks work from the precomputed vector (R30); see :meth:`reapplies_from_keys`.
+    _keyed_reapplication = True
     _required_fields = ("name", "key_spec", "dim", "metric", "backend", "params", "store", "invalid",
                         "total_count", "centroids", "trained_size")
 
@@ -180,9 +182,35 @@ class VectorIndex(Index):
 
     # -- element hooks ------------------------------------------------------------------------
 
+    # -- precomputed keys (R30, R49; B7) --------------------------------------------------------
+
+    def key_of(self, element):
+        """The precomputed form of ``element``'s key: its canonical vector, or None when the key is
+        not a vector of ``dim`` finite numbers (the element is then kept as invalid)."""
+        return self._vector(element)
+
+    def reapplies_from_keys(self) -> bool:
+        """True for the exact and hnsw backends, which file an element by its vector alone.  An
+        ivf_flat index files it in the inverted list of the current centroids and may retrain on
+        an add (a k-means), so it is not maintained under the space root: a collection holding one
+        takes the whole collection on every write (R30, B7)."""
+        return super().reapplies_from_keys() and self.backend != "ivf_flat"
+
     def with_added(self, element) -> "VectorIndex":
         """The index after one more occurrence of ``element`` (an invalid key goes to ``invalid``)."""
-        vector = self._vector(element)
+        return self.with_added_key(element, self._vector(element))
+
+    def with_removed(self, element) -> "VectorIndex":
+        """See :meth:`with_removed_key`; the vector is computed from ``element``."""
+        return self.with_removed_key(element, self._vector(element))
+
+    def with_replaced(self, old, new) -> "VectorIndex":
+        """The index after replacing one occurrence of ``old`` by ``new`` (remove, then add)."""
+        return self.with_replaced_keys(old, self._vector(old), new, self._vector(new))
+
+    def with_added_key(self, element, vector, *, check_unique: bool = True) -> "VectorIndex":
+        """:meth:`with_added` with ``element``'s canonical vector (:meth:`key_of`) already
+        computed; None files it as invalid (R49)."""
         mk = member_key(element)
         if vector is None:
             check_member_key(self, element, mk)
@@ -198,13 +226,13 @@ class VectorIndex(Index):
             return grown._retrained()
         return grown
 
-    def with_removed(self, element) -> "VectorIndex":
-        """The index after one occurrence of ``element`` fewer; ``ProtoValidationError`` if it holds none.
+    def with_removed_key(self, element, vector) -> "VectorIndex":
+        """The index after one occurrence of ``element`` (whose canonical vector is ``vector``)
+        fewer; ``ProtoValidationError`` if it holds none.
 
         Only the member whose store key is ``(list of its vector, its member key)`` is removed,
         never an equal member (D58, as in :mod:`.keyed`).
         """
-        vector = self._vector(element)
         if vector is None:
             invalid = group_remove(self.invalid, element)
             if invalid is None:

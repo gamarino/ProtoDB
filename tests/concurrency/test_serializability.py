@@ -25,8 +25,12 @@ a linked write reapplied over a root whose class changed (R12), a commit order t
 match the published versions, and a read-only transaction that sees no consistent prefix.  The
 report line counts the class changes committed and the R12 conflicts they caused, the conflicts
 by unit and root kind, and the commits whose collection intentions were reapplied over a
-concurrent change of the same root (composed).  Later tasks (9, 10) add their operations to
-the mix.
+concurrent change of the same root (composed).  Task 9 adds equality lookups through the
+index every dictionary carries (``x_eq``, ``x_in``: one INDEX_GROUP per decade read, R28) and
+so makes every dictionary write an indexed write, maintained from precomputed keys (R24, R49);
+the report counts the lookups committed and the INDEX_GROUP/INDEX_DEFS conflicts, and the test
+asserts that the index extractor never ran with the space root held (P-C).  Task 10 adds its
+operations to the mix.
 """
 import random
 import threading
@@ -42,9 +46,9 @@ from proto_db.storage.memory import MemoryStorage
 from proto_db.transactions import ObjectSpace
 from tests.concurrency.harness import report, run_threads
 from tests.support.serial_model import (COLLECTIONS, COUNTED_SET_OPS, DICTIONARY_AND_CELL_OPS, LIST_OPS,
-                                        MULTIMAP_OPS, OBJECT, RECORDS, SET_OPS, Op, Record, StateNames, capture,
-                                        check_history, execute, family_of, kinds_by_version, random_program,
-                                        roots_by_version)
+                                        LOOKUP_OPS, MULTIMAP_OPS, OBJECT, RECORDS, SET_OPS, Op, Record, StateNames,
+                                        capture, check_history, decade_index, execute, extractor_calls_under_root,
+                                        family_of, kinds_by_version, random_program, roots_by_version)
 
 SEED = 20261124
 THREADS = 4
@@ -65,7 +69,8 @@ MIX = (DICTIONARY_AND_CELL_OPS + ("root_names", "c_names") * 2 + ("d_get", "d_ha
        + SET_OPS + ("s_has", "s_add", "s_remove") * 3
        + COUNTED_SET_OPS + ("cs_count", "cs_has", "cs_add", "cs_remove") * 4
        + MULTIMAP_OPS + ("r_get", "r_has", "r_add", "r_remove_record") * 3
-       + LIST_OPS + ("l_get", "l_set", "l_append", "l_extend") * 3)
+       + LIST_OPS + ("l_get", "l_set", "l_append", "l_extend") * 3
+       + LOOKUP_OPS * 3)
 
 pytestmark = [pytest.mark.freethreaded, pytest.mark.timeout(240)]
 
@@ -85,7 +90,7 @@ def _seed_state(db, rng):
             d = cls(context=tr)
             for k in rng.sample(NAMES.keys, 3):
                 d = d.set_at(k, rng.choice(NAMES.values))
-            tr.set_root_object(name, d)
+            tr.set_root_object(name, d.add_index(decade_index()))
         s = tr.new_set()
         for k in rng.sample(NAMES.keys, 3):
             s = s.add(k)
@@ -245,6 +250,7 @@ def test_serializability_over_the_closed_operation_set(db):
     per_thread = [[] for _ in range(THREADS)]
     stats = Stats()
 
+    calls_before = extractor_calls_under_root()
     elapsed = run_threads([_worker(db, t, programs[t], per_thread[t], stats) for t in range(THREADS)])
 
     records = [r for rs in per_thread for r in rs]
@@ -252,12 +258,17 @@ def test_serializability_over_the_closed_operation_set(db):
     read_only = sum(r.read_only for r in records)
     check_history(records, initial, final=_capture(db))
     by_unit = Counter(unit.kind.name if unit is not None else "none" for unit, _, _ in stats.conflicts)
+    calls, held = (after - before for after, before in zip(extractor_calls_under_root(), calls_before))
+    assert calls > 0 and held == 0, f"the index extractor ran {held} of {calls} times with the space root held"
+    lookups = Counter(op.kind for r in records for op in r.program if op.kind in LOOKUP_OPS)
     report("serializability collections+cells", elapsed,
            f"{stats.commits} commits, {stats.attempts} attempts, {len(stats.conflicts)} conflicts",
            f"{len(records) - read_only} published, {read_only} read-only",
            f"conflicts by unit {dict(sorted(by_unit.items()))}",
            f"by unit@root kind {conflicts_by_root_kind(records, initial, stats)}",
            f"composed {composed_counts(records, initial)}",
+           f"lookups {dict(sorted(lookups.items()))}, index group conflicts {by_unit.get('INDEX_GROUP', 0)}, "
+           f"index definition conflicts {by_unit.get('INDEX_DEFS', 0)}, extractor calls {calls}",
            class_change_counts(records, initial, stats))
 
 

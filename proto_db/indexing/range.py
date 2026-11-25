@@ -35,6 +35,8 @@ class RangeIndex(KeyGroupIndex):
 
     #: Plans read only the stored trees: cacheable by the index's pointer (D56).
     _plan_cacheable = True
+    #: The element hooks work from precomputed keys (R49).
+    _keyed_reapplication = True
 
     __type_name__ = "proto_db.indexing.RangeIndex"
     #: Operators this index answers exactly.

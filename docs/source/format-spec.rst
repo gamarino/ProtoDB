@@ -1438,6 +1438,15 @@ Key-group indexes
     MISSING is filed under the key MISSING. A key with no member left is removed from
     ``groups``. The two classes differ only in the plans they offer.
 
+    ``unique`` (bool, ``EqualityIndex`` only): part of the index definition. A writer writes it
+    only when it is True; an index without the attribute (every index written before it, and
+    every non-unique index) reads as not unique. A unique index holds at most one occurrence
+    under each key other than MISSING and None, and no element with an unorderable key (its
+    ``side`` group is empty). The attribute adds no format version: a reader that does not know
+    it reads a unique index as a plain one, and a writer that does not know it maintains the
+    index without enforcing the constraint, so a collection with a unique index should only be
+    changed by a writer that knows ``unique``.
+
     Indexes written before format 3's CountedKeyNode (plain KeyNode trees, no ``weight``) are
     still read and answer every query; they offer no rank access until rebuilt (D56).
 

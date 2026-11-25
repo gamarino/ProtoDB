@@ -32,7 +32,7 @@ from ..errors import ProtoValidationError
 from ..preconditions import ABSENT, UnitKind, token
 from ..values import canonical, canonical_for, check_wrapped, hash_key, order_key
 from . import avl
-from .base import ConcurrentOptimized, IndexedCollection, repair_pairs, same_value
+from .base import ConcurrentOptimized, IndexedCollection, prepared_parts, repair_pairs, same_value
 from .dictionaries import sorted_unique_pairs
 from .linking import NOT_A_UNIT, engine_reads, record_key, register_fine_grained
 
@@ -228,6 +228,16 @@ class HashDictionary(ConcurrentOptimized, IndexedCollection):
                 return False
         return True
 
+    def _intention_elements(self, base):
+        """See :meth:`IndexedCollection._intention_elements`: each value set, and the value
+        ``base`` holds under each key set or removed (the value a ``KEY`` precondition keeps)."""
+        for op in prepared_parts(self._changes)[0]:
+            if op[0] == _SET:
+                yield op[2]
+            _, bucket, position = base._find(op[1])
+            if position >= 0:
+                yield bucket[position][1]
+
     def _replay_op(self, target: "HashDictionary", op: tuple) -> "HashDictionary":
         if op[0] == _SET:
             return target.set_at(op[1], op[2])
@@ -248,6 +258,7 @@ class HashDictionary(ConcurrentOptimized, IndexedCollection):
 HASH_DICTIONARY_OPERATIONS = ("get_at", "has", "__contains__", "set_at", "remove_at", "_set_at", "_remove_at",
                               "_stored_at", "_unit_token", "_find", "_bucket_hash", "elements", "items", "keys",
                               "values", "__iter__", "__len__", "content_equals", "_same_content", "_scan_window",
-                              "_replay_op", "_net_ops", "_op_key", "_reapplied_on", "_with")
+                              "_replay_op", "_net_ops", "_op_key", "_reapplied_on", "_with",
+                              "_intention_elements", "prepare_changes")
 
 register_fine_grained(HashDictionary, HASH_DICTIONARY_OPERATIONS)

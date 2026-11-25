@@ -33,6 +33,7 @@ import msgpack
 from msgpack import packb as _packb
 
 from .errors import ProtoNotSupportedError, ProtoUserError, ProtoValidationError
+from .purity import check_not_extracting
 
 __all__ = ["MISSING", "FrozenList", "FrozenDict", "canonical", "check_text", "order_key", "rank_bounds", "values_equal", "hash_key",
            "is_atom", "is_orderable", "exact_token", "MutableObject", "ATOM_TOKEN", "map_key_ids",
@@ -195,7 +196,6 @@ class MutableObject:
 
     def get(self, transaction):
         """Return the cell's value as seen by ``transaction`` (``None`` if the cell is absent)."""
-        from .indexing.purity import check_not_extracting
         check_not_extracting("MutableObject.get")
         return transaction.get_mutable(self._name)
 

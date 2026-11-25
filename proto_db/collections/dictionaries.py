@@ -48,7 +48,8 @@ from ..errors import ProtoCorruptionError, ProtoValidationError
 from ..preconditions import ABSENT, UnitKind, token
 from ..values import canonical, canonical_for, check_wrapped, order_key
 from . import avl
-from .base import ConcurrentOptimized, IndexedCollection, check_sorted_keys, repair_pairs, same_value
+from .base import (ConcurrentOptimized, IndexedCollection, check_sorted_keys, prepared_parts, repair_pairs,
+                   same_value)
 from .linking import NOT_A_UNIT, engine_reads, record_key, record_whole, register_fine_grained, wrote, written_with
 from .sets import CountedSet, counter_net_effect, counter_transform
 
@@ -261,6 +262,16 @@ class Dictionary(ConcurrentOptimized, IndexedCollection):
         return all(order_key(k1) == order_key(k2) and same_value(v1, v2)
                    for (k1, v1), (k2, v2) in zip(self.items(), other.items()))
 
+    def _intention_elements(self, base):
+        """See :meth:`IndexedCollection._intention_elements`: each value set, and the value
+        ``base`` holds under each key set or removed (the value a ``KEY`` precondition keeps)."""
+        for op in prepared_parts(self._changes)[0]:
+            if op[0] == _SET:
+                yield avl.unboxed(op[2])
+            held = avl.key_get(base.root, op[1], ABSENT)
+            if held is not ABSENT:
+                yield held
+
     def _replay_op(self, target: "Dictionary", op: tuple) -> "Dictionary":
         if op[0] == _SET:
             return target.set_at(op[1], op[2])
@@ -280,7 +291,8 @@ class Dictionary(ConcurrentOptimized, IndexedCollection):
 DICTIONARY_OPERATIONS = ("get_at", "has", "__contains__", "set_at", "remove_at", "_set_at", "_remove_at",
                          "_stored_at", "_unit_token", "elements", "items", "keys", "values", "__iter__", "__len__",
                          "content_equals", "_same_content", "_scan_window", "key_at_position", "position_of",
-                         "_replay_op", "_net_ops", "_op_key", "_reapplied_on", "_with")
+                         "_replay_op", "_net_ops", "_op_key", "_reapplied_on", "_with", "_intention_elements",
+                         "prepare_changes")
 
 register_fine_grained(Dictionary, DICTIONARY_OPERATIONS)
 
@@ -538,6 +550,23 @@ class RepeatedKeysDictionary(ConcurrentOptimized, IndexedCollection):
                 net.append((_NET, key, cleared, tuple(transforms)))
         return net
 
+    def _intention_elements(self, base):
+        """See :meth:`IndexedCollection._intention_elements`: each record named, the stored
+        record ``base`` holds for it under its key, and every record ``base`` holds under a key
+        removed.  (A record a concurrent commit stored under a removed key has no precomputed key:
+        the reapplication then conflicts.)"""
+        for op in prepared_parts(self._changes)[0]:
+            records = avl.key_get(base.root, op[1])
+            if op[0] == _REMOVE_KEY:
+                if records is not None:
+                    yield from records.elements()
+                continue
+            yield op[2]
+            if records is not None:
+                _, bucket, position = records._find(op[2])
+                if position >= 0:
+                    yield bucket[position][0]
+
     def _replay_op(self, target: "RepeatedKeysDictionary", op: tuple) -> "RepeatedKeysDictionary":
         if op[0] != _NET:
             raise ProtoValidationError(f"Unknown RepeatedKeysDictionary net op {op!r}")
@@ -561,7 +590,7 @@ REPEATED_KEYS_DICTIONARY_OPERATIONS = (
     "get_at", "get", "has", "__contains__", "_recorded_key", "set_at", "add", "remove_record", "remove_at",
     "remove_key", "_transform_record", "_record_step", "_record_stepped", "_key", "_record", "_unit_token",
     "elements", "items", "keys", "__iter__", "__len__", "content_equals", "_same_content", "_replay_op",
-    "_net_ops", "_op_key", "_reapplied_on", "_with")
+    "_net_ops", "_op_key", "_reapplied_on", "_with", "_intention_elements", "prepare_changes")
 
 register_fine_grained(RepeatedKeysDictionary, REPEATED_KEYS_DICTIONARY_OPERATIONS)
 

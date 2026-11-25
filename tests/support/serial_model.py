@@ -32,8 +32,16 @@ write on a root of another kind writes nothing.  Model contents: a dictionary ``
 a Set ``{element: True}``, a CountedSet ``{element: count}``, a RepeatedKeysDictionary
 ``{key: {record: count}}``, a List ``[item, ...]``.  A List operation on a position outside the
 list (``ProtoValidationError``) reads :data:`OUT_OF_RANGE` and writes nothing.
+
+Task 9 adds equality lookups through an index (``x_eq``, ``x_in``; family ``x_``, the
+dictionaries): every Dictionary and HashDictionary the model builds carries the EqualityIndex
+:data:`DECADE_INDEX` over the extractor ``value // 10`` (:data:`DECADE_EXTRACTOR`), so every
+dictionary write maintains an index from precomputed keys, and a lookup reads the sorted values
+of the groups it names (``Unit(INDEX_GROUP)``, R28).  The extractor counts the calls that found
+the space root held (:func:`extractor_calls_under_root`, which must stay 0: P-C).
 """
 import copy
+import threading
 from collections import namedtuple
 from dataclasses import dataclass, field
 
@@ -42,6 +50,10 @@ from proto_db.collections.hash_dictionaries import HashDictionary
 from proto_db.collections.lists import List
 from proto_db.collections.sets import CountedSet, Set
 from proto_db.errors import ProtoValidationError
+from proto_db.indexing.equality import EqualityIndex
+from proto_db.indexing.keyspec import KeySpec, register_extractor
+from proto_db.query.planner import plan_query
+from proto_db.query.terms import EQ, IN, Term
 
 #: The kind of an object root (R1: any value that is not a collection).
 OBJECT = "object"
@@ -84,10 +96,46 @@ COUNTED_SET_OPS = ("cs_count", "cs_has", "cs_add", "cs_remove", "cs_items")
 MULTIMAP_OPS = ("r_get", "r_has", "r_add", "r_remove_record", "r_remove_key", "r_len")
 #: The operations of Task 7 (``l_insert``/``l_remove`` are structural: the whole list, R14).
 LIST_OPS = ("l_get", "l_get_neg", "l_set", "l_append", "l_extend", "l_insert", "l_remove", "l_len")
+#: The operations of Task 9: equality lookups through :data:`DECADE_INDEX` (``key``: one decade,
+#: or a tuple of decades for ``x_in``).
+LOOKUP_OPS = ("x_eq", "x_in")
 #: Every operation kind the model knows (each must have a real and a model implementation).
-ALL_OPS = DICTIONARY_AND_CELL_OPS + SET_OPS + COUNTED_SET_OPS + MULTIMAP_OPS + LIST_OPS
+ALL_OPS = DICTIONARY_AND_CELL_OPS + SET_OPS + COUNTED_SET_OPS + MULTIMAP_OPS + LIST_OPS + LOOKUP_OPS
 #: The kinds each family's operations act on, by operation prefix.
-_FAMILIES = {"d_": DICTIONARIES, "s_": SETS, "cs_": COUNTED_SETS, "r_": MULTIMAPS, "l_": LISTS}
+_FAMILIES = {"d_": DICTIONARIES, "s_": SETS, "cs_": COUNTED_SETS, "r_": MULTIMAPS, "l_": LISTS, "x_": DICTIONARIES}
+
+#: The extractor of the dictionaries' index: the decade of a value (values are ints of
+#: ``StateNames.values``), and the decades a lookup draws from.
+DECADE_EXTRACTOR = "tests.serial_model.decade"
+DECADES = 10
+#: The name of that index.
+DECADE_INDEX = "by_decade"
+#: Calls of the extractor, and those that found the space root held (P-C: must stay 0).
+_extractor_calls = [0, 0]
+_extractor_lock = threading.Lock()
+
+
+def _decade(value):
+    from proto_db.transactions import Transaction
+    held = Transaction._holding_root_lock()
+    with _extractor_lock:
+        _extractor_calls[0] += 1
+        _extractor_calls[1] += held
+    return value // 10
+
+
+register_extractor(DECADE_EXTRACTOR, _decade)
+
+
+def extractor_calls_under_root() -> tuple:
+    """``(calls, calls with the space root held)`` of the index extractor so far."""
+    with _extractor_lock:
+        return tuple(_extractor_calls)
+
+
+def decade_index() -> EqualityIndex:
+    """The index every dictionary of the model carries."""
+    return EqualityIndex(DECADE_INDEX, KeySpec.extractor(DECADE_EXTRACTOR))
 #: Operations that read or write several elements at once (``value`` is a tuple of keys).
 _MULTI = ("s_union", "s_difference", "s_intersection", "l_extend")
 #: Operations that only read the whole collection, or the root (no key).
@@ -193,6 +241,10 @@ def _draw(rng, names: StateNames, kind: str) -> Op:
         return Op(kind, target, value=value)
     if kind in ("r_add", "r_remove_record"):
         return Op(kind, target, key, rng.randrange(RECORDS))
+    if kind == "x_eq":
+        return Op(kind, target, rng.randrange(DECADES))
+    if kind == "x_in":
+        return Op(kind, target, tuple(sorted(rng.sample(range(DECADES), rng.randint(1, 3)))))
     return Op(kind, target, key, value if kind in ("obj_set", "d_set") else None)
 
 
@@ -254,7 +306,7 @@ def _fresh(tr, kind: str, items: dict):
             collection = collection.set_at(k, v % RECORDS)
         else:
             collection = collection.set_at(k, v)
-    return collection
+    return collection.add_index(decade_index()) if kind in DICTIONARIES else collection
 
 
 def content_of(value) -> dict:
@@ -403,6 +455,21 @@ def _real_d_pos(tr, op, names):
     if d is None:
         return marker
     return d.position_of(op.key) if d.has(op.key) else -1
+
+
+def _lookup(tr, op, term):
+    d, marker = _collection(tr, op)
+    return marker if d is None else tuple(sorted(plan_query(d, term).execute()))
+
+
+@_real
+def _real_x_eq(tr, op, names):
+    return _lookup(tr, op, Term("@" + DECADE_EXTRACTOR, EQ, op.key))
+
+
+@_real
+def _real_x_in(tr, op, names):
+    return _lookup(tr, op, Term("@" + DECADE_EXTRACTOR, IN, op.key))
 
 
 @_real
@@ -682,6 +749,14 @@ class Model:
     def _d_has(self, op):
         content, marker = self._content(op)
         return marker if content is None else op.key in content
+
+    def _x_eq(self, op):
+        content, marker = self._content(op)
+        return marker if content is None else tuple(sorted(v for v in content.values() if v // 10 == op.key))
+
+    def _x_in(self, op):
+        content, marker = self._content(op)
+        return marker if content is None else tuple(sorted(v for v in content.values() if v // 10 in op.key))
 
     def _creating(self, op, family):
         """The content a creating write of ``family`` changes, as :func:`_creating_write`: the

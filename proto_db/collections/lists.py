@@ -49,7 +49,7 @@ from ..errors import ProtoValidationError
 from ..preconditions import UnitKind, token
 from ..values import canonical_for
 from . import avl
-from .base import IndexedCollection, whole_unless_logged
+from .base import IndexedCollection, _Reapplying, check_unique_after, prepared_parts, whole_unless_logged
 from .linking import NOT_A_UNIT, engine_reads, record_key, record_whole, register_fine_grained
 
 __all__ = ["List", "LIST_OPERATIONS"]
@@ -228,16 +228,17 @@ class List(IndexedCollection):
 
     # -- reapplication (R34) ----------------------------------------------------------------
 
-    def _net_ops(self) -> tuple[dict, list]:
-        """This version's intentions reduced to what is reapplied: ``{base position: value}`` (the
-        last value per position) and the appended values in order, each changed by the
-        ``set_at`` calls on it.  (In a transaction a ``set_at`` on an appended position records
-        the whole list, so such a version is published as is, not reapplied.)"""
+    def _net_ops(self, operations: tuple | None = None) -> tuple[dict, list]:
+        """This version's intentions (``operations``, default its ``_changes``) reduced to what is
+        reapplied: ``{base position: value}`` (the last value per position) and the appended
+        values in order, each changed by the ``set_at`` calls on it.  (In a transaction a
+        ``set_at`` on an appended position records the whole list, so such a version is
+        published as is, not reapplied.)"""
         with engine_reads():
             base_count = self.count - self._appended
         sets: dict = {}
         appended: list = []
-        for op in self._changes:
+        for op in (prepared_parts(self._changes)[0] if operations is None else operations):
             if op[0] == _APPEND:
                 appended.extend(op[1])
             elif op[0] == _SET:
@@ -250,21 +251,39 @@ class List(IndexedCollection):
                 raise ProtoValidationError(f"A List version with the op {op!r} is whole; it is not reapplied")
         return sets, appended
 
-    def _reapplied_on(self, current: "List") -> "List":
+    def _intention_elements(self, base):
+        """See :meth:`IndexedCollection._intention_elements`: each value set or appended, and the
+        item ``base`` holds at each base position set (the item a ``POSITION`` precondition keeps)."""
+        with engine_reads():
+            count = base.count
+        for op in prepared_parts(self._changes)[0]:
+            if op[0] == _APPEND:
+                yield from op[1]
+            elif op[0] == _SET:
+                yield op[2]
+                if 0 <= op[1] < count:
+                    yield avl.pos_get(base.root, op[1])
+
+    def _reapplied_on(self, current: "List", changes: tuple | None = None) -> "List":
         """``current`` with this version's intentions applied (R34): each base position set by
         ``set_at`` (its precondition proved it present and unchanged), then the appended values
-        at the end, through the same mutators the transaction used.  Only a version that is not
-        whole is reapplied."""
+        at the end, through the same mutators the transaction used.  ``changes`` is the record
+        :meth:`prepare_changes` gave (default: the version's own): a prepared record takes every
+        index key from its table, so no extractor runs (R49).  Only a version that is not whole
+        is reapplied."""
         if type(current) is not type(self):
             raise ProtoValidationError(f"Cannot reapply a {type(self).__name__} on a {type(current).__name__}")
         if self._whole:
             raise ProtoValidationError("A whole List version is published as is; it is not reapplied")
-        sets, appended = self._net_ops()
+        operations, table = prepared_parts(self._changes if changes is None else changes)
+        sets, appended = self._net_ops(operations)
         target = current
-        for position, value in sets.items():
-            target = target.set_at(position, value)
-        if appended:
-            target = target.extend(appended)
+        with _Reapplying(table):
+            for position, value in sets.items():
+                target = target.set_at(position, value)
+            if appended:
+                target = target.extend(appended)
+        check_unique_after(target, table)
         return target
 
     # -- derived lists --------------------------------------------------------------------
@@ -311,6 +330,6 @@ LIST_OPERATIONS = ("get_at", "set_at", "append_last", "extend", "insert_at", "re
                    "slice", "head", "tail", "_position", "_recorded_position", "_structural", "_appended_with",
                    "_unit_token", "elements", "_scan_window", "__iter__", "__len__", "__contains__",
                    "content_equals", "_same_content", "_net_ops", "_reapplied_on", "_with", "_current_indexes",
-                   "_after_add", "_after_replace", "_after_remove")
+                   "_after_add", "_after_replace", "_after_remove", "_intention_elements", "prepare_changes")
 
 register_fine_grained(List, LIST_OPERATIONS)

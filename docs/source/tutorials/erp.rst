@@ -304,9 +304,9 @@ pointer's content never changes, so nothing needs invalidating. Reopen the space
 .. code-block:: text
    :caption: Output
 
-   first pipeline report (cold)       atoms loaded from disk: 2012
+   first pipeline report (cold)       atoms loaded from disk: 2015
    same report, new transaction       atoms loaded from disk: 0
-   a related query, new transaction   atoms loaded from disk: 6
+   a related query, new transaction   atoms loaded from disk: 3
 
 The second and third transactions decode only what the earlier ones did not. :doc:`cad` explores this
 with a deep object graph, and states its limit: the benefit needs the working set to fit in the cache.

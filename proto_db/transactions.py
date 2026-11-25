@@ -188,8 +188,9 @@ from collections.abc import Mapping
 from typing import Any, Callable, Iterator, Optional
 
 from .catalog.atoms import INTENT_LOG_ROOT, SEMANTIC_CATALOG_ROOT
-from .collections.base import _Immutable
-from .collections.linking import Link, fine_grained, link_of, linked_copy, lookup_key, record_whole
+from .collections.base import IntentionConflict, _Immutable
+from .collections.linking import (Link, engine_reads, fine_grained, link_of, linked_copy, lookup_key, record_whole,
+                                  unit_key)
 from .collections.dictionaries import Dictionary, RepeatedKeysDictionary
 from .collections.hash_dictionaries import HashDictionary
 from .collections.lists import List
@@ -204,7 +205,7 @@ from .resolution import enter_reader, exit_reader, new_cache, reset_reader, set_
 from .storage.base import check_lock_timeout
 from .storage.cache import BoundedCache
 from .query.cache import QUERY_CACHE_BYTES, QueryCache
-from .indexing.purity import check_not_extracting
+from .purity import check_not_extracting
 from .indexing.vector_backends import DERIVED
 from .query.pager import check_resumed, decode_ref, encode_ref, pager_arguments, portable_pager
 from .storage.format import RootRecord, next_root_version
@@ -247,6 +248,28 @@ _APPLY_REAPPLY = _Sentinel("APPLY_REAPPLY")
 _UNIT_NOUNS = {UnitKind.KEY: "Key", UnitKind.ELEMENT: "Element", UnitKind.COUNT: "The count of element",
                UnitKind.RECORDS: "The records of key", UnitKind.POSITION: "Position"}
 _COLLECTION_UNIT_KINDS = frozenset(_UNIT_NOUNS)
+
+#: Per thread: how many times this thread holds the space root (the root lock, or a cluster lease
+#: or permit) -- set around the lock region of a standalone round and around every build, which
+#: runs only while the space root is held (``Transaction._holding_root_lock``).
+_root_held = threading.local()
+
+
+class _HoldingRoot:
+    """Context manager marking this thread as holding the space root (re-entrant)."""
+
+    __slots__ = ()
+
+    def __enter__(self):
+        _root_held.depth = getattr(_root_held, "depth", 0) + 1
+        return self
+
+    def __exit__(self, *exc):
+        _root_held.depth -= 1
+        return False
+
+
+_HOLDING_ROOT = _HoldingRoot()
 #: The registry's roots (:mod:`proto_db.registry`).
 _REGISTRY_ROOTS = frozenset({_registry.MODULES_ROOT, _registry.CATALOG_ROOT})
 #: The roots a semantic operation's checks depend on: the module list, the registry catalog and the semantic
@@ -1382,7 +1405,8 @@ def _standalone_round(storage, lock_timeout, batch: list) -> None:
         ptr = None
         for entry in batch:
             try:
-                built_ptr = entry.build(current, None)
+                with _HOLDING_ROOT:
+                    built_ptr = entry.build(current, None)
             except Exception as e:      # noqa: BLE001 -- delivered to that commit's thread
                 # One commit's error, even an unexpected one (a bug, a type error in user data),
                 # is that commit's alone: it is raised in its own thread and the others go on
@@ -2761,6 +2785,9 @@ class Transaction:
         # decided when it is written, while the transaction is active.
         self._linked: dict = {}
         self._linked_writes: set = set()
+        # Root name -> the prepared record of intentions of its linked write (prepare_changes: the
+        # changes with their index keys, R24), computed at commit before the space root is taken.
+        self._prepared: dict = {}
         self._mwrites: dict = {}        # mutable name -> value or REMOVED
         # The runtime registry (proto_db.registry): modules to add at commit (name -> depends, in
         # install order), catalog objects to add (registry name -> DBObject), the names whose new
@@ -3790,6 +3817,7 @@ class Transaction:
     def _commit(self) -> None:
         if not self._writes and not self._mwrites and not self._registry_pending():
             return
+        self._prepare_writes()
         written = (list(self._writes.values()) + list(self._mwrites.values()) + list(self._catalog_new.values())
                    + [obj for _, obj in self._catalog_updates.values()])
         for value in written:
@@ -3837,6 +3865,40 @@ class Transaction:
                     self._database.name, self._recorded,
                     self._recorded[-1] if published or unknown else None)
 
+    @staticmethod
+    def _holding_root_lock() -> bool:
+        """Whether the current thread holds the space root (the root lock, or a cluster lease or
+        permit): true inside the lock region of a commit round and inside every build.  Nothing
+        that runs then may run user code (P-C); a test hook (and a guard) for that rule."""
+        return getattr(_root_held, "depth", 0) > 0
+
+    def _prepare_writes(self) -> None:
+        """The preparation phase of the commit (spec section 8 phase 2), before the space root is
+        taken: for each linked collection write that may be reapplied, the index keys of every
+        element its intentions touch, computed against the base collection's indexes (R24) and
+        kept in ``_prepared``; ``Unit(INDEX_DEFS)`` recorded, so a concurrent change of the
+        index definitions conflicts (R25).  A collection whose base holds an index that cannot be
+        maintained from precomputed keys (an ivf_flat vector index, an index kind that does not
+        opt in, an index with format-3 member tokens, R30, B7, B8), or whose class cannot
+        enumerate the elements, takes the whole collection instead: a stale index is rebuilt now,
+        and the version is published as is."""
+        log = self._read_log
+        for name in sorted(self._linked_writes):
+            value = self._writes.get(name)
+            if value is None or value is _REMOVED or value._whole or log.whole(name) or not value._changes:
+                continue
+            base = self._base_root_value(name)
+            if not value._reapplies_from_keys(base):
+                with engine_reads():
+                    indexes = value.indexes.rebuilt_stale(value.elements)
+                self._writes[name] = value._with(indexes=indexes, _whole=True)
+                log.record(Unit(UnitKind.WHOLE, name), self._base_whole_token(name))
+                continue
+            self._prepared[name] = value.prepare_changes(base)
+            unit = Unit(UnitKind.INDEX_DEFS, name)
+            if unit not in log:
+                log.record(unit, base._index_definitions_token())
+
     def _scoped_build_root(self, current, stamp: Optional[_ClusterStamp] = None) -> AtomPointer:
         """:meth:`_build_root` with this transaction as the reader (review I1, ruling R201): what
         the build resolves (an index extractor run by a reapplied intention or a registry merge) is decided by
@@ -3844,7 +3906,8 @@ class Transaction:
         or a cluster round leader) and whatever reader that thread has."""
         token = set_reader(self)
         try:
-            return self._build_root(current, stamp)
+            with _HOLDING_ROOT:        # a build runs only while the space root is held
+                return self._build_root(current, stamp)
         finally:
             reset_reader(token)
 
@@ -3885,7 +3948,15 @@ class Transaction:
                 # R34: the intentions of the linked version on the current collection, which the
                 # preconditions just proved present and of the same class (R12).
                 merge_started = clock()
-                value = value._reapplied_on(current_objects.get_at(name))
+                try:
+                    value = value._reapplied_on(current_objects.get_at(name), self._prepared.get(name))
+                except IntentionConflict as e:
+                    unit = (Unit(UnitKind.INDEX_GROUP, name, key=unit_key(e.key), index=e.index)
+                            if e.kind is UnitKind.INDEX_GROUP else Unit(UnitKind.WHOLE, name))
+                    raise ProtoConflictError(
+                        f"Root {name!r} of database {self._database.name!r} cannot take this transaction's "
+                        f"changes: {e.detail} (unit {unit.kind.name})", unit=unit,
+                        database=self._database.name) from None
                 replay += clock() - merge_started
             objects = objects.set_at(name, value)
         if self._registry_pending():
@@ -3972,6 +4043,21 @@ class Transaction:
                 value = current.get_at(unit.root, _ABSENT)
                 # A plain value (int, str, ...) has no type name: never the expected class.
                 holds = value is not _ABSENT and getattr(type(value), "__type_name__", None) == expected
+            elif kind is UnitKind.INDEX_DEFS or kind is UnitKind.INDEX_GROUP:
+                value = current.get_at(unit.root, _ABSENT)
+                if value is _ABSENT or not fine_grained(type(value)):
+                    actual = None
+                elif kind is UnitKind.INDEX_DEFS:
+                    actual = value._index_definitions_token()
+                else:
+                    actual = value._index_group_token(unit.index, lookup_key(unit.key))
+                if actual is None or not _same_token(expected, actual):
+                    what = ("The index definitions" if kind is UnitKind.INDEX_DEFS else
+                            f"The group of key {lookup_key(unit.key)!r} in index {unit.index!r}")
+                    raise ProtoConflictError(
+                        f"{what} of root {unit.root!r} of database {database!r} was changed by a concurrent "
+                        f"commit (unit {kind.name})", unit=unit, database=database)
+                continue
             elif kind is UnitKind.ROOT_NAMES:
                 if not _same_token(expected, _token(tuple(current.keys()))):
                     raise ProtoConflictError(

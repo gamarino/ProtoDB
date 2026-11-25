@@ -36,21 +36,127 @@ threads.
 """
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable, Iterable, Iterator
+from types import MappingProxyType
 
 from ..core.atom import BUILTIN_TYPE_ALIASES, Atom, PersistenceContext
 from ..errors import ProtoMisfiledError, ProtoUserError, ProtoValidationError
+from ..preconditions import Unit, UnitKind, token
 from ..query.plans import CollectionScanPlan
-from ..values import canonical, is_atom, order_key, values_equal
+from ..values import MISSING, canonical, is_atom, order_key, values_equal
 from . import avl
-from .linking import engine_reading, record_whole
+from .linking import engine_reading, engine_reads, link_of, record_read, record_whole
 
 __all__ = ["IndexSet", "IndexedCollection", "ConcurrentOptimized", "net_effect", "same_value",
-           "whole_unless_logged"]
+           "whole_unless_logged", "IntentionConflict", "prepared_parts"]
 
-#: Op-log kinds reserved for index-definition changes; collection ops must not start with "@".
-_INDEX_ADD = "@index_add"
-_INDEX_REMOVE = "@index_remove"
+#: The kind of the ``_changes`` entry holding the precomputed index keys of a prepared record of
+#: intentions (:meth:`IndexedCollection.prepare_changes`, spec R24); collection ops never start
+#: with "@".
+_INDEX_KEYS = "@index_keys"
+
+
+class IntentionConflict(Exception):
+    """Internal: reapplying intentions on the current collection met what the preparation did not
+    cover (an element whose index keys were not precomputed: ``UnitKind.WHOLE``) or a unique key
+    the reapplied state holds twice (``UnitKind.INDEX_GROUP``, with ``index`` and ``key``).  The
+    transaction turns it into ``ProtoConflictError`` naming the unit on its root (R29, R36)."""
+
+    def __init__(self, kind: UnitKind, detail: str, *, index: str | None = None, key=None):
+        super().__init__(detail)
+        self.kind = kind
+        self.detail = detail
+        self.index = index
+        self.key = key
+
+
+# -- reapplication from precomputed keys (spec R24, R49) ----------------------------------------
+
+_reapply = threading.local()
+
+
+def _key_table():
+    """The precomputed keys of the reapplication running in this thread, or None."""
+    return getattr(_reapply, "table", None)
+
+
+class _Reapplying:
+    """Context manager: while it is active, this thread's IndexSet hooks take every key from
+    ``table`` and never run an extractor (R49).  Nested uses restore the outer table."""
+
+    __slots__ = ("table", "_outer")
+
+    def __init__(self, table):
+        self.table = table
+
+    def __enter__(self):
+        self._outer = getattr(_reapply, "table", None)
+        _reapply.table = self.table
+        return self
+
+    def __exit__(self, *exc):
+        _reapply.table = self._outer
+        return False
+
+
+_member_key = None
+
+
+def element_identity(element):
+    """How a prepared table identifies ``element``: the order key of its index member key
+    (:func:`proto_db.indexing.keyed.member_key`: atoms by oid, values by equality part and exact
+    token), so two elements an index stores as one member share their keys."""
+    global _member_key
+    if _member_key is None:
+        from ..indexing.keyed import member_key     # deferred: the indexing package imports this one
+        _member_key = member_key
+    return order_key(_member_key(element))
+
+
+def _prepared_key(table, index, name: str, element):
+    key = table.get((name, element_identity(element)), _NO_KEY)
+    if key is _NO_KEY:
+        raise IntentionConflict(
+            UnitKind.WHOLE, f"the element {element!r} of the current collection has no precomputed key for "
+                            f"the index {name!r} (a concurrent commit stored an element this transaction did "
+                            f"not prepare)")
+    return key
+
+
+_NO_KEY = object()
+
+
+def prepared_parts(changes: tuple) -> tuple:
+    """``(operations, table)`` of a record of intentions: the operations without the precomputed
+    keys entry, and its table (None when the record was not prepared)."""
+    if changes and changes[-1][0] == _INDEX_KEYS:
+        return changes[:-1], changes[-1][1]
+    return changes, None
+
+
+def check_unique_after(collection, table) -> None:
+    """After a reapplication: ``IntentionConflict`` (``INDEX_GROUP``) when a unique index of
+    ``collection`` holds two elements under a key the prepared ``table`` names (R29).  Only
+    engine data is read: the keys are the precomputed ones."""
+    if not table:
+        return
+    with engine_reads():
+        indexes = collection.indexes
+    seen = set()
+    for (name, _), key in table.items():
+        index = indexes.get(name)
+        unique = getattr(index, "_is_unique", None)
+        if unique is None or not unique() or key is MISSING or key is None:
+            continue
+        okey = order_key(key)
+        if (name, okey) in seen:
+            continue
+        seen.add((name, okey))
+        if index.group_count(key) > 1:
+            raise IntentionConflict(UnitKind.INDEX_GROUP,
+                                    f"a concurrent commit added an element with the key {key!r} to the unique "
+                                    f"index {name!r}", index=name, key=key)
 
 
 def _current(index) -> bool:
@@ -215,13 +321,18 @@ class IndexSet(_Immutable, Atom):
 
     def rebuilt_stale(self, elements: Callable) -> "IndexSet":
         """This set with every index whose ``has_current_tokens()`` is False rebuilt as
-        ``index.empty().build(elements())`` (D58); the set itself when there is none."""
+        ``index.empty().build(elements())`` (D58); the set itself when there is none.  During a
+        reapplication from precomputed keys a stale index is never rebuilt (that runs
+        extractors): ``IntentionConflict`` instead (the preparation takes such a collection whole,
+        B8)."""
         if self.root is None:
             return self
         pairs = list(avl.key_iter(self.root))
         stale = [i for i, (_, index) in enumerate(pairs) if not _current(index)]
         if not stale:
             return self
+        if _key_table() is not None:
+            raise IntentionConflict(UnitKind.WHOLE, f"the index {pairs[stale[0]][0]!r} must be rebuilt")
         for i in stale:
             name, index = pairs[i]
             pairs[i] = (name, index.empty().build(elements()))
@@ -235,16 +346,51 @@ class IndexSet(_Immutable, Atom):
             [(name, index.empty().build(elements())) for name, index in avl.key_iter(self.root)]))
 
     def on_add(self, element) -> "IndexSet":
-        """Return the set after ``with_added(element)`` on every index."""
-        return self._map(lambda index: index.with_added(element))
+        """Return the set after ``with_added(element)`` on every index; during a reapplication
+        ``with_added_key`` with the precomputed key, uniqueness checked on the final state (R49)."""
+        table = _key_table()
+        if table is None:
+            return self._map(lambda index: index.with_added(element))
+        return self._map(lambda index: index.with_added_key(
+            element, _prepared_key(table, index, index.name, element), check_unique=False))
 
     def on_remove(self, element) -> "IndexSet":
-        """Return the set after ``with_removed(element)`` on every index."""
-        return self._map(lambda index: index.with_removed(element))
+        """Return the set after ``with_removed(element)`` on every index (``with_removed_key``
+        during a reapplication)."""
+        table = _key_table()
+        if table is None:
+            return self._map(lambda index: index.with_removed(element))
+        return self._map(lambda index: index.with_removed_key(
+            element, _prepared_key(table, index, index.name, element)))
 
     def on_replace(self, old, new) -> "IndexSet":
-        """Return the set after ``with_replaced(old, new)`` on every index."""
-        return self._map(lambda index: index.with_replaced(old, new))
+        """Return the set after ``with_replaced(old, new)`` on every index (``with_replaced_keys``
+        during a reapplication)."""
+        table = _key_table()
+        if table is None:
+            return self._map(lambda index: index.with_replaced(old, new))
+        return self._map(lambda index: index.with_replaced_keys(
+            old, _prepared_key(table, index, index.name, old), new, _prepared_key(table, index, index.name, new),
+            check_unique=False))
+
+    def definitions_token(self):
+        """The token of this set's index definitions (``Index.definition_data`` of each, by
+        name): what ``Unit(INDEX_DEFS)`` compares (R25)."""
+        defs = []
+        for name, index in avl.key_iter(self.root):
+            data = getattr(index, "definition_data", None)
+            defs.append((name, data() if data is not None
+                         else (getattr(type(index), "__type_name__", type(index).__qualname__),)))
+        return token(tuple(defs))
+
+    def keyed(self) -> bool:
+        """Whether every index is maintained from precomputed keys and has current member tokens:
+        what a reapplication under the space root needs (R30, B7, B8)."""
+        for _, index in avl.key_iter(self.root):
+            keyed = getattr(index, "reapplies_from_keys", None)
+            if keyed is None or not keyed() or not _current(index):
+                return False
+        return True
 
 
 # -- IndexedCollection ---------------------------------------------------------------------
@@ -390,7 +536,9 @@ class IndexedCollection(_Immutable, Atom):
         The index is built as ``index.empty().build(self.elements())``: only its
         definition is used, never content it may already hold.
         ``ProtoValidationError`` if an index with the same name exists (checked
-        before building) or if the built index has another name.
+        before building) or if the built index has another name.  It is built here, in the
+        transaction's own thread, never under the space root; the version takes the whole
+        collection (R26, P-B) and is published as is.
         """
         name = _index_name(index)
         if name in self.indexes:
@@ -398,21 +546,107 @@ class IndexedCollection(_Immutable, Atom):
         built = index.empty().build(self.elements())
         if built is None or _index_name(built) != name:
             raise ProtoValidationError(f"Index {name!r} build() returned {built!r}; expected the same name")
-        return self._with(indexes=self.indexes.with_index(built), _whole=True,
-                          **self._index_log((_INDEX_ADD, name, index)))
+        return self._with(indexes=self.indexes.with_index(built), _whole=True)
 
     def remove_index(self, name: str) -> "IndexedCollection":
-        """Return a version without the index ``name``; ``ProtoValidationError`` if absent."""
-        return self._with(indexes=self.indexes.without(name), _whole=True,
-                          **self._index_log((_INDEX_REMOVE, name)))
+        """Return a version without the index ``name``; ``ProtoValidationError`` if absent.
+        The version takes the whole collection (R26, P-B)."""
+        return self._with(indexes=self.indexes.without(name), _whole=True)
 
     def get_index(self, name: str):
-        """Return the index ``name`` or ``None``."""
+        """Return the index ``name`` or ``None``.  On a linked version it records the index
+        definitions (R25) and the whole collection: the index is read directly, bypassing the
+        collection's recorded reads (B5)."""
+        if self._link is not None:
+            record_whole(self)
+            self._record_index_definitions()
+            with engine_reads():
+                return self.indexes.get(name)
         return self.indexes.get(name)
 
     def index_names(self) -> list[str]:
-        """Names of the associated indexes, sorted."""
+        """Names of the associated indexes, sorted.  On a linked version it records the index
+        definitions (spec section 6, R25)."""
+        if self._link is not None:
+            self._record_index_definitions()
+            with engine_reads():
+                return self.indexes.names()
         return self.indexes.names()
+
+    # -- the index units of the precondition model (spec section 7) ------------------------------
+
+    def _record_index_definitions(self) -> None:
+        """On a linked version: record ``Unit(INDEX_DEFS, root)`` expecting the base's index
+        definitions (R25, R8); nothing on an unlinked one or inside ``engine_reads``."""
+        link = link_of(self)
+        if link is None or engine_reading():
+            return
+        unit = Unit(UnitKind.INDEX_DEFS, link.root)
+        log = link.transaction._read_log
+        if unit not in log:
+            record_read(self, unit, link.transaction._base_root_value(link.root)._index_definitions_token())
+
+    def _index_definitions_token(self):
+        """The token of this version's index definitions (an engine read: records nothing)."""
+        with engine_reads():
+            return self.indexes.definitions_token()
+
+    def _index_group_token(self, name: str, key):
+        """The token of the group of ``key`` in the key-group index ``name`` (R28): its
+        ``(members, total)`` tuple, the members tree by pointer; ``NOT_A_UNIT`` when the index is
+        absent or keeps no groups (an engine read: records nothing)."""
+        from .linking import NOT_A_UNIT
+        with engine_reads():
+            index = self.indexes.get(name)
+        group = getattr(index, "group_token_data", None)
+        if group is None:
+            return NOT_A_UNIT
+        return token(group(key))
+
+    def _intention_elements(self, base) -> Iterable | None:
+        """Every element reapplying this version's intentions may add, remove or replace on a
+        current collection that the preconditions keep equal to ``base`` where they constrain it:
+        the elements the operations name and the stored elements of ``base`` they touch.  ``None``
+        when the class cannot tell (the default): such a collection with indexes takes the whole
+        collection at commit.  Engine reads only (the caller holds ``engine_reads``)."""
+        return None
+
+    def prepare_changes(self, base) -> tuple:
+        """The preparation phase of a commit (spec section 8, R24), outside the space root: this
+        version's record of intentions (``_changes``) with the key of every element it may add,
+        remove or replace (:meth:`_intention_elements`) in every index of ``base`` (the root's
+        base collection), computed now with the extractors.  The keys travel at the end of the
+        record, as ``("@index_keys", {(index name, element identity): key})``; under the space
+        root the reapplication takes every key from there and runs no extractor (R49).
+
+        ``ProtoValidationError`` when the class cannot enumerate those elements while ``base`` has
+        indexes (the caller takes the collection whole instead, see :meth:`_reapplies_from_keys`)."""
+        with engine_reads():
+            indexes = base.indexes
+            pairs = list(avl.key_iter(indexes.root))
+            elements = [] if not pairs else self._intention_elements(base)
+            if elements is None:
+                raise ProtoValidationError(f"A {type(self).__name__} cannot precompute its index keys")
+            elements = list(elements)
+            table = {}
+            for name, index in pairs:
+                for element in elements:
+                    ident = (name, element_identity(element))
+                    if ident not in table:
+                        table[ident] = index.key_of(element)
+        operations, _ = prepared_parts(self._changes)
+        return operations + ((_INDEX_KEYS, MappingProxyType(table)),)
+
+    def _reapplies_from_keys(self, base) -> bool:
+        """Whether this version's intentions can be reapplied under the space root from keys
+        :meth:`prepare_changes` computes against ``base``: every index of ``base`` is maintained
+        from precomputed keys with current member tokens (R30, B7, B8), and the class enumerates
+        the elements its intentions touch.  Otherwise the commit takes the whole collection."""
+        with engine_reads():
+            indexes = base.indexes
+            if not len(indexes):
+                return True
+            return indexes.keyed() and self._intention_elements(base) is not None
 
     def _scan_window(self, start: int, stop: int | None):
         """Elements ``start .. stop-1`` of :meth:`elements` without producing the earlier ones, or
@@ -535,10 +769,6 @@ class IndexedCollection(_Immutable, Atom):
         """The IndexSet after replacing element ``old`` by ``new``."""
         return self._current_indexes().on_replace(old, new)
 
-    def _index_log(self, op: tuple) -> dict:
-        """Extra ``_with`` changes recording an index-definition change (none unless ConcurrentOptimized)."""
-        return {}
-
 
 # -- ConcurrentOptimized -------------------------------------------------------------------
 
@@ -617,12 +847,10 @@ class ConcurrentOptimized:
     def _logged(self, *ops: tuple) -> tuple:
         """Return this version's changes extended with ``ops`` (the receiver's are unchanged)."""
         for op in ops:
-            if not isinstance(op, tuple) or not op or not isinstance(op[0], str):
-                raise ProtoValidationError(f"An op must be a tuple starting with a str kind, not {op!r}")
+            if not isinstance(op, tuple) or not op or not isinstance(op[0], str) or op[0].startswith("@"):
+                raise ProtoValidationError(f"An op must be a tuple starting with a str kind not starting "
+                                           f"with '@', not {op!r}")
         return self._changes + ops
-
-    def _index_log(self, op: tuple) -> dict:
-        return {"_changes": self._changes + (op,)}
 
     def _op_key(self, op: tuple):
         """Key identifying what ``op`` touches, for :func:`net_effect` (default ``order_key(op[1])``)."""
@@ -643,16 +871,23 @@ class ConcurrentOptimized:
         """Apply one net element op to ``target`` through mutators that maintain its indexes and log; return it."""
         raise NotImplementedError(f"{type(self).__name__} must implement _replay_op()")
 
-    def _reapplied_on(self, current):
+    def _reapplied_on(self, current, changes: tuple | None = None):
         """``current`` with the net intent of this version's changes applied (R34): the net ops of
         :meth:`_net_ops` replayed through :meth:`_replay_op`, the same tree operations the
-        transaction used.  Only a version without index changes is reapplied: an index change
-        marks the version whole (P-B), and a whole version is published as is."""
+        transaction used.  ``changes`` is the record :meth:`prepare_changes` gave (default: the
+        version's own ``_changes``); a prepared record takes every index key from its table, so
+        no extractor runs (R49), and a unique index is checked on the final state (R29;
+        ``IntentionConflict``).  Only a version that is not whole is reapplied: an index change
+        or an unlisted operation marks the version whole (P-B), and it is published as is."""
         if type(current) is not type(self):
             raise ProtoValidationError(f"Cannot reapply a {type(self).__name__} on a {type(current).__name__}")
-        if any(op[0] in (_INDEX_ADD, _INDEX_REMOVE) for op in self._changes):
-            raise ProtoValidationError("A version with index changes is whole; it is not reapplied")
+        if self._whole:
+            raise ProtoValidationError("A whole version (an index change or an unlisted operation) is published "
+                                       "as is; it is not reapplied")
+        operations, table = prepared_parts(self._changes if changes is None else changes)
         target = current
-        for op in self._net_ops(list(self._changes)):
-            target = self._replay_op(target, op)
+        with _Reapplying(table):
+            for op in self._net_ops(list(operations)):
+                target = self._replay_op(target, op)
+        check_unique_after(target, table)
         return target

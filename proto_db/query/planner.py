@@ -77,18 +77,31 @@ predicate as a residual filter on top, when that is cheaper than sorting the
 planned result; otherwise a ``Sort`` node orders it.  The two orders are
 equal up to the order of ties (D36).  With several keys a ``Sort`` is always
 used.  ``limit``/``offset`` add a ``Limit`` node on top, after ordering.
+
+Reads of a linked collection (spec sections 6 and 7, B4)
+--------------------------------------------------------
+Planning a query over a collection a transaction got from a root is a read of it, recorded
+once the plan is built (so a result the query cache serves for that plan records the same).
+The planner consults the index definitions: ``Unit(INDEX_DEFS)``.  A plan whose every access
+path is a key-group lookup -- an EqualityIndex or RangeIndex answering ``==`` or ``in``, under
+any Filter, Sort, Limit, Union or Intersect -- reads only those groups: one
+``Unit(INDEX_GROUP, root, index=name, key=k)`` per key, expecting the group the base collection
+holds.  Any other plan (a scan, a range, ``!=``, ``?N``, an ordered or a vector scan) records
+the whole collection.  Planning itself (estimates, index lookups) records nothing.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 
 from ..collections.base import IndexedCollection
+from ..collections.linking import engine_reading, engine_reads, link_of, record_read, record_whole, unit_key
 from ..errors import ProtoNotSupportedError, ProtoValidationError
 from ..indexing.keyspec import KeySpec
+from ..preconditions import Unit, UnitKind
 from .expressions import And, Expression, Not, Or, PythonPredicate, iter_terms
-from .plans import (CollectionScanPlan, Filter, Intersect, Limit, QueryPlan, Sort, Union, VectorSearch,
+from .plans import (CollectionScanPlan, Filter, IndexPlan, Intersect, Limit, QueryPlan, Sort, Union, VectorSearch,
                     ordered_index_scan)
-from .terms import IS_NONE, NEAR, NOT_NONE, Term
+from .terms import EQ, IN, IS_NONE, NEAR, NOT_NONE, Term
 
 __all__ = ["plan_query", "normalize"]
 
@@ -276,9 +289,10 @@ class _Planner:
 
 
 def _source(source) -> tuple:
-    """``(base plan, indexes)`` of a planner source."""
+    """``(base plan, indexes)`` of a planner source (the caller holds ``engine_reads`` for a
+    collection: the reads are recorded by :func:`_record_reads` from the finished plan)."""
     if isinstance(source, IndexedCollection):
-        collection, base = source, source.as_query_plan()
+        collection, base = source, CollectionScanPlan(source)
     elif isinstance(source, CollectionScanPlan):
         collection, base = source.collection, source
     elif isinstance(source, QueryPlan):
@@ -315,6 +329,44 @@ def _order_keys(order_by) -> list:
     return keys
 
 
+def _group_reads(plan: QueryPlan, collection, out: list) -> bool:
+    """Collect into ``out`` the ``(index name, key)`` groups ``plan`` reads when its every access
+    path is a key-group lookup of ``collection`` for ``==`` or ``in`` (B4); False otherwise."""
+    if isinstance(plan, IndexPlan):
+        term = plan.term
+        index = plan.index
+        if term is None or term.op not in (EQ, IN) or getattr(index, "group_token_data", None) is None:
+            return False
+        if collection.indexes.get(index.name) is not index:
+            return False
+        keys = (term.value,) if term.op == EQ else term.value
+        out.extend((index.name, key) for key in keys)
+        return True
+    if isinstance(plan, (Filter, Sort, Limit)):
+        return _group_reads(plan.source, collection, out)
+    if isinstance(plan, (Union, Intersect)):
+        return all(_group_reads(source, collection, out) for source in plan.sources)
+    return False
+
+
+def _record_reads(collection, plan: QueryPlan) -> None:
+    """Record what ``plan`` reads of the linked ``collection`` (module docstring, B4)."""
+    link = link_of(collection)
+    if link is None or engine_reading():
+        return
+    collection._record_index_definitions()
+    groups: list = []
+    with engine_reads():
+        whole = collection._whole or not _group_reads(plan, collection, groups)
+    if whole:
+        record_whole(collection)
+        return
+    base = link.transaction._base_root_value(link.root)
+    for name, key in groups:
+        record_read(collection, Unit(UnitKind.INDEX_GROUP, link.root, key=unit_key(key), index=name),
+                    base._index_group_token(name, key))
+
+
 def plan_query(source, where=None, order_by=None, limit=None, offset=0) -> QueryPlan:
     """Plan a query (module docstring): the cheapest plan returning the multiset a scan would return.
 
@@ -327,7 +379,7 @@ def plan_query(source, where=None, order_by=None, limit=None, offset=0) -> Query
     Raises ``ProtoValidationError`` for malformed arguments and
     ``ProtoNotSupportedError`` for a ``near[]`` term no index can answer.
     """
-    base, indexes = _source(source)
+    collection = source if isinstance(source, IndexedCollection) else None
     expr = None if where is None else normalize(Expression.compile(where))
     keys = _order_keys(order_by)
     for name, value in (("limit", limit), ("offset", offset)):
@@ -335,9 +387,15 @@ def plan_query(source, where=None, order_by=None, limit=None, offset=0) -> Query
             continue
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
             raise ProtoValidationError(f"plan_query {name} must be an int >= 0, not {value!r}")
-    planner = _Planner(base, indexes)
-    candidate = _Candidate(base, (), True) if expr is None else planner.plan(expr)
-    plan = planner.order(candidate, expr, keys)
-    if limit is not None or offset:
-        plan = Limit(plan, limit, offset)
+    with engine_reads():
+        base, indexes = _source(source)
+        planner = _Planner(base, indexes)
+        candidate = _Candidate(base, (), True) if expr is None else planner.plan(expr)
+        plan = planner.order(candidate, expr, keys)
+        if limit is not None or offset:
+            plan = Limit(plan, limit, offset)
+    if collection is not None:
+        _record_reads(collection, plan)
+    elif isinstance(source, CollectionScanPlan):
+        record_whole(source.collection)     # a scan given as the source reads the whole collection
     return plan

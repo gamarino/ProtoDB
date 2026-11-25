@@ -249,7 +249,7 @@ class TestReviewFixes:
         rng = random.Random(3)
         for _ in range(150):
             snapshot = make([rng.randrange(4) for _ in range(rng.randrange(6))], indexes=("i",))
-            snapshot = snapshot._with(_changes=())
+            snapshot = snapshot._with(_changes=(), _whole=False)   # as loaded: no runtime record (Task 9)
             theirs, mine = snapshot, snapshot
             for _ in range(rng.randrange(6)):
                 e = rng.randrange(4)

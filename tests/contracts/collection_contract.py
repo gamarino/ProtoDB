@@ -32,6 +32,7 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 from proto_db.collections.base import ConcurrentOptimized, IndexedCollection
+from proto_db.errors import ProtoValidationError
 from proto_db.query.plans import CollectionScanPlan
 from proto_db.storage.memory import MemoryStorage
 from proto_db.values import order_key
@@ -277,6 +278,14 @@ def check_intentions(factory: CollectionFactory, seed: int, steps: int = 15) -> 
     mine, theirs = mutate(snapshot), mutate(snapshot)
     mine_before, theirs_before = _state(factory, mine), _state(factory, theirs)
 
+    if mine._whole:
+        import pytest
+        # A whole version (an operation that takes the whole collection, e.g. Set.intersection,
+        # or an index change) is published as is under Unit(WHOLE), never reapplied (P-B, R26).
+        with pytest.raises(ProtoValidationError):
+            mine._reapplied_on(theirs)
+        assert _state(factory, mine) == mine_before and _state(factory, theirs) == theirs_before
+        return
     reapplied = mine._reapplied_on(theirs)
     serial = theirs
     for op in mine._changes:
