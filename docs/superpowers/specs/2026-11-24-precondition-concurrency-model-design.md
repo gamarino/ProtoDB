@@ -759,3 +759,94 @@ Each step leaves the suite green before moving on to the next.
 11. Documentation and decisions.
 12. Port to protoBaseST, conformance vectors and interoperability
     (section 11).
+
+## 14. Amendments approved by the author (2026-11-24)
+
+The author confirmed A1-A5 and accepted every resolution of the
+pre-implementation review (`2026-11-24-precondition-concurrency-model-review.md`,
+items B1-B8, N1-N5 and its correction list) and of the PostgreSQL comparison
+(M1-M4 below). Where an amendment and an earlier rule differ, the amendment
+prevails. Rule numbers continue from R61.
+
+### Scope
+
+**R62. protoBaseST.** Section 11 (R56-R61) is deferred: protoBaseST is not
+changed in this work. A proposal document presents the model to the
+protoBaseST community (the FAST group) for feedback. R59 and R61 wait for that
+port; the conformance scenarios of R60 are written in proto_db only.
+
+### Version mark (B1)
+
+**R63.** A root record written by this model has format version 7, the new
+feature `preconditions` in `FEATURE_VERSIONS`. Every root this code publishes
+is version 7, whatever its content. The upgrade is one-way: once a space holds
+a version-7 root, software without this model can neither read nor write it.
+R52 holds (this code reads versions 2-7 without migration). `PROTOCOL_VERSION`
+rises to 16 (R51): every node of a cluster must apply the same validation.
+protoBaseST cannot open a version-7 space until its port.
+
+### Commit protocol (B2, M1)
+
+**R64. Candidate.** The pre-pass candidate is the pair of reapplied maps
+(objects and mutables). The DatabaseRoot and the SpaceRoot are always built
+under the space root; in a cluster they carry the permission's stamp. The
+module-import loop (`_IMPORT_ROUNDS`) is kept: it re-runs engine code, not
+user code.
+
+**R65. Delta validation.** Under the space root, validation does not re-check
+every precondition. The pre-pass proved every precondition against R0, so a
+precondition holds against R1 if and only if its unit did not change between
+R0 and R1. The engine computes the changes from R0 to R1 by a structural diff
+of the persistent trees that skips every pair of subtrees with the same
+pointer, and fails if any changed unit is covered by a recorded precondition
+or by a recorded range (R68). The cost under the lock is
+O(changes since R0 × log n), independent of the size of the read set. Within a
+group commit round, entries after the first diff R0 against the round's
+current root. When there was no pre-pass (R0 unavailable), validation is the
+full check against R1.
+
+**R66. Escalation.** A transaction records at most
+`PRECONDITION_ESCALATION_LIMIT = 1024` fine preconditions per collection root.
+The next one replaces them all with a whole-collection precondition (P-A). The
+limit bounds the memory of a read set, as PostgreSQL bounds its predicate
+locks.
+
+### Ranges (M4)
+
+**R67.** Range invariants are in scope (they leave section 13's out-of-scope
+list). A range is (collection root, source, low, high, low inclusive, high
+inclusive), where the source is the Dictionary's own keys or a named
+RangeIndex, and the bounds follow `order_key`.
+
+**R68.** The reads that record a range instead of the whole collection:
+a query plan answered by a RangeIndex range scan (the range of index keys it
+scanned), and a window read of Dictionary keys (`keys(after=...)` and the
+planner's ordered window): the range from its start to the last key it
+returned, or to the end when it was exhausted. A range precondition fails when
+any key (Dictionary) or index group key (RangeIndex) inside the range differs
+between base and current; with R65 that is any changed key of the diff inside
+the range. Unbounded and unordered reads still record the whole collection.
+
+### Liveness of index creation (M3)
+
+**R69. Catch-up.** A transaction whose only operations on a collection are
+`add_index` or `remove_index`, and that recorded no other read of it, does not
+fail because the collection changed. In the pre-pass, if the collection in R0
+differs from the base, the engine computes the elements changed from the base
+to R0 by diff, applies them to the index under construction (extractors run
+here, outside the lock), and takes R0's collection as the expected value; it
+repeats with the newer root at most `INDEX_CATCH_UP_ROUNDS = 3` times. Under
+the lock the whole-collection precondition compares against the last expected
+value; if it fails, ProtoConflictError, and `Database.run` retries.
+
+### Documentation additions (M2 and the comparison)
+
+**R70.** The model's documentation must also cover: identifiers generated
+without a shared counter (UUID or ULID; a counter cell is a hot key, and a
+non-transactional sequence is out of scope); the "verify reference" pattern
+beside "verify and add"; reading from a `Snapshot` as the deliberate escape
+from the guarantee (the analogue of READ COMMITTED); the rule that a function
+given to `Database.run` may run several times, so external effects go after
+the commit; lock cells (section 13) carrying an owner and an expiry, since a
+crashed owner never deletes its cell; and that any future storage compaction
+must keep the base of every open transaction readable.
