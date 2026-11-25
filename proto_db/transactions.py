@@ -1,5 +1,6 @@
 """ObjectSpace, Database and Transaction: the transactional layer of ProtoDB 2.0
-(spec section 7, decisions D9, D11, D32, D33, D34, D35).
+(spec section 7, decisions D9, D11, D32, D33, D34, D35; the precondition model of the
+2026-11-24 spec for roots and mutable cells).
 
 Layout of a space (D32)
     The storage root points to a :class:`SpaceRoot` atom whose ``databases`` field is a
@@ -13,32 +14,54 @@ Layout of a space (D32)
     ``previous`` is loaded on demand, never kept loaded by its root (Task 8.3l, D53):
     history is on disk, not in memory.
 
-Snapshot isolation and the read set (D9)
+Snapshot isolation and preconditions (spec sections 4-6)
     A transaction reads the storage root once, when it starts, and every read goes to
-    that snapshot.  ``get_root_object(name)`` records ``name`` with what the snapshot
-    held -- an exact token (atoms by storage pointer, plain values by type and exact
-    payload, so ``1 -> 1.0`` is a change) or ABSENT -- in the read set.
-    At commit, under the root lock, a recorded root that changed in the current root
-    (including one that appeared or disappeared) raises :class:`ProtoConflictError`
-    and nothing is published.  ``root_names()`` does not enter the read set.
+    that snapshot, its **base**.  What it reads and writes declares preconditions
+    (:mod:`proto_db.preconditions`): each unit's value in the base, compared at commit,
+    under the root lock, with the current root by exact token (atoms by storage
+    pointer, plain values by type and exact payload, so ``1 -> 1.0`` is a change); one
+    that no longer holds raises :class:`ProtoConflictError` naming the unit and the
+    database, and nothing is published.  A value that changed and came back to the base
+    value holds (ABA by value, R7).
 
-Merge of roots written but not read (D9, D33)
+    - An **object root** (any value but a Dictionary, HashDictionary, Set, CountedSet,
+      RepeatedKeysDictionary or List, R1) is one unit, ``Unit(ROOT, name)`` (R2): reading
+      it, writing it (``set_root_object``, also without a prior read) and removing it
+      (``remove_root_object``) record its base value, ABSENT included.  Two
+      transactions that write the same root, or different attributes of the same
+      object, conflict; two creators of the same absent root conflict.
+    - A **collection root** read with ``get_root_object`` records
+      ``Unit(ROOT_PRESENCE, name)``: still present and of the same class (R12).  Until the
+      linked collections record their content, the read also records
+      ``Unit(WHOLE, name)``, the whole root's base value (P-A: coarser is safe).
+    - Every write that replaces a root's value (an object root, a collection that is not
+      merged as below, ``replace=True``, ``remove_root_object``) is compared against the
+      base like an object root, ``Unit(ROOT, name)``: no last writer wins.
+    - ``root_names()`` records ``Unit(ROOT_NAMES)``: a concurrent creation or removal of a
+      root conflicts, a change of a root's value does not.
+    - Reading or writing a root this transaction already wrote records nothing more (R9).
+
+    The reserved ``__`` roots (the registry and the semantic catalog) are outside the
+    model (R37): a read of one through ``get_root_object`` records the whole root, and
+    their writes are the merges described below.
+
+Merge of collection roots written but not read (D33; transitional, until linked intentions)
     A root that was written without being read is merged when the written value is
     :class:`~proto_db.collections.base.ConcurrentOptimized`, its op log is complete
     (:attr:`~proto_db.collections.base.ConcurrentOptimized.log_is_complete`: the
     value was built from an empty collection in this transaction), and the current
     root holds a value of the same type: the commit stores
     ``written.rebase_onto(current)``, i.e. the transaction's intent replayed onto the
-    current value, whether or not that value changed since the snapshot.  The
-    original written version is always the one rebased.  A ``ProtoConflictError``
-    raised by ``rebase_onto`` is a conflict like any other.  In every other case the
-    written value replaces the current one (last writer wins), and so does
-    ``remove_root_object`` of an unread root.  ``set_root_object(name, value,
-    replace=True)``, and a set following ``remove_root_object(name)`` in the same
-    transaction, always replace.  After a successful commit the written values'
-    logs are marked incomplete, so reusing such a value in a later transaction
-    replaces instead of replaying this transaction's operations again.  Reading back a root written before it
-    was read returns the value as written, not the merged one.
+    current value, whether or not that value changed since the snapshot, with no
+    precondition.  The original written version is always the one rebased.  A
+    ``ProtoConflictError`` raised by ``rebase_onto`` is a conflict like any other.  In
+    every other case the written value replaces the current one and the write's
+    precondition applies.  ``set_root_object(name, value, replace=True)``, and a set
+    following ``remove_root_object(name)`` in the same transaction, always replace.
+    After a successful commit the written values' logs are marked incomplete, so reusing
+    such a value in a later transaction replaces instead of replaying this transaction's
+    operations again.  Reading back a root written before it was read returns the value
+    as written, not the merged one.
 
 The registry roots (runtime registry)
     ``install_module`` never writes a root directly: at commit, under the root lock, its
@@ -102,8 +125,9 @@ Commit protocol (D34)
        storage is append-only, so unpublished records are harmless.
     3. The root lock is taken with the space's ``lock_timeout``; a timeout raises and
        the commit never proceeds unlocked.
-    4. The current root is read and the read set is checked against it.
-    5. Unread mergeable roots are rebased onto their current values; new
+    4. The current root is read and every precondition is checked against it.
+    5. The written roots and cells are applied on the current maps (unread mergeable
+       roots rebased onto their current values, the reserved roots merged); new
        DatabaseRoot and SpaceRoot atoms are built and saved.
     6. ``storage.flush()`` makes the data durable according to the storage's
        durability mode, then ``publish_root(ptr, expected_epoch)`` publishes the root
@@ -209,6 +233,8 @@ def _utc_now() -> datetime.datetime:
 
 
 #: The registry's roots (:mod:`proto_db.registry`).
+# The classes whose root values are collection roots (R1); any other value is an object root.
+_COLLECTION_ROOT_TYPES = (Dictionary, HashDictionary, Set, CountedSet, RepeatedKeysDictionary, List)
 _REGISTRY_ROOTS = frozenset({_registry.MODULES_ROOT, _registry.CATALOG_ROOT})
 #: The roots a semantic operation's checks depend on: the module list, the registry catalog and the semantic
 #: catalog.  A transaction that wrote through the semantic session reads them (final review I2).
@@ -2737,9 +2763,10 @@ class Transaction:
         self._space_registries = database.space._registries
         self._lock = threading.RLock()
         self._state = _ACTIVE
-        self._reads: dict = {}
-        self._writes: dict = {}
-        self._replaced: set = set()
+        self._writes: dict = {}         # root name -> value or REMOVED
+        # Transitional: removed when linked intentions land (precondition model, Tasks 4/6)
+        self._replaced: set = set()     # names whose write never merges (replace=True, after a removal)
+        self._read_roots: set = set()   # names read through get_root_object (a read root never merges)
         self._mwrites: dict = {}        # mutable name -> value or REMOVED
         # The runtime registry (proto_db.registry): modules to add at commit (name -> depends, in
         # install order), catalog objects to add (registry name -> DBObject), the names whose new
@@ -2778,8 +2805,8 @@ class Transaction:
         self._db_root = database._root_in(self, record)
         self._objects = self._db_root.objects
         self._mutables = self._db_root.mutables
-        # The preconditions this transaction declared (spec sections 4-6): today the mutable cells
-        # (CELL, CELL_NAMES); every expected value is the base's (R8).
+        # The preconditions this transaction declared (spec sections 4-6): roots (ROOT, ROOT_PRESENCE,
+        # ROOT_NAMES, WHOLE) and mutable cells (CELL, CELL_NAMES); every expected value is the base's (R8).
         self._read_log = ReadLog(self._base_whole_token)
         # The registry (Task 8): the space's binding of this database when it is for this
         # snapshot's list (kept for the transaction's life), else None (a mismatch, raised at the
@@ -2849,10 +2876,15 @@ class Transaction:
     def get_root_object(self, name: str):
         """Return the value of root ``name`` (``None`` if absent); records the read (see module docs).
 
+        An absent or object root records ``Unit(ROOT, name)`` with its base value (ABSENT
+        included); a collection root records ``Unit(ROOT_PRESENCE, name)`` with its class (R12)
+        and, until the linked collections record their content, ``Unit(WHOLE, name)``.  A root
+        this transaction wrote returns its own value and records nothing (R9).
+
         A registry root (``__currentModules``, ``__catalog``) is read here like any root: the
-        read is recorded, so a concurrent install makes this transaction's commit conflict
+        whole root is recorded, so a concurrent install makes this transaction's commit conflict
         (ruling R241); :meth:`installed_modules` and :meth:`catalog_object` read the same state
-        without entering the read set."""
+        without recording it."""
         _check_name(name)
         if self._state != _ACTIVE:      # fails before the lock (see "Locks" in the class docstring)
             self._check_active()
@@ -2863,8 +2895,8 @@ class Transaction:
                 value = self._writes[name]
                 return None if value is _REMOVED else value
             value = self._objects.get_at(name, _ABSENT)
-            if name not in self._reads:
-                self._reads[name] = _token(value)
+            self._record_root_read(name, value)
+            self._read_roots.add(name)
             if name in _REGISTRY_ROOTS and self._registry_pending():
                 return self._registry_view(name)
             return None if value is _ABSENT else value
@@ -2894,14 +2926,17 @@ class Transaction:
     def set_root_object(self, name: str, value, *, replace: bool = False) -> None:
         """Set root ``name`` to ``value`` (any canonical value or atom) at commit.
 
-        A fresh collection written to an existing root you did not read is merged
-        into it, not substituted: its operations (intent) are replayed onto the
-        value current at commit (D33).  Use ``replace=True`` to substitute: the value
-        is then stored as written, last writer wins, no merge.  A set that follows a
-        :meth:`remove_root_object` of the same name in this transaction is a
-        replacement too.  Once a name is marked for replacement it stays so for the
-        rest of the transaction.  A root read with :meth:`get_root_object` before
-        being written is never merged: a concurrent change to it is a conflict.
+        A write that replaces the root records ``Unit(ROOT, name)`` with the root's base value
+        (ABSENT included), also when the root was not read: at commit the root must still hold
+        that value, or ``ProtoConflictError`` is raised (no last writer wins).
+
+        Transitionally, a fresh collection written to an existing root you did not read is
+        merged into it, not substituted: its operations (intent) are replayed onto the value
+        current at commit (D33), with no precondition.  Use ``replace=True`` to substitute (the
+        write then compares against the base, as above).  A set that follows a
+        :meth:`remove_root_object` of the same name in this transaction is a replacement too.
+        Once a name is marked for replacement it stays so for the rest of the transaction.  A
+        root read with :meth:`get_root_object` before being written is never merged.
         """
         _check_name(name)
         _check_not_reserved(name)
@@ -2913,12 +2948,17 @@ class Transaction:
         with self._lock:
             if self._state != _ACTIVE:
                 self._check_active()
+            # Transitional: removed when linked intentions land (precondition model, Tasks 4/6)
             if replace or self._writes.get(name) is _REMOVED:
                 self._replaced.add(name)
+            if not self._may_merge(name, value):
+                self._observe_root(name)
             self._writes[name] = value
 
     def remove_root_object(self, name: str) -> None:
-        """Remove root ``name`` at commit (a no-op if it is absent then); a later set of it replaces."""
+        """Remove root ``name`` at commit; a later set of it replaces.  Records ``Unit(ROOT, name)``
+        with the base value: a concurrent change, removal or creation (when absent in the base) of
+        the root conflicts."""
         _check_name(name)
         _check_not_reserved(name)
         if self._state != _ACTIVE:      # fails before the lock (see "Locks" in the class docstring)
@@ -2926,29 +2966,71 @@ class Transaction:
         with self._lock:
             if self._state != _ACTIVE:
                 self._check_active()
+            self._observe_root(name)
             self._writes[name] = _REMOVED
+            # Transitional: removed when linked intentions land (precondition model, Tasks 4/6)
             self._replaced.add(name)
 
     def root_names(self) -> list:
         """Sorted names of the roots as this transaction sees them.
 
-        Listing is not recorded in the read set.  To create a root only if it is
-        absent, test it with ``get_root_object(name) is None``: that read is
-        recorded (ABSENT included), so a concurrent creator makes the commit
-        conflict; deciding from ``root_names()`` gives no such protection.
+        Records ``Unit(ROOT_NAMES)`` with the token of the base's name tuple: a concurrent
+        creation or removal of any root makes the commit raise ``ProtoConflictError``; a
+        change of a root's value does not (spec section 6).
         """
         if self._state != _ACTIVE:      # fails before the lock (see "Locks" in the class docstring)
             self._check_active()
         with self._lock:
             if self._state != _ACTIVE:
                 self._check_active()
-            names = set(self._objects.keys())
+            base_names = tuple(self._objects.keys())
+            unit = Unit(UnitKind.ROOT_NAMES)
+            if unit not in self._read_log:
+                self._read_log.record(unit, _token(base_names))
+            names = set(base_names)
             for name, value in self._writes.items():
                 if value is _REMOVED:
                     names.discard(name)
                 else:
                     names.add(name)
             return sorted(names)
+
+    def _may_merge(self, name: str, value) -> bool:
+        """Whether a write of ``value`` to root ``name`` may still be merged at commit (D33).
+
+        # Transitional: removed when linked intentions land (precondition model, Tasks 4/6)
+        """
+        return (name not in self._read_roots and name not in self._replaced
+                and isinstance(value, ConcurrentOptimized) and value.log_is_complete)
+
+    def _merges(self, name: str, value, current) -> bool:
+        """Whether the build merges ``value`` into root ``name``'s current value ``current``.
+
+        # Transitional: removed when linked intentions land (precondition model, Tasks 4/6)
+        """
+        return (value is not _REMOVED and current is not _ABSENT and type(current) is type(value)
+                and self._may_merge(name, value))
+
+    def _observe_root(self, name: str) -> None:
+        """Under the lock, before a write of root ``name``: record ``Unit(ROOT, name)`` with the
+        base value (R8) unless it is recorded already (R9)."""
+        unit = Unit(UnitKind.ROOT, name)
+        if unit not in self._read_log:
+            self._read_log.record(unit, _token(self._objects.get_at(name, _ABSENT)))
+
+    def _record_root_read(self, name: str, value) -> None:
+        """Under the lock: record the read of root ``name`` whose base value is ``value`` (section 6)."""
+        log = self._read_log
+        if value is not _ABSENT and not name.startswith("__") and isinstance(value, _COLLECTION_ROOT_TYPES):
+            unit = Unit(UnitKind.ROOT_PRESENCE, name)
+            if unit not in log:
+                log.record(unit, type(value).__type_name__)
+                # Until the linked collections record their content, the whole root as well (P-A).
+                log.record(Unit(UnitKind.WHOLE, name), _token(value))
+            return
+        unit = Unit(UnitKind.ROOT, name)       # an absent root, an object root or a reserved root (R37)
+        if unit not in log:
+            log.record(unit, _token(value))
 
     # -- mutable cells (D11, D35) ------------------------------------------------------------
 
@@ -3071,10 +3153,11 @@ class Transaction:
                     self._semantic_undo = None
 
     def _read_catalog_roots(self) -> None:
-        """Under the lock: enter the catalog roots in the read set (see :meth:`semantic_operation`)."""
+        """Under the lock: record the catalog roots, whole (R37; see :meth:`semantic_operation`)."""
         for name in _SEMANTIC_CATALOG_ROOTS:
-            if name not in self._reads:
-                self._reads[name] = _token(self._objects.get_at(name, _ABSENT))
+            unit = Unit(UnitKind.ROOT, name)
+            if unit not in self._read_log:
+                self._read_log.record(unit, _token(self._objects.get_at(name, _ABSENT)))
 
     def _note_undo(self, name: str) -> None:
         """Under the lock, inside a top-level semantic operation: remember the cell ``name`` as it was
@@ -3671,7 +3754,7 @@ class Transaction:
     def commit(self) -> None:
         """Commit the writes (commit protocol in the module docstring).
 
-        Raises ``ProtoConflictError`` when a root in the read set changed or a merge
+        Raises ``ProtoConflictError`` when a precondition no longer holds or a merge
         conflicts; nothing is published then.  The transaction ends either way: after a
         failed commit it is aborted.  It waits for a semantic operation in progress in another
         thread, and is refused (``ProtoUserError``, the transaction stays active) inside one of
@@ -3727,6 +3810,7 @@ class Transaction:
             if published:
                 # Post-publish, cannot fail: a committed value's log was consumed by this
                 # commit, so a later transaction reusing it must not replay it again (D33).
+                # Transitional: removed when linked intentions land (precondition model, Tasks 4/6)
                 for value in written:
                     if isinstance(value, ConcurrentOptimized):
                         object.__setattr__(value, "_log_complete", False)
@@ -3755,7 +3839,8 @@ class Transaction:
             reset_reader(token)
 
     def _build_root(self, current, stamp: Optional[_ClusterStamp] = None) -> AtomPointer:
-        """Under the root lock (or the cluster lease): check the read set, merge, save and return
+        """Under the root lock (or the cluster lease): check the preconditions, apply the writes
+        (merging unread mergeable roots and the reserved roots), save and return
         the new SpaceRoot pointer.  With a cluster ``stamp`` the stage timings are recorded in it."""
         clock = time.perf_counter
         started = clock()
@@ -3770,10 +3855,9 @@ class Transaction:
             db_root = space.databases.get_at(self._database.name) if space is not None else None
             if db_root is None:
                 raise ProtoConflictError(f"Database {self._database.name!r} no longer exists")
-            for name, token in self._reads.items():
-                if not _same_token(token, _token(db_root.objects.get_at(name, _ABSENT))):
-                    raise ProtoConflictError(
-                        f"Root {name!r} of database {self._database.name!r} was changed by a concurrent commit")
+            # Every precondition before any intention (R33, P-F).
+            self._check_roots(db_root.objects)
+            self._check_replaced_roots(db_root.objects)
             self._check_mutables(db_root.mutables)
         validated = clock()
         current_objects = db_root.objects
@@ -3783,9 +3867,11 @@ class Transaction:
                 if objects.has(name):
                     objects = objects.remove_at(name)
                 continue
-            if name not in self._reads and name not in self._replaced:
+            current_value = current_objects.get_at(name, _ABSENT)
+            if self._may_merge(name, value):
+                # Transitional: removed when linked intentions land (precondition model, Tasks 4/6)
                 merge_started = clock()
-                value = self._merged(value, current_objects.get_at(name, _ABSENT))
+                value = self._merged(value, current_value)
                 replay += clock() - merge_started
             objects = objects.set_at(name, value)
         if self._registry_pending():
@@ -3823,6 +3909,53 @@ class Transaction:
             stamp.timings["path_copy"] = clock() - validated - replay
         return ptr
 
+    def _check_roots(self, current: Dictionary) -> None:
+        """Under the root lock: raise ``ProtoConflictError`` naming the unit if a ``ROOT``,
+        ``ROOT_PRESENCE``, ``WHOLE`` or ``ROOT_NAMES`` precondition does not hold against the
+        current root map (R6, R12, R36)."""
+        database = self._database.name
+        for unit, expected in self._read_log.preconditions().items():
+            kind = unit.kind
+            if kind is UnitKind.ROOT or kind is UnitKind.WHOLE:
+                holds = _same_token(expected, _token(current.get_at(unit.root, _ABSENT)))
+            elif kind is UnitKind.ROOT_PRESENCE:
+                value = current.get_at(unit.root, _ABSENT)
+                holds = value is not _ABSENT and type(value).__type_name__ == expected
+            elif kind is UnitKind.ROOT_NAMES:
+                if not _same_token(expected, _token(tuple(current.keys()))):
+                    raise ProtoConflictError(
+                        f"The root names of database {database!r} were changed by a concurrent commit "
+                        f"(unit {kind.name})", unit=unit, database=database)
+                continue
+            else:
+                continue
+            if not holds:
+                raise ProtoConflictError(
+                    f"Root {unit.root!r} of database {database!r} was changed by a concurrent commit "
+                    f"(unit {kind.name})", unit=unit, database=database)
+
+    def _check_replaced_roots(self, current: Dictionary) -> None:
+        """Under the root lock: a written root the build does not merge replaces the current value,
+        so it must still hold its base value (section 5).  Raises ``ProtoConflictError`` naming
+        ``Unit(ROOT, name)`` for such a write whose precondition was not recorded at write time
+        (a write that could still merge then, and does not now).
+
+        # Transitional: removed when linked intentions land (precondition model, Tasks 4/6)
+        """
+        database = self._database.name
+        log = self._read_log
+        for name, value in self._writes.items():
+            unit = Unit(UnitKind.ROOT, name)
+            if unit in log:
+                continue                # checked by _check_roots
+            now = current.get_at(name, _ABSENT)
+            if self._merges(name, value, now):
+                continue
+            if not _same_token(_token(self._objects.get_at(name, _ABSENT)), _token(now)):
+                raise ProtoConflictError(
+                    f"Root {name!r} of database {database!r} was changed by a concurrent commit "
+                    f"(unit {unit.kind.name})", unit=unit, database=database)
+
     def _check_mutables(self, current: Dictionary) -> None:
         """Under the root lock: raise ``ProtoConflictError`` naming the unit if a ``CELL`` or
         ``CELL_NAMES`` precondition does not hold against the current mutable table (R6, R36)."""
@@ -3841,7 +3974,10 @@ class Transaction:
 
     @staticmethod
     def _merged(mine, current):
-        """The value to store for a root written but not read (merge rule in the module docstring)."""
+        """The value to store for a root written but not read (merge rule in the module docstring).
+
+        # Transitional: removed when linked intentions land (precondition model, Tasks 4/6)
+        """
         if (current is _ABSENT or not isinstance(mine, ConcurrentOptimized) or not mine.log_is_complete
                 or type(current) is not type(mine)):
             return mine

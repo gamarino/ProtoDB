@@ -204,7 +204,8 @@ across two transactions:
 
    hits = 143 (the +1000 was overwritten)
 
-No exception was raised, because the second transaction read nothing. The fix is the rule of the section
+No exception was raised: the last transaction started after the +1000 commit, so the value it overwrote
+is the one it started from, and nothing changed before its commit. The fix is the rule of the section
 above: read and write in the same transaction. The same applies to reusing an object that came from a
 transaction whose commit failed. ``proto_db`` documents these cases instead of policing them with expensive
 checks.

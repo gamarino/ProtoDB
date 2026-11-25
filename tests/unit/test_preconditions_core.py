@@ -62,6 +62,28 @@ def test_escalation_takes_the_base_token_of_the_root():
     assert log.preconditions()[Unit(UnitKind.WHOLE, "d")] == ("base", "d")
 
 
+def test_escalation_computes_the_base_token_outside_the_log_lock():
+    """The base token may load lazy tree nodes: it is computed without holding the log's lock, and
+    the escalation is re-checked under it (a concurrent record made meanwhile is never lost)."""
+    held = []
+
+    def whole_token(root):
+        free = log._lock.acquire(blocking=False)               # never blocks: no deadlock if it is held
+        held.append(not free)
+        if free:
+            log._lock.release()
+            log.record(Unit(UnitKind.CELL, key="during"), 1)    # a record made while the token is computed
+        return ("base", root)
+
+    log = ReadLog(whole_token=whole_token)
+    for i in range(PRECONDITION_ESCALATION_LIMIT + 1):
+        log.record(Unit(UnitKind.KEY, "d", key=i), i)
+    assert held == [False]
+    assert log.preconditions() == {Unit(UnitKind.CELL, key="during"): 1,
+                                   Unit(UnitKind.WHOLE, "d"): ("base", "d")}
+    assert log.whole("d")
+
+
 def test_fine_records_after_whole_are_covered():
     log = ReadLog()
     log.record_range(KeyRange("d", None, 1, 5, True, False))

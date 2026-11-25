@@ -26,6 +26,7 @@ from proto_db.catalog.model import canonical_form, from_atoms, to_atoms
 from proto_db.errors import ProtoCorruptionError, ProtoNotSupportedError, ProtoUserError, ProtoValidationError
 from proto_db.registry import Registry
 from proto_db.semantic import SemanticSession, semantic
+from proto_db.preconditions import Unit, UnitKind
 from proto_db.semantic import store
 from proto_db.semantic.compose import compose
 from proto_db.storage.file import FileStorage
@@ -192,7 +193,7 @@ def test_rc4_database_without_semantic_catalog(tmp_path):
                 semantic(tr).catalog()
             with pytest.raises(ProtoNotSupportedError, match="no semantic catalog"):
                 Order.describe(tr)
-            assert SEMANTIC_CATALOG_ROOT not in tr._reads
+            assert Unit(UnitKind.ROOT, SEMANTIC_CATALOG_ROOT) not in tr._read_log
         finally:
             tr.abort()
         _install(db, "acme_delivery")
@@ -324,7 +325,7 @@ def test_reading_the_catalog_does_not_enter_the_read_set():
         assert semantic(reader).list_entities("order")
         reader.set_root_object("mine", 1)
         _install(db, "acme_delivery")                        # a concurrent install commits first
-        assert SEMANTIC_CATALOG_ROOT not in reader._reads
+        assert Unit(UnitKind.ROOT, SEMANTIC_CATALOG_ROOT) not in reader._read_log
         reader.commit()                                      # no conflict
         assert db.run(lambda tr: tr.get_root_object("mine")) == 1
     finally:

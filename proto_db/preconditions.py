@@ -99,6 +99,8 @@ class KeyRange:
     high_inclusive: bool
 
 
+_NO_TOKEN = object()      # ReadLog.record: the escalation token is not computed yet
+
 PRECONDITION_ESCALATION_LIMIT = 1024
 """At most this many fine preconditions per collection root; the next one escalates (R66)."""
 
@@ -127,25 +129,39 @@ class ReadLog:
         self._whole: set = set()
 
     def record(self, unit: Unit, expected) -> None:
-        """Record the precondition ``(unit, expected)`` unless the unit is already recorded or covered."""
-        with self._lock:
-            if unit in self._preconditions:
-                return
-            root = unit.root
-            if unit.kind is UnitKind.WHOLE:
-                self._make_whole(root, expected)
-                return
-            fine = root is not None and unit.kind in _FINE_KINDS
-            if fine:
-                if root in self._whole:
+        """Record the precondition ``(unit, expected)`` unless the unit is already recorded or covered.
+
+        The expected value of an escalation (``whole_token``) may load lazy tree nodes, so it is
+        computed without holding the log's lock; the escalation is then decided again under it.
+        """
+        root = unit.root
+        token = _NO_TOKEN
+        while True:
+            with self._lock:
+                if unit in self._preconditions:
                     return
-                count = self._fine.get(root, 0)
-                if count >= PRECONDITION_ESCALATION_LIMIT:
-                    token = None if self._whole_token is None else self._whole_token(root)
-                    self._make_whole(root, token)
+                if unit.kind is UnitKind.WHOLE:
+                    self._make_whole(root, expected)
                     return
-                self._fine[root] = count + 1
-            self._preconditions[unit] = expected
+                if root is not None and unit.kind in _FINE_KINDS:
+                    if root in self._whole:
+                        return
+                    count = self._fine.get(root, 0)
+                    if count >= PRECONDITION_ESCALATION_LIMIT:
+                        if token is not _NO_TOKEN or self._whole_token is None:
+                            self._make_whole(root, None if token is _NO_TOKEN else token)
+                            return
+                    else:
+                        self._fine[root] = count + 1
+                        self._preconditions[unit] = expected
+                        return
+                else:
+                    self._preconditions[unit] = expected
+                    return
+            # Escalation needed: compute the base token outside the lock, then check again (the
+            # count of fine units only grows until the root becomes whole, so the next pass
+            # escalates with this token or finds the root already whole).
+            token = self._whole_token(root)
 
     def _make_whole(self, root, expected) -> None:
         """Under the lock: ``root`` becomes a whole-collection precondition."""

@@ -20,7 +20,10 @@ The read set
 ``get_root_object(name)`` records ``(name, token)`` in the transaction's **read set**. The token is exact:
 atoms by storage pointer, plain values by their type and exact payload (so ``1`` becoming ``1.0`` is a
 change), and the *absence* of a root is a token too. ``get_mutable`` does the same for mutable cells, in
-their own namespace. ``root_names()`` does not enter the read set.
+their own namespace. ``root_names()`` records the set of root names: a concurrent creation or removal of a
+root conflicts, a change of a root's value does not. Reading a collection root also records that it is still
+present and of the same class. Every conflict names the unit that failed (``ProtoConflictError.unit``) and the
+database (``ProtoConflictError.database``).
 
 At commit, under the root lock, the transaction's read set is compared with the current root. If any
 recorded root changed, appeared or disappeared, the commit raises ``ProtoConflictError`` (a
@@ -36,7 +39,7 @@ ran one after another in commit order, for the roots and cells they read.
 Writes that were not read: merge or replace
 -------------------------------------------
 
-A root written without having been read has nothing to validate, and what happens to it depends on the value:
+What happens to a root written without having been read depends on the value:
 
 * If the value is a ``ConcurrentOptimized`` collection (``Dictionary``, ``RepeatedKeysDictionary``,
   ``HashDictionary``, ``Set``, ``CountedSet``), its **operation log is complete** (it was built from empty in
@@ -45,13 +48,15 @@ A root written without having been read has nothing to validate, and what happen
   per element, by net effect). Writers of different keys do not conflict; writers of the same key are
   applied in commit order. ``CountedSet`` and ``RepeatedKeysDictionary`` counters compose by their transform
   (D26). A conflict raised by the replay is a conflict like any other.
-* In every other case the written value replaces the current one (**last writer wins**). That includes
-  integers, strings, records, lists, and ``remove_root_object`` of an unread root.
+* In every other case the written value replaces the current one, and the write is compared with the value
+  the root had when the transaction started, *absent* included: if another transaction changed it meanwhile,
+  the commit raises ``ProtoConflictError``. There is no last writer wins. That includes integers, strings,
+  records, lists, a collection whose current root is absent or of another type, and ``remove_root_object``.
   ``set_root_object(name, value, replace=True)``, and a set following a ``remove_root_object`` of the same
   name in the same transaction, always replace.
 
 The merge replays recorded operations. It never infers what a value *means*, so two blind writes of
-different integers to one root do not add: the last one wins (D9 rejects "+1" merges). A value reused in a
+different integers to one root do not add: the second one conflicts (D9 rejects "+1" merges). A value reused in a
 later transaction after its commit has its log marked incomplete, so it replaces instead of replaying the
 same operations twice (D33).
 

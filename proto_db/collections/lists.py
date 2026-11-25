@@ -12,7 +12,8 @@ non-``int`` positions; ``slice``, ``head`` and ``tail`` clamp like Python slices
 
 A ``List`` is not ``ConcurrentOptimized``: positional operations from concurrent
 transactions have no meaningful per-key net effect, so a written ``List`` root
-follows the "other types" rule of spec section 7 (last writer wins, D23).
+follows the "other types" rule: it replaces the root, compared against the root's
+value in the transaction's base (precondition model, section 5; D23 amended).
 
 Thread safety: a ``List`` version is immutable once built and may be shared
 between threads; lazily loaded nodes are published atomically by the atom layer.

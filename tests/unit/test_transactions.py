@@ -493,15 +493,17 @@ def test_blind_write_over_a_different_type_replaces(db):
     assert dict(read_root(db, "d").items()) == {"a": 1}
 
 
-def test_blind_write_of_non_mergeable_type_is_last_writer_wins(db):
+def test_blind_writes_of_a_non_mergeable_type_conflict(db):
+    """Section 5: a write that replaces a root compares against the base (no last writer wins)."""
     with db.new_transaction() as tr:
         tr.set_root_object("l", tr.new_list().append_last(1))
     tr1, tr2 = db.new_transaction(), db.new_transaction()
     tr1.set_root_object("l", tr1.new_list().append_last(2))
     tr2.set_root_object("l", tr2.new_list().append_last(3))
     tr1.commit()
-    tr2.commit()
-    assert list(read_root(db, "l")) == [3]
+    with pytest.raises(ProtoConflictError):
+        tr2.commit()
+    assert list(read_root(db, "l")) == [2]
 
 
 def test_rebase_conflict_is_a_conflict_and_publishes_nothing(space, db):
@@ -531,15 +533,17 @@ def test_merge_always_rebases_the_original_version(db):
     assert read_root(db, "c").count_of("x") == 4
 
 
-def test_blind_remove_root_is_last_writer_wins(db):
+def test_blind_remove_root_conflicts_with_a_concurrent_write(db):
+    """Section 5 table: ``remove_root_object(n)`` requires ``current[n] == base[n]``."""
     with db.new_transaction() as tr:
         tr.set_root_object("x", 1)
     tr = db.new_transaction()
     with db.new_transaction() as other:
         other.set_root_object("x", 2)
     tr.remove_root_object("x")
-    tr.commit()
-    assert read_root(db, "x") is None
+    with pytest.raises(ProtoConflictError):
+        tr.commit()
+    assert read_root(db, "x") == 2
 
 
 # -- history ---------------------------------------------------------------------------------
@@ -1098,12 +1102,22 @@ def test_remove_then_set_replaces(db):
 def test_set_with_replace_substitutes_a_blind_root(db):
     with db.new_transaction() as tr:
         tr.set_root_object("x", tr.new_dictionary().set_at("a", 1))
+    with db.new_transaction() as tr:
+        tr.set_root_object("x", tr.new_dictionary().set_at("c", 3), replace=True)
+    assert dict(read_root(db, "x").items()) == {"c": 3}
+
+
+def test_set_with_replace_compares_against_the_base(db):
+    """Section 5: a replacement compares against the base; a concurrent change conflicts."""
+    with db.new_transaction() as tr:
+        tr.set_root_object("x", tr.new_dictionary().set_at("a", 1))
     tr1, tr2 = db.new_transaction(), db.new_transaction()
     tr1.set_root_object("x", tr1.new_dictionary().set_at("b", 2))
     tr2.set_root_object("x", tr2.new_dictionary().set_at("c", 3), replace=True)
     tr1.commit()
-    tr2.commit()
-    assert dict(read_root(db, "x").items()) == {"c": 3}
+    with pytest.raises(ProtoConflictError):
+        tr2.commit()
+    assert dict(read_root(db, "x").items()) == {"a": 1, "b": 2}
 
 
 def test_replace_mark_is_sticky_within_the_transaction(db):
