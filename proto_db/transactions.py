@@ -517,7 +517,10 @@ class Snapshot:
     :attr:`Snapshot.ref`, a :class:`HistoryEntry` or a pager token.  Every version stays
     readable forever (P1, R77a), so a snapshot needs no pinning; a version whose local copy
     was released is read from the object store.  It is not a transaction: it records no
-    reads, cannot commit, and every write method raises ``ProtoUserError``.  The values it
+    reads, cannot commit, and every write method raises ``ProtoUserError``.  What a transaction
+    reads through a snapshot (of its own :attr:`Transaction.snapshot_ref` included) is outside
+    its read set and its serializability guarantee (spec R21): the deliberate escape, the
+    analogue of READ COMMITTED.  The values it
     returns are the version's immutable values, shareable with any transaction (P2).
     Thread-safe.
 
@@ -2563,7 +2566,8 @@ class Database:
         return Transaction(self)
 
     def history(self) -> list:
-        """The committed versions of this database, newest first, as :class:`HistoryEntry` objects."""
+        """The committed versions of this database, newest first, as :class:`HistoryEntry` objects.
+        Reads through them are outside every transaction's read set (spec R21)."""
         self._space._check_open()
         context = _SpaceContext(self._space.storage, self._space._registries)
         root = self._root_in(context, self._space._read_storage_root())
@@ -2863,7 +2867,11 @@ class Transaction:
 
     def load(self, ptr: AtomPointer, type_name: str) -> Atom:
         """Return the atom stored at ``ptr``: the space's shared decoded atom (R75), or a lazy
-        stub of this transaction when the space's atom cache is disabled."""
+        stub of this transaction when the space's atom cache is disabled.
+
+        Not recorded in the read set: a read by pointer names no root, so nothing validates it at
+        commit (spec R21, review N2).  It is outside the serializability guarantee; read through
+        :meth:`get_root_object` and :meth:`get_mutable` what the commit must validate."""
         check_not_extracting("load")
         return self._load(ptr, type_name)
 

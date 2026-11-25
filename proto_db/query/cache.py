@@ -47,6 +47,10 @@ loaded atoms (the 8.3l rule); other values are held frozen (D25).  :class:`Query
 is bounded by an estimated byte size, its key included; one entry may take at most an
 eighth of it.  :func:`key_digest` is BLAKE2b-128 of a key's ``repr``, for explain and
 logs; :func:`plan_digest` is the process-independent digest a pager token carries.
+
+A result served from the cache records in the running transaction the same reads as the query
+that produced it (spec R22): :meth:`QueryCache.result` records the reads of every cacheable plan
+it answers, hit or miss, from the plan's structure (:func:`record_served_reads`).
 """
 from __future__ import annotations
 
@@ -70,7 +74,7 @@ from .plans import (CollectionScanPlan, Count, Distinct, Filter, GroupBy, IndexP
 from .terms import NearQuery, Term
 
 __all__ = ["QUERY_SEMANTICS_VERSION", "QUERY_CACHE_BYTES", "QueryCache", "QueryResult", "cache_key",
-           "as_plan", "plan_digest", "key_digest"]
+           "as_plan", "plan_digest", "key_digest", "record_served_reads"]
 
 #: Version of the executors' observable behaviour (row order, ties, grouping).  Part of every
 #: key and of every pager token: raise it whenever a plan node's output changes for some input.
@@ -287,6 +291,51 @@ def plan_digest(source) -> tuple:
     return key_digest(structure), dict(sorted(seen.items()))
 
 
+def record_served_reads(plan: QueryPlan) -> None:
+    """Record, in the transaction of each linked collection ``plan`` scans, what running ``plan``
+    reads of it (spec R22: a result served from the cache records the same as the query that
+    produced it).
+
+    A cached result is shared by every transaction of the space, and a precondition names a
+    transaction's root and expects that transaction's base, so a :class:`QueryResult` carries no
+    precondition: the reads are derived from the plan being answered, by this one function, on a
+    hit and on a miss alike.  Equal keys mean equal plan trees over the same collection versions,
+    so a hit records what the miss that stored the result recorded.
+
+    Only collection scans read a linked collection while a cacheable plan runs (an index plan reads
+    its index, recorded when the plan was planned or the index obtained: ``plan_query``,
+    ``get_index``; a cacheable plan runs no Python code).  A scan records the whole collection,
+    except a positional window over it (a ``Limit`` directly above the scan, not under a ``Count``),
+    which records what the collection's ``_record_window`` records (R68: a Dictionary's range from
+    its first key to the window's last one); a collection without it records the whole collection.
+    This covers what executing the plan records: a window the executor narrows lies inside it, and
+    a ``Count`` reads the row count, the whole collection.  Nothing is recorded for an unlinked
+    collection, after its transaction ended, or inside ``engine_reads``."""
+    from ..collections.linking import record_whole
+    stack = [(plan, False)]
+    while stack:
+        node, counted = stack.pop()
+        t = type(node)
+        if t is CollectionScanPlan:
+            record_whole(node.collection)
+        elif t is Limit and type(node.source) is CollectionScanPlan and not counted:
+            collection = node.source.collection
+            if hasattr(type(collection), "_record_window"):
+                collection._record_window(node.offset, None if node.n is None else node.offset + node.n)
+            else:
+                record_whole(collection)
+        elif t is Count:
+            stack.append((node.source, True))
+        elif t is Join:
+            stack.extend(((node.left, counted), (node.right, counted)))
+        elif t in (Union, Intersect):
+            stack.extend((source, counted) for source in node.sources)
+        else:
+            source = getattr(node, "source", None)
+            if isinstance(source, QueryPlan):
+                stack.append((source, counted))
+
+
 def _key_size(key) -> int:
     """Estimated bytes held by a key (I3): every tuple, str, bytes and number in it."""
     size, stack = 0, [key]
@@ -470,13 +519,17 @@ class QueryCache:
 
     def result(self, source) -> QueryResult:
         """The result of ``source`` (a QueryPlan, a Queryable or a collection): from the cache when
-        its key is cached, else executed now (and stored when cacheable and small enough)."""
+        its key is cached, else executed now (and stored when cacheable and small enough).
+
+        A cacheable plan records its reads (:func:`record_served_reads`) whether the result is
+        served or computed, so a hit registers the same preconditions as a miss (R22)."""
         plan = as_plan(source)
         key, reason = cache_key(plan)
         if key is None:
             with self._lock:
                 self._uncacheable += 1
             return QueryResult(None, reason, tuple(plan.execute()), None, 0)
+        record_served_reads(plan)
         enabled = self._cache.max_bytes > 0
         if enabled:
             hit = self._cache.get(key)
