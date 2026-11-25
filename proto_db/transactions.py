@@ -2882,6 +2882,14 @@ class Transaction:
         """True until the transaction is committed or aborted."""
         return self._state == _ACTIVE
 
+    @property
+    def committed_version(self) -> Optional[int]:
+        """The version of the database root this transaction published, which is its place in the
+        commit order (spec section 2), or ``None`` when it did not commit or published nothing (a
+        transaction without writes, R23).  Within a group commit round several transactions share
+        one published space root and its epoch, but each builds its own database version."""
+        return self._committed_version if self._state == _COMMITTED else None
+
     def _check_active(self) -> None:
         if self._state != _ACTIVE:
             raise ProtoUserError(f"The transaction is {self._state}; start a new one")
