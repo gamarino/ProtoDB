@@ -611,6 +611,20 @@ class IndexedCollection(_Immutable, Atom):
             return NOT_A_UNIT
         return token(group(key))
 
+    def _range_tree(self, index):
+        """The keyed tree a range precondition on source ``index`` compares (R67, R68): the
+        ``groups`` tree of the key-group index named ``index`` (keys ordered by ``order_key``,
+        each value a group ``(members, total)``); ``NOT_A_UNIT`` when the collection has no
+        such index or no own key tree (``index`` None here).  An engine read: records nothing."""
+        from .linking import NOT_A_UNIT
+        if index is None:
+            return NOT_A_UNIT
+        with engine_reads():
+            found = self.indexes.get(index)
+        if getattr(found, "group_token_data", None) is None:
+            return NOT_A_UNIT
+        return found.groups
+
     def _intention_elements(self, base) -> Iterable | None:
         """Every element reapplying this version's intentions may add, remove or replace on a
         current collection that the preconditions keep equal to ``base`` where they constrain it:

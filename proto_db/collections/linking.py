@@ -16,6 +16,8 @@ What a read records (spec section 6):
   ``get_at(k)`` ``Unit(RECORDS, root, key=k)``, a List's ``get_at(i)`` ``Unit(POSITION, root,
   key=i)``), through :func:`record_key`; the expected value
   is what the collection's ``_unit_token(kind, key)`` gives;
+* a range read (R67, R68: a Dictionary window, a RangeIndex range scan) records a
+  :class:`~proto_db.preconditions.KeyRange` through :func:`record_range`;
 * every other read by user code of a linked instance -- a persisted field (``count``, ``root``,
   ``indexes``, ...), iteration, ``len`` -- records ``Unit(WHOLE, root)`` through
   :func:`record_whole` (P-B, R18, B3);
@@ -40,14 +42,14 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Optional
 
 from ..core.atom import AtomPointer
-from ..preconditions import Unit, UnitKind, token
+from ..preconditions import KeyRange, Unit, UnitKind, token
 from ..values import order_key
 from . import avl
 
 if TYPE_CHECKING:
     from ..transactions import Transaction
 
-__all__ = ["Link", "ExactKey", "linked_copy", "link_of", "record_read", "record_whole", "record_key",
+__all__ = ["Link", "ExactKey", "linked_copy", "link_of", "record_read", "record_whole", "record_key", "record_range",
            "engine_reads", "engine_reading", "fine_grained", "register_fine_grained", "unit_key", "lookup_key",
            "NOT_A_UNIT", "wrote", "written_with"]
 
@@ -199,6 +201,24 @@ def record_key(collection, key, kind: UnitKind = UnitKind.KEY, *, from_base: boo
     with engine_reads():
         expected = source._unit_token(kind, key)
     log.record(unit, expected)
+
+
+def record_range(collection, index, low, high, low_inclusive: bool, high_inclusive: bool, *,
+                 covers: Optional[KeyRange] = None) -> Optional[KeyRange]:
+    """Record the range invariant ``KeyRange(root, index, low, high, ...)`` (bounds are order
+    keys, ``None`` open) for a range read of the linked ``collection`` (R67, R68) and return it,
+    or ``None`` where :func:`record_read` records nothing.  A version marked whole records the
+    whole collection instead.  ``covers``: the range this read recorded before, which the new
+    one contains (:meth:`ReadLog.record_range`)."""
+    link = _recording_link(collection)
+    if link is None:
+        return None
+    if collection._whole:
+        record_whole(collection)
+        return None
+    r = KeyRange(link.root, index, low, high, low_inclusive, high_inclusive)
+    link.transaction._read_log.record_range(r, covers)
+    return r
 
 
 def wrote(collection, key) -> bool:

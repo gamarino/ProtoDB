@@ -189,8 +189,8 @@ from typing import Any, Callable, Iterator, Optional
 
 from .catalog.atoms import INTENT_LOG_ROOT, SEMANTIC_CATALOG_ROOT
 from .collections.base import IntentionConflict, _Immutable
-from .collections.linking import (Link, engine_reads, fine_grained, link_of, linked_copy, lookup_key, record_whole,
-                                  unit_key)
+from .collections.linking import (NOT_A_UNIT, Link, engine_reads, fine_grained, link_of, linked_copy, lookup_key,
+                                  record_whole, unit_key)
 from .collections.dictionaries import Dictionary, RepeatedKeysDictionary
 from .collections.hash_dictionaries import HashDictionary
 from .collections.lists import List
@@ -212,7 +212,7 @@ from .storage.format import RootRecord, next_root_version
 from .cluster.coordinator import REFOUND_TERM_STEP
 from .cluster.lease import Permission
 from .cluster.rootlog import compare_roots
-from .preconditions import ABSENT, ReadLog, Unit, UnitKind, same_token, token
+from .preconditions import ABSENT, ReadLog, Unit, UnitKind, range_holds, same_token, token
 from .values import canonical_for, check_text
 
 __all__ = ["ObjectSpace", "Database", "Transaction", "HistoryEntry", "SpaceRoot", "DatabaseRoot"]
@@ -4070,6 +4070,30 @@ class Transaction:
                 raise ProtoConflictError(
                     f"Root {unit.root!r} of database {database!r} was changed by a concurrent commit "
                     f"(unit {kind.name})", unit=unit, database=database)
+        for r in self._read_log.ranges():
+            self._check_range(r, current, database)
+
+    def _check_range(self, r, current: Dictionary, database: str) -> None:
+        """Under the root lock: the range precondition ``r`` (R67, R68) holds if the keys inside it
+        (the Dictionary's own keys, or the groups of index ``r.index``) and their values are the
+        same in the current state as in the base (full validation, R65 without a pre-pass).
+        Engine data only (P-C): the two keyed trees are compared by pointer, then walked over
+        the range only (O(log n + k) nodes each, values by token, never loaded).  A root
+        absent, of another class or without the source now is a conflict (R12); the conflict
+        names ``Unit(RANGE, root, key=r, index=r.index)``."""
+        value = current.get_at(r.root, _ABSENT)
+        base = self._base_root_value(r.root)
+        holds = False
+        if value is not _ABSENT and type(value) is type(base) and fine_grained(type(value)):
+            current_tree, base_tree = value._range_tree(r.index), base._range_tree(r.index)
+            holds = (current_tree is not NOT_A_UNIT and base_tree is not NOT_A_UNIT
+                     and range_holds(r, base_tree, current_tree))
+        if not holds:
+            source = "keys" if r.index is None else f"keys of index {r.index!r}"
+            raise ProtoConflictError(
+                f"The {source} of root {r.root!r} of database {database!r} in the range read were changed by a "
+                f"concurrent commit (unit RANGE)", unit=Unit(UnitKind.RANGE, r.root, key=r, index=r.index),
+                database=database)
 
     def _check_mutables(self, current: Dictionary) -> None:
         """Under the root lock: raise ``ProtoConflictError`` naming the unit if a ``CELL`` or

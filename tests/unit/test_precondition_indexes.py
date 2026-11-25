@@ -179,9 +179,10 @@ def test_range_index_eq_lookup_records_group(db):
     assert lookup(d, 5) == [5]
     assert group("d", "r", 5) in tr._read_log and whole("d") not in tr._read_log
     assert defs("d") in tr._read_log
-    # A range scan, a scan and a filtered lookup over a scan read the whole collection (until Task 10).
+    # A range scan reads the range it scanned (R68), not the whole collection; a scan reads it all.
     assert sorted(plan_query(d, Term(None, GT, 5)).execute()) == [6]
-    assert whole("d") in tr._read_log
+    assert whole("d") not in tr._read_log
+    assert [(r.root, r.index) for r in tr._read_log.ranges()] == [("d", "r")]
     tr.abort()
     tr = db.new_transaction()
     assert list(plan_query(tr.get_root_object("d")).execute()) == [5, 6]

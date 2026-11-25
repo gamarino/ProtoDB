@@ -29,8 +29,12 @@ concurrent change of the same root (composed).  Task 9 adds equality lookups thr
 index every dictionary carries (``x_eq``, ``x_in``: one INDEX_GROUP per group read, R28) and
 so makes every dictionary write an indexed write, maintained from precomputed keys (R24, R49);
 the report counts the lookups committed and the INDEX_GROUP/INDEX_DEFS conflicts, and the test
-asserts that the index extractor never ran with the space root held (P-C).  Task 10 adds its
-operations to the mix.
+asserts that the index extractor never ran with the space root held (P-C).  Task 10 adds range
+reads (R67, R68): ``x_range`` through the RangeIndex every dictionary now also carries, and the
+Dictionary windows ``w_after`` (``keys(after=)``) and ``w_window`` (the planner's positional
+window); a deterministic pre-run assertion (:func:`range_exposure`) proves the seeded programs
+give range reads and writes inside them of other threads enough chances to meet, and the report
+counts the range reads that recorded a range and the RANGE conflicts.
 """
 import random
 import threading
@@ -46,9 +50,10 @@ from proto_db.storage.memory import MemoryStorage
 from proto_db.transactions import ObjectSpace
 from tests.concurrency.harness import report, run_threads
 from tests.support.serial_model import (COLLECTIONS, COUNTED_SET_OPS, DICTIONARY_AND_CELL_OPS, LIST_OPS,
-                                        LOOKUP_OPS, MULTIMAP_OPS, OBJECT, RECORDS, SET_OPS, Op, Record, StateNames,
-                                        capture, check_history, group_index, execute, extractor_calls_under_root,
-                                        family_of, group_of, kinds_by_version, random_program, roots_by_version)
+                                        LOOKUP_OPS, MULTIMAP_OPS, OBJECT, RANGE_OPS, RECORDS, SET_OPS, Op, Record,
+                                        StateNames, capture, check_history, execute, extractor_calls_under_root,
+                                        family_of, group_of, kinds_by_version, random_program, range_reads,
+                                        reset_range_reads, roots_by_version, with_indexes)
 
 SEED = 20261124
 THREADS = 4
@@ -70,7 +75,14 @@ MIX = (DICTIONARY_AND_CELL_OPS + ("root_names", "c_names") * 2 + ("d_get", "d_ha
        + COUNTED_SET_OPS + ("cs_count", "cs_has", "cs_add", "cs_remove") * 4
        + MULTIMAP_OPS + ("r_get", "r_has", "r_add", "r_remove_record") * 3
        + LIST_OPS + ("l_get", "l_set", "l_append", "l_extend") * 3
-       + LOOKUP_OPS * 3)
+       + LOOKUP_OPS * 3
+       + RANGE_OPS * 3)
+
+#: Deterministic floors of :func:`range_exposure` for the seeded programs (set below the values
+#: the seed gives, see the Task 10 report).
+RANGE_PROGRAMS_MIN = 150
+RANGE_WRITERS_MIN = 120
+RANGE_PAIRS_MIN = 4000
 
 pytestmark = [pytest.mark.freethreaded, pytest.mark.timeout(240)]
 
@@ -90,7 +102,7 @@ def _seed_state(db, rng):
             d = cls(context=tr)
             for k in rng.sample(NAMES.keys, 3):
                 d = d.set_at(k, rng.choice(NAMES.values))
-            tr.set_root_object(name, d.add_index(group_index()))
+            tr.set_root_object(name, with_indexes(d))
         s = tr.new_set()
         for k in rng.sample(NAMES.keys, 3):
             s = s.add(k)
@@ -275,6 +287,42 @@ def group_exposure(programs) -> dict:
     return {"lookup_programs": lookup_programs, "group_writers": writers, "pairs": pairs}
 
 
+def range_exposure(programs) -> dict:
+    """From the seeded programs alone (no interleaving): how much they expose the range
+    preconditions (R67, R68).  ``range_programs``: programs with a range read; ``range_writers``:
+    programs whose ``d_set``/``d_remove`` may change what a range read of another thread covers
+    (same root: an ``x_range`` value interval holding a value it sets, a key after a ``w_after``
+    start, any key for a ``w_window``, whose positions every key before it moves); ``pairs``:
+    (range reader, writer) program pairs of different threads that may meet that way."""
+    def reads(program):
+        return [op for op in program if op.kind in RANGE_OPS]
+
+    def meets(read, write):
+        if write.target != read.target or write.kind not in ("d_set", "d_remove"):
+            return False
+        if read.kind == "x_range":
+            return write.kind == "d_set" and read.key[0] <= write.value <= read.key[1]
+        if read.kind == "w_after":
+            return write.key > read.key
+        return True
+
+    def program_meets(readers, writer):
+        return any(meets(r, w) for r in readers for w in writer)
+
+    readers = [[reads(p) for p in thread] for thread in programs]
+    range_programs = sum(1 for thread in readers for r in thread if r)
+    writers = pairs = 0
+    for t, thread in enumerate(programs):
+        for program in thread:
+            if any(program_meets(r, program) for u, th in enumerate(readers) if u != t for r in th if r):
+                writers += 1
+    for t, thread in enumerate(readers):
+        for r in thread:
+            if r:
+                pairs += sum(1 for u, th in enumerate(programs) if u != t for w in th if program_meets(r, w))
+    return {"range_programs": range_programs, "range_writers": writers, "pairs": pairs}
+
+
 def test_serializability_over_the_closed_operation_set(db):
     rng = random.Random(SEED)
     _seed_state(db, rng)
@@ -288,6 +336,10 @@ def test_serializability_over_the_closed_operation_set(db):
     exposure = group_exposure(programs)
     assert exposure["lookup_programs"] >= 100 and exposure["group_writers"] >= 50 \
         and exposure["pairs"] >= 1000, exposure
+    ranges = range_exposure(programs)
+    assert ranges["range_programs"] >= RANGE_PROGRAMS_MIN and ranges["range_writers"] >= RANGE_WRITERS_MIN \
+        and ranges["pairs"] >= RANGE_PAIRS_MIN, ranges
+    reset_range_reads()
 
     calls_before = extractor_calls_under_root()
     elapsed = run_threads([_worker(db, t, programs[t], per_thread[t], stats) for t in range(THREADS)])
@@ -309,6 +361,8 @@ def test_serializability_over_the_closed_operation_set(db):
            f"group exposure {exposure}",
            f"lookups {dict(sorted(lookups.items()))}, index group conflicts {by_unit.get('INDEX_GROUP', 0)}, "
            f"index definition conflicts {by_unit.get('INDEX_DEFS', 0)}, extractor calls {calls}",
+           f"range exposure {ranges}, range reads (ranged, not) {range_reads()}, "
+           f"range conflicts {by_unit.get('RANGE', 0)}",
            class_change_counts(records, initial, stats))
 
 

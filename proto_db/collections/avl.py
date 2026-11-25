@@ -63,6 +63,7 @@ __all__ = [
     "pos_get", "pos_insert", "pos_set", "pos_remove", "pos_slice", "pos_concat",
     "pos_iter", "pos_count", "pos_from_iterable",
     "key_get", "key_put", "key_remove", "key_iter", "key_iter_range", "key_iter_okey_range",
+    "key_iter_okey_range_stored", "key_at",
     "key_iter_reversed", "key_count_below", "key_from_sorted", "key_from_sorted_okeys",
     "key_weight", "key_weight_below", "key_iter_from_weight", "pos_iter_from", "key_iter_from",
     "check_invariants", "UNBOUNDED",
@@ -651,6 +652,31 @@ def _iter_okey_range(root, lok, hik, lo_inc, hi_inc) -> Iterator[tuple]:
         yield key, unboxed(value)
 
 
+def key_iter_okey_range_stored(root: KeyNode | None, lok=None, hik=None,
+                               lo_inc: bool = True, hi_inc: bool = True) -> Iterator[tuple]:
+    """Yield ``(order key, key, stored value)`` of the keys inside the order-key range, in key
+    order: :func:`key_iter_okey_range` without unboxing (a :class:`ValueBox` is yielded as is,
+    never loaded), for a range precondition (R68).  O(log n + k), explicit stack."""
+    _check_kind(root, KeyNode)
+    stack = []
+    node = root
+    while stack or node is not None:
+        while node is not None:
+            nk = node._order_key()
+            if lok is not None and (nk < lok or (nk == lok and not lo_inc)):
+                node = node.right  # node and its left subtree are below the range
+                continue
+            stack.append((nk, node))
+            node = node.left
+        if not stack:
+            return
+        nk, node = stack.pop()
+        if hik is not None and (nk > hik or (nk == hik and not hi_inc)):
+            return
+        yield nk, node.key, node.value
+        node = node.right
+
+
 def key_iter_reversed(root: KeyNode | None) -> Iterator[tuple]:
     """Yield ``(key, value)`` pairs in descending key order (no recursion), O(n)."""
     _check_kind(root, KeyNode)
@@ -818,6 +844,14 @@ def key_iter_from(root: KeyNode | None, start: int) -> Iterator[tuple]:
     _check_index(start, _count(root), "Start")
     for key, value, _ in _nodes_from(root, start, False, _count, True):
         yield key, unboxed(value)
+
+
+def key_at(root: KeyNode | None, i: int):
+    """The key of the ``i``-th node in key order (``0 <= i < count``), in O(log n); its value is
+    not read (a :class:`ValueBox` stays unloaded)."""
+    _check_kind(root, KeyNode)
+    _check_index(i, _count(root) - 1, "Position")
+    return next(_nodes_from(root, i, False, _count, True))[0]
 
 
 # -- invariants ---------------------------------------------------------------------------

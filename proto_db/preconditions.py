@@ -19,10 +19,10 @@ from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
 from .core.atom import Atom
-from .values import exact_token
+from .values import exact_token, order_key
 
 __all__ = ["ABSENT", "UnitKind", "Unit", "KeyRange", "PRECONDITION_ESCALATION_LIMIT", "ReadLog", "token",
-           "same_token"]
+           "same_token", "range_violated", "changed_keys", "range_holds"]
 
 
 class _AbsentToken:
@@ -119,9 +119,15 @@ def same_token(a, b) -> bool:
 
 @dataclass(frozen=True)
 class KeyRange:
-    """A range invariant (R67): the keys of root ``root`` between ``low`` and ``high`` (by
-    ``order_key``), from the Dictionary's own keys (``index=None``) or from the named
-    RangeIndex.  ``low``/``high`` ``None`` means unbounded on that side."""
+    """A range invariant (R67): the keys of root ``root`` between ``low`` and ``high``, from the
+    Dictionary's own keys (``index=None``) or from the named RangeIndex.
+
+    ``low`` and ``high`` are **order keys** (:func:`proto_db.values.order_key` of a key, or a
+    :func:`proto_db.values.rank_bounds` bound), so a range is pure data compared without user
+    code (P-C); ``None`` means unbounded on that side (an order key is never ``None``).  The
+    precondition holds while every key inside the range, and its value (a Dictionary: the
+    stored form, a ``ValueBox`` by pointer, D51; a RangeIndex: the group ``(members, total)``,
+    the members by pointer), is the same in the current state as in the base (R68)."""
 
     root: str
     index: str | None
@@ -142,7 +148,8 @@ class ReadLog:
 
     :meth:`record` keeps the first expected value given for a unit (R8, R9): later observations
     of the same unit add nothing.  Recording the ``PRECONDITION_ESCALATION_LIMIT + 1``-th fine
-    unit of one root (key, element, count, records, position or index group) replaces that
+    precondition of one root (a key, element, count, records, position or index group unit, or a
+    range: R66 bounds the read set's memory, and a range is a fine precondition) replaces that
     root's fine units and ranges by ``Unit(WHOLE, root)`` (R66, P-A); so does recording a
     ``WHOLE`` unit directly.  Once a root is whole, its fine units and ranges are covered and
     are not recorded.
@@ -205,11 +212,40 @@ class ReadLog:
             del self._ranges[r]
         self._preconditions[Unit(UnitKind.WHOLE, root)] = expected
 
-    def record_range(self, r: KeyRange) -> None:
-        """Record the range invariant ``r`` (once; covered when its root is whole)."""
-        with self._lock:
-            if r.root not in self._whole:
-                self._ranges.setdefault(r, None)
+    def record_range(self, r: KeyRange, covers: Optional[KeyRange] = None) -> None:
+        """Record the range invariant ``r`` (once; covered when its root is whole).
+
+        A range is a fine precondition of its root (R66): it counts toward
+        ``PRECONDITION_ESCALATION_LIMIT`` with the root's fine units, and the range past the limit
+        escalates the root to ``WHOLE``.  ``covers`` is a range ``r`` contains (a window read
+        that grew: same start, a later end): it is replaced by ``r`` in place, so a window
+        widening key by key holds one range.  Dropping ``covers`` is right even if another read
+        recorded it too, since ``r`` covers it."""
+        root = r.root
+        token = _NO_TOKEN
+        while True:
+            with self._lock:
+                if root in self._whole:
+                    return
+                old = covers is not None and covers != r and covers in self._ranges
+                if r in self._ranges:
+                    if old:
+                        del self._ranges[covers]
+                        self._fine[root] -= 1
+                    return
+                if old:
+                    del self._ranges[covers]
+                    self._ranges[r] = None
+                    return
+                count = self._fine.get(root, 0)
+                if count < PRECONDITION_ESCALATION_LIMIT:
+                    self._fine[root] = count + 1
+                    self._ranges[r] = None
+                    return
+                if token is not _NO_TOKEN or self._whole_token is None:
+                    self._make_whole(root, None if token is _NO_TOKEN else token)
+                    return
+            token = self._whole_token(root)         # outside the lock, as in record()
 
     def whole(self, root: str) -> bool:
         """Whether ``root`` has a whole-collection precondition."""
@@ -230,3 +266,59 @@ class ReadLog:
         """The recorded range invariants, in recording order."""
         with self._lock:
             return tuple(self._ranges)
+
+
+# -- range invariants (R67, R68): data only, P-C ----------------------------------------------------
+
+def _in_range(r: KeyRange, okey) -> bool:
+    """Whether the order key ``okey`` lies inside ``r``."""
+    low, high = r.low, r.high
+    if low is not None and (okey < low or (okey == low and not r.low_inclusive)):
+        return False
+    if high is not None and (okey > high or (okey == high and not r.high_inclusive)):
+        return False
+    return True
+
+
+def range_violated(r: KeyRange, changed_keys) -> bool:
+    """Whether any key of ``changed_keys`` (keys that differ between the base and the current
+    state: Dictionary keys, or index keys for a RangeIndex range) lies inside ``r``, by
+    ``order_key`` comparisons only (R68, P-C)."""
+    return any(_in_range(r, order_key(key)) for key in changed_keys)
+
+
+def changed_keys(base_entries, current_entries):
+    """The keys whose entry differs between two key-ordered streams of ``(order key, key, token)``
+    (a key present in one only, or with another token): a merge, O(len(base) + len(current))."""
+    base, current = iter(base_entries), iter(current_entries)
+    b, c = next(base, None), next(current, None)
+    while b is not None or c is not None:
+        if c is None or (b is not None and b[0] < c[0]):
+            yield b[1]
+            b = next(base, None)
+        elif b is None or c[0] < b[0]:
+            yield c[1]
+            c = next(current, None)
+        else:
+            if not same_token(b[2], c[2]):
+                yield c[1]
+            b, c = next(base, None), next(current, None)
+
+
+def range_holds(r: KeyRange, base_tree, current_tree) -> bool:
+    """Full validation of ``r`` (no pre-pass, R65): the keyed trees ``base_tree`` and
+    ``current_tree`` (a Dictionary's ``root``, or a RangeIndex's ``groups``) hold the same keys
+    with the same tokens inside ``r``.  The same tree (by pointer) holds at once; otherwise each
+    tree is walked over the range only: O(log n + k) nodes per tree, k the entries inside the
+    range, and no value is loaded (a ``ValueBox`` or a members tree is compared by pointer)."""
+    if base_tree is current_tree:
+        return True
+    if isinstance(base_tree, Atom) and isinstance(current_tree, Atom):
+        pointer = base_tree.atom_pointer
+        if pointer is not None and pointer == current_tree.atom_pointer:
+            return True
+    from .collections import avl
+    entries = [((okey, key, token(stored)) for okey, key, stored in
+                avl.key_iter_okey_range_stored(tree, r.low, r.high, r.low_inclusive, r.high_inclusive))
+               for tree in (base_tree, current_tree)]
+    return not range_violated(r, changed_keys(*entries))

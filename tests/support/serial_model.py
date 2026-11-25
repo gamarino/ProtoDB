@@ -40,9 +40,19 @@ groups over the 100 values, dense enough that lookups and writes of one group me
 dictionary write maintains an index from precomputed keys, and a lookup reads the sorted values
 of the groups it names (``Unit(INDEX_GROUP)``, R28).  The extractor counts the calls that found
 the space root held (:func:`extractor_calls_under_root`, which must stay 0: P-C).
+
+Task 10 adds range reads (R67, R68): every dictionary also carries the RangeIndex
+:data:`VALUE_INDEX` over the value itself, ``x_range`` reads the values in ``[low, high]`` through it
+(a RangeIndex range scan when the planner picks it: one ``KeyRange`` of index keys), and the
+Dictionary windows (family ``w_``, Dictionary only): ``w_after`` reads at most ``value`` keys after
+``key`` with ``keys(after=key)`` (a window range, to the end when exhausted) and ``w_window`` the
+values at positions ``key .. key+value-1`` through the planner's ``limit``/``offset`` window (the
+range from the first key, or the whole dictionary when the window reaches the end).
+:func:`range_reads` counts the range reads that recorded a range rather than the whole root.
 """
 import copy
 import threading
+from itertools import islice
 from collections import namedtuple
 from dataclasses import dataclass, field
 
@@ -53,8 +63,9 @@ from proto_db.collections.sets import CountedSet, Set
 from proto_db.errors import ProtoValidationError
 from proto_db.indexing.equality import EqualityIndex
 from proto_db.indexing.keyspec import KeySpec, register_extractor
+from proto_db.indexing.range import RangeIndex
 from proto_db.query.planner import plan_query
-from proto_db.query.terms import EQ, IN, Term
+from proto_db.query.terms import BETWEEN, EQ, IN, Term
 
 #: The kind of an object root (R1: any value that is not a collection).
 OBJECT = "object"
@@ -100,10 +111,14 @@ LIST_OPS = ("l_get", "l_get_neg", "l_set", "l_append", "l_extend", "l_insert", "
 #: The operations of Task 9: equality lookups through :data:`GROUP_INDEX` (``key``: one group,
 #: or a tuple of groups for ``x_in``).
 LOOKUP_OPS = ("x_eq", "x_in")
+#: The operations of Task 10: range reads (``x_range`` through :data:`VALUE_INDEX`, ``key`` the
+#: pair ``(low, high)``; the Dictionary windows ``w_after`` and ``w_window``).
+RANGE_OPS = ("x_range", "w_after", "w_window")
 #: Every operation kind the model knows (each must have a real and a model implementation).
-ALL_OPS = DICTIONARY_AND_CELL_OPS + SET_OPS + COUNTED_SET_OPS + MULTIMAP_OPS + LIST_OPS + LOOKUP_OPS
+ALL_OPS = DICTIONARY_AND_CELL_OPS + SET_OPS + COUNTED_SET_OPS + MULTIMAP_OPS + LIST_OPS + LOOKUP_OPS + RANGE_OPS
 #: The kinds each family's operations act on, by operation prefix.
-_FAMILIES = {"d_": DICTIONARIES, "s_": SETS, "cs_": COUNTED_SETS, "r_": MULTIMAPS, "l_": LISTS, "x_": DICTIONARIES}
+_FAMILIES = {"d_": DICTIONARIES, "s_": SETS, "cs_": COUNTED_SETS, "r_": MULTIMAPS, "l_": LISTS, "x_": DICTIONARIES,
+             "w_": POSITIONAL}
 
 #: The extractor of the dictionaries' index: the group of a value, ``value // GROUP_WIDTH``
 #: (values are the ints of ``StateNames.values``, 0..99: :data:`GROUPS` groups).
@@ -141,8 +156,43 @@ def extractor_calls_under_root() -> tuple:
 
 
 def group_index() -> EqualityIndex:
-    """The index every dictionary of the model carries."""
+    """The equality index every dictionary of the model carries."""
     return EqualityIndex(GROUP_INDEX, KeySpec.extractor(GROUP_EXTRACTOR))
+
+
+#: The name of the RangeIndex over the value every dictionary carries (Task 10).
+VALUE_INDEX = "by_value"
+#: Width bounds of an ``x_range`` interval over the values 0..99: narrow enough that the planner
+#: answers it by the range index rather than by a filtered scan of a few keys.
+RANGE_WIDTH = (3, 20)
+
+
+def with_indexes(d):
+    """``d`` with the indexes every dictionary of the model carries."""
+    return d.add_index(group_index()).add_index(RangeIndex(VALUE_INDEX, KeySpec.element()))
+
+
+#: Range reads by operation kind: ``[recorded a range, recorded the whole root]``.
+_range_reads: dict = {}
+_range_lock = threading.Lock()
+
+
+def _count_range_read(tr, kind: str, ranges_before: int) -> None:
+    ranged = len(tr._read_log.ranges()) > ranges_before
+    with _range_lock:
+        _range_reads.setdefault(kind, [0, 0])[0 if ranged else 1] += 1
+
+
+def range_reads() -> dict:
+    """``{kind: (reads that recorded a range, reads that recorded none: the whole root or a
+    range already held)}`` so far (``reset_range_reads`` clears)."""
+    with _range_lock:
+        return {kind: tuple(counts) for kind, counts in sorted(_range_reads.items())}
+
+
+def reset_range_reads() -> None:
+    with _range_lock:
+        _range_reads.clear()
 #: Operations that read or write several elements at once (``value`` is a tuple of keys).
 _MULTI = ("s_union", "s_difference", "s_intersection", "l_extend")
 #: Operations that only read the whole collection, or the root (no key).
@@ -252,6 +302,13 @@ def _draw(rng, names: StateNames, kind: str) -> Op:
         return Op(kind, target, rng.randrange(GROUPS))
     if kind == "x_in":
         return Op(kind, target, tuple(sorted(rng.sample(range(GROUPS), rng.randint(1, 2)))))
+    if kind == "x_range":
+        low = rng.choice(names.values)
+        return Op(kind, target, (low, low + rng.randint(*RANGE_WIDTH)))
+    if kind == "w_after":
+        return Op(kind, target, key, rng.randint(1, 3))
+    if kind == "w_window":
+        return Op(kind, target, rng.randrange(len(names.keys) - 1), rng.randint(1, 3))
     return Op(kind, target, key, value if kind in ("obj_set", "d_set") else None)
 
 
@@ -313,7 +370,7 @@ def _fresh(tr, kind: str, items: dict):
             collection = collection.set_at(k, v % RECORDS)
         else:
             collection = collection.set_at(k, v)
-    return collection.add_index(group_index()) if kind in DICTIONARIES else collection
+    return with_indexes(collection) if kind in DICTIONARIES else collection
 
 
 def content_of(value) -> dict:
@@ -477,6 +534,39 @@ def _real_x_eq(tr, op, names):
 @_real
 def _real_x_in(tr, op, names):
     return _lookup(tr, op, Term("@" + GROUP_EXTRACTOR, IN, op.key))
+
+
+@_real
+def _real_x_range(tr, op, names):
+    d, marker = _collection(tr, op)
+    if d is None:
+        return marker
+    before = len(tr._read_log.ranges())
+    found = tuple(sorted(plan_query(d, Term(None, BETWEEN, op.key)).execute()))
+    _count_range_read(tr, op.kind, before)
+    return found
+
+
+@_real
+def _real_w_after(tr, op, names):
+    d, marker = _collection(tr, op, POSITIONAL)
+    if d is None:
+        return marker
+    before = len(tr._read_log.ranges())
+    found = tuple(islice(d.keys(after=op.key), op.value))
+    _count_range_read(tr, op.kind, before)
+    return found
+
+
+@_real
+def _real_w_window(tr, op, names):
+    d, marker = _collection(tr, op, POSITIONAL)
+    if d is None:
+        return marker
+    before = len(tr._read_log.ranges())
+    found = tuple(plan_query(d, limit=op.value, offset=op.key).execute())
+    _count_range_read(tr, op.kind, before)
+    return found
 
 
 @_real
@@ -764,6 +854,21 @@ class Model:
     def _x_in(self, op):
         content, marker = self._content(op)
         return marker if content is None else tuple(sorted(v for v in content.values() if group_of(v) in op.key))
+
+    def _x_range(self, op):
+        content, marker = self._content(op)
+        low, high = op.key
+        return marker if content is None else tuple(sorted(v for v in content.values() if low <= v <= high))
+
+    def _w_after(self, op):
+        content, marker = self._content(op, POSITIONAL)
+        return marker if content is None else tuple(sorted(k for k in content if k > op.key)[:op.value])
+
+    def _w_window(self, op):
+        content, marker = self._content(op, POSITIONAL)
+        if content is None:
+            return marker
+        return tuple(content[k] for k in sorted(content)[op.key:op.key + op.value])
 
     def _creating(self, op, family):
         """The content a creating write of ``family`` changes, as :func:`_creating_write`: the

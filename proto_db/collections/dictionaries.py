@@ -59,7 +59,8 @@ from ..values import canonical, canonical_for, check_wrapped, order_key
 from . import avl
 from .base import (ConcurrentOptimized, IndexedCollection, check_sorted_keys, prepared_parts, repair_pairs,
                    same_value)
-from .linking import NOT_A_UNIT, engine_reads, record_key, record_whole, register_fine_grained, wrote, written_with
+from .linking import (NOT_A_UNIT, engine_reads, record_key, record_range, record_whole, register_fine_grained, wrote,
+                      written_with)
 from .sets import CountedSet, counter_net_effect, counter_transform
 
 __all__ = ["Dictionary", "RepeatedKeysDictionary"]
@@ -127,13 +128,36 @@ class Dictionary(ConcurrentOptimized, IndexedCollection):
             yield value
 
     def _scan_window(self, start: int, stop: int | None):
-        """Values ``start .. stop-1`` in key order, by the node counts: O(log n + k) (D56)."""
+        """Values ``start .. stop-1`` in key order, by the node counts: O(log n + k) (D56).
+
+        On a linked version it records what the window reveals (:meth:`_record_window`, R68)."""
         if type(self).elements is not Dictionary.elements:
             return None  # a subclass that redefines its elements cannot be windowed by position
-        stop = self.count if stop is None else min(stop, self.count)
+        self._record_window(start, stop)
+        with engine_reads():
+            count, root = self.count, self.root
+        stop = count if stop is None else min(stop, count)
         if start >= stop:
             return iter(())
-        return islice((value for _, value in avl.key_iter_from(self.root, start)), stop - start)
+        return islice((value for _, value in avl.key_iter_from(root, start)), stop - start)
+
+    def _record_window(self, start: int, stop: int | None) -> None:
+        """On a linked version, record what the positional window ``start .. stop-1`` reveals
+        (R68, the planner's ordered window): a position depends on every key before it, so the
+        range from the first key to the window's last one, ``KeyRange(root, None, None, last)``;
+        the whole collection when the window reaches the end.  An empty request reveals
+        nothing.  O(log n), no value loaded."""
+        if self._link is None or (stop is not None and start >= stop):
+            return
+        if type(self).elements is not Dictionary.elements:
+            record_whole(self)
+            return
+        with engine_reads():
+            count, root = self.count, self.root
+        if stop is None or stop >= count:
+            record_whole(self)
+            return
+        record_range(self, None, None, order_key(avl.key_at(root, stop - 1)), True, True)
 
     def get_at(self, key, default=None):
         """Return the value stored under ``key`` (canonicalized, as stored keys are) or ``default`` when absent.
@@ -203,11 +227,33 @@ class Dictionary(ConcurrentOptimized, IndexedCollection):
 
     def keys(self, *, after=avl.UNBOUNDED) -> Iterator:
         """Keys in order; with ``after``, only the keys strictly after it (by ``order_key``, D20), lazily:
-        O(log n) to start and O(1) per key, a cursor from the last key given."""
-        pairs = avl.key_iter(self.root) if after is avl.UNBOUNDED else \
-            avl.key_iter_range(self.root, lo=after, lo_inc=False)
-        for key, _ in pairs:
+        O(log n) to start and O(1) per key, a cursor from the last key given.
+
+        On a linked version ``keys()`` records the whole collection; ``keys(after=k)`` is a window
+        read (R68): before each key it yields it records ``KeyRange(root, None, k, key)``, and
+        when exhausted ``KeyRange(root, None, k, None)`` (to the end), each widening the last
+        (bounds by ``order_key``)."""
+        if after is avl.UNBOUNDED or self._link is None:
+            pairs = avl.key_iter(self.root) if after is avl.UNBOUNDED else \
+                avl.key_iter_range(self.root, lo=after, lo_inc=False)
+            for key, _ in pairs:
+                yield key
+            return
+        low = order_key(after)
+        with engine_reads():
+            root = self.root
+        recorded = None
+        for okey, key, _ in avl.key_iter_okey_range_stored(root, low, None, False, True):
+            recorded = record_range(self, None, low, okey, True, True, covers=recorded)
             yield key
+        record_range(self, None, low, None, True, True, covers=recorded)
+
+    def _range_tree(self, index):
+        """See :meth:`IndexedCollection._range_tree`; ``index`` None: the key tree (``root``)."""
+        if index is None:
+            with engine_reads():
+                return self.root
+        return super()._range_tree(index)
 
     def _check_placement(self) -> None:
         check_sorted_keys(self, self.root)
@@ -301,7 +347,7 @@ DICTIONARY_OPERATIONS = ("get_at", "has", "__contains__", "set_at", "remove_at",
                          "_stored_at", "_unit_token", "elements", "items", "keys", "values", "__iter__", "__len__",
                          "content_equals", "_same_content", "_scan_window", "key_at_position", "position_of",
                          "_replay_op", "_net_ops", "_op_key", "_reapplied_on", "_with", "_intention_elements",
-                         "prepare_changes")
+                         "prepare_changes", "_record_window", "_range_tree")
 
 register_fine_grained(Dictionary, DICTIONARY_OPERATIONS)
 
