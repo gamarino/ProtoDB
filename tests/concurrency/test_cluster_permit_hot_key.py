@@ -232,11 +232,15 @@ def test_each_usable_permit_of_a_delayed_holder_commits(tmp_path, round_, thread
         assert set(res.values.values()) == {len(res.present)}, (res.values, len(res.present))
 
 
-def test_a_permission_kept_for_a_slow_retry_is_released_for_the_other_members(tmp_path):
+def test_a_permission_kept_for_a_slow_retry_is_released_for_the_other_members(tmp_path, monkeypatch):
     """Review I2 (Task 8.3f-B fix round 1): a permission kept for the runner's own retry was
     bounded only by its validity, so a retry whose ``fn`` worked for a second stalled every
     other member for that second (a8a87a7: 0.5 s of work, 502 ms for another member's single
-    commit; 1.5 s, a term abandoned).  The keep is now bounded by ``_RETRY_HOLD``."""
+    commit; 1.5 s, a term abandoned).  The keep is now bounded by ``_RETRY_HOLD``.
+
+    The other member's first commit lands between this commit's pre-pass and its lock step (spec
+    section 8): a conflict the pre-pass sees is raised without a permission, so only one decided
+    under the permission keeps it."""
     slow = 1.0
     with TieredCluster(tmp_path, 3, storage_kw=dict(durability="fsync"), lease_duration=2.4,
                        request_timeout=0.1) as tc:
@@ -247,6 +251,17 @@ def test_a_permission_kept_for_a_slow_retry_is_released_for_the_other_members(tm
         time.sleep(0.3)
         abandoned = sum(tc[n].stats().get("terms_abandoned", 0) for n in tc.ids)
         started, latency = [], []
+        pending = []
+        lock_step = tx._commit_root
+
+        def after_prepass(storage, lock_timeout, build, coordinator=None):
+            if pending and coordinator is tc[b]:
+                pending.clear()
+                t = threading.Thread(target=lambda: tc.db(a).run(incr, **RUN_KW))
+                t.start()
+                t.join()
+            return lock_step(storage, lock_timeout, build, coordinator)
+        monkeypatch.setattr(tx, "_commit_root", after_prepass)
 
         def fn(tr):
             group = tx._GROUPS.get(tc[b])
@@ -262,10 +277,9 @@ def test_a_permission_kept_for_a_slow_retry_is_released_for_the_other_members(tm
                 threading.Thread(target=other, daemon=True).start()
                 time.sleep(slow)
             elif not started:
-                # Another member commits first: this commit conflicts and its permission is kept.
-                t = threading.Thread(target=lambda: tc.db(a).run(incr, **RUN_KW))
-                t.start()
-                t.join()
+                # Another member commits first (after the pre-pass): this commit conflicts under its
+                # permission, which is kept.
+                pending.append(1)
             tr.set_root_object("n", v + 1)
 
         for _ in range(10):

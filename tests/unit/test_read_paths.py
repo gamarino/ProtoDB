@@ -445,8 +445,8 @@ def test_semantic_describe_from_snapshot_records_nothing(sdb):
 # -- N2: composing the semantic catalog runs no application code (R37, P-C) ----------------------------
 
 def test_semantic_catalog_merge_runs_no_user_code(sdb, monkeypatch):
-    """A commit that installs a module merges the semantic catalog under the space root, composing the
-    module's contributions there.  Its descriptor, invariant and intent spec subclasses override the methods
+    """A commit that installs a module merges the semantic catalog (in its pre-pass, and again under the space
+    root when the root changed meanwhile), composing the module's contributions there.  Its descriptor, invariant and intent spec subclasses override the methods
     the composition reads: none is called, under the root or elsewhere in the composition, and the stored
     catalog holds the engine's reading of the declarations, not the overrides'."""
     from proto_db.semantic import store
@@ -463,7 +463,10 @@ def test_semantic_catalog_merge_runs_no_user_code(sdb, monkeypatch):
     monkeypatch.setattr(store, "module_contributions", spy)
     acme_overrides.CALLS.clear()
     sdb.run(lambda tr: tr.install_module("acme_overrides"))
-    assert ("acme_overrides", True) in composed            # the merge composed the module under the root
+    # The commit's pre-pass composes the module, before the space root is taken (spec section 8 phase 3,
+    # R64); with the root unchanged the candidate is published and nothing is composed under it.
+    assert composed and all(name == "acme_overrides" for name, _ in composed)
+    assert ("acme_overrides", False) in composed and ("acme_overrides", True) not in composed
     assert [call for call in acme_overrides.CALLS if call[1]] == []
     assert acme_overrides.CALLS == []
     with sdb.new_transaction() as tr:
@@ -474,6 +477,38 @@ def test_semantic_catalog_merge_runs_no_user_code(sdb, monkeypatch):
     engine_invariant = Invariant("number >= 0", name="number_not_negative", meaning="An order number is not negative")
     assert elements["number_not_negative"] == engine_invariant.element("entity")
     assert elements["review"]["meaning"] == "Mark the order as reviewed"
+
+
+def test_semantic_catalog_merge_under_the_root_runs_no_user_code(sdb, monkeypatch):
+    """The same install when another commit lands between the commit's pre-pass and its lock step: the
+    root changed, so the merge composes the module again under the space root (R65, R37); no override of
+    the module's descriptor, invariant or intent spec subclasses is called there either."""
+    from proto_db import transactions
+    from proto_db.semantic import store
+    from proto_db.transactions import Transaction
+    from tests.unit.semantic_modules import acme_overrides
+
+    composed = []
+    contributions = store.module_contributions
+
+    def spy(registry, name):
+        composed.append((name, Transaction._holding_root_lock()))
+        return contributions(registry, name)
+    monkeypatch.setattr(store, "module_contributions", spy)
+    acme_overrides.CALLS.clear()
+    lock_step, pending = transactions._commit_root, [True]
+
+    def concurrent_first(*args, **kwargs):
+        if pending:
+            pending.pop()
+            sdb.run(lambda tr: tr.set_root_object("unrelated", 1))
+        return lock_step(*args, **kwargs)
+    monkeypatch.setattr(transactions, "_commit_root", concurrent_first)
+    tr = sdb.new_transaction()
+    tr.install_module("acme_overrides")
+    tr.commit()
+    assert ("acme_overrides", True) in composed            # composed again under the root
+    assert acme_overrides.CALLS == []
 
 
 class _NotedDict(dict):

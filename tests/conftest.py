@@ -6,6 +6,13 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
+# -- Delta validation equivalence (Task 12, ruling 2) -----------------------------------------------
+# PROTO_DB_VERIFY_DELTA=1 makes every delta validation under the space root (spec R65) also run the
+# full validation against the same root and fail (AssertionError) unless both give the same outcome.
+if os.environ.get("PROTO_DB_VERIFY_DELTA") == "1":
+    from proto_db import transactions as _transactions
+    _transactions._VERIFY_DELTA = True
+
 # -- GIL leak detection (Task 7.1, D39) -------------------------------------------------------
 # Importing hnswlib re-enables the GIL for the whole process on CPython 3.14t, which would silently turn
 # every later free-threading test into a GIL test.  hnsw searches therefore run in child processes

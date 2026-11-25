@@ -17,7 +17,8 @@ stored field of the customer, which no order writes): it puts the customer's cel
 
 Commit timings are taken by harness-only wrappers (:class:`CommitProbe`) which change no behaviour: per commit
 attempt, the time in ``Transaction._build_root`` (under the root lock), the validation of the reads in it
-(``Transaction._check_mutables``) and the replay part (always 0: there is no replay).  The wait is the commit's latency minus its
+(``Transaction._delta_check`` after the commit's pre-pass, ``Transaction._check_mutables`` without one; the
+pre-pass's own validation runs before the root lock and is not counted) and the replay part (always 0: there is no replay).  The wait is the commit's latency minus its
 time under the lock; the lock occupancy is the time under the lock summed over the attempts, over the timed
 window.  :func:`check_timings` verifies them (no negative wait, no part larger than its whole, an occupancy of
 at most 1).
@@ -147,7 +148,8 @@ def check_timings(samples: list, *, wall: float) -> list:
 
 class CommitProbe:
     """Harness-only timing of the commit's stages: while installed, wrappers around
-    ``Transaction._build_root`` and ``Transaction._check_mutables`` add their durations to the transaction they work for (a group-commit leader builds
+    ``Transaction._build_root``, and around ``Transaction._delta_check`` and ``Transaction._check_mutables`` while the space root is
+    held, add their durations to the transaction they work for (a group-commit leader builds
     other threads' transactions: the time goes to the transaction built).  They call the original and change
     nothing else.  :meth:`take` gives and forgets one transaction's totals."""
 
@@ -161,11 +163,13 @@ class CommitProbe:
             parts = self._totals.setdefault(id(tr), {"under_lock": 0.0, "validate": 0.0, "replay": 0.0})
             parts[part] += seconds
 
-    def _wrap(self, owner, name: str, part: str, transaction_of) -> None:
+    def _wrap(self, owner, name: str, part: str, transaction_of, held_only: bool = False) -> None:
         original = owner.__dict__[name]
         probe = self
 
         def timed(self, *args, **kwargs):
+            if held_only and not owner._holding_root_lock():
+                return original(self, *args, **kwargs)      # the pre-pass: before the root lock
             start = time.perf_counter()
             try:
                 return original(self, *args, **kwargs)
@@ -178,7 +182,8 @@ class CommitProbe:
     def install(self) -> "CommitProbe":
         from proto_db.transactions import Transaction
         self._wrap(Transaction, "_build_root", "under_lock", lambda tr: tr)
-        self._wrap(Transaction, "_check_mutables", "validate", lambda tr: tr)
+        self._wrap(Transaction, "_delta_check", "validate", lambda tr: tr, held_only=True)
+        self._wrap(Transaction, "_check_mutables", "validate", lambda tr: tr, held_only=True)
         return self
 
     def uninstall(self) -> None:

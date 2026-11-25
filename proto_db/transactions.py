@@ -188,6 +188,7 @@ from collections.abc import Mapping
 from typing import Any, Callable, Iterator, Optional
 
 from .catalog.atoms import INTENT_LOG_ROOT, SEMANTIC_CATALOG_ROOT
+from .collections import diff as _diff
 from .collections.base import IntentionConflict, _Immutable
 from .collections.linking import (NOT_A_UNIT, Link, engine_reads, fine_grained, link_of, linked_copy, lookup_key,
                                   record_whole, unit_key)
@@ -212,8 +213,8 @@ from .storage.format import RootRecord, next_root_version
 from .cluster.coordinator import REFOUND_TERM_STEP
 from .cluster.lease import Permission
 from .cluster.rootlog import compare_roots
-from .preconditions import ABSENT, ReadLog, Unit, UnitKind, range_holds, same_token, token
-from .values import canonical_for, check_text
+from .preconditions import ABSENT, ReadLog, Unit, UnitKind, range_holds, range_violated, same_token, token
+from .values import canonical_for, check_text, order_key
 
 __all__ = ["ObjectSpace", "Database", "Transaction", "HistoryEntry", "SpaceRoot", "DatabaseRoot"]
 
@@ -270,6 +271,107 @@ class _HoldingRoot:
 
 
 _HOLDING_ROOT = _HoldingRoot()
+
+#: Test switch (Task 12, equivalence of R65): when true, every delta validation under the space
+#: root also runs the full validation against the same current root and raises AssertionError
+#: unless both give the same outcome (no conflict, or a conflict on the same unit with the same
+#: message).  Never set by the library; ``tests/conftest.py`` sets it from ``PROTO_DB_VERIFY_DELTA``.
+_VERIFY_DELTA = False
+
+# The rank of a precondition in the order full validation checks them (R33, R36): the root and
+# collection units in recording order, then the ranges, then the cells (``_check_roots`` before
+# ``_check_mutables``).  Delta validation reports the violated unit of lowest rank, so both name
+# the same unit.
+_RANK_ROOTS, _RANK_RANGES, _RANK_CELLS = 0, 1, 2
+# Units checked once per changed root, whatever changed inside it.
+_ROOT_LEVEL_KINDS = frozenset({UnitKind.ROOT, UnitKind.WHOLE, UnitKind.ROOT_PRESENCE, UnitKind.INDEX_DEFS})
+# Units found by key in a changed collection (the key's order key, as the collection looks it up).
+_KEYED_KINDS = frozenset({UnitKind.KEY, UnitKind.ELEMENT, UnitKind.COUNT, UnitKind.RECORDS, UnitKind.POSITION,
+                          UnitKind.INDEX_GROUP})
+
+
+class _DeltaPlan:
+    """The recorded preconditions of a transaction arranged for delta validation (R65): built in
+    the pre-pass, outside the space root, so that under it each changed unit of the diff R0 -> R1
+    finds the preconditions it covers by dictionary lookups, in time independent of the read set."""
+
+    __slots__ = ("expected", "rank", "by_root", "root_level", "keyed", "unkeyed", "root_names", "cells",
+                 "cell_names", "ranges", "ranges_by_root", "group_indexes", "fine_roots")
+
+    def __init__(self, preconditions: dict, ranges: tuple):
+        self.expected = preconditions
+        self.rank: dict = {}
+        self.by_root: dict = {}         # root -> its units (any kind), in recording order
+        self.root_level: dict = {}      # root -> its ROOT, WHOLE, ROOT_PRESENCE and INDEX_DEFS units
+        self.keyed: dict = {}           # (kind, root, index, order key) -> units
+        self.unkeyed: dict = {}         # root -> keyed-kind units whose key has no order key
+        self.root_names: Optional[Unit] = None
+        self.cells: dict = {}           # cell name -> Unit(CELL)
+        self.cell_names: Optional[Unit] = None
+        self.ranges: dict = {}          # (root, index) -> [(rank, KeyRange)]
+        self.ranges_by_root: dict = {}  # root -> [(rank, KeyRange)]
+        self.group_indexes: dict = {}   # root -> {index name}: the indexes whose groups or ranges were read
+        self.fine_roots: set = set()    # roots with a keyed unit or a range
+        for i, unit in enumerate(preconditions):
+            kind = unit.kind
+            if kind is UnitKind.CELL:
+                self.rank[unit] = (_RANK_CELLS, i)
+                self.cells[unit.key] = unit
+                continue
+            if kind is UnitKind.CELL_NAMES:
+                self.rank[unit] = (_RANK_CELLS, i)
+                self.cell_names = unit
+                continue
+            self.rank[unit] = (_RANK_ROOTS, i)
+            if kind is UnitKind.ROOT_NAMES:
+                self.root_names = unit
+                continue
+            root = unit.root
+            self.by_root.setdefault(root, []).append(unit)
+            if kind in _ROOT_LEVEL_KINDS:
+                self.root_level.setdefault(root, []).append(unit)
+                continue
+            self.fine_roots.add(root)
+            if kind is UnitKind.INDEX_GROUP:
+                self.group_indexes.setdefault(root, set()).add(unit.index)
+            try:
+                okey = order_key(lookup_key(unit.key))
+            except ProtoValidationError:
+                self.unkeyed.setdefault(root, []).append(unit)
+                continue
+            self.keyed.setdefault((kind, root, unit.index, okey), []).append(unit)
+        for j, r in enumerate(ranges):
+            entry = ((_RANK_RANGES, j), r)
+            self.ranges.setdefault((r.root, r.index), []).append(entry)
+            self.ranges_by_root.setdefault(r.root, []).append(entry)
+            self.fine_roots.add(r.root)
+            if r.index is not None:
+                self.group_indexes.setdefault(r.root, set()).add(r.index)
+
+
+class _Candidate:
+    """The pre-pass result (spec section 8 phase 3, R64): the root it was built on (R0, by
+    pointer), that root's SpaceRoot and DatabaseRoot, the reapplied maps of objects and mutables
+    (saved), the module list the registry merge committed, the delta plan, and the oid of the
+    DatabaseRoot to build on the candidate.
+
+    That oid is drawn before the maps are saved: a build in one phase draws the new DatabaseRoot's
+    oid (adding it to the databases map) before it saves the maps' new nodes, and keeping that
+    order keeps the records a commit writes, byte for byte, those of a build in one phase (the
+    deterministic vectors and the plain-workload digests pin them)."""
+
+    __slots__ = ("pointer", "space", "db_root", "objects", "mutables", "committed_modules", "plan", "oid")
+
+    def __init__(self, pointer, space, db_root, objects, mutables, committed_modules, plan: _DeltaPlan,
+                 oid: uuid.UUID):
+        self.oid = oid
+        self.pointer = pointer
+        self.space = space
+        self.db_root = db_root
+        self.objects = objects
+        self.mutables = mutables
+        self.committed_modules = committed_modules
+        self.plan = plan
 #: The registry's roots (:mod:`proto_db.registry`).
 _REGISTRY_ROOTS = frozenset({_registry.MODULES_ROOT, _registry.CATALOG_ROOT})
 #: The roots a semantic operation's checks depend on: the module list, the registry catalog and the semantic
@@ -437,10 +539,13 @@ class DatabaseRoot(_Immutable, Atom):
 
     def __init__(self, *, objects: Dictionary, mutables: Dictionary, previous: Optional["DatabaseRoot"],
                  version: int, committed_at: datetime.datetime, origin: bytes | None = None,
-                 context: PersistenceContext | None = None):
-        """Create a database version."""
+                 context: PersistenceContext | None = None, oid: uuid.UUID | None = None):
+        """Create a database version; ``oid``: an identity drawn beforehand (a commit's pre-pass
+        draws it, see :class:`_Candidate`), else one is drawn on first need as for any atom."""
         super().__init__(context=context)
         osa = object.__setattr__
+        if oid is not None:
+            osa(self, "oid", oid)
         osa(self, "objects", objects)
         osa(self, "mutables", mutables)
         self._set_link("previous", previous)
@@ -2381,6 +2486,15 @@ class ObjectSpace:
         knows none; epochs never go backwards), else the storage's."""
         return self._read_storage_root()
 
+    def _published_record(self):
+        """The last published root a commit's pre-pass validates against (R0, spec section 8
+        phase 3): the storage's root, or in cluster mode the newest committed root this node
+        knows (without the confirmation round a new transaction may run)."""
+        coordinator = self._coordinator
+        if coordinator is None:
+            return self._storage.read_root()
+        return coordinator.current_root()[1]
+
     def _read_storage_root(self):
         """The current root: the storage's, or in cluster mode the cluster's committed root
         (the persisted one may lag)."""
@@ -2823,6 +2937,9 @@ class Transaction:
         self._recorded: list = []           # the list of each build that installs (committing)
         self._own_modules: tuple = ()           # the list this transaction's installs saw (snapshot + pending)
         self._import_needed: Optional[tuple] = None     # set by a build that needs imports (I-1)
+        # The pre-pass result (R64), set by _commit before the lock step; None: no pre-pass (a
+        # build then validates fully, R65).
+        self._candidate: Optional[_Candidate] = None
         record = database.space._snapshot_record()
         self._epoch = record.epoch if record is not None else 0
         self._snapshot_pointer = record.pointer if record is not None else None
@@ -3823,30 +3940,29 @@ class Transaction:
                 self._state = _COMMITTED if committed else _ABORTED
 
     def _commit(self) -> None:
+        """The commit protocol of spec section 8: close (R23: nothing to publish ends here; module
+        installs and catalog updates count as intentions, N3), preparation (:meth:`_prepare_commit`),
+        pre-pass (:meth:`_prepass`, without the space root), publication (:meth:`_build_root`
+        under the space root: the candidate when the root did not change, else delta validation
+        and reapplication), after (the links end with the transaction, R47)."""
         if not self._writes and not self._mwrites and not self._registry_pending():
             return
-        self._prepare_writes()
-        written = (list(self._writes.values()) + list(self._mwrites.values()) + list(self._catalog_new.values())
-                   + [obj for _, obj in self._catalog_updates.values()])
-        for value in written:
-            if isinstance(value, Atom):
-                self.save(value)
+        self._prepare_commit()
         space = self._database.space
-        # In cluster mode the round's replication makes every record of the round durable with
-        # one local sync (D50); no flush per transaction.
-        with _released(self._lock):
-            self._prebuild_registries()
         published = unknown = False
         try:
             for _ in range(_IMPORT_ROUNDS):
                 self._import_needed = None
                 with _registry.no_builds():
-                    try:
-                        published = _commit_root(self.storage, space.lock_timeout, self._scoped_build_root,
-                                                 space.coordinator)
-                    except ProtoOutcomeUnknownError:
-                        unknown = True
-                        raise
+                    # R31: one pre-pass per lock step; a conflict here never takes the space root.
+                    self._candidate = self._prepass()
+                    if self._import_needed is None:
+                        try:
+                            published = _commit_root(self.storage, space.lock_timeout, self._scoped_build_root,
+                                                     space.coordinator)
+                        except ProtoOutcomeUnknownError:
+                            unknown = True
+                            raise
                 if self._import_needed is None:
                     break
                 # The build published nothing: it needs modules this process has not fully imported,
@@ -3872,6 +3988,58 @@ class Transaction:
                 space._registries.committed(
                     self._database.name, self._recorded,
                     self._recorded[-1] if published or unknown else None)
+
+    def _prepare_commit(self) -> None:
+        """The preparation phase (spec section 8 phase 2), without the space root: the index keys
+        of the intentions (:meth:`_prepare_writes`), every written atom persisted, and the
+        registries resolution may need built (outside every lock)."""
+        self._prepare_writes()
+        written = (list(self._writes.values()) + list(self._mwrites.values()) + list(self._catalog_new.values())
+                   + [obj for _, obj in self._catalog_updates.values()])
+        for value in written:
+            if isinstance(value, Atom):
+                self.save(value)
+        # In cluster mode the round's replication makes every record of the round durable with
+        # one local sync (D50); no flush per transaction.
+        with _released(self._lock):
+            self._prebuild_registries()
+
+    def _prepass(self) -> Optional[_Candidate]:
+        """The pre-pass (spec section 8 phase 3, R31, R64), without the space root: read the last
+        published root R0, validate every precondition against it (a failure raises
+        ``ProtoConflictError`` before the space root is taken), reapply the intentions on it,
+        persist the new nodes, and return the candidate maps with the plan of delta validation
+        (R65).  ``None`` when there is no published root, or when the registry merge needs
+        modules imported first (``_import_needed`` is set).  This transaction is the reader, as
+        in a build (ruling R201)."""
+        record = self._database.space._published_record()
+        if record is None:
+            return None
+        reader = set_reader(self)
+        try:
+            if record.pointer == self._snapshot_pointer:
+                space, db_root = self._snapshot_space, self._db_root
+                plan = self._write_plan(db_root.objects, True)
+            else:
+                space = _load_space(self, record)
+                db_root = space.databases.get_at(self._database.name) if space is not None else None
+                if db_root is None:
+                    raise ProtoConflictError(f"Database {self._database.name!r} no longer exists")
+                plan = self._write_plan(db_root.objects, False)
+                self._check_roots(db_root.objects)
+                self._check_mutables(db_root.mutables)
+            applied = self._applied_maps(db_root, plan)
+            if applied is None:
+                return None
+            objects, mutables, _ = applied
+            oid = uuid.uuid4()          # before the saves: see _Candidate
+            self.save(objects)
+            self.save(mutables)
+            committed = self._committed_modules if self._registry_pending() else None
+            return _Candidate(record.pointer, space, db_root, objects, mutables, committed,
+                              _DeltaPlan(self._read_log.preconditions(), self._read_log.ranges()), oid)
+        finally:
+            reset_reader(reader)
 
     @staticmethod
     def _holding_root_lock() -> bool:
@@ -3920,30 +4088,81 @@ class Transaction:
             reset_reader(token)
 
     def _build_root(self, current, stamp: Optional[_ClusterStamp] = None) -> AtomPointer:
-        """Under the root lock (or the cluster lease): check the preconditions, apply the writes
-        (reapplying linked collections' intentions, merging unread mergeable roots and the
-        reserved roots), save and return the new SpaceRoot pointer.  With a cluster ``stamp``
-        the stage timings are recorded in it."""
+        """Under the root lock (or the cluster lease), spec section 8 phase 4: with the current root
+        R1 the very root of the pre-pass candidate (same pointer, R64), build on the candidate
+        maps (no validation, no reapplication, no storage read); otherwise check the
+        preconditions -- by delta over the diff R0 -> R1 after a pre-pass (R65), fully without
+        one -- apply the writes (reapplying linked collections' intentions, merging the reserved
+        roots), save and return the new SpaceRoot pointer.  With a cluster ``stamp`` the stage
+        timings are recorded in it."""
         clock = time.perf_counter
         started = clock()
         replay = 0.0
-        # The snapshot is current only if it is the very same root: in cluster mode, after a
-        # refound, an epoch no longer identifies a root (D46).
-        if (current.pointer if current is not None else None) == self._snapshot_pointer:
-            space = self._snapshot_space
-            db_root = self._db_root
-            plan = self._write_plan(db_root.objects, True)
+        candidate = self._candidate
+        pointer = current.pointer if current is not None else None
+        if candidate is not None and pointer == candidate.pointer:
+            # R32: only a round's first commit can find the root its pre-pass read; a later one
+            # finds the root the previous commit of the round produced.
+            space, db_root = candidate.space, candidate.db_root
+            objects, mutables = candidate.objects, candidate.mutables
+            if candidate.committed_modules is not None:
+                self._committed_modules = candidate.committed_modules
+            oid = candidate.oid
+            validated = clock()
         else:
-            space = _load_space(self, current)
-            db_root = space.databases.get_at(self._database.name) if space is not None else None
-            if db_root is None:
-                raise ProtoConflictError(f"Database {self._database.name!r} no longer exists")
-            # How each written root is applied, decided once (review of Task 3: the check and the
-            # application must agree); then every precondition before any intention (R33, P-F).
-            plan = self._write_plan(db_root.objects, False)
-            self._check_roots(db_root.objects)
-            self._check_mutables(db_root.mutables)
-        validated = clock()
+            # The snapshot is current only if it is the very same root: in cluster mode, after a
+            # refound, an epoch no longer identifies a root (D46).
+            if pointer == self._snapshot_pointer:
+                space = self._snapshot_space
+                db_root = self._db_root
+                plan = self._write_plan(db_root.objects, True)
+            else:
+                space = _load_space(self, current)
+                db_root = space.databases.get_at(self._database.name) if space is not None else None
+                if db_root is None:
+                    raise ProtoConflictError(f"Database {self._database.name!r} no longer exists")
+                # How each written root is applied, decided once (review of Task 3: the check and the
+                # application must agree); then every precondition before any intention (R33, P-F).
+                plan = self._write_plan(db_root.objects, False)
+                if candidate is not None:
+                    self._delta_check(candidate, db_root)
+                else:
+                    self._check_roots(db_root.objects)
+                    self._check_mutables(db_root.mutables)
+            validated = clock()
+            applied = self._applied_maps(db_root, plan)
+            if applied is None:
+                return None             # modules to import first, outside the lock (_commit)
+            objects, mutables, replay = applied
+            oid = None
+        self._committed_version = db_root.version + 1
+        self._committed_key = (stamp.term if stamp is not None else 0, self._committed_version)
+        self._committed_origin = (stamp.term, stamp.epoch) if stamp is not None else None
+        if self._installs:
+            # Before the publish: a transaction of this space that starts on this list before the
+            # commit's rebind binds to it (review I1).
+            self._database.space._registries.committing(self._database.name, self._committed_modules)
+            self._recorded.append(self._committed_modules)
+        new_root = DatabaseRoot(objects=objects, mutables=mutables, previous=db_root,
+                                version=self._committed_version,
+                                committed_at=max(_utc_now(), db_root.committed_at), origin=db_root.origin,
+                                context=self, oid=oid)
+        new_space = _new_space_root(space.databases.set_at(self._database.name, new_root), self, stamp, space)
+        ptr = self.save(new_space)
+        if stamp is not None:
+            stamp.timings["validation"] = validated - started
+            stamp.timings["replay"] = replay
+            stamp.timings["path_copy"] = clock() - validated - replay
+        return ptr
+
+    def _applied_maps(self, db_root: "DatabaseRoot", plan: dict) -> Optional[tuple]:
+        """``(objects, mutables, replay seconds)``: the maps of ``db_root`` with this transaction's
+        writes applied as ``plan`` says (R34, R35: reapplied linked intentions with their
+        precomputed keys, the reserved roots merged, R37), or ``None`` when the registry merge
+        needs modules imported first.  Run on R0 by the pre-pass and on R1 under the space root;
+        engine code only (P-C)."""
+        clock = time.perf_counter
+        replay = 0.0
         current_objects = db_root.objects
         objects = current_objects
         for name, value in self._writes.items():
@@ -3982,25 +4201,7 @@ class Transaction:
                 mutables = mutables.set_at(name, value)
             elif mutables.has(name):
                 mutables = mutables.remove_at(name)
-        self._committed_version = db_root.version + 1
-        self._committed_key = (stamp.term if stamp is not None else 0, self._committed_version)
-        self._committed_origin = (stamp.term, stamp.epoch) if stamp is not None else None
-        if self._installs:
-            # Before the publish: a transaction of this space that starts on this list before the
-            # commit's rebind binds to it (review I1).
-            self._database.space._registries.committing(self._database.name, self._committed_modules)
-            self._recorded.append(self._committed_modules)
-        new_root = DatabaseRoot(objects=objects, mutables=mutables, previous=db_root,
-                                version=self._committed_version,
-                                committed_at=max(_utc_now(), db_root.committed_at), origin=db_root.origin,
-                                context=self)
-        new_space = _new_space_root(space.databases.set_at(self._database.name, new_root), self, stamp, space)
-        ptr = self.save(new_space)
-        if stamp is not None:
-            stamp.timings["validation"] = validated - started
-            stamp.timings["replay"] = replay
-            stamp.timings["path_copy"] = clock() - validated - replay
-        return ptr
+        return objects, mutables, replay
 
     def _write_plan(self, current: Dictionary, snapshot_current: bool) -> dict:
         """How each written root is applied on the current root map ``current``: removed, set as
@@ -4023,72 +4224,91 @@ class Transaction:
         return plan
 
     def _check_roots(self, current: Dictionary) -> None:
-        """Under the root lock: raise ``ProtoConflictError`` naming the unit if a ``ROOT``,
-        ``ROOT_PRESENCE``, ``WHOLE``, ``ROOT_NAMES`` or collection unit (``KEY``, ``ELEMENT``,
-        ``COUNT``, ``RECORDS``, ``POSITION``) precondition does not hold against the current root map (R6, R12,
-        R36).  A collection unit compares the current collection's ``_unit_token`` (a Dictionary
-        key's stored form, D51: a box by its pointer, never loaded; a Set element's presence; a
-        CountedSet element's count; the pointer of a RepeatedKeysDictionary key's records; a List
-        position's item, ``NOT_A_UNIT`` when it no longer exists)."""
-        database = self._database.name
+        """Full validation of the roots (R65 without a pre-pass, and the pre-pass itself): raise
+        ``ProtoConflictError`` naming the first unit, in recording order, whose ``ROOT``,
+        ``ROOT_PRESENCE``, ``WHOLE``, ``ROOT_NAMES``, index or collection unit (``KEY``,
+        ``ELEMENT``, ``COUNT``, ``RECORDS``, ``POSITION``) precondition does not hold against the
+        root map ``current`` (R6, R12, R36), then the first range that does not hold
+        (:meth:`_root_violation`, :meth:`_range_violation`)."""
         for unit, expected in self._read_log.preconditions().items():
-            kind = unit.kind
-            if kind is UnitKind.ROOT or kind is UnitKind.WHOLE:
-                holds = _same_token(expected, _token(current.get_at(unit.root, _ABSENT)))
-            elif kind in _COLLECTION_UNIT_KINDS:
-                value = current.get_at(unit.root, _ABSENT)
-                # R12: a root absent or of a class without this unit now is a conflict (_unit_token
-                # gives NOT_A_UNIT, equal to no token, for a kind the class does not have).
-                holds = (value is not _ABSENT and fine_grained(type(value))
-                         and _same_token(expected, value._unit_token(kind, lookup_key(unit.key))))
-                if not holds:
-                    raise ProtoConflictError(
-                        f"{_UNIT_NOUNS[kind]} {lookup_key(unit.key)!r} of root {unit.root!r} of database "
-                        f"{database!r} was changed by a concurrent commit (unit {kind.name})",
-                        unit=unit, database=database)
-                continue
-            elif kind is UnitKind.ROOT_PRESENCE:
-                value = current.get_at(unit.root, _ABSENT)
-                # A plain value (int, str, ...) has no type name: never the expected class.
-                holds = value is not _ABSENT and getattr(type(value), "__type_name__", None) == expected
-            elif kind is UnitKind.INDEX_DEFS or kind is UnitKind.INDEX_GROUP:
-                value = current.get_at(unit.root, _ABSENT)
-                if value is _ABSENT or not fine_grained(type(value)):
-                    actual = None
-                elif kind is UnitKind.INDEX_DEFS:
-                    actual = value._index_definitions_token()
-                else:
-                    actual = value._index_group_token(unit.index, lookup_key(unit.key))
-                if actual is None or not _same_token(expected, actual):
-                    what = ("The index definitions" if kind is UnitKind.INDEX_DEFS else
-                            f"The group of key {lookup_key(unit.key)!r} in index {unit.index!r}")
-                    raise ProtoConflictError(
-                        f"{what} of root {unit.root!r} of database {database!r} was changed by a concurrent "
-                        f"commit (unit {kind.name})", unit=unit, database=database)
-                continue
-            elif kind is UnitKind.ROOT_NAMES:
-                if not _same_token(expected, _token(tuple(current.keys()))):
-                    raise ProtoConflictError(
-                        f"The root names of database {database!r} were changed by a concurrent commit "
-                        f"(unit {kind.name})", unit=unit, database=database)
-                continue
-            else:
-                continue
-            if not holds:
-                raise ProtoConflictError(
-                    f"Root {unit.root!r} of database {database!r} was changed by a concurrent commit "
-                    f"(unit {kind.name})", unit=unit, database=database)
+            error = self._root_violation(unit, expected, current)
+            if error is not None:
+                raise error
         for r in self._read_log.ranges():
-            self._check_range(r, current, database)
+            error = self._range_violation(r, current)
+            if error is not None:
+                raise error
 
-    def _check_range(self, r, current: Dictionary, database: str) -> None:
-        """Under the root lock: the range precondition ``r`` (R67, R68) holds if the keys inside it
-        (the Dictionary's own keys, or the groups of index ``r.index``) and their values are the
-        same in the current state as in the base (full validation, R65 without a pre-pass).
-        Engine data only (P-C): the two keyed trees are compared by pointer, then walked over
-        the range only (O(log n + k) nodes each, values by token, never loaded).  A root
-        absent, of another class or without the source now is a conflict (R12); the conflict
-        names ``Unit(RANGE, root, key=r, index=r.index)``."""
+    def _root_violation(self, unit: Unit, expected, current: Dictionary, *,
+                        names_changed: Optional[bool] = None) -> Optional[ProtoConflictError]:
+        """The ``ProtoConflictError`` naming ``unit`` when its precondition ``expected`` does not
+        hold against the root map ``current``, else ``None`` (also for the cell units, which
+        :meth:`_cell_violation` checks).  A collection unit compares the current collection's
+        ``_unit_token`` (a Dictionary key's stored form, D51: a box by its pointer, never loaded; a
+        Set element's presence; a CountedSet element's count; the pointer of a
+        RepeatedKeysDictionary key's records; a List position's item, ``NOT_A_UNIT`` when it no
+        longer exists).  ``names_changed`` (delta validation): whether the set of root names
+        differs from the pre-pass root's, which the pre-pass proved equal to the base's -- a
+        ``ROOT_NAMES`` unit then needs no listing of the names."""
+        database = self._database.name
+        kind = unit.kind
+        if kind is UnitKind.ROOT or kind is UnitKind.WHOLE:
+            holds = _same_token(expected, _token(current.get_at(unit.root, _ABSENT)))
+        elif kind in _COLLECTION_UNIT_KINDS:
+            value = current.get_at(unit.root, _ABSENT)
+            # R12: a root absent or of a class without this unit now is a conflict (_unit_token
+            # gives NOT_A_UNIT, equal to no token, for a kind the class does not have).
+            holds = (value is not _ABSENT and fine_grained(type(value))
+                     and _same_token(expected, value._unit_token(kind, lookup_key(unit.key))))
+            if holds:
+                return None
+            return ProtoConflictError(
+                f"{_UNIT_NOUNS[kind]} {lookup_key(unit.key)!r} of root {unit.root!r} of database "
+                f"{database!r} was changed by a concurrent commit (unit {kind.name})",
+                unit=unit, database=database)
+        elif kind is UnitKind.ROOT_PRESENCE:
+            value = current.get_at(unit.root, _ABSENT)
+            # A plain value (int, str, ...) has no type name: never the expected class.
+            holds = value is not _ABSENT and getattr(type(value), "__type_name__", None) == expected
+        elif kind is UnitKind.INDEX_DEFS or kind is UnitKind.INDEX_GROUP:
+            value = current.get_at(unit.root, _ABSENT)
+            if value is _ABSENT or not fine_grained(type(value)):
+                actual = None
+            elif kind is UnitKind.INDEX_DEFS:
+                actual = value._index_definitions_token()
+            else:
+                actual = value._index_group_token(unit.index, lookup_key(unit.key))
+            if actual is not None and _same_token(expected, actual):
+                return None
+            what = ("The index definitions" if kind is UnitKind.INDEX_DEFS else
+                    f"The group of key {lookup_key(unit.key)!r} in index {unit.index!r}")
+            return ProtoConflictError(
+                f"{what} of root {unit.root!r} of database {database!r} was changed by a concurrent "
+                f"commit (unit {kind.name})", unit=unit, database=database)
+        elif kind is UnitKind.ROOT_NAMES:
+            if names_changed is None:
+                names_changed = not _same_token(expected, _token(tuple(current.keys())))
+            if not names_changed:
+                return None
+            return ProtoConflictError(
+                f"The root names of database {database!r} were changed by a concurrent commit "
+                f"(unit {kind.name})", unit=unit, database=database)
+        else:
+            return None
+        if holds:
+            return None
+        return ProtoConflictError(
+            f"Root {unit.root!r} of database {database!r} was changed by a concurrent commit "
+            f"(unit {kind.name})", unit=unit, database=database)
+
+    def _range_violation(self, r, current: Dictionary) -> Optional[ProtoConflictError]:
+        """Full validation of the range precondition ``r`` (R67, R68): ``None`` if the keys inside
+        it (the Dictionary's own keys, or the groups of index ``r.index``) and their values are
+        the same in the current state as in the base, else the error naming
+        ``Unit(RANGE, root, key=r, index=r.index)``.  Engine data only (P-C): the two keyed trees
+        are compared by pointer, then walked over the range only (O(log n + k) nodes each,
+        values by token, never loaded).  A root absent, of another class or without the source
+        now is a conflict (R12)."""
         value = current.get_at(r.root, _ABSENT)
         base = self._base_root_value(r.root)
         holds = False
@@ -4096,28 +4316,162 @@ class Transaction:
             current_tree, base_tree = value._range_tree(r.index), base._range_tree(r.index)
             holds = (current_tree is not NOT_A_UNIT and base_tree is not NOT_A_UNIT
                      and range_holds(r, base_tree, current_tree))
-        if not holds:
-            source = "keys" if r.index is None else f"keys of index {r.index!r}"
-            raise ProtoConflictError(
-                f"The {source} of root {r.root!r} of database {database!r} in the range read were changed by a "
-                f"concurrent commit (unit RANGE)", unit=Unit(UnitKind.RANGE, r.root, key=r, index=r.index),
-                database=database)
+        return None if holds else self._range_error(r)
+
+    def _range_error(self, r) -> ProtoConflictError:
+        database = self._database.name
+        source = "keys" if r.index is None else f"keys of index {r.index!r}"
+        return ProtoConflictError(
+            f"The {source} of root {r.root!r} of database {database!r} in the range read were changed by a "
+            f"concurrent commit (unit RANGE)", unit=Unit(UnitKind.RANGE, r.root, key=r, index=r.index),
+            database=database)
 
     def _check_mutables(self, current: Dictionary) -> None:
-        """Under the root lock: raise ``ProtoConflictError`` naming the unit if a ``CELL`` or
-        ``CELL_NAMES`` precondition does not hold against the current mutable table (R6, R36)."""
-        database = self._database.name
+        """Full validation of the cells: raise ``ProtoConflictError`` naming the first ``CELL`` or
+        ``CELL_NAMES`` unit, in recording order, whose precondition does not hold against the
+        current mutable table (R6, R36)."""
         for unit, expected in self._read_log.preconditions().items():
-            if unit.kind is UnitKind.CELL:
-                if not _same_token(expected, _token(current.get_at(unit.key, _ABSENT))):
-                    raise ProtoConflictError(
-                        f"Mutable {unit.key!r} of database {database!r} was changed by a concurrent commit "
-                        f"(unit {unit.kind.name})", unit=unit, database=database)
-            elif unit.kind is UnitKind.CELL_NAMES:
-                if not _same_token(expected, _token(tuple(current.keys()))):
-                    raise ProtoConflictError(
-                        f"The mutable cell names of database {database!r} were changed by a concurrent commit "
-                        f"(unit {unit.kind.name})", unit=unit, database=database)
+            error = self._cell_violation(unit, expected, current)
+            if error is not None:
+                raise error
+
+    def _cell_violation(self, unit: Unit, expected, current: Dictionary, *,
+                        names_changed: Optional[bool] = None) -> Optional[ProtoConflictError]:
+        """The ``ProtoConflictError`` naming the ``CELL`` or ``CELL_NAMES`` ``unit`` when its
+        precondition does not hold against the mutable table ``current``, else ``None`` (also for
+        any other kind).  ``names_changed``: as in :meth:`_root_violation`, for ``CELL_NAMES``."""
+        database = self._database.name
+        if unit.kind is UnitKind.CELL:
+            if not _same_token(expected, _token(current.get_at(unit.key, _ABSENT))):
+                return ProtoConflictError(
+                    f"Mutable {unit.key!r} of database {database!r} was changed by a concurrent commit "
+                    f"(unit {unit.kind.name})", unit=unit, database=database)
+        elif unit.kind is UnitKind.CELL_NAMES:
+            if names_changed is None:
+                names_changed = not _same_token(expected, _token(tuple(current.keys())))
+            if names_changed:
+                return ProtoConflictError(
+                    f"The mutable cell names of database {database!r} were changed by a concurrent commit "
+                    f"(unit {unit.kind.name})", unit=unit, database=database)
+        return None
+
+    def _delta_check(self, candidate: _Candidate, db_root: "DatabaseRoot") -> None:
+        """Delta validation under the space root (R65): the pre-pass proved every precondition
+        against R0 (``candidate.db_root``), so one holds against R1 (``db_root``) iff its unit did
+        not change between them.  The engine diffs R0 and R1 -- the root map, each changed
+        fine-grained collection (:meth:`changed_units`), the index groups read
+        (:meth:`changed_index_groups`) and the mutable table -- skipping shared subtrees unloaded,
+        and checks only the recorded preconditions and ranges the changes cover: cost
+        O(changes since R0 x log n), independent of the read set.  A changed root that cannot be
+        diffed (absent on one side, another class, a list that shrank, a set indexed on one side
+        only) has every unit of it checked.  Raises the ``ProtoConflictError`` of the violated
+        unit of lowest rank, the one full validation raises first (R33, R36)."""
+        plan = candidate.plan
+        old_db = candidate.db_root
+        old_objects, new_objects = old_db.objects, db_root.objects
+        found: list = []
+        seen: set = set()
+
+        def check(unit, names_changed=None):
+            if unit in seen:
+                return
+            seen.add(unit)
+            rank = plan.rank[unit]
+            expected = plan.expected[unit]
+            if rank[0] == _RANK_CELLS:
+                error = self._cell_violation(unit, expected, db_root.mutables, names_changed=names_changed)
+            else:
+                error = self._root_violation(unit, expected, new_objects, names_changed=names_changed)
+            if error is not None:
+                found.append((rank, error))
+
+        def check_range(rank, r, keys):
+            # keys: exactly the keys (or index keys) whose entry differs between R0 and R1, or
+            # None when the source could not be diffed (full check of the range).
+            error = (self._range_violation(r, new_objects) if keys is None
+                     else self._range_error(r) if range_violated(r, keys) else None)
+            if error is not None:
+                found.append((rank, error))
+
+        with engine_reads():
+            old_tree, new_tree = old_objects.root, new_objects.root
+        for name, old_stored, new_stored in _diff.changed_entries(old_tree, new_tree):
+            for unit in plan.root_level.get(name, ()):
+                check(unit)
+            if plan.root_names is not None and (old_stored is ABSENT) != (new_stored is ABSENT):
+                check(plan.root_names, names_changed=True)
+            if name in plan.fine_roots:
+                self._delta_check_collection(plan, name, old_objects, new_objects, check, check_range)
+        with engine_reads():
+            old_cells, new_cells = old_db.mutables.root, db_root.mutables.root
+        for name, old_stored, new_stored in _diff.changed_entries(old_cells, new_cells):
+            unit = plan.cells.get(name)
+            if unit is not None:
+                check(unit)
+            if plan.cell_names is not None and (old_stored is ABSENT) != (new_stored is ABSENT):
+                check(plan.cell_names, names_changed=True)
+        delta = min(found, key=lambda item: item[0])[1] if found else None
+        if _VERIFY_DELTA:
+            self._verify_delta(delta, db_root)
+        if delta is not None:
+            raise delta
+
+    def _delta_check_collection(self, plan: _DeltaPlan, name: str, old_objects: Dictionary,
+                                new_objects: Dictionary, check, check_range) -> None:
+        """The keyed units, index groups and ranges of the changed root ``name`` that the diff of
+        its collection R0 -> R1 covers (see :meth:`_delta_check`)."""
+        old, new = old_objects.get_at(name, _ABSENT), new_objects.get_at(name, _ABSENT)
+        whole = (old is _ABSENT or new is _ABSENT or type(old) is not type(new) or not fine_grained(type(new)))
+        keys: list = []
+        if not whole:
+            cls = type(new)         # fine-grained: its diff methods are the engine's (N5)
+            for unit in cls.changed_units(old, new, name):
+                if unit.kind is UnitKind.WHOLE:
+                    whole = True
+                    break
+                key = lookup_key(unit.key)
+                keys.append(key)
+                for covered in plan.keyed.get((unit.kind, name, None, order_key(key)), ()):
+                    check(covered)
+        if whole:
+            for unit in plan.by_root.get(name, ()):
+                check(unit)
+            for rank, r in plan.ranges_by_root.get(name, ()):
+                check_range(rank, r, None)
+            return
+        for rank, r in plan.ranges.get((name, None), ()):
+            check_range(rank, r, keys)
+        for index in sorted(plan.group_indexes.get(name, ())):
+            groups = list(cls.changed_index_groups(old, new, index))
+            if any(key is _diff.EVERYTHING for key in groups):
+                for unit in plan.by_root.get(name, ()):
+                    if unit.kind is UnitKind.INDEX_GROUP and unit.index == index:
+                        check(unit)
+                for rank, r in plan.ranges.get((name, index), ()):
+                    check_range(rank, r, None)
+                continue
+            for key in groups:
+                for covered in plan.keyed.get((UnitKind.INDEX_GROUP, name, index, order_key(key)), ()):
+                    check(covered)
+            for rank, r in plan.ranges.get((name, index), ()):
+                check_range(rank, r, groups)
+        for unit in plan.unkeyed.get(name, ()):
+            check(unit)
+
+    def _verify_delta(self, delta: Optional[ProtoConflictError], db_root: "DatabaseRoot") -> None:
+        """Test switch :data:`_VERIFY_DELTA`: run the full validation against ``db_root`` and raise
+        ``AssertionError`` unless it gives the outcome delta validation gave (ruling 2 of Task 12)."""
+        try:
+            self._check_roots(db_root.objects)
+            self._check_mutables(db_root.mutables)
+            full = None
+        except ProtoConflictError as e:
+            full = e
+        same = (full is None and delta is None) or (
+            full is not None and delta is not None and full.unit == delta.unit and str(full) == str(delta))
+        if not same:
+            raise AssertionError(f"Delta validation gave {delta!r} (unit {getattr(delta, 'unit', None)}) where full "
+                                 f"validation gives {full!r} (unit {getattr(full, 'unit', None)})")
 
     # -- context manager --------------------------------------------------------------------
 
