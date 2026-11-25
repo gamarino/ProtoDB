@@ -93,19 +93,6 @@ Mutable cells (D11, D35)
     :class:`~proto_db.values.MutableObject` handle names a cell and resolves it
     through a transaction.
 
-Intent transactions (spec section 9, R269; Task 8)
-    ``new_transaction(intents=True)`` and ``run(fn, intents=True)`` start a transaction whose
-    semantic session logs its operations instead of writing cells (:mod:`proto_db.semantic.intents`).
-    At commit, in the build under the root lock, after the root writes and the registry merge and
-    before the raw cell writes, the log validates the reads its caller decided on and replays the
-    operations on the cells current then (``ProtoConflictError`` on a changed read), and the commit
-    writes the operations' IntentRecords in ``__intentLog``.  A commit that logged nothing removes an
-    older ``__intentLog`` (the root holds the records of the commit that wrote its version), unless it
-    wrote that root itself (an internal writer, such as the conformance generator; applications cannot
-    write reserved roots); a database
-    that never used intents has none, so without the flag nothing changes.  A space with a cluster
-    coordinator refuses the flag (``ProtoNotSupportedError``).
-
 Commit protocol (D34)
     1. No writes: nothing is saved nor published.
     2. Written values are saved (children first) before taking the root lock; the
@@ -258,12 +245,6 @@ def _semantic_store():
     return store
 
 
-def _intents():
-    """:mod:`proto_db.semantic.intents`, imported on first use (it imports this module)."""
-    from .semantic import intents
-    return intents
-
-
 def _constraints():
     """:mod:`proto_db.semantic.constraints`, imported on first use (the semantic layer imports this module)."""
     from .semantic import constraints
@@ -280,11 +261,6 @@ class _SemanticUndo:
     def __init__(self):
         self.cells: dict = {}
         self.versions: dict = {}
-
-
-def _check_intents_flag(intents) -> None:
-    if not isinstance(intents, bool):
-        raise ProtoValidationError(f"intents must be a bool, not {intents!r}")
 
 
 def _check_not_reserved(name: str) -> None:
@@ -2536,13 +2512,10 @@ class Database:
             raise ProtoValidationError(f"Database {self._name!r} does not exist")
         return root
 
-    def new_transaction(self, *, intents: bool = False) -> "Transaction":
-        """Start a transaction on the current snapshot.  With ``intents=True`` its semantic session logs its
-        operations and the commit replays them (spec section 9; see :class:`Transaction`); a space with a
-        cluster coordinator refuses it (``ProtoNotSupportedError``)."""
-        _check_intents_flag(intents)
+    def new_transaction(self) -> "Transaction":
+        """Start a transaction on the current snapshot."""
         self._space._check_open()
-        return Transaction(self, intents=intents)
+        return Transaction(self)
 
     def history(self) -> list:
         """The committed versions of this database, newest first, as :class:`HistoryEntry` objects."""
@@ -2643,7 +2616,7 @@ class Database:
         return check_resumed(pager, fields)
 
     def run(self, fn: Callable[["Transaction"], Any], retries: int = 10,
-            backoff: tuple = (0.001, 0.2), *, intents: bool = False) -> Any:
+            backoff: tuple = (0.001, 0.2)) -> Any:
         """Run ``fn(tr)`` in a fresh transaction, commit it and return ``fn``'s result.
 
         On ``ProtoConflictError`` (from the commit, from a merge, or raised by ``fn``)
@@ -2656,10 +2629,8 @@ class Database:
         root that permission committed.  Any other exception aborts the
         transaction and propagates unchanged; notably ``ProtoOutcomeUnknownError`` is never
         retried, because the commit may have been applied.  If ``fn`` ends the transaction itself
-        (commit or abort), ``run`` returns its result without committing.  With ``intents=True`` each
-        attempt is an intent transaction (:meth:`new_transaction`).
+        (commit or abort), ``run`` returns its result without committing.
         """
-        _check_intents_flag(intents)
         if isinstance(retries, bool) or not isinstance(retries, int) or retries < 0:
             raise ProtoValidationError("retries must be a non-negative int")
         try:
@@ -2676,7 +2647,7 @@ class Database:
         _RUN.kept_group = None
         try:
             for attempt in range(retries + 1):
-                tr = self.new_transaction(intents=intents)
+                tr = self.new_transaction()
                 _RUN.retry_left = attempt < retries
                 held = False
                 try:
@@ -2743,38 +2714,16 @@ class Transaction:
     and that transaction's own commit fills its memo, or remembers its error, before it waits
     for the root lock, after which its resolution takes no lock.
 
-    Replaying intents at commit keeps this order (intent mode, :mod:`proto_db.semantic.intents`).
-    The replay runs in :meth:`_build_root`, under the root lock, in the thread that builds the
-    commit: its own, or a group-commit leader building the queued commits of other threads, each of
-    which holds its own transaction's ``_lock`` while it waits.  It takes no transaction's
-    ``_lock``: the log it reads is frozen (changed only under ``_lock`` while the transaction is
-    active, and the transaction stopped being active under ``_lock`` before its commit was queued),
-    the cells it reads and writes are its own, and it resolves through the registry memo filled
-    before the root lock.  An intent's own code that calls another transaction meets the rule
-    above: that transaction is not active (it raises before the lock), or its lock is held by a
-    call that never waits for the root lock.  So the replay adds no edge to the order ``_lock``,
-    then the root lock, then the leaf locks (atom cache, registry cache), and no cycle.
-
     Constraints (spec section 10, :mod:`proto_db.semantic.constraints`): the outermost semantic operation
     is all or nothing (:meth:`semantic_operation` undoes its writes when it raises), and :meth:`commit`
     checks the cardinality of the entities the semantic operations wrote under the lock, before the state
     leaves active and outside the root lock, so its reads enter the read set; a violation aborts the
     transaction (``ProtoConstraintError``).  A transaction that ran no semantic write checks nothing.
 
-    With ``intents=True`` (spec section 9) the transaction is in intent mode: see
-    :mod:`proto_db.semantic.intents`.  A raw write (:meth:`set_mutable`, :meth:`new_mutable`,
-    :meth:`remove_mutable`) of a cell its intent log touches is refused (``ProtoUserError``), and so is a
-    raw read (:meth:`get_mutable`, :meth:`snapshot_mutable`) of a cell the log wrote.
     """
 
-    def __init__(self, database: Database, *, intents: bool = False):
-        """Start a transaction on ``database``'s current snapshot (use :meth:`Database.new_transaction`).
-        ``intents=True``: intent mode (spec section 9), refused on a space with a cluster coordinator."""
-        _check_intents_flag(intents)
-        if intents and database.space._coordinator is not None:
-            raise ProtoNotSupportedError(
-                "Intent transactions (intents=True) run on one node: a space with a cluster coordinator refuses "
-                "them (spec section 9, R269)")
+    def __init__(self, database: Database):
+        """Start a transaction on ``database``'s current snapshot (use :meth:`Database.new_transaction`)."""
         self._database = database
         self.storage = database.space.storage
         atoms = database.space._atoms
@@ -2842,9 +2791,6 @@ class Transaction:
         # for the transaction's life, so only its own installs change it (review Important 3).
         self._registry_memo: Optional[tuple] = None
         self._prebuild_error: Optional[ProtoDBError] = None     # a registry the commit could not build
-        # Intent mode (spec section 9): the intent log, replayed at commit (proto_db.semantic.intents).
-        self._intent_log = _intents().IntentLog(self) if intents else None
-
     @property
     def _linearizations(self) -> BoundedCache:
         """The linearizations of parents tuples for objects whose context is this transaction:
@@ -2888,28 +2834,6 @@ class Transaction:
     def is_active(self) -> bool:
         """True until the transaction is committed or aborted."""
         return self._state == _ACTIVE
-
-    @property
-    def intents(self) -> bool:
-        """Whether the transaction is in intent mode (``Database.new_transaction(intents=True)``)."""
-        return self._intent_log is not None
-
-    def _check_not_logged(self, name: str) -> None:
-        """Under the lock: refuse a raw write of a cell the intent log touches (spec section 9)."""
-        if self._intent_log is not None and self._intent_log.touches(name):
-            raise ProtoUserError(
-                f"The cell {name!r} is read or written by this transaction's intent log; a raw write of it is "
-                f"refused (spec section 9): change it through the semantic session")
-
-    def _check_not_written_by_log(self, name: str) -> None:
-        """Under the lock: refuse a raw read of a cell the intent log wrote (spec section 9).  The raw view
-        never holds the log's effects: they exist from the commit on, recomputed by the replay on the cells
-        current then, so the record view's value is not what commits either."""
-        if self._intent_log is not None and self._intent_log.cells.wrote(name):
-            raise ProtoUserError(
-                f"The cell {name!r} is written by this transaction's intent log; a raw read of it is refused "
-                f"(spec section 9): its value is decided when the commit replays the log -- read it through "
-                f"the semantic session")
 
     def _check_active(self) -> None:
         if self._state != _ACTIVE:
@@ -3050,7 +2974,6 @@ class Transaction:
         with self._lock:
             if self._state != _ACTIVE:
                 self._check_active()
-            self._check_not_logged(name)
             if self._mutable_view(name, record=True) is not _ABSENT:
                 raise ProtoValidationError(f"Mutable {name!r} already exists")
             if self._semantic_depth:
@@ -3071,7 +2994,6 @@ class Transaction:
         with self._lock:
             if self._state != _ACTIVE:
                 self._check_active()
-            self._check_not_written_by_log(name)
             value = self._mutable_view(name, record=True)
             return None if value is _ABSENT else value
 
@@ -3088,7 +3010,6 @@ class Transaction:
         with self._lock:
             if self._state != _ACTIVE:
                 self._check_active()
-            self._check_not_written_by_log(name)
             value = self._mutables.get_at(name, _ABSENT)
         return None if value is _ABSENT else value
 
@@ -3107,7 +3028,7 @@ class Transaction:
         (:meth:`semantic_changes`, :mod:`proto_db.semantic.constraints`).  The first operation that writes
         also enters the catalog roots (``__currentModules``, ``__catalog``, ``__semanticCatalog``) in the read
         set: its writes were checked against this version's catalog, so a concurrent install makes the commit
-        conflict and a retry checks them against the new one, as an intent-mode commit does.  The undo log is
+        conflict and a retry checks them against the new one.  The undo log is
         made by the operation's first write, so an operation that only reads allocates nothing.
 
         Only the outermost operation is undone: a nested operation that fails inside it is not undone by
@@ -3266,7 +3187,6 @@ class Transaction:
         with self._lock:
             if self._state != _ACTIVE:
                 self._check_active()
-            self._check_not_logged(name)
             if self._mutable_view(name, record=False) is _ABSENT:
                 raise ProtoValidationError(f"Mutable {name!r} does not exist; create it with new_mutable")
             if self._semantic_depth:
@@ -3287,7 +3207,6 @@ class Transaction:
         with self._lock:
             if self._state != _ACTIVE:
                 self._check_active()
-            self._check_not_logged(name)
             if self._mutable_view(name, record=False) is _ABSENT:
                 raise ProtoValidationError(f"Mutable {name!r} does not exist")
             if self._semantic_depth:
@@ -3295,9 +3214,7 @@ class Transaction:
             self._mwrites[name] = _REMOVED
 
     def mutable_names(self) -> list:
-        """Sorted names of the mutable cells as this transaction sees them (not recorded in the read set).
-        In intent mode the cells the log created are listed too, under the names the commit gives them (R260;
-        a replay that would create others is a conflict)."""
+        """Sorted names of the mutable cells as this transaction sees them (not recorded in the read set)."""
         if self._state != _ACTIVE:      # fails before the lock (see "Locks" in the class docstring)
             self._check_active()
         with self._lock:
@@ -3309,8 +3226,6 @@ class Transaction:
                     names.discard(name)
                 else:
                     names.add(name)
-            if self._intent_log is not None:
-                names.update(self._intent_log.cells.written())
             return sorted(names)
 
     # -- the runtime registry ----------------------------------------------------------------
@@ -3756,8 +3671,7 @@ class Transaction:
                 self._state = _COMMITTED if committed else _ABORTED
 
     def _commit(self) -> None:
-        if not self._writes and not self._mwrites and not self._registry_pending() \
-                and not (self._intent_log is not None and self._intent_log.entries):
+        if not self._writes and not self._mwrites and not self._registry_pending():
             return
         written = (list(self._writes.values()) + list(self._mwrites.values()) + list(self._catalog_new.values())
                    + [obj for _, obj in self._catalog_updates.values()])
@@ -3864,14 +3778,9 @@ class Transaction:
             if objects is None:
                 return None             # modules to import first, outside the lock (_commit)
         mutables = db_root.mutables
-        if self._intent_log is not None:
-            # Intent mode (preflight F22): validate the fine reads, replay the log on the current cells and
-            # write __intentLog; the raw writes below hold no cell the log touched.  No transaction lock.
-            merge_started = clock()
-            objects, mutables = self._intent_log.replay(self, db_root, objects, mutables)
-            replay += clock() - merge_started
-        elif INTENT_LOG_ROOT not in self._writes and current_objects.has(INTENT_LOG_ROOT):
-            objects = objects.remove_at(INTENT_LOG_ROOT)    # an older commit's log is not this version's (R271)
+        if INTENT_LOG_ROOT not in self._writes and current_objects.has(INTENT_LOG_ROOT):
+            # R55: a leftover __intentLog of an older release is dropped by this commit (a reserved-root write).
+            objects = objects.remove_at(INTENT_LOG_ROOT)
         for name, value in self._mwrites.items():
             if value is not _REMOVED:
                 mutables = mutables.set_at(name, value)

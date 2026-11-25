@@ -1074,8 +1074,7 @@ def test_a_query_from_another_thread_sees_a_semantic_operation_entirely_before_o
 
 # -- final review I1: a maintained aggregate added to a populated type ---------------------------------------
 
-@pytest.mark.parametrize("intents", [False, True])
-def test_a_maintained_aggregate_added_to_existing_entities_is_computed_then_maintained(db, intents):
+def test_a_maintained_aggregate_added_to_existing_entities_is_computed_then_maintained(db):
     """A module that adds maintained aggregates to types with entities (a natural evolution of a perennial
     base): an existing entity, whose record does not store them, reads them computed from the relation's
     current members, and the first write that maintains one stores it, seeded by that computation; every
@@ -1094,7 +1093,7 @@ def test_a_maintained_aggregate_added_to_existing_entities_is_computed_then_main
     db.run(lambda tr: tr.install_module("acme_late_count"))
 
     def run(work):
-        tr = db.new_transaction(intents=intents)
+        tr = db.new_transaction()
         try:
             result = work(semantic(tr))
             tr.commit()

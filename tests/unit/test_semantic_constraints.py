@@ -4,17 +4,15 @@ R279; Task 9; preflight F25, F27, F28, F29; the plan's Review Focus 3, 4 and 6).
 Catches: two orders of one customer that fit its credit limit together but are refused, or that exceed it
 together and both commit; a violation reported as a conflict (and so retried), as a ``TypeError`` over an
 absent operand, or without the rule's name, meaning and rendered message; a violating commit that publishes
-part of itself, or that fails the other commits of its group-commit round; a cancelled order that keeps
+part of itself; a cancelled order that keeps
 weighing on the aggregate; an invariant of a supertype's declaration that misses a subtype instance; an
 informative invariant (``enforced=False``) that refuses anything; a direct-mode operation that is checked
 only at commit, or that leaves its writes behind when it is refused; an entity committed without the one
 target its role requires; an enforced invariant over another entity, which no change of that entity would
-re-check.  No sleep decides anything (R82): concurrent commits are ordered by the test, and the group-commit
-round by its queue.
+re-check.  No sleep decides anything (R82): concurrent commits are ordered by the test.
 """
 from __future__ import annotations
 
-import threading
 from datetime import date
 from decimal import Decimal
 
@@ -25,7 +23,7 @@ from proto_db.semantic import semantic
 from proto_db.semantic.descriptors import invariant_name
 from proto_db.semantic.expressions import parse
 from proto_db.storage.memory import MemoryStorage
-from proto_db.transactions import ObjectSpace, Transaction
+from proto_db.transactions import ObjectSpace
 from proto_db.values import MISSING
 from tests.unit.semantic_modules import MAPPING
 
@@ -98,26 +96,29 @@ def _exists(db, handle) -> bool:
     return _read(db, lambda s, tr: tr.get_mutable(handle.name) is not None)
 
 
-# -- intent mode: what commits together -----------------------------------------------------------------------
+# -- what commits together (the cell is the unit, R3) --------------------------------------------------------
 
-def test_concurrent_orders_within_the_limit_both_commit(db):
+def test_concurrent_orders_within_the_limit_both_commit_through_run(db):
     world = _world(db)
-    first, second = db.new_transaction(intents=True), db.new_transaction(intents=True)     # one snapshot
-    orders = [_order(semantic(tr), world, number, "30") for tr, number in ((first, 2), (second, 3))]
+    first, second = db.new_transaction(), db.new_transaction()          # one snapshot
+    orders = [_order(semantic(first), world, 2, "30")]
+    _order(semantic(second), world, 3, "30")
     first.commit()
-    second.commit()                                         # replayed on the first: 20 + 30 + 30 <= 100
+    with pytest.raises(ProtoConflictError):                  # both write Bob's cell
+        second.commit()
+    orders.append(db.run(lambda tr: _order(semantic(tr), world, 3, "30")))       # the retry: 20 + 30 + 30 <= 100
     assert _committed(db, world["bob"]) == Decimal("80")
     assert _orders_of(db, world["bob"]) == {world["first"], *orders}
 
 
 def test_the_later_order_over_the_limit_fails_with_the_rule(db):
     world = _world(db)
-    first, second = db.new_transaction(intents=True), db.new_transaction(intents=True)     # one snapshot
+    first = db.new_transaction()
     _order(semantic(first), world, 2, "30")
-    late = _order(semantic(second), world, 3, "60")         # alone it fits: 20 + 60 <= 100
     first.commit()
+    second = db.new_transaction()                           # on the first's version: 20 + 30 + 60 = 110 > 100
     with pytest.raises(ProtoConstraintError) as raised:
-        second.commit()                                     # with the first: 20 + 30 + 60 = 110 > 100
+        _order(semantic(second), world, 3, "60")            # refused at the operation, not at commit
     error = raised.value
     assert isinstance(error, ProtoValidationError) and not isinstance(error, ProtoConflictError)    # R273
     assert error.code == 10_100
@@ -131,10 +132,9 @@ def test_the_later_order_over_the_limit_fails_with_the_rule(db):
     assert described == {"error": "ProtoConstraintError", "code": 10_100, "constraint": CREDIT, "meaning": MEANING,
                          "message": "The order exceeds the credit limit of Bob by 10", "entity": world["bob"].name,
                          "values": {"committed": Decimal("110"), "credit_limit": Decimal("100")}, "missing": []}
-    # Nothing of the failed commit is published; the transaction ended.
-    assert not second.is_active
+    second.abort()                                          # the refused operation left nothing behind
     assert _committed(db, world["bob"]) == Decimal("50")
-    assert late not in _orders_of(db, world["bob"]) and not _exists(db, late)
+    assert len(_orders_of(db, world["bob"])) == 2
     assert "conflict" not in error.message
 
 
@@ -143,21 +143,19 @@ def test_cancelled_orders_leave_the_aggregate(db):
     second = db.run(lambda tr: _order(semantic(tr), world, 2, "30"))
     third = db.run(lambda tr: _order(semantic(tr), world, 3, "40"))
     assert _committed(db, world["bob"]) == Decimal("90")
-    late = db.new_transaction(intents=True)
-    fourth = _order(semantic(late), world, 4, "50")         # on the record view 140: the replay decides
     db.run(lambda tr: semantic(tr).update(third, state="cancelled"))       # where becomes false: a delta of -40
     assert _committed(db, world["bob"]) == Decimal("50")
-    late.commit()                                           # replayed on 50: 50 + 50 = 100 <= 100
+    fourth = db.run(lambda tr: _order(semantic(tr), world, 4, "50"))       # 50 + 50 = 100 <= 100
     assert _committed(db, world["bob"]) == Decimal("100")
     assert _orders_of(db, world["bob"]) == {world["first"], second, third, fourth}
     # The cancelled order's lines no longer move the aggregate.
     db.run(lambda tr: semantic(tr).get(third).add_line(world["product"], Decimal("1"), Decimal("500")))
     assert _committed(db, world["bob"]) == Decimal("100")
     with pytest.raises(ProtoConstraintError, match="by 1$"):
-        db.run(lambda tr: _order(semantic(tr), world, 5, "1"), intents=True)
+        db.run(lambda tr: _order(semantic(tr), world, 5, "1"))
 
 
-# -- Review Focus 3: a violation in Database.run, and in a group-commit round --------------------------------
+# -- Review Focus 3: a violation in Database.run -------------------------------------------------------------
 
 def test_constraint_error_is_not_retried_by_run(db):
     world = _world(db)
@@ -165,77 +163,16 @@ def test_constraint_error_is_not_retried_by_run(db):
 
     def fn(tr):
         calls.append(tr)
-        order = _order(semantic(tr), world, 3, "60")
+        order = _order(semantic(tr), world, 3, "60")        # alone it fits: 20 + 60 <= 100
         if len(calls) == 1:                                 # a concurrent order commits before this one
-            db.run(lambda other: _order(semantic(other), world, 2, "30"), intents=True)
+            db.run(lambda other: _order(semantic(other), world, 2, "30"))
         return order
     with pytest.raises(ProtoConstraintError) as raised:
-        db.run(fn, intents=True)
-    assert len(calls) == 1                                  # R273: never retried
+        db.run(fn)
+    assert len(calls) == 2                                  # the conflict was retried; the rule never (R273)
     assert raised.value.constraint == CREDIT
     assert _committed(db, world["bob"]) == Decimal("50")
     assert len(_orders_of(db, world["bob"])) == 2
-
-
-def test_only_the_violating_commit_fails_in_a_group_round(db, monkeypatch):
-    """T0's round holds the root lock while T1 (30 for Bob), T2 (60 for Bob) and T3 (70 for Ann), three intent
-    transactions from one snapshot, queue behind it in that order.  One thread leads the next round and builds
-    the three on one another: T2, the one that exceeds Bob's limit together with T1, fails with the rule; T1
-    and T3 publish.  The queue sets the order, with no sleep."""
-    from proto_db import transactions as T
-    world = _world(db)
-    group = T._group_of(db.space.storage)
-    original = Transaction._build_root
-    owner, builders, held, release = {}, {}, threading.Event(), threading.Event()
-
-    def build(self, current, stamp=None):
-        name = owner.get(id(self))
-        if name == "T0":
-            held.set()
-            assert release.wait(60)
-        elif name is not None:
-            builders[name] = threading.current_thread().name
-        return original(self, current, stamp)
-    monkeypatch.setattr(Transaction, "_build_root", build)
-    recorded = {}
-    for name, number, amount, customer in (("T1", 2, "30", world["bob"]), ("T2", 3, "60", world["bob"]),
-                                           ("T3", 4, "70", world["ann"])):
-        tr = db.new_transaction(intents=True)
-        owner[id(tr)] = name
-        recorded[name] = (tr, _order(semantic(tr), world, number, amount, customer=customer))
-    outcome = {}
-
-    def commit(name, tr):
-        try:
-            tr.commit()
-            outcome[name] = "committed"
-        except BaseException as error:          # reported to the test
-            outcome[name] = error
-    zero = db.new_transaction()
-    owner[id(zero)] = "T0"
-    zero.set_root_object("t0", 1)
-    threads = [threading.Thread(target=commit, args=("T0", zero), name="T0", daemon=True)]
-    threads[0].start()
-    assert held.wait(60)
-    for position, name in enumerate(("T1", "T2", "T3"), start=1):
-        thread = threading.Thread(target=commit, args=(name, recorded[name][0]), name=name, daemon=True)
-        threads.append(thread)
-        thread.start()
-        with group.cond:                        # queued in this order behind T0's round
-            assert group.cond.wait_for(lambda: len(group.queue) == position, timeout=60)
-    release.set()
-    for thread in threads:
-        thread.join(60)
-    assert [t.name for t in threads if t.is_alive()] == [], "a commit hung"
-    failed = outcome.pop("T2")
-    assert outcome == {"T0": "committed", "T1": "committed", "T3": "committed"}
-    assert isinstance(failed, ProtoConstraintError) and failed.constraint == CREDIT
-    assert str(failed) == "The order exceeds the credit limit of Bob by 10"
-    assert len(set(builders.values())) == 1                 # one round, one leader built all three
-    assert _committed(db, world["bob"]) == Decimal("50") and _committed(db, world["ann"]) == Decimal("70")
-    assert _orders_of(db, world["bob"]) == {world["first"], recorded["T1"][1]}
-    assert not _exists(db, recorded["T2"][1])
-    db.space.close()    # not on failure: a hung commit holds the root lock (the daemon threads die with the run)
 
 
 # -- Review Focus 4: an absent operand -------------------------------------------------------------------------
@@ -254,42 +191,38 @@ def test_missing_credit_limit_names_the_operand(db):
                                                 company=record.company))
     db.run(drop_limit)
     order = db.run(lambda tr: _order(semantic(tr), world, 2, None, customer=carol))     # no amount: unchanged
-    for intents in (False, True):
-        with pytest.raises(ProtoConstraintError) as raised:
-            db.run(lambda tr: semantic(tr).get(order).add_line(world["product"], Decimal("1"), Decimal("5")),
-                   intents=intents)
-        error = raised.value
-        assert error.constraint == CREDIT
-        assert error.message == "The order exceeds the credit limit of Carol by <missing credit_limit>"
-        assert error.values["committed"] == Decimal("5") and error.values["credit_limit"] is MISSING
-        described = error.describe()
-        assert described["values"] == {"committed": Decimal("5"), "credit_limit": None}
-        assert described["missing"] == ["credit_limit"]
+    with pytest.raises(ProtoConstraintError) as raised:
+        db.run(lambda tr: semantic(tr).get(order).add_line(world["product"], Decimal("1"), Decimal("5")))
+    error = raised.value
+    assert error.constraint == CREDIT
+    assert error.message == "The order exceeds the credit limit of Carol by <missing credit_limit>"
+    assert error.values["committed"] == Decimal("5") and error.values["credit_limit"] is MISSING
+    described = error.describe()
+    assert described["values"] == {"committed": Decimal("5"), "credit_limit": None}
+    assert described["missing"] == ["credit_limit"]
     assert _committed(db, carol) == 0
 
 
-# -- cardinality (F28: at commit, in both modes) --------------------------------------------------------------
+# -- cardinality (F28: at commit) --------------------------------------------------------------
 
 def test_cardinality_one_is_enforced(db):
     world = _world(db)
     order = world["first"]
-    for intents in (False, True):
-        tr = db.new_transaction(intents=intents)
-        semantic(tr).unlink(order, "customer", world["bob"])
-        with pytest.raises(ProtoConstraintError) as raised:
-            tr.commit()
-        error = raised.value
-        assert error.constraint == "acme.sales.Order.customer.cardinality"
-        assert error.meaning == "Every acme.sales.Order has exactly one customer"
-        assert error.message == "The order ACME, 1 has no customer (cardinality one)"
-        assert error.entity == order.name and error.values == {"customer": MISSING}
-        assert not tr.is_active
-        assert _read(db, lambda s, tr: s.get(order).customer.entity) == world["bob"]       # nothing published
+    tr = db.new_transaction()
+    semantic(tr).unlink(order, "customer", world["bob"])
+    with pytest.raises(ProtoConstraintError) as raised:
+        tr.commit()
+    error = raised.value
+    assert error.constraint == "acme.sales.Order.customer.cardinality"
+    assert error.meaning == "Every acme.sales.Order has exactly one customer"
+    assert error.message == "The order ACME, 1 has no customer (cardinality one)"
+    assert error.entity == order.name and error.values == {"customer": MISSING}
+    assert not tr.is_active
+    assert _read(db, lambda s, tr: s.get(order).customer.entity) == world["bob"]       # nothing published
     # An unlink and a link in one transaction move the end: the order still has exactly one customer.
-    for intents in (False, True):
-        db.run(lambda tr: [semantic(tr).unlink(order, "customer", world["bob"]),
-                           semantic(tr).link(order, "customer", world["ann"])], intents=intents)
-        world["bob"], world["ann"] = world["ann"], world["bob"]
+    db.run(lambda tr: [semantic(tr).unlink(order, "customer", world["bob"]),
+                       semantic(tr).link(order, "customer", world["ann"])])
+    world["bob"], world["ann"] = world["ann"], world["bob"]
     # A new order without its customer is refused at commit, with nothing published.
     tr = db.new_transaction()
     orphan = semantic(tr).create(ORDER, number=9, company=world["company"])
@@ -330,11 +263,10 @@ def test_inherited_invariant_binds_subtype_instances():
         world = _world(db)
         rush = db.run(lambda tr: _order(semantic(tr), world, 2, "30", type_name=RUSH))     # counted: 50
         assert _committed(db, world["bob"]) == Decimal("50")
-        for intents in (False, True):
-            with pytest.raises(ProtoConstraintError) as raised:
-                db.run(lambda tr: _order(semantic(tr), world, 3, "60", type_name=RUSH), intents=intents)
-            assert raised.value.constraint == CREDIT
-            assert str(raised.value) == "The order exceeds the credit limit of Bob by 10"
+        with pytest.raises(ProtoConstraintError) as raised:
+            db.run(lambda tr: _order(semantic(tr), world, 3, "60", type_name=RUSH))
+        assert raised.value.constraint == CREDIT
+        assert str(raised.value) == "The order exceeds the credit limit of Bob by 10"
         assert _orders_of(db, world["bob"]) == {world["first"], rush}
         # A rush order's own key is inherited from Order: its cardinality error names it the same way.
         tr = db.new_transaction()
@@ -350,7 +282,7 @@ def test_informative_constraint_is_not_enforced():
     space, db = _space("acme_informative")
     try:
         world = _world(db)
-        db.run(lambda tr: _order(semantic(tr), world, 2, "60"), intents=True)       # 80: into the margin of 50
+        db.run(lambda tr: _order(semantic(tr), world, 2, "60"))       # 80: into the margin of 50
         assert _committed(db, world["bob"]) == Decimal("80")
         described = _read(db, lambda s, tr: s.describe(CUSTOMER))
         margin = next(c for c in described["constraints"] if c["name"] == "credit_margin")
@@ -426,7 +358,7 @@ def test_a_stored_cross_entity_invariant_opens_for_reading_and_is_not_enforced(m
                                                                      Decimal("500")))
         assert _read(db, lambda s, tr: s.get(world["first"]).total) == Decimal("520")
         db.run(lambda tr: semantic(tr).get(world["first"]).add_line(world["product"], Decimal("1"),
-                                                                     Decimal("1")), intents=True)
+                                                                     Decimal("1")))
         assert _read(db, lambda s, tr: s.get(world["first"]).total) == Decimal("521")
     finally:
         space.close()

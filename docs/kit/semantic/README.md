@@ -46,14 +46,14 @@ semantic session (`semantic(tr)`, `query`) in `proto_db/semantic/session.py`.
 
 ## Step 4: coexist or collide by meaning
 
-Seven threads create orders for one company from one snapshot, in intent mode (`new_transaction(intents=True)`).
-The independent orders all commit with no conflict; of Fabrikam's two orders, which fit its limit each but not
-together, the one replayed second fails with `ProtoConstraintError`, whose message names the rule. A walk of the
+Seven threads create orders for one company, each in `Database.run`, which retries a conflict on a shared cell.
+The independent orders all commit; of Fabrikam's two orders, which fit its limit each but not
+together, the one that runs second fails with `ProtoConstraintError`, whose message names the rule. A walk of the
 whole history recomputes every customer's committed amount and finds no version over a limit. The agent then
 describes the customer: the rule, its meaning and the aggregate are its material to explain the refusal.
 
-Where to look: intents logged and replayed at commit in `proto_db/semantic/intents.py`; invariants checked on
-the combined result in `proto_db/semantic/constraints.py`; the history walk is `_verify_history` in the demo,
+Where to look: intents run through the session in `proto_db/semantic/entities.py`; invariants checked on
+the transaction's view in `proto_db/semantic/constraints.py`; the history walk is `_verify_history` in the demo,
 shown failing on planted damage in `tests/docs/test_kit.py`. The measured concurrency experiment is
 `benchmarks/semantic/credit_experiment.py`, published in `docs/source/performance.rst`.
 

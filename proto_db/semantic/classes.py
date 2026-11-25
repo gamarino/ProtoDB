@@ -39,11 +39,11 @@ Intents (spec sections 4 and 9, R278)
     through :func:`_invoke`, which runs the implementation with :func:`intent_context` bound; a call on
     a version that no ``SemanticSession`` gave raises ``ProtoUserError``.  A version the session gave
     invokes through the session (``proto_db.semantic.entities.BoundIntent``), which supplies the
-    context and, in intent mode, logs the call (:mod:`proto_db.semantic.intents`).  Inside a running
+    context.  Inside a running
     intent, an intent called on any version (also through ``_super()``) runs as part of it.  An intent
     that returns a new version of its receiver updates the target through ``context.update``.  An
-    intent may not be named like a logged session operation (:data:`PRIMITIVES`): its log records
-    would read as that operation's.
+    intent may not be named like a session operation (:data:`PRIMITIVES`): the catalog's IntentRecord
+    names would read as that operation's.
 """
 from __future__ import annotations
 
@@ -65,7 +65,7 @@ __all__ = ["Extension", "Relationship", "IntentContext", "IntentInvoker", "inten
 #: Class-body names that configure a declaration and are not elements.
 _CONFIG = frozenset({"__type_name__", "__type_aliases__", "__registry_module__"})
 _EXTENSION_CONFIG = frozenset({"__extends__", "__parents__", "__registry_module__"})
-#: The session operations an intent log records by name beside the intents (spec section 9).
+#: The session operations an IntentRecord names beside the intents (spec section 9).
 PRIMITIVES = RESERVED_INTENT_NAMES
 
 

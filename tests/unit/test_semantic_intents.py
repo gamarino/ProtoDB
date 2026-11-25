@@ -1,19 +1,15 @@
-"""Intent transactions behind a flag, on one node (spec section 9; rulings R260, R261, R269 to R271, R278;
-Task 8; preflight F21, F22, F25, F26, F37).
+"""The semantic session's intents and operations on the cell path (spec section 9; R53, R278).
 
-Catches: a flag that changes the bytes or the behaviour of code that does not set it; two orders of one
-customer that conflict on the customer cell instead of being replayed one after the other; a fine read of
-one attribute that conflicts with a change of another attribute of the same cell, or that misses a change of
-the attribute it read; a condition read (a query, a navigation) that misses a change of the collection it
-scanned; a replay that draws a UUID, or creates cells named otherwise than the recording told the caller; an
-``__intentLog`` that misses an operation, keeps an older commit's records, or names a version other than the
-one it is in; a redefined intent whose ``_super()`` chain runs a module's implementation twice; an intent
-whose returned version does not update its target; ``intent_context()`` usable outside an intent; a
-``requires`` decided at record time (a conflict, or a stale yes) instead of at replay; the flag accepted on a
-clustered space; a raw write that silently overwrites, or is overwritten by, the cells the log touches; a
-group-commit leader that deadlocks, or replays without its intent context, when it replays another thread's
-intents.  No sleep decides anything (R82): concurrent commits are ordered by the test, and the group-commit
-round by its queue.
+The intents mode (``intents=True``) is gone (R53): every session operation reads and writes the transaction's cells
+through ``get_mutable``, ``set_mutable``, ``new_mutable`` and ``remove_mutable``, and the unit of conflict is the
+cell (R3).  What these tests catch: a session whose bytes differ from the plain workload's; two orders of one
+customer that do not conflict on the customer cell, or a ``Database.run`` that does not retry them; a read of a cell
+that misses a concurrent change of it; an intent whose ``_super()`` chain runs a module's implementation twice; an
+intent whose returned version does not update its target; ``intent_context()`` usable outside an intent; a
+``requires`` that is not decided when the intent is called, or a retried ``ProtoConstraintError``; a raw access to a
+cell the session touched that is refused; a member read that runs inside another thread's operation; a catalog root
+change that a transaction's session writes miss.  No sleep decides anything (R82): concurrent commits are ordered by
+the test.
 
 Every entity the tests create is complete (every ``one`` role set, preflight F28).
 """
@@ -26,12 +22,11 @@ from unittest import mock
 
 import pytest
 
-from proto_db.catalog.atoms import INTENT_LOG_ROOT, intent_log_root, intent_records
-from proto_db.errors import (ProtoConflictError, ProtoConstraintError, ProtoNotSupportedError, ProtoUserError,
-                             ProtoValidationError)
+from proto_db.errors import ProtoConflictError, ProtoConstraintError, ProtoUserError, ProtoValidationError
 from proto_db.semantic import IntentContext, Version, intent_context, semantic
 from proto_db.storage.memory import MemoryStorage
-from proto_db.transactions import Database, ObjectSpace, Transaction
+from proto_db.transactions import ObjectSpace, Transaction
+from tests.support.roots import reserved_root_names
 from tests.unit.semantic_modules import MAPPING
 from tests.unit.semantic_modules import acme_audit
 from tests.unit.test_semantic_classes import _PLAIN_DIGEST_ON_THE_BASE, _plain_workload
@@ -39,7 +34,6 @@ from tests.unit.test_semantic_classes import _PLAIN_DIGEST_ON_THE_BASE, _plain_w
 pytestmark = [pytest.mark.timeout(120)]
 
 ORDER, LINE, PRODUCT = "acme.sales.Order", "acme.sales.OrderLine", "acme.catalog.Product"
-
 
 def _database(*modules):
     space = ObjectSpace(MemoryStorage(), modules_mapping=MAPPING)
@@ -90,280 +84,139 @@ def _read(db, fn):
         tr.abort()
 
 
-def _log(tr) -> tuple:
-    """The IntentRecords of the version ``tr`` reads, as ``(intent, target, arguments, transaction)``."""
-    log = intent_log_root(tr._objects)
-    return None if log is None else tuple((r.intent, r.target, dict(r.arguments), r.transaction)
-                                          for r in intent_records(log))
+# -- the plain workload ---------------------------------------------------------------------------------
 
-
-# -- without the flag ------------------------------------------------------------------------------------
-
-def test_without_the_flag_nothing_changes(tmp_path, db):
-    # F37: the oracle is the literal digest of a fixed non-semantic workload computed on the base commit
-    # b99285b, by the helper the class tests pin it with; the same workload with intents=False stated
-    # explicitly writes the same bytes.
+def test_the_session_writes_the_plain_workloads_bytes(tmp_path, db):
+    # F37: the oracle is the literal digest of a fixed non-semantic workload computed on the base commit b99285b.
     assert _plain_workload(tmp_path / "default") == _PLAIN_DIGEST_ON_THE_BASE
-    original = Database.run
-
-    def run(self, fn, *args, **kwargs):
-        return original(self, fn, *args, intents=False, **kwargs)
-    with mock.patch.object(Database, "run", run):
-        assert _plain_workload(tmp_path / "explicit") == _PLAIN_DIGEST_ON_THE_BASE
-    # Direct mode keeps today's rules: a raw write of a cell a session operation wrote is allowed, and a
-    # database that never used intents has no __intentLog.
+    # A raw write of a cell a session operation wrote is allowed, and no __intentLog is written (R53, R55).
     company, customer, product = _world(db)
     tr = db.new_transaction()
-    assert tr.intents is False
     order = _order(semantic(tr), company, customer, 1)
     tr.set_mutable(order.name, tr.get_mutable(order.name).with_(number=2))
     tr.commit()
-    assert _read(db, lambda s, tr: (s.get(order).number, _log(tr))) == (2, None)
-    for wrong in (1, None, "yes"):
-        with pytest.raises(ProtoValidationError, match="intents"):
-            db.new_transaction(intents=wrong)
-        with pytest.raises(ProtoValidationError, match="intents"):
-            db.run(lambda tr: None, intents=wrong)
+    assert _read(db, lambda s, tr: s.get(order).number) == 2
+    assert "__intentLog" not in reserved_root_names(db)
 
 
 # -- what commits together ------------------------------------------------------------------------------
 
-def test_two_orders_for_one_customer_both_commit(db):
+def test_two_orders_for_one_customer_conflict_on_the_cell_and_run_retries(db):
+    # R3: the unit is the cell.  Two orders from one snapshot both write the customer cell, so the second
+    # commit conflicts; Database.run retries it on the new state and both orders land.
     company, customer, product = _world(db)
-    first, second = db.new_transaction(intents=True), db.new_transaction(intents=True)     # one snapshot
+    first, second = db.new_transaction(), db.new_transaction()                  # one snapshot
     orders = []
     for tr, number, quantity in ((first, 1, "2"), (second, 2, "3")):
         s = semantic(tr)
         order = _order(s, company, customer, number)
-        s.get(order).add_line(product, Decimal(quantity), Decimal("10"))       # the brief's signature
-        assert s.get(order).total == Decimal(quantity) * 10                     # the record view shows it
+        s.get(order).add_line(product, Decimal(quantity), Decimal("10"))
+        assert s.get(order).total == Decimal(quantity) * 10
         orders.append(order)
     first.commit()
-    second.commit()                                                              # no conflict: replayed
+    with pytest.raises(ProtoConflictError):
+        second.commit()
+    attempts = []
+
+    def place(tr):
+        attempts.append(1)
+        s = semantic(tr)
+        order = _order(s, company, customer, 2)
+        s.get(order).add_line(product, Decimal("3"), Decimal("10"))
+        if len(attempts) == 1:                              # a concurrent commit on the customer's cell
+            db.run(lambda other: semantic(other).update(customer, credit_limit=Decimal("900")))
+        return order
+    retried = db.run(place)
+    assert len(attempts) == 2
 
     def check(s, tr):
         bob = s.get(customer)
-        assert {v.entity for v in bob.orders} == set(orders)
+        assert {v.entity for v in bob.orders} == {orders[0], retried}
         assert bob.committed == Decimal("50")
-        assert [s.get(o).total for o in orders] == [Decimal("20"), Decimal("30")]
-        assert {v.entity for v in s.get(company).orders} == set(orders)
         assert len(s.get(product).order_lines) == 2
     _read(db, check)
 
 
-def test_reading_price_does_not_conflict_with_a_new_sale(db):
+def test_reading_a_changed_cell_conflicts(db):
     company, customer, product = _world(db)
-    tr = db.new_transaction(intents=True)
-    s = semantic(tr)
-    price = s.get(product).list_price                       # a fine read of (product, list_price)
-    order = _order(s, company, customer, 1)
-    s.get(order).add_line(product, Decimal("1"), price)
-
-    def sale(other):                                        # a concurrent sale: product.order_lines changes
-        t = semantic(other)
-        sold = _order(t, company, customer, 2)
-        t.relate(LINE, order=sold, product=product, quantity=Decimal("4"), price=Decimal("10"))
-    db.run(sale)
-    tr.commit()
-    _read(db, lambda s, tr: (len(s.get(product).order_lines) == 2 and s.get(customer).committed == Decimal("50"))
-          or pytest.fail("both sales are kept"))
-
-
-def test_reading_a_changed_attribute_conflicts(db):
-    company, customer, product = _world(db)
-    tr = db.new_transaction(intents=True)
+    tr = db.new_transaction()
     s = semantic(tr)
     assert s.get(product).list_price == Decimal("10")
     _order(s, company, customer, 1)
     db.run(lambda other: semantic(other).update(product, list_price=Decimal("12")))
-    with pytest.raises(ProtoConflictError, match=r"'list_price'.*acme\.catalog\.Product#"):
+    with pytest.raises(ProtoConflictError):
         tr.commit()
     assert _read(db, lambda s, tr: len(s.get(customer).orders)) == 0          # nothing of it is published
-    # A field read at its default (stored nowhere, ABSENT) conflicts when a concurrent commit stores it.
-    order = db.run(lambda other: _order(semantic(other), company, customer, 5))
-    tr = db.new_transaction(intents=True)
-    assert semantic(tr).get(order).state == "open"
-    semantic(tr).update(order, date=date(2026, 6, 12))
-    db.run(lambda other: semantic(other).update(order, state="open"))
-    with pytest.raises(ProtoConflictError, match="'state'"):
-        tr.commit()
 
 
-def test_condition_read_conflicts_when_the_collection_changed(db):
+def test_navigating_a_many_end_conflicts_when_the_collection_changed(db):
     company, customer, product = _world(db)
-    query = {"from": ["via", ["cell", customer.name], "orders"], "aggregate": ["count"]}
-
-    def decide(tr):
-        s = semantic(tr)
-        if s.query(query)["rows"] == [{"count": 0}]:       # the result decides what the transaction writes
-            _order(s, company, customer, 1)
-
-    tr = db.new_transaction(intents=True)
-    decide(tr)
+    tr = db.new_transaction()
+    s = semantic(tr)
+    if len(s.get(customer).orders) == 0:
+        _order(s, company, customer, 1)
     db.run(lambda other: _order(semantic(other), company, customer, 7))
     with pytest.raises(ProtoConflictError):
         tr.commit()
-    # A navigation of a many end is a condition read of that end too.
-    tr = db.new_transaction(intents=True)
+    # Without a concurrent change the same decision commits.
+    tr = db.new_transaction()
     s = semantic(tr)
     if len(s.get(customer).orders) == 1:
         _order(s, company, customer, 2)
-    db.run(lambda other: _order(semantic(other), company, customer, 8))
-    with pytest.raises(ProtoConflictError, match="'orders'"):
-        tr.commit()
-    # Without a concurrent change the same decision commits.
-    tr = db.new_transaction(intents=True)
-    s = semantic(tr)
-    if len(s.get(customer).orders) == 2:
-        _order(s, company, customer, 3)
     tr.commit()
-    assert _read(db, lambda s, tr: len(s.get(customer).orders)) == 3
+    assert _read(db, lambda s, tr: len(s.get(customer).orders)) == 2
 
 
-# -- the log and its replay ---------------------------------------------------------------------------
+# -- intents --------------------------------------------------------------------------------------------
 
-def test_replay_is_deterministic_and_draws_no_uuid(audited, monkeypatch):
+def test_an_intent_creates_inside_a_transaction(audited):
     db = audited
     company, customer, product = _world(db)
-    tr = db.new_transaction(intents=True)
+    tr = db.new_transaction()
     s = semantic(tr)
     order = _order(s, company, customer, 1)
     follow = s.get(order).follow_up(2)                      # a creation inside an intent
     gadget = s.create(PRODUCT, name="gadget", list_price=Decimal("3"), company=company)
-    db.run(lambda other: semantic(other).update(customer, credit_limit=Decimal("900")))   # replayed elsewhere
-
-    # R260: an entity's identity is its cell name, drawn at record time.  The patch covers every place the
-    # semantic layer draws one; a record's oid (storage identity, core/atom.py) is drawn by every new
-    # record, and the replay builds new records (a role binds the version current at replay), so the
-    # patch leaves the uuid module itself alone.
-    class _NoDraw:
-        @staticmethod
-        def uuid4():
-            raise AssertionError("the replay drew an entity's UUID")
-    from proto_db.semantic import intents as intents_module, session as session_module
-    monkeypatch.setattr(intents_module, "uuid", _NoDraw)
-    monkeypatch.setattr(session_module, "uuid", _NoDraw)
     tr.commit()
-    monkeypatch.undo()
-    with pytest.raises(AssertionError, match="entity's UUID"):            # the patch covers the draw
-        with mock.patch.object(intents_module, "uuid", _NoDraw):
-            tr2 = db.new_transaction(intents=True)
-            try:
-                semantic(tr2).create("acme.core.Company", name="X")
-            finally:
-                tr2.abort()
 
     def check(s, tr):
         assert s.get(order).number == 1 and s.get(follow).number == 2 and s.get(gadget).name == "gadget"
         assert {v.entity for v in s.get(customer).orders} == {order, follow}
         assert tr.get_mutable(follow.name).customer == customer
-        records = _log(tr)
-        assert [r[0] for r in records] == [(ORDER, "create"), (ORDER, "follow_up"), (PRODUCT, "create")]
-        assert records[1][2] == {"number": 2, "#created": [follow.name]}       # the drawn cell travels
-        assert records[2][1] == gadget.name
     _read(db, check)
-
-
-def test_a_replay_that_creates_otherwise_than_recorded_conflicts(audited):
-    # The replay never draws (R260): when it creates more entities than were recorded, or of another type,
-    # the commit conflicts instead of drawing a name, or of publishing a cell the caller was never told of.
-    # The divergence is made by editing the recording, the one deterministic way to reach it.
-    db = audited
-    company, customer, product = _world(db)
-    order = db.run(lambda other: _order(semantic(other), company, customer, 1))
-    for tamper, message in ((lambda created: created.clear(), "creates more"),
-                            (lambda created: created.__setitem__(0, f"{PRODUCT}#{'0' * 32}"), "recorded")):
-        tr = db.new_transaction(intents=True)
-        follow = semantic(tr).get(order).follow_up(2)
-        assert follow.name.startswith(ORDER + "#")
-        tamper(tr._intent_log.entries[-1].created)
-        with pytest.raises(ProtoConflictError, match=message):
-            tr.commit()
-    # Unchanged recordings replay their own cells, also two follow-ups of one order from one snapshot.
-    first, second = db.new_transaction(intents=True), db.new_transaction(intents=True)
-    handles = [semantic(first).get(order).follow_up(2), semantic(second).get(order).follow_up(3)]
-    first.commit()
-    second.commit()
-    assert _read(db, lambda s, tr: {v.entity: v.number for v in s.get(customer).orders}) == {
-        order: 1, handles[0]: 2, handles[1]: 3}
-
-
-def test_intent_log_records_each_operation(db):
-    company, customer, product = _world(db)
-    other_company = db.run(lambda tr: semantic(tr).create("acme.core.Company", name="Other"))
-    tr = db.new_transaction(intents=True)
-    s = semantic(tr)
-    order = _order(s, company, customer, 1)
-    s.get(order).add_line(product, Decimal("2"), Decimal("10.50"))
-    s.update(order, date=date(2026, 6, 11))
-    s.relate(LINE, order=order, product=product, quantity=Decimal("1"), price=Decimal("9"))
-    s.unlink(customer, "company", company)
-    s.link(customer, "company", other_company)
-    s.invoke(order, "confirm")
-    tr.commit()
-
-    def check(s, tr):
-        version = tr._db_root.version
-        assert _log(tr) == (
-            ((ORDER, "create"), order.name, {"number": 1, "date": date(2026, 6, 10), "company": company.name,
-                                             "customer": customer.name}, version),
-            ((ORDER, "add_line"), order.name, {"product": product.name, "quantity": Decimal("2"),
-                                               "price": Decimal("10.50")}, version),
-            ((ORDER, "update"), order.name, {"date": date(2026, 6, 11)}, version),
-            ((LINE, "relate"), order.name, {"order": order.name, "product": product.name,
-                                            "quantity": Decimal("1"), "price": Decimal("9")}, version),
-            (("acme.sales.Customer", "unlink"), customer.name, {"role": "company", "target": company.name},
-             version),
-            (("acme.sales.Customer", "link"), customer.name, {"role": "company", "target": other_company.name},
-             version),
-            ((ORDER, "confirm"), order.name, {}, version))
-        assert s.get(order).state == "confirmed" and s.get(order).total == Decimal("30.00")
-        assert s.get(customer).company.entity == other_company
-    _read(db, check)
-    # The next commit's log holds its own records only; a commit without the flag writes none, and the
-    # version before keeps its log (history is the chain of versions).
-    db.run(lambda tr: semantic(tr).update(order, date=date(2026, 6, 12)), intents=True)
-    assert _read(db, lambda s, tr: [r[0] for r in _log(tr)]) == [(ORDER, "update")]
-    db.run(lambda tr: tr.set_root_object("plain", 1))
-    assert _read(db, lambda s, tr: (_log(tr), tr._objects.has(INTENT_LOG_ROOT))) == (None, False)
-    assert [r.intent for r in intent_records(intent_log_root(db.history()[1].root.objects))] == [(ORDER, "update")]
 
 
 def test_add_line_super_chain_runs_once_per_module(audited):
     db = audited
     company, customer, product = _world(db)
-    tr = db.new_transaction(intents=True)
+    tr = db.new_transaction()
     s = semantic(tr)
     order = _order(s, company, customer, 1)
     s.get(order).add_line(product, Decimal("2"), Decimal("10"))
-    assert acme_audit.RUNS == [threading.current_thread().name]       # recorded: each module once
+    assert acme_audit.RUNS == [threading.current_thread().name]       # each module once
     assert len(s.get(order).lines) == 1
     tr.commit()
-    assert len(acme_audit.RUNS) == 2                                  # replayed: each module once more
+    assert len(acme_audit.RUNS) == 1                                  # a commit runs no intent
     assert _read(db, lambda s, tr: (len(s.get(order).lines), s.get(order).total)) == (1, Decimal("20"))
 
 
 def test_confirm_returning_with_updates_the_target(db):
     company, customer, product = _world(db)
     order = db.run(lambda tr: _order(semantic(tr), company, customer, 1))
-    tr = db.new_transaction(intents=True)
+    tr = db.new_transaction()
     s = semantic(tr)
     result = s.get(order).confirm()
     assert isinstance(result, Version) and result.entity == order and result.state == "confirmed"
     assert s.get(order).state == "confirmed"
     tr.commit()
     assert _read(db, lambda s, tr: s.get(order).state) == "confirmed"
-    # Direct mode applies an intent at once, under today's rules.
-    order2 = db.run(lambda tr: _order(semantic(tr), company, customer, 2))
-    db.run(lambda tr: semantic(tr).get(order2).confirm())
-    assert _read(db, lambda s, tr: (s.get(order2).state, _log(tr))) == ("confirmed", None)
 
 
 def test_intent_context_outside_an_intent_raises(db):
     company, customer, product = _world(db)
     with pytest.raises(ProtoUserError, match="only while an intent runs"):
         intent_context()
-    tr = db.new_transaction(intents=True)
+    tr = db.new_transaction()
     s = semantic(tr)
     order = _order(s, company, customer, 1)
     s.get(order).confirm()
@@ -379,7 +232,7 @@ def test_intent_context_outside_an_intent_raises(db):
 def test_session_writes_inside_an_intent_go_through_the_context(audited):
     db = audited
     company, customer, product = _world(db)
-    tr = db.new_transaction(intents=True)
+    tr = db.new_transaction()
     s = semantic(tr)
     order = _order(s, company, customer, 1)
     with mock.patch.object(acme_audit, "RUNS", new=_Raiser(lambda: s.update(order, date=date(2026, 1, 1)))):
@@ -387,7 +240,6 @@ def test_session_writes_inside_an_intent_go_through_the_context(audited):
             s.get(order).add_line(product, Decimal("1"), Decimal("1"))
     assert len(s.get(order).lines) == 0 and s.get(order).date == date(2026, 6, 10)    # nothing of it applied
     tr.commit()
-    assert _read(db, lambda s, tr: [r[0][1] for r in _log(tr)]) == ["create"]
 
 
 class _Raiser(list):
@@ -402,177 +254,44 @@ class _Raiser(list):
         self._action()
 
 
-def test_requires_is_evaluated_at_replay(db):
+def test_requires_is_decided_when_the_intent_is_called(db):
     company, customer, product = _world(db)
     order = db.run(lambda tr: _order(semantic(tr), company, customer, 1))
-    late, early = db.new_transaction(intents=True), db.new_transaction(intents=True)
-    semantic(late).get(order).confirm()                     # requires holds at record time
-    semantic(early).get(order).confirm()
-    early.commit()
+    db.run(lambda tr: semantic(tr).get(order).confirm())
+    tr = db.new_transaction()
     with pytest.raises(ProtoConstraintError, match=r"acme\.sales\.Order\.confirm\.requires") as raised:
-        late.commit()
-    # F26/F25: the record-time check is a courtesy that records no fine read; the replay decides, with a
-    # ProtoConstraintError that keeps its class through the replay (never a retryable conflict, R273).
+        semantic(tr).get(order).confirm()
+    tr.abort()
     error = raised.value
     assert not isinstance(error, ProtoConflictError)
     assert error.constraint == "acme.sales.Order.confirm.requires"
     assert error.meaning == "Confirm the order; it accepts no new lines afterwards"
     assert error.entity == order.name and error.values == {"state": "confirmed"}
     assert "Confirm the order" in str(error)
-    tr = db.new_transaction(intents=True)
-    with pytest.raises(ProtoConstraintError, match=r"acme\.sales\.Order\.confirm\.requires"):
-        semantic(tr).get(order).confirm()                   # false at record time: refused at once
-    tr.abort()
     calls = []
 
     def confirm(tr):                                        # in Database.run: raised once, never retried
         calls.append(tr)
         semantic(tr).get(order).confirm()
     with pytest.raises(ProtoConstraintError):
-        db.run(confirm, intents=True)
+        db.run(confirm)
     assert len(calls) == 1
 
 
-def test_cluster_space_refuses_intents():
-    from tests.unit.test_semantic_catalog_store import _NodeRoot
-    storage = MemoryStorage()
-    plain = ObjectSpace(storage)
-    plain.new_database("db")
-    space = ObjectSpace(storage, coordinator=_NodeRoot((0, storage.read_root())))
-    try:
-        database = Database(space, "db")
-        with pytest.raises(ProtoNotSupportedError, match="cluster"):
-            database.new_transaction(intents=True)
-        with pytest.raises(ProtoNotSupportedError, match="cluster"):
-            database.run(lambda tr: None, intents=True)
-        with pytest.raises(ProtoNotSupportedError, match="cluster"):
-            Transaction(database, intents=True)
-    finally:
-        space.close()
-        plain.close()
+# -- raw access beside the session ---------------------------------------------------------------------
 
-
-def test_raw_write_of_a_logged_cell_is_refused(db):
-    company, customer, product = _world(db)
-    tr = db.new_transaction(intents=True)
-    s = semantic(tr)
-    order = _order(s, company, customer, 1)
-    for name in (order.name, customer.name, company.name):              # created, linked, linked
-        with pytest.raises(ProtoUserError, match="intent log"):
-            tr.set_mutable(name, 1)
-        with pytest.raises(ProtoUserError, match="intent log"):
-            tr.remove_mutable(name)
-    with pytest.raises(ProtoUserError, match="intent log"):
-        tr.new_mutable(order.name, 1)
-    tr.new_mutable("plain", 1)                                           # other raw writes keep today's rules
-    tr.set_mutable("plain", 2)
-    tr.commit()
-    assert _read(db, lambda s, tr: (tr.get_mutable("plain"), s.get(order).number)) == (2, 1)
-    # The other order: a raw write first, then an operation that touches that cell.
-    tr = db.new_transaction(intents=True)
-    tr.set_mutable(product.name, tr.get_mutable(product.name))
-    with pytest.raises(ProtoUserError, match="intent log"):
-        semantic(tr).update(product, list_price=Decimal("11"))
-    tr.abort()
-
-
-# -- a group-commit leader replays another thread's intents ----------------------------------------------
-
-def test_a_group_commit_leader_replays_another_threads_intents(audited, monkeypatch):
-    """T0's round holds the root lock while T1 and T2, two intent transactions, queue behind it; whichever of
-    them leads the next round builds the other one's commit, so its replay (its intent included) runs in
-    the leader's thread while the owner's thread holds its transaction's lock and waits.  Neither waits for
-    the other (no cycle), both commit, and the replayed intent sees its context.  The order is set by the
-    group queue, with no sleep."""
-    from proto_db import transactions as T
-    db = audited
-    company, customer, product = _world(db)
-    orders = db.run(lambda tr: [_order(semantic(tr), company, customer, n) for n in (1, 2)])
-    space = db.space
-    group = T._group_of(space.storage)
-    original = Transaction._build_root
-    owner, held, release = {}, threading.Event(), threading.Event()
-
-    def build(self, current, stamp=None):
-        if owner.get(id(self)) == "T0":
-            held.set()
-            assert release.wait(60)
-        return original(self, current, stamp)
-    monkeypatch.setattr(Transaction, "_build_root", build)
-    outcome = {}
-
-    def commit(name, order):
-        tr = db.new_transaction(intents=order is not None)
-        owner[id(tr)] = name
-        if order is None:
-            tr.set_root_object("t0", 1)
-        else:
-            semantic(tr).get(order).add_line(product, Decimal("1"), Decimal("10"))
-        try:
-            tr.commit()
-            outcome[name] = "committed"
-        except BaseException as error:          # reported to the test
-            outcome[name] = error
-    first = threading.Thread(target=commit, args=("T0", None), name="T0", daemon=True)
-    first.start()
-    assert held.wait(60)
-    queued = [threading.Thread(target=commit, args=(n, o), name=n, daemon=True)
-              for n, o in (("T1", orders[0]), ("T2", orders[1]))]
-    for thread in queued:
-        thread.start()
-    with group.cond:            # both wait in the queue behind T0's round: one leads the next round
-        assert group.cond.wait_for(lambda: len(group.queue) == 2, timeout=60)
-    release.set()
-    for thread in [first] + queued:
-        thread.join(60)
-    assert [t.name for t in [first] + queued if t.is_alive()] == [], "a commit hung"
-    assert outcome == {"T0": "committed", "T1": "committed", "T2": "committed"}
-    recorded, replayed = acme_audit.RUNS[:2], acme_audit.RUNS[2:]
-    assert sorted(recorded) == ["T1", "T2"]
-    assert len(replayed) == 2 and len(set(replayed)) == 1             # one leader replayed both
-    assert _read(db, lambda s, tr: s.get(customer).committed) == Decimal("20")
-    space.close()       # not on failure: a hung commit holds the root lock (the daemon threads die with the run)
-
-
-def test_taking_the_stored_record_is_a_read_of_the_whole_cell(db):
-    # version.record hands the stored record itself to the caller, whose reads of it the session cannot see:
-    # taking it records the whole cell (coarse, never wrong).
-    company, customer, product = _world(db)
-    tr = db.new_transaction(intents=True)
-    s = semantic(tr)
-    if s.get(product).record.list_price == Decimal("10"):
-        _order(s, company, customer, 1)
-    db.run(lambda other: semantic(other).update(product, name="widget 2"))   # another attribute of the cell
-    with pytest.raises(ProtoConflictError, match=r"the cell 'acme\.catalog\.Product#"):
-        tr.commit()
-    tr = db.new_transaction(intents=True)
-    version = semantic(tr).get(product)
-    tr.abort()
-    assert version.record.name == "widget 2"                                  # after the end: no read recorded
-
-
-# -- fix round 1 of the review --------------------------------------------------------------------------------
-
-def test_a_raw_read_of_a_cell_the_log_wrote_is_refused(db):
-    # Review I1 (ruling): the raw view never shows the log's effects (they exist from the commit on, recomputed
-    # by the replay), so a raw read of a cell the log wrote is refused rather than served stale -- and no raw
-    # write derived from such a read can commit.  A cell the log did not write reads as today.
+def test_raw_access_to_a_cell_the_session_touched_is_allowed(db):
     company, customer, product = _world(db)
     spare = db.run(lambda tr: tr.new_mutable("spare", 7))
-    tr = db.new_transaction(intents=True)
+    tr = db.new_transaction()
     s = semantic(tr)
     order = _order(s, company, customer, 1)
     s.get(order).add_line(product, Decimal("2"), Decimal("10"))
-    assert s.get(customer).committed == Decimal("20")
-    for name in (order.name, customer.name, company.name, product.name):
-        with pytest.raises(ProtoUserError, match="intent log"):
-            tr.get_mutable(name)
-        with pytest.raises(ProtoUserError, match="intent log"):
-            tr.snapshot_mutable(name)
-    with pytest.raises(ProtoUserError, match="intent log"):
-        customer.get(tr)                                    # handle resolution goes through get_mutable
-    assert tr.get_mutable(spare.name) == 7                  # a cell the log did not write
-    # The cell listing is consistent: the log's cells are listed under the names the commit gives them (R260).
+    for name in (order.name, customer.name, company.name, product.name):      # created, linked, linked, read
+        assert tr.get_mutable(name) is not None
+    assert tr.snapshot_mutable(order.name) is None and tr.snapshot_mutable(customer.name) is not None
+    assert customer.get(tr) is not None
+    assert tr.get_mutable(spare.name) == 7
     assert order.name in tr.mutable_names() and spare.name in tr.mutable_names()
     tr.new_mutable("audit", 0)
     tr.commit()
@@ -610,10 +329,10 @@ def test_member_iteration_waits_for_an_operation_in_progress(db, monkeypatch):
     # thread's operation on the transaction -- never inside it, where it would see writes the failing operation
     # then drops.  Ordered by events: A's operation, holding the lock after its writes, waits until B either
     # met the lock (fixed) or finished reading without it (the defect), then fails.
-    from proto_db.semantic import intents as intents_module
+    from proto_db.semantic import entities as entities_module
     company, customer, _ = _world(db)
     orders = db.run(lambda tr: [_order(semantic(tr), company, customer, n, date(2026, 6, 1)) for n in (1, 2, 3)])
-    tr = db.new_transaction(intents=True)
+    tr = db.new_transaction()
     s = semantic(tr)
     it = iter(s.get(customer).orders)
     first = next(it)
@@ -621,11 +340,11 @@ def test_member_iteration_waits_for_an_operation_in_progress(db, monkeypatch):
     tr._lock = watched
     inside, progress, seen = threading.Event(), threading.Event(), []
 
-    def hold(ops, handle, verb):
+    def hold(self, old, new):
         inside.set()
         progress.wait(60)
         raise RuntimeError("the operation fails after its writes")
-    monkeypatch.setattr(intents_module, "_type_of", hold)
+    monkeypatch.setattr(entities_module.Operations, "_propagate", hold)
 
     def a():
         with pytest.raises(RuntimeError):
@@ -659,68 +378,31 @@ def test_member_iteration_waits_for_an_operation_in_progress(db, monkeypatch):
     tr.abort()
 
 
-def test_a_replay_failing_on_a_concurrent_unlink_conflicts(db):
-    # Ruling: a replay failure caused by a concurrent commit is ProtoConflictError (retryable), whatever the
-    # operation reports on the state it meets; the class does not depend on timing (R82).
+def test_a_concurrent_unlink_conflicts_and_the_retry_decides_on_the_new_state(db):
     company, customer, _ = _world(db)
     other = db.run(lambda tr: semantic(tr).create("acme.core.Company", name="Other"))
-    a, b = db.new_transaction(intents=True), db.new_transaction(intents=True)
+    a, b = db.new_transaction(), db.new_transaction()
     for tr in (a, b):
         semantic(tr).unlink(customer, "company", company)
         semantic(tr).link(customer, "company", other)
     a.commit()
-    with pytest.raises(ProtoConflictError, match="concurrent commit") as raised:
+    with pytest.raises(ProtoConflictError):
         b.commit()
-    assert "is not linked" in str(raised.value)             # what the replay met, kept in the message
     assert _read(db, lambda s, t: s.navigate(customer, "company").entity) == other
-    # The retry decides on the new state: the unlink is refused when it is recorded.
+    # The retry decides on the new state: the unlink is refused when it is made.
     attempts = []
 
     def move(tr):
         attempts.append(1)
         semantic(tr).unlink(customer, "company", company)
     with pytest.raises(ProtoValidationError, match="is not linked"):
-        db.run(move, intents=True)
+        db.run(move)
     assert len(attempts) == 1
 
 
-def test_a_replay_touching_a_raw_written_cell_conflicts(db):
-    # A replay reaches a cell the transaction wrote raw only because a concurrent commit changed the state the
-    # log was recorded on (at record time the access was refused, and a raw write of a logged cell is too):
-    # ProtoConflictError, not ProtoUserError.
-    company, first, product = _world(db)
-    second = db.run(lambda tr: semantic(tr).create("acme.sales.Customer", name="Ann", credit_limit=Decimal("1000"),
-                                                   company=company))
-    order = db.run(lambda tr: _order(semantic(tr), company, first, 1))
-    stored_second = _read(db, lambda s, t: t.get_mutable(second.name))
-    tr = db.new_transaction(intents=True)
-    semantic(tr).invoke(order, "add_line", product=product, quantity=Decimal("2"), price=Decimal("10"))
-    tr.set_mutable(second.name, stored_second)              # blind: the cell the record never touched
-
-    def move(other):
-        semantic(other).unlink(order, "customer", first)
-        semantic(other).link(order, "customer", second)
-    db.run(move)                                            # the order's total now moves Ann's aggregate
-    with pytest.raises(ProtoConflictError, match="wrote raw"):
-        tr.commit()
-
-
-def test_a_replay_failure_is_a_conflict_only_when_this_database_changed():
-    # Deferred minor 163: whether the replay ran on another state is decided by the database's version, not
-    # by the identity of the root object (a reload of the same version, after a cache eviction, is another
-    # object); a replay failure on an unchanged version is the operation's own error, never a conflict.
-    from types import SimpleNamespace
-    from proto_db.semantic.intents import _changed_state
-    tr = SimpleNamespace(_db_root=SimpleNamespace(version=7))
-    error = ProtoValidationError("the operation's own refusal")
-    assert _changed_state(error, SimpleNamespace(version=7), tr) is False
-    assert _changed_state(error, SimpleNamespace(version=8), tr) is True
-    assert _changed_state(ProtoConstraintError("rule"), SimpleNamespace(version=8), tr) is False
-
-
-def test_the_first_registry_build_of_an_intent_transaction_holds_no_transaction_lock(db, monkeypatch):
+def test_the_first_registry_build_of_a_transaction_holds_no_transaction_lock(db, monkeypatch):
     # Final review M5: building the registry may import, and imports never run holding the transaction's
-    # lock (review M-5); the first operation of an intent transaction builds it before taking the lock.
+    # lock (review M-5); the first operation of a transaction builds it before taking the lock.
     company, customer, _ = _world(db)
     original = Transaction._resolution_registry
     held = []
@@ -730,7 +412,7 @@ def test_the_first_registry_build_of_an_intent_transaction_holds_no_transaction_
             held.append(self._lock._is_owned())
         return original(self)
     monkeypatch.setattr(Transaction, "_resolution_registry", watched)
-    tr = db.new_transaction(intents=True)
+    tr = db.new_transaction()
     try:
         semantic(tr).update(customer, credit_limit=Decimal("10"))
     finally:
@@ -738,11 +420,11 @@ def test_the_first_registry_build_of_an_intent_transaction_holds_no_transaction_
     assert held and not any(held)
 
 
-def test_a_catalog_root_change_during_an_intent_transaction_conflicts(db):
-    # The replay composes with the catalog and registry the log was recorded with: a concurrent install
-    # changes them, and the commit is a conflict naming the root.
+def test_a_catalog_root_change_during_a_transaction_conflicts(db):
+    # The first write of a session enters the catalog roots in the read set: a concurrent install changes them,
+    # and the commit is a conflict naming the root.
     company, customer, _ = _world(db)
-    tr = db.new_transaction(intents=True)
+    tr = db.new_transaction()
     _order(semantic(tr), company, customer, 1)
     db.run(lambda other: other.install_module("acme_audit"))
     with pytest.raises(ProtoConflictError, match="__currentModules"):
@@ -767,7 +449,7 @@ for name in ("create", "update", "link", "unlink", "relate", "follow_up"):
 
 
 def test_an_intent_named_like_a_primitive_is_refused():
-    # A record of the intent log names its operation by (type, name): an intent named like a primitive
+    # An IntentRecord names its operation by (type, name): an intent named like a primitive
     # (classes.PRIMITIVES) would read as that primitive, so the declaration is refused.  The probe declares
     # its own registry module in a namespace of its own (one declaration per process).
     namespace = {"__name__": "tests.unit.semantic_modules.t8_reserved_names"}

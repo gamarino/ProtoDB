@@ -93,7 +93,7 @@ def test_verifier_passes_a_clean_history(db):
         order = s.create(ORDER, number=2, company=company, customer=customer)
         s.get(order).add_line(product, Decimal("3"), Decimal("10"))
         return order
-    second = db.run(more, intents=True)
+    second = db.run(more)
     db.run(lambda tr: semantic(tr).update(first, state="cancelled"))    # cancelling frees credit
     report = verify_history(db)
     assert report.violations == [] and report.aggregate_mismatches == []
@@ -210,7 +210,7 @@ def test_the_plan_is_deterministic_and_some_demand_exceeds_the_limits():
 
 # -- the command line ------------------------------------------------------------------------------------------
 
-@pytest.mark.parametrize("mode", ["direct", "intents"])
+@pytest.mark.parametrize("mode", ["direct"])
 def test_the_command_line_writes_a_verified_self_reporting_result(tmp_path, mode, capsys):
     out = tmp_path / f"{mode}.json"
     status = experiment.main(["--mode", mode, "--threads", "2", "--orders", "12", "--customers", "2",
@@ -243,7 +243,7 @@ def test_a_failed_check_makes_the_run_unverified(tmp_path, monkeypatch):
     """A reconciliation problem must fail the run (exit 1) and be written, never look like a result."""
     monkeypatch.setattr(experiment, "reconcile", lambda *a, **k: ["planted problem"])
     out = tmp_path / "r.json"
-    status = experiment.main(["--mode", "intents", "--threads", "1", "--orders", "2", "--customers", "1",
+    status = experiment.main(["--mode", "direct", "--threads", "1", "--orders", "2", "--customers", "1",
                               "--products", "1", "--workdir", str(tmp_path / "work"), "--out", str(out)])
     result = json.loads(out.read_text())
     assert status == 1 and result["verified"] is False and result["reconciliation"] == ["planted problem"]
@@ -253,14 +253,14 @@ def test_summarize_gives_medians_and_ranges_per_cell(tmp_path):
     paths = []
     for i, (p50, commits) in enumerate([(1.0, 10), (3.0, 12), (2.0, 11)]):
         path = tmp_path / f"r{i}.json"
-        path.write_text(json.dumps({"mode": "intents", "gil": False, "commit": "abc1234", "clean": True,
+        path.write_text(json.dumps({"mode": "direct", "gil": False, "commit": "abc1234", "clean": True,
                                     "verified": True, "commits": commits, "attempts": 12, "conflicts": 0,
                                     "rejected_by_conflict": 0, "rejected_by_constraint": 12 - commits,
                                     "violations": 0, "commit_latency_ms": {"p50": p50, "p95": p50 * 2},
                                     "orders_per_s": 100.0 * (i + 1), "wall_s": 1.0}))
         paths.append(str(path))
     summary = experiment.summarize(paths)
-    cell = summary["cells"]["intents gil=0"]
+    cell = summary["cells"]["direct gil=0"]
     assert cell["runs"] == 3 and cell["verified_runs"] == 3
     assert cell["commit_latency_p50_ms"] == {"median": 2.0, "min": 1.0, "max": 3.0}
     assert cell["commits"] == {"median": 11, "min": 10, "max": 12}
@@ -292,7 +292,7 @@ def test_a_verifier_failure_alone_makes_the_run_unverified(tmp_path, monkeypatch
         return report
     monkeypatch.setattr(experiment, "verify_history", planted)
     out = tmp_path / "r.json"
-    status = experiment.main(["--mode", "intents", "--threads", "1", "--orders", "2", "--customers", "1",
+    status = experiment.main(["--mode", "direct", "--threads", "1", "--orders", "2", "--customers", "1",
                               "--products", "1", "--workdir", str(tmp_path / "work"), "--out", str(out)])
     result = json.loads(out.read_text())
     assert status == 1 and result["verified"] is False
@@ -314,34 +314,25 @@ def _variant_world(db):
     return plan, db.run(experiment._setup({0: Decimal("1000")}, 1))
 
 
-@pytest.mark.parametrize("reads, conflicts", [("credit-limit", True), ("none", False)])
-def test_the_read_variant_has_a_fine_read_set_that_conflicts(db, reads, conflicts):
-    """``--reads credit-limit``: each order reads its customer's limit, so its fine read set holds
-    ``(customer, credit_limit)``, and a concurrent change of the limit is a conflict.  The default workload
-    reads nothing: its fine read set is empty and the same change commits beside it."""
+@pytest.mark.parametrize("reads", ["credit-limit", "none"])
+def test_both_read_variants_conflict_with_a_change_of_the_customer_cell(db, reads):
+    """The unit is the cell (R3): every order writes its customer's aggregate, so a concurrent change of that
+    cell is a conflict whether or not the order also reads the customer's limit (``--reads``)."""
     from proto_db.errors import ProtoConflictError
     plan, world = _variant_world(db)
     _, customers, _ = world
-    tr = db.new_transaction(intents=True)
+    tr = db.new_transaction()
     try:
         experiment.record_order(tr, world, plan[0], reads=reads)
-        recorded = dict(tr._intent_log._reads)
-        if conflicts:
-            assert (customers[0].name, "credit_limit") in recorded
-        else:
-            assert recorded == {}
         db.run(lambda other: semantic(other).update(customers[0], credit_limit=Decimal("2000")))
-        if conflicts:
-            with pytest.raises(ProtoConflictError):
-                tr.commit()
-        else:
+        with pytest.raises(ProtoConflictError):
             tr.commit()
     finally:
         if tr.is_active:
             tr.abort()
 
 
-@pytest.mark.parametrize("mode", ["direct", "intents"])
+@pytest.mark.parametrize("mode", ["direct"])
 def test_the_command_line_reports_consistent_commit_timings(tmp_path, mode):
     out = tmp_path / f"{mode}.json"
     status = experiment.main(["--mode", mode, "--threads", "2", "--orders", "10", "--customers", "2",
@@ -355,6 +346,5 @@ def test_the_command_line_reports_consistent_commit_timings(tmp_path, mode):
         assert "p50" in timings[name], name
     assert 0 < timings["lock_occupancy"] <= 1
     assert timings["samples"] == result["attempts"] - timings["commits_not_reached"]
-    if mode == "direct":
-        assert timings["replay_ms"]["p50"] == 0
+    assert timings["replay_ms"]["p50"] == 0
     assert len(result["check"]["load_average"]) == 3 and isinstance(result["check"]["foreign_processes"], list)

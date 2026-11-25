@@ -237,13 +237,8 @@ class RegistryReader(Reader):
 
 
 def _reader_for(receiver) -> RegistryReader:
-    """The reader of a computed attribute of ``receiver``: its transaction's cells, unless the running reader
-    stands for that transaction (the record view or the replay of an intent transaction,
-    :mod:`proto_db.semantic.intents`), whose cells are then the ones to read."""
+    """The reader of a computed attribute of ``receiver``: its transaction's cells."""
     context = getattr(receiver, "context", None)
-    current = resolution.current_reader()
-    if context is not None and getattr(current, "_reader_transaction", None) is context:
-        return RegistryReader(current)
     return RegistryReader(context if hasattr(context, "get_mutable") else None)
 
 

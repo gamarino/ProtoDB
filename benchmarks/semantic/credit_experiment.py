@@ -1,30 +1,23 @@
-"""The concurrency experiment of the semantic model: intents against direct mode (spec section 15, Task 10;
-rulings R269, R273, R275).
+"""The concurrency experiment of the semantic model on the cell path (spec section 15, Task 10; rulings R273,
+R275).  The intents mode it once compared against was removed (R53): only ``--mode direct`` remains.
 
 The order-entry scenario of the demo (``docs/kit/semantic/acme_sales.py``): one company, ``K`` customers with a
 credit limit, ``P`` products, and ``M`` orders of 1-3 lines each, placed by ``N`` threads.  Each order is one
 ``Database.run`` that creates the order, adds its lines through the ``add_line`` intent and commits:
 
-- ``--mode direct``: today's transactions (``Database.run``, its retries on conflict; the R275 baseline);
-- ``--mode intents``: the same work with ``intents=True``: the operations are logged and replayed at commit.
+- ``--mode direct``: ``Database.run``, its retries on conflict (the R275 baseline).
 
 The plan (which customer, which lines, which prices) and the credit limits come from ``--seed``.  Each customer's
 limit is ``--limit-fraction`` of the demand the plan places on it (rounded down), so some orders must be refused
 by the credit rule (``committed <= credit_limit``).  The workload decides on nothing it reads: it never reads a
-customer's committed amount, a query, ``.record`` or a computed attribute of the company or the product (in
-intent mode those record whole cells, a sound coarsening, and the experiment would measure that coarsening
-instead of the model).
+customer's committed amount, a query, ``.record`` or a computed attribute of the company or the product.
 
 With ``--reads credit-limit`` each order first reads its customer's ``credit_limit`` through the session (a
-stored field of the customer, which no order writes).  In intent mode that read is the order's fine read set,
-``(customer, credit_limit)``, validated at commit; in direct mode it puts the customer's cell in the read set.  The
-default workload (``--reads none``) reads nothing, so in intent mode its fine read set is empty and only the
-catalog roots are validated: its zero conflicts hold by construction, and it does not measure the read set's cost.
+stored field of the customer, which no order writes): it puts the customer's cell in the read set.
 
-Commit timings are taken by harness-only wrappers (:class:`CommitProbe`), the same in both modes, which change
-no behaviour: per commit attempt, the time in ``Transaction._build_root`` (under the root lock), the validation
-of the reads in it (``IntentLog._validate``; ``Transaction._check_mutables`` in direct mode) and the rest of the
-replay (``IntentLog.replay`` minus its validation; 0 in direct mode).  The wait is the commit's latency minus its
+Commit timings are taken by harness-only wrappers (:class:`CommitProbe`) which change no behaviour: per commit
+attempt, the time in ``Transaction._build_root`` (under the root lock), the validation of the reads in it
+(``Transaction._check_mutables``) and the replay part (always 0: there is no replay).  The wait is the commit's latency minus its
 time under the lock; the lock occupancy is the time under the lock summed over the attempts, over the timed
 window.  :func:`check_timings` verifies them (no negative wait, no part larger than its whole, an occupancy of
 at most 1).
@@ -43,7 +36,7 @@ The run is self-reporting.  It prints the work it did and verifies it before it 
 A failed check makes the run unverified: exit status 1, ``"verified": false`` in the JSON, which is written
 anyway.  Usage, from the root of the tree to measure (a clean ``python -m benchmarks.export`` tree)::
 
-    python -m benchmarks.semantic.credit_experiment --mode direct|intents --threads N --orders M \\
+    python -m benchmarks.semantic.credit_experiment --mode direct --threads N --orders M \\
         --customers K --seed S [--reads none|credit-limit] --workdir DIR --out FILE
     python -m benchmarks.semantic.credit_experiment --summarize FILE... --out SUMMARY
 
@@ -122,7 +115,7 @@ class FinalState:
 class CommitTiming:
     """One commit attempt, in seconds: its ``latency`` (around ``Transaction.commit()``), its time
     ``under_lock`` (in ``Transaction._build_root``), the ``validate`` part of that (the reads' validation) and
-    the ``replay`` part (the intent log's replay without its validation)."""
+    the ``replay`` part (always 0: there is no replay)."""
 
     latency: float
     under_lock: float = 0.0
@@ -154,8 +147,7 @@ def check_timings(samples: list, *, wall: float) -> list:
 
 class CommitProbe:
     """Harness-only timing of the commit's stages: while installed, wrappers around
-    ``Transaction._build_root``, ``Transaction._check_mutables``, ``IntentLog.replay`` and
-    ``IntentLog._validate`` add their durations to the transaction they work for (a group-commit leader builds
+    ``Transaction._build_root`` and ``Transaction._check_mutables`` add their durations to the transaction they work for (a group-commit leader builds
     other threads' transactions: the time goes to the transaction built).  They call the original and change
     nothing else.  :meth:`take` gives and forgets one transaction's totals."""
 
@@ -184,12 +176,9 @@ class CommitProbe:
         setattr(owner, name, timed)
 
     def install(self) -> "CommitProbe":
-        from proto_db.semantic.intents import IntentLog
         from proto_db.transactions import Transaction
         self._wrap(Transaction, "_build_root", "under_lock", lambda tr: tr)
         self._wrap(Transaction, "_check_mutables", "validate", lambda tr: tr)
-        self._wrap(IntentLog, "replay", "replay", lambda log: log._tr)
-        self._wrap(IntentLog, "_validate", "validate", lambda log: log._tr)
         return self
 
     def uninstall(self) -> None:
@@ -201,9 +190,7 @@ class CommitProbe:
         with self._lock:
             parts = self._totals.pop(id(tr), {"under_lock": 0.0, "validate": 0.0, "replay": 0.0})
         validate = parts["validate"]
-        # IntentLog.replay calls _validate: its replay part is its time without the validation.
-        replay = max(0.0, parts["replay"] - validate) if parts["replay"] else 0.0
-        return CommitTiming(latency, parts["under_lock"], validate, replay)
+        return CommitTiming(latency, parts["under_lock"], validate, parts["replay"])
 
 
 def make_plan(*, orders: int, customers: int, products: int, seed: int, limit_fraction: float) -> tuple:
@@ -315,7 +302,7 @@ def record_order(tr, world: tuple, order: PlannedOrder, *, reads: str = "none") 
         version.add_line(products[product], quantity, price)
 
 
-def _place(db, world: tuple, order: PlannedOrder, *, intents: bool, retries: int, credit: str, reads: str,
+def _place(db, world: tuple, order: PlannedOrder, *, retries: int, credit: str, reads: str,
            probe: CommitProbe, timings: list) -> Outcome:
     """Place ``order`` with ``Database.run``; each commit attempt is timed inside ``fn`` (``timings``)."""
     from proto_db.errors import ProtoConflictError, ProtoConstraintError
@@ -335,7 +322,7 @@ def _place(db, world: tuple, order: PlannedOrder, *, intents: bool, retries: int
             counts["conflicts"] += 1
             raise
     try:
-        db.run(fn, retries=retries, intents=intents)
+        db.run(fn, retries=retries)
         status, error = "committed", ""
     except ProtoConstraintError as e:
         status, error = ("constraint", "") if e.constraint == credit else ("error", repr(e))
@@ -395,7 +382,6 @@ def run(args) -> dict:
     storage = MemoryStorage() if args.storage == "memory" else \
         FileStorage(os.path.join(args.workdir, "space"), durability=args.durability)
     space = ObjectSpace(storage, modules_mapping=MAPPING)
-    intents = args.mode == "intents"
     credit = invariant_name(parse(CREDIT_RULE))
     try:
         db = space.new_database(DATABASE)
@@ -407,7 +393,7 @@ def run(args) -> dict:
         try:
             def worker(t: int):
                 def work():
-                    return [(o.number, _place(db, world, o, intents=intents, retries=args.retries, credit=credit,
+                    return [(o.number, _place(db, world, o, retries=args.retries, credit=credit,
                                               reads=args.reads, probe=probe, timings=timings[t]))
                             for o in plan[t::args.threads]]
                 return work
@@ -434,7 +420,7 @@ def run(args) -> dict:
     settings = {k: getattr(args, k) for k in ("mode", "threads", "orders", "customers", "products", "seed",
                                                "retries", "limit_fraction", "storage", "durability", "reads")}
     return {
-        "experiment": "semantic credit: intents against direct mode",
+        "experiment": "semantic credit: direct mode",
         "commit": source.get("commit"), "clean": bool(source.get("clean")), "source": source,
         "mode": args.mode, "gil": gil_enabled(), **{k: v for k, v in settings.items() if k != "mode"},
         "settings": settings,
@@ -461,7 +447,7 @@ def run(args) -> dict:
                     "replay_ms": latency_ms([t.replay for t in attempt_timings]),
                     "lock_occupancy": round(occupancy, 4) if occupancy is not None else None,
                     "what": "per commit attempt: under_lock = Transaction._build_root; validate = the reads' "
-                            "validation in it; replay = IntentLog.replay without validation (0 in direct mode); "
+                            "validation in it; replay = 0 (there is no replay); "
                             "wait = latency - under_lock; lock_occupancy = sum(under_lock) / wall_s"},
         "timing_checks": timing_problems,
         "wall_s": round(wall, 4),
@@ -548,7 +534,7 @@ def summarize(paths: list) -> dict:
 def parse_args(argv=None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="python -m benchmarks.semantic.credit_experiment",
                                      description=__doc__.splitlines()[0])
-    parser.add_argument("--mode", choices=("direct", "intents"))
+    parser.add_argument("--mode", choices=("direct",))
     parser.add_argument("--threads", type=int, default=8)
     parser.add_argument("--orders", type=int, default=400)
     parser.add_argument("--customers", type=int, default=8)
