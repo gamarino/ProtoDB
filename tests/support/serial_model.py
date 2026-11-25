@@ -45,8 +45,8 @@ Task 10 adds range reads (R67, R68): every dictionary also carries the RangeInde
 :data:`VALUE_INDEX` over the value itself, ``x_range`` reads the values in ``[low, high]`` through it
 (a RangeIndex range scan when the planner picks it: one ``KeyRange`` of index keys), and the
 Dictionary windows (family ``w_``, Dictionary only): ``w_after`` reads at most ``value`` keys after
-``key`` with ``keys(after=key)`` (a window range, to the end when exhausted) and ``w_window`` the
-values at positions ``key .. key+value-1`` through the planner's ``limit``/``offset`` window (the
+``key`` with ``keys(after=key)`` (``value`` None: all of them; a window range, to the end when
+exhausted) and ``w_window`` the values at positions ``key .. key+value-1`` through the planner's ``limit``/``offset`` window (the
 range from the first key, or the whole dictionary when the window reaches the end).
 :func:`range_reads` counts the range reads that recorded a range rather than the whole root.
 """
@@ -165,6 +165,14 @@ VALUE_INDEX = "by_value"
 #: Width bounds of an ``x_range`` interval over the values 0..99: narrow enough that the planner
 #: answers it by the range index rather than by a filtered scan of a few keys.
 RANGE_WIDTH = (3, 20)
+#: How many keys a ``w_after`` reads (None: to the end, so the window is exhausted and covers
+#: every later key).
+W_AFTER_COUNTS = (1, 2, None)
+#: The offsets of a one-row ``w_window``: small, so the window mostly ends before the last key of
+#: a dictionary of a few keys and records a range (one reaching the end records the whole root),
+#: and mostly after the first key, so a change before the window (which shifts its positions)
+#: must conflict.
+W_WINDOW_OFFSETS = (1,)
 
 
 def with_indexes(d):
@@ -306,9 +314,9 @@ def _draw(rng, names: StateNames, kind: str) -> Op:
         low = rng.choice(names.values)
         return Op(kind, target, (low, low + rng.randint(*RANGE_WIDTH)))
     if kind == "w_after":
-        return Op(kind, target, key, rng.randint(1, 3))
+        return Op(kind, target, key, rng.choice(W_AFTER_COUNTS))
     if kind == "w_window":
-        return Op(kind, target, rng.randrange(len(names.keys) - 1), rng.randint(1, 3))
+        return Op(kind, target, rng.choice(W_WINDOW_OFFSETS), 1)
     return Op(kind, target, key, value if kind in ("obj_set", "d_set") else None)
 
 

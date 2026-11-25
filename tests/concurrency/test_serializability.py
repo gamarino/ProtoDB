@@ -32,9 +32,10 @@ the report counts the lookups committed and the INDEX_GROUP/INDEX_DEFS conflicts
 asserts that the index extractor never ran with the space root held (P-C).  Task 10 adds range
 reads (R67, R68): ``x_range`` through the RangeIndex every dictionary now also carries, and the
 Dictionary windows ``w_after`` (``keys(after=)``) and ``w_window`` (the planner's positional
-window); a deterministic pre-run assertion (:func:`range_exposure`) proves the seeded programs
-give range reads and writes inside them of other threads enough chances to meet, and the report
-counts the range reads that recorded a range and the RANGE conflicts.
+window); a deterministic pre-run assertion (:func:`range_exposure`: a serial replay of the seeded
+programs, counting only the reads that record a range there) proves that range reads and writes
+inside them of other threads get enough chances to meet, and the report counts the range reads
+that recorded a range and the RANGE conflicts.
 """
 import random
 import threading
@@ -57,7 +58,7 @@ from tests.support.serial_model import (COLLECTIONS, COUNTED_SET_OPS, DICTIONARY
 
 SEED = 20261124
 THREADS = 4
-PER_THREAD = 200
+PER_THREAD = 400
 
 NAMES = StateNames(
     roots={"obj": OBJECT, "dict": "Dictionary", "hdict": "HashDictionary", "set": "Set", "cset": "CountedSet",
@@ -69,20 +70,24 @@ NAMES = StateNames(
 #: The draw: every operation of Tasks 2-4, 6 and 7, with the operations on fine units (keys,
 #: elements, counts, records, positions) and the name-set reads drawn more often, so the class
 #: changes that root_reset, obj_set and the creating writes, and the seven roots, do not crowd out
-#: the unit-level interleavings.
+#: the unit-level interleavings.  Task 10: the Dictionary windows are drawn more often, and ``d_set``
+#: more often than ``d_remove`` so that a dictionary holds most keys and a one-row window at offset 1
+#: mostly ends before the last key (a range, not the whole root) with a key before it that a
+#: concurrent write may add or remove; lookups keep their share (group exposure).
 MIX = (DICTIONARY_AND_CELL_OPS + ("root_names", "c_names") * 2 + ("d_get", "d_has", "d_set", "d_remove") * 4
        + SET_OPS + ("s_has", "s_add", "s_remove") * 3
        + COUNTED_SET_OPS + ("cs_count", "cs_has", "cs_add", "cs_remove") * 4
        + MULTIMAP_OPS + ("r_get", "r_has", "r_add", "r_remove_record") * 3
        + LIST_OPS + ("l_get", "l_set", "l_append", "l_extend") * 3
-       + LOOKUP_OPS * 3
-       + RANGE_OPS * 3)
+       + LOOKUP_OPS * 4
+       + RANGE_OPS * 3 + ("w_after", "w_window") * 8 + ("d_set",) * 8)
 
-#: Deterministic floors of :func:`range_exposure` for the seeded programs (set below the values
-#: the seed gives, see the Task 10 report).
-RANGE_PROGRAMS_MIN = 150
-RANGE_WRITERS_MIN = 120
-RANGE_PAIRS_MIN = 4000
+#: Deterministic floors of :func:`range_exposure` for the seeded programs, counting only the reads
+#: that record a range in the serial replay (seed values 350, 419, 27938, 26510; Task 10 report).
+RANGE_PROGRAMS_MIN = 300
+RANGE_WRITERS_MIN = 350
+RANGE_PAIRS_MIN = 22000
+RANGE_WINDOW_PAIRS_MIN = 20000
 
 pytestmark = [pytest.mark.freethreaded, pytest.mark.timeout(240)]
 
@@ -287,40 +292,82 @@ def group_exposure(programs) -> dict:
     return {"lookup_programs": lookup_programs, "group_writers": writers, "pairs": pairs}
 
 
-def range_exposure(programs) -> dict:
-    """From the seeded programs alone (no interleaving): how much they expose the range
-    preconditions (R67, R68).  ``range_programs``: programs with a range read; ``range_writers``:
-    programs whose ``d_set``/``d_remove`` may change what a range read of another thread covers
-    (same root: an ``x_range`` value interval holding a value it sets, a key after a ``w_after``
-    start, any key for a ``w_window``, whose positions every key before it moves); ``pairs``:
-    (range reader, writer) program pairs of different threads that may meet that way."""
-    def reads(program):
-        return [op for op in program if op.kind in RANGE_OPS]
+def _range_read(model, op):
+    """What ``op`` (a range read) covers when it runs on ``model``, if it records a range there:
+    a predicate on a ``d_set``/``d_remove`` of the same root that may change what it read
+    (``x_range``: the value set is inside its interval; ``w_after``: the key is after its start
+    and, unless the window was exhausted, at most its last key; ``w_window``: the key is at most
+    the window's last key, since a key before it shifts its positions); None when it records no
+    range there (the root holds no Dictionary, or a window reaches the end: the whole root)."""
+    kind, content = model.roots.get(op.target, (None, None))
+    if op.kind == "x_range":
+        if kind not in ("Dictionary", "HashDictionary"):
+            return None
+        low, high = op.key
+        return lambda w: w.kind == "d_set" and low <= w.value <= high
+    if kind != "Dictionary":
+        return None
+    keys = sorted(content)
+    if op.kind == "w_after":
+        after = [k for k in keys if k > op.key]
+        if op.value is None or op.value >= len(after):
+            return lambda w: w.key > op.key
+        last = after[op.value - 1]
+        return lambda w: op.key < w.key <= last
+    stop = op.key + op.value
+    if stop >= len(keys):
+        return None
+    last = keys[stop - 1]
+    return lambda w: w.key <= last
 
-    def meets(read, write):
-        if write.target != read.target or write.kind not in ("d_set", "d_remove"):
-            return False
-        if read.kind == "x_range":
-            return write.kind == "d_set" and read.key[0] <= write.value <= read.key[1]
-        if read.kind == "w_after":
-            return write.key > read.key
-        return True
 
-    def program_meets(readers, writer):
-        return any(meets(r, w) for r in readers for w in writer)
+def range_exposure(programs, initial) -> dict:
+    """Deterministic (no interleaving): how much the seeded programs expose the range
+    preconditions (R67, R68), counting only the range reads that record a range.  Whether a
+    read records one depends on the state it reads, so the programs are replayed serially on the
+    model from ``initial``, round-robin across threads (program i of each thread in turn), and
+    each range read is judged on the state it meets there (:func:`_range_read`).
+    ``range_programs``: programs with a read that records a range; ``range_writers``: programs
+    whose ``d_set``/``d_remove`` may change what such a read of another thread covers;
+    ``pairs``: (reader, writer) program pairs of different threads that may meet that way;
+    ``window_pairs``: those whose reader is a ``w_window`` or a ``w_after``."""
+    model = initial.copy()
+    covered = [[[] for _ in thread] for thread in programs]   # thread -> program -> (kind, target, predicate)
+    for i in range(max(len(thread) for thread in programs)):
+        for t, thread in enumerate(programs):
+            if i >= len(thread):
+                continue
+            for op in thread[i]:
+                if op.kind in RANGE_OPS:
+                    predicate = _range_read(model, op)
+                    if predicate is not None:
+                        covered[t][i].append((op.kind, op.target, predicate))
+                model.apply(op)
 
-    readers = [[reads(p) for p in thread] for thread in programs]
-    range_programs = sum(1 for thread in readers for r in thread if r)
-    writers = pairs = 0
+    def meets(reads, writer):
+        return [kind for kind, target, predicate in reads for w in writer
+                if w.target == target and w.kind in ("d_set", "d_remove") and predicate(w)]
+
+    range_programs = sum(1 for thread in covered for reads in thread if reads)
+    writers = pairs = window_pairs = 0
     for t, thread in enumerate(programs):
         for program in thread:
-            if any(program_meets(r, program) for u, th in enumerate(readers) if u != t for r in th if r):
+            if any(meets(reads, program) for u, th in enumerate(covered) if u != t for reads in th if reads):
                 writers += 1
-    for t, thread in enumerate(readers):
-        for r in thread:
-            if r:
-                pairs += sum(1 for u, th in enumerate(programs) if u != t for w in th if program_meets(r, w))
-    return {"range_programs": range_programs, "range_writers": writers, "pairs": pairs}
+    for t, thread in enumerate(covered):
+        for reads in thread:
+            if not reads:
+                continue
+            for u, th in enumerate(programs):
+                if u == t:
+                    continue
+                for writer in th:
+                    met = meets(reads, writer)
+                    if met:
+                        pairs += 1
+                        window_pairs += any(kind != "x_range" for kind in met)
+    return {"range_programs": range_programs, "range_writers": writers, "pairs": pairs,
+            "window_pairs": window_pairs}
 
 
 def test_serializability_over_the_closed_operation_set(db):
@@ -336,9 +383,9 @@ def test_serializability_over_the_closed_operation_set(db):
     exposure = group_exposure(programs)
     assert exposure["lookup_programs"] >= 100 and exposure["group_writers"] >= 50 \
         and exposure["pairs"] >= 1000, exposure
-    ranges = range_exposure(programs)
+    ranges = range_exposure(programs, initial)
     assert ranges["range_programs"] >= RANGE_PROGRAMS_MIN and ranges["range_writers"] >= RANGE_WRITERS_MIN \
-        and ranges["pairs"] >= RANGE_PAIRS_MIN, ranges
+        and ranges["pairs"] >= RANGE_PAIRS_MIN and ranges["window_pairs"] >= RANGE_WINDOW_PAIRS_MIN, ranges
     reset_range_reads()
 
     calls_before = extractor_calls_under_root()
