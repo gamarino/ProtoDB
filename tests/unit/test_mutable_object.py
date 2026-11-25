@@ -15,6 +15,7 @@ from proto_db.core.atom import AtomPointer
 from proto_db.core.dbobject import DBObject, MutableObject
 from proto_db.errors import (ProtoConflictError, ProtoCorruptionError, ProtoDBError, ProtoUserError,
                              ProtoValidationError)
+from proto_db.preconditions import Unit, UnitKind
 from proto_db.storage.file import FileStorage
 from proto_db.storage.memory import MemoryStorage
 from proto_db.transactions import ObjectSpace
@@ -377,15 +378,19 @@ def test_exact_token_rewrite_conflicts_for_a_reader(db):
         t1.commit()
 
 
-def test_blind_writes_last_writer_wins(db):
+def test_blind_writes_conflict(db):
+    """Spec section 5: a set without a prior read compares against the base, so the second
+    of two concurrent blind writers conflicts (it no longer wins)."""
     with db.new_transaction() as tr:
         tr.new_mutable("n", 0)
     t1, t2 = db.new_transaction(), db.new_transaction()
     t1.set_mutable("n", "first")
     t2.set_mutable("n", "second")
     t1.commit()
-    t2.commit()
-    assert read_mutable(db, "n") == "second"
+    with pytest.raises(ProtoConflictError) as e:
+        t2.commit()
+    assert e.value.unit == Unit(UnitKind.CELL, key="n")
+    assert read_mutable(db, "n") == "first"
 
 
 def test_concurrent_creators_conflict(db):
@@ -399,21 +404,23 @@ def test_concurrent_creators_conflict(db):
 
 
 def test_blind_set_of_a_concurrently_removed_mutable_conflicts(db):
-    """A set never resurrects a cell another transaction removed (D35)."""
+    """A set never resurrects a cell another transaction removed: the cell's base value is
+    its precondition (spec section 5)."""
     with db.new_transaction() as tr:
         tr.new_mutable("x", 1)
     t1 = db.new_transaction()
     t1.set_mutable("x", 2)
     with db.new_transaction() as tr:
         tr.remove_mutable("x")
-    with pytest.raises(ProtoConflictError):
+    with pytest.raises(ProtoConflictError) as e:
         t1.commit()
+    assert e.value.unit == Unit(UnitKind.CELL, key="x")
     assert read_mutable(db, "x") is None
 
 
-def test_blind_set_over_a_concurrently_recreated_mutable_wins(db):
-    """ABA: a cell removed and created again meanwhile exists at commit, so a blind set overwrites
-    the new cell (last writer wins, D35); a reader of the cell would conflict instead."""
+def test_blind_set_over_a_concurrently_recreated_mutable_conflicts(db):
+    """A cell removed and created again meanwhile with another value no longer equals the base
+    (R6), so a blind set conflicts like a reader's (spec section 5)."""
     with db.new_transaction() as tr:
         tr.new_mutable("x", 1)
     blind, reader = db.new_transaction(), db.new_transaction()
@@ -423,20 +430,37 @@ def test_blind_set_over_a_concurrently_recreated_mutable_wins(db):
         tr.remove_mutable("x")
     with db.new_transaction() as tr:
         tr.new_mutable("x", "recreated")
+    for t in (blind, reader):
+        with pytest.raises(ProtoConflictError):
+            t.commit()
+    assert read_mutable(db, "x") == "recreated"
+
+
+def test_blind_set_over_a_cell_recreated_with_the_base_value_holds(db):
+    """ABA by value (R7): the cell was removed and created again with its base value."""
+    with db.new_transaction() as tr:
+        tr.new_mutable("x", 1)
+    blind = db.new_transaction()
+    blind.set_mutable("x", "blind")
+    with db.new_transaction() as tr:
+        tr.remove_mutable("x")
+    with db.new_transaction() as tr:
+        tr.new_mutable("x", 1)
     blind.commit()
     assert read_mutable(db, "x") == "blind"
-    with pytest.raises(ProtoConflictError):
-        reader.commit()
 
 
-def test_blind_remove_of_a_concurrently_removed_mutable_is_a_no_op(db):
+def test_remove_of_a_concurrently_removed_mutable_conflicts(db):
+    """Spec section 5: deleting a cell another transaction already deleted is a conflict (it was a no-op)."""
     with db.new_transaction() as tr:
         tr.new_mutable("x", 1)
     t1 = db.new_transaction()
     t1.remove_mutable("x")
     with db.new_transaction() as tr:
         tr.remove_mutable("x")
-    t1.commit()
+    with pytest.raises(ProtoConflictError) as e:
+        t1.commit()
+    assert e.value.unit == Unit(UnitKind.CELL, key="x")
     assert read_mutable(db, "x") is None
 
 

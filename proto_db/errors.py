@@ -170,8 +170,18 @@ class ProtoLockingError(ProtoDBError):
 
 
 class ProtoConflictError(ProtoLockingError):
-    """A transaction conflicted with a concurrent commit; retrying is appropriate."""
+    """A transaction conflicted with a concurrent commit; retrying is appropriate.
+
+    ``unit`` is the :class:`~proto_db.preconditions.Unit` whose precondition failed (``None``
+    when the conflict is not about one unit) and ``database`` the name of the database it
+    belongs to (R36).  Both are instance attributes, so a copy of the error keeps them.
+    """
     default_code = CONFLICT_ERROR
+
+    def __init__(self, message: str = "", *, code: int | None = None, unit=None, database: str | None = None):
+        super().__init__(message, code=code)
+        self.unit = unit
+        self.database = database
 
 
 class ProtoTimeoutError(ProtoLockingError):

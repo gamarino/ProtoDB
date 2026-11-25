@@ -83,15 +83,18 @@ The registry of a database (runtime registry, Task 8)
 Mutable cells (D11, D35)
     The mutable table is a second namespace beside the roots: ``new_mutable``,
     ``get_mutable``, ``set_mutable``, ``remove_mutable`` and ``mutable_names`` mirror
-    the root API and share its read set rule (exact tokens, ABSENT included) and its
-    conflict check, but per namespace: a root and a mutable of the same name are
-    unrelated.  Mutables are never merged: a written value is stored as written
-    (blind writes: last writer wins).  ``new_mutable`` requires the name to be absent
-    and records that in the read set, so two concurrent creators conflict;
-    ``set_mutable`` requires the cell to exist, and a blind set of a cell removed by a
-    concurrent commit is a conflict (it never resurrects the cell).  A
-    :class:`~proto_db.values.MutableObject` handle names a cell and resolves it
-    through a transaction.
+    the root API, in their own namespace: a root and a mutable of the same name are
+    unrelated.  They follow the precondition model (:mod:`proto_db.preconditions`, spec
+    section 5): the unit is the cell, and every operation on a cell records the cell's
+    value in the transaction's base (an exact token, ABSENT included) as a precondition,
+    checked against the current mutable table at commit.  So a set, also one without a
+    prior read, conflicts with any concurrent change or removal of the cell (no last
+    writer wins); a removal conflicts with a concurrent removal; ``new_mutable``
+    requires the name to be absent, so two concurrent creators conflict; and
+    ``mutable_names`` records the set of cell names.  Different cells never conflict.
+    Mutables are never merged: a written value is stored as written, on the current
+    table (R35).  A :class:`~proto_db.values.MutableObject` handle names a cell and
+    resolves it through a transaction.
 
 Commit protocol (D34)
     1. No writes: nothing is saved nor published.
@@ -177,6 +180,7 @@ from .storage.format import RootRecord, next_root_version
 from .cluster.coordinator import REFOUND_TERM_STEP
 from .cluster.lease import Permission
 from .cluster.rootlog import compare_roots
+from .preconditions import ABSENT, ReadLog, Unit, UnitKind
 from .values import canonical_for, check_text, exact_token
 
 __all__ = ["ObjectSpace", "Database", "Transaction", "HistoryEntry", "SpaceRoot", "DatabaseRoot"]
@@ -194,7 +198,7 @@ class _Sentinel:
         return self._name
 
 
-_ABSENT = _Sentinel("ABSENT")
+_ABSENT = ABSENT                # the token of an absent unit (proto_db.preconditions)
 _REMOVED = _Sentinel("REMOVED")
 
 _ACTIVE, _COMMITTING, _COMMITTED, _ABORTED = "active", "committing", "committed", "aborted"
@@ -253,8 +257,8 @@ def _constraints():
 
 class _SemanticUndo:
     """What the top-level semantic operation in progress changed in its transaction, to undo it when it fails
-    (:meth:`Transaction.semantic_operation`): per cell, whether it was written before, its earlier write and
-    whether it was set blindly; per field-version slot, its earlier record (``_ABSENT``: none)."""
+    (:meth:`Transaction.semantic_operation`): per cell, whether it was written before and its earlier write;
+    per field-version slot, its earlier record (``_ABSENT``: none)."""
 
     __slots__ = ("cells", "versions")
 
@@ -2736,9 +2740,7 @@ class Transaction:
         self._reads: dict = {}
         self._writes: dict = {}
         self._replaced: set = set()
-        self._mreads: dict = {}         # mutable name -> token (or ABSENT) seen in the snapshot
         self._mwrites: dict = {}        # mutable name -> value or REMOVED
-        self._mexpected: set = set()    # mutables set blindly: must still exist at commit
         # The runtime registry (proto_db.registry): modules to add at commit (name -> depends, in
         # install order), catalog objects to add (registry name -> DBObject), the names whose new
         # catalog object was handed to the application, and the module list the installs were
@@ -2776,6 +2778,9 @@ class Transaction:
         self._db_root = database._root_in(self, record)
         self._objects = self._db_root.objects
         self._mutables = self._db_root.mutables
+        # The preconditions this transaction declared (spec sections 4-6): today the mutable cells
+        # (CELL, CELL_NAMES); every expected value is the base's (R8).
+        self._read_log = ReadLog(self._base_whole_token)
         # The registry (Task 8): the space's binding of this database when it is for this
         # snapshot's list (kept for the transaction's life), else None (a mismatch, raised at the
         # first resolution through the registry); nothing is imported here.
@@ -2947,25 +2952,33 @@ class Transaction:
 
     # -- mutable cells (D11, D35) ------------------------------------------------------------
 
-    def _mutable_view(self, name: str, record: bool):
+    def _base_whole_token(self, root: str):
+        """The expected value of ``Unit(WHOLE, root)``: the token of the root's base value (R8)."""
+        return _token(self._objects.get_at(root, _ABSENT))
+
+    def _mutable_view(self, name: str):
         """The cell ``name`` as this transaction sees it (value or ABSENT); the caller holds the lock.
 
-        With ``record``, a snapshot read enters the read set (first read only).
+        Every operation on a cell observes it: the first one that sees the base records
+        ``Unit(CELL, key=name)`` with the base's token (R8); a cell this transaction already
+        wrote reads its own value and records nothing more (R9).
         """
         if name in self._mwrites:
             value = self._mwrites[name]
             return _ABSENT if value is _REMOVED else value
         value = self._mutables.get_at(name, _ABSENT)
-        if record and name not in self._mreads:
-            self._mreads[name] = _token(value)
+        unit = Unit(UnitKind.CELL, key=name)
+        if unit not in self._read_log:
+            self._read_log.record(unit, _token(value))
         return value
 
     def new_mutable(self, name: str, value) -> MutableObject:
         """Create the mutable cell ``name`` holding ``value`` at commit; return its handle.
 
         Raises ``ProtoValidationError`` if the cell exists in this transaction's view.
-        The absence is recorded in the read set, so a concurrent creator of the same
-        name makes one of the two commits raise ``ProtoConflictError``.
+        The precondition is that the cell is still absent (spec section 5), so a
+        concurrent creator of the same name makes one of the two commits raise
+        ``ProtoConflictError``.
         """
         _check_name(name, "mutable")
         value = canonical_for(value, f"Mutable {name!r}")
@@ -2974,7 +2987,7 @@ class Transaction:
         with self._lock:
             if self._state != _ACTIVE:
                 self._check_active()
-            if self._mutable_view(name, record=True) is not _ABSENT:
+            if self._mutable_view(name) is not _ABSENT:
                 raise ProtoValidationError(f"Mutable {name!r} already exists")
             if self._semantic_depth:
                 self._note_undo(name)
@@ -2984,9 +2997,9 @@ class Transaction:
     def get_mutable(self, name: str):
         """Return the value of the mutable cell ``name`` (``None`` if absent); records the read.
 
-        Like :meth:`get_root_object`: the snapshot value (an exact token, or ABSENT)
-        enters the read set, so a concurrent change, creation or removal of the cell
-        makes the commit raise ``ProtoConflictError``.
+        The precondition is the cell's base value (an exact token, or ABSENT, R6), so a
+        concurrent change, creation or removal of the cell makes the commit raise
+        ``ProtoConflictError``.
         """
         _check_name(name, "mutable")
         if self._state != _ACTIVE:      # fails before the lock (see "Locks" in the class docstring)
@@ -2994,7 +3007,7 @@ class Transaction:
         with self._lock:
             if self._state != _ACTIVE:
                 self._check_active()
-            value = self._mutable_view(name, record=True)
+            value = self._mutable_view(name)
             return None if value is _ABSENT else value
 
     def snapshot_mutable(self, name: str):
@@ -3070,22 +3083,18 @@ class Transaction:
             self._semantic_undo = _SemanticUndo()
         cells = self._semantic_undo.cells
         if name not in cells:
-            had = name in self._mwrites
-            cells[name] = (had, self._mwrites.get(name), name in self._mexpected)
+            cells[name] = (name in self._mwrites, self._mwrites.get(name))
 
     def _undo_semantic_operation(self) -> None:
         """Under the lock: undo what the failed top-level semantic operation wrote (see
         :meth:`semantic_operation`)."""
         undo = self._semantic_undo
-        for name, (had, previous, expected) in undo.cells.items():
+        for name, (had, previous) in undo.cells.items():
+            # The preconditions the operation recorded stay: it observed the base (P-A).
             if had:
                 self._mwrites[name] = previous
             else:
                 self._mwrites.pop(name, None)
-            if expected:
-                self._mexpected.add(name)
-            else:
-                self._mexpected.discard(name)
         for name, previous in undo.versions.items():
             if previous is _ABSENT:
                 self._semantic_versions.pop(name, None)
@@ -3103,7 +3112,7 @@ class Transaction:
             if undo is None:
                 return {}                       # nothing written yet
             out = {}
-            for name, (had, previous, _) in undo.cells.items():
+            for name, (had, previous) in undo.cells.items():
                 if not had:
                     previous = self._mutables.get_at(name, _ABSENT)
                 out[name] = None if previous is _ABSENT or previous is _REMOVED else previous
@@ -3176,9 +3185,10 @@ class Transaction:
         """Set the mutable cell ``name`` to ``value`` at commit; the cell must exist.
 
         Raises ``ProtoValidationError`` if the cell is absent in this transaction's view
-        (use :meth:`new_mutable`).  The value is stored as written, never merged.  A set
-        without a prior read is blind: a concurrent set is not a conflict (last writer
-        wins), but a concurrent removal of the cell is.
+        (use :meth:`new_mutable`).  The value is stored as written, never merged.  The
+        precondition is the cell's base value (spec section 5): any concurrent change or
+        removal of the cell is a conflict, also for a set without a prior read, and also
+        when ``value`` is the base value (R10).
         """
         _check_name(name, "mutable")
         value = canonical_for(value, f"Mutable {name!r}")
@@ -3187,19 +3197,18 @@ class Transaction:
         with self._lock:
             if self._state != _ACTIVE:
                 self._check_active()
-            if self._mutable_view(name, record=False) is _ABSENT:
+            if self._mutable_view(name) is _ABSENT:
                 raise ProtoValidationError(f"Mutable {name!r} does not exist; create it with new_mutable")
             if self._semantic_depth:
                 self._note_undo(name)
-            if name not in self._mwrites:
-                self._mexpected.add(name)
             self._mwrites[name] = value
 
     def remove_mutable(self, name: str) -> None:
         """Remove the mutable cell ``name`` at commit; the cell must exist in this transaction's view.
 
-        Raises ``ProtoValidationError`` if it is absent.  A cell removed meanwhile by a
-        concurrent commit makes a blind removal a no-op, not a conflict.
+        Raises ``ProtoValidationError`` if it is absent.  The precondition is the cell's
+        base value (spec section 5): a cell changed or removed meanwhile by a concurrent
+        commit is a conflict.
         """
         _check_name(name, "mutable")
         if self._state != _ACTIVE:      # fails before the lock (see "Locks" in the class docstring)
@@ -3207,20 +3216,29 @@ class Transaction:
         with self._lock:
             if self._state != _ACTIVE:
                 self._check_active()
-            if self._mutable_view(name, record=False) is _ABSENT:
+            if self._mutable_view(name) is _ABSENT:
                 raise ProtoValidationError(f"Mutable {name!r} does not exist")
             if self._semantic_depth:
                 self._note_undo(name)
             self._mwrites[name] = _REMOVED
 
     def mutable_names(self) -> list:
-        """Sorted names of the mutable cells as this transaction sees them (not recorded in the read set)."""
+        """Sorted names of the mutable cells as this transaction sees them.
+
+        Records ``Unit(CELL_NAMES)`` with the token of the base's sorted name tuple: a
+        concurrent creation or removal of any cell makes the commit raise
+        ``ProtoConflictError``; a change of a cell's value does not (spec section 6).
+        """
         if self._state != _ACTIVE:      # fails before the lock (see "Locks" in the class docstring)
             self._check_active()
         with self._lock:
             if self._state != _ACTIVE:
                 self._check_active()
-            names = set(self._mutables.keys())
+            base_names = tuple(self._mutables.keys())
+            unit = Unit(UnitKind.CELL_NAMES)
+            if unit not in self._read_log:
+                self._read_log.record(unit, _token(base_names))
+            names = set(base_names)
             for name, value in self._mwrites.items():
                 if value is _REMOVED:
                     names.discard(name)
@@ -3756,8 +3774,7 @@ class Transaction:
                 if not _same_token(token, _token(db_root.objects.get_at(name, _ABSENT))):
                     raise ProtoConflictError(
                         f"Root {name!r} of database {self._database.name!r} was changed by a concurrent commit")
-            if self._mreads or self._mexpected:
-                self._check_mutables(db_root.mutables)
+            self._check_mutables(db_root.mutables)
         validated = clock()
         current_objects = db_root.objects
         objects = current_objects
@@ -3807,15 +3824,20 @@ class Transaction:
         return ptr
 
     def _check_mutables(self, current: Dictionary) -> None:
-        """Under the root lock: raise ``ProtoConflictError`` if a read cell changed or a blindly set one vanished."""
-        for name, token in self._mreads.items():
-            if not _same_token(token, _token(current.get_at(name, _ABSENT))):
-                raise ProtoConflictError(
-                    f"Mutable {name!r} of database {self._database.name!r} was changed by a concurrent commit")
-        for name in self._mexpected:
-            if not current.has(name):
-                raise ProtoConflictError(
-                    f"Mutable {name!r} of database {self._database.name!r} was removed by a concurrent commit")
+        """Under the root lock: raise ``ProtoConflictError`` naming the unit if a ``CELL`` or
+        ``CELL_NAMES`` precondition does not hold against the current mutable table (R6, R36)."""
+        database = self._database.name
+        for unit, expected in self._read_log.preconditions().items():
+            if unit.kind is UnitKind.CELL:
+                if not _same_token(expected, _token(current.get_at(unit.key, _ABSENT))):
+                    raise ProtoConflictError(
+                        f"Mutable {unit.key!r} of database {database!r} was changed by a concurrent commit "
+                        f"(unit {unit.kind.name})", unit=unit, database=database)
+            elif unit.kind is UnitKind.CELL_NAMES:
+                if not _same_token(expected, _token(tuple(current.keys()))):
+                    raise ProtoConflictError(
+                        f"The mutable cell names of database {database!r} were changed by a concurrent commit "
+                        f"(unit {unit.kind.name})", unit=unit, database=database)
 
     @staticmethod
     def _merged(mine, current):
