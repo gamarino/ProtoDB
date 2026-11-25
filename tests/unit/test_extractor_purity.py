@@ -89,3 +89,36 @@ def test_extracting_nests_and_unwinds():
         with pytest.raises(ProtoUserError):
             check_not_extracting("x")
     check_not_extracting("x")
+
+
+def test_extractor_calling_load_or_snapshot_mutable_fails(db, extractors):
+    db.run(lambda tr: tr.new_mutable("c", 1))
+    box = {}
+    extractors("p8_load", lambda e: box["tx"].load(e.atom_pointer, type(e).__type_name__))
+    extractors("p8_snap", lambda e: box["tx"].snapshot_mutable("c"))
+    from proto_db.core.dbobject import DBObject
+    db.run(lambda tr: tr.set_root_object("o", DBObject(v=1)))
+    with db.new_transaction() as tx:
+        box["tx"] = tx
+        obj = tx.get_root_object("o")
+        with pytest.raises(ProtoUserError, match="load"):
+            KeySpec.extractor("p8_load").extract(obj)
+        with pytest.raises(ProtoUserError, match="snapshot_mutable"):
+            KeySpec.extractor("p8_snap").extract(obj)
+
+
+def test_pure_extractor_walks_cold_nested_stub(extractors):
+    """A pure extractor may resolve the atoms its own value references, even cold stubs of a
+    fresh space (no atom cache entry): the engine's decoding does not hit the guarded load."""
+    from proto_db.core.dbobject import DBObject
+    storage = MemoryStorage()
+    space = ObjectSpace(storage)
+    space.new_database("db").run(
+        lambda tr: tr.set_root_object("o", DBObject(child=DBObject(v=7), n=1)))
+    extractors("p8_child", lambda e: e.child.v)
+    for kw in ({}, {"atom_cache_entries": 0}):
+        space2 = ObjectSpace(storage, **kw)     # not closed: it would close the shared storage
+        with space2.open_database("db").new_transaction() as tx:
+            obj = tx.get_root_object("o")
+            assert KeySpec.extractor("p8_child").extract(obj) == 7
+    space.close()

@@ -2838,6 +2838,11 @@ class Transaction:
         """Return the atom stored at ``ptr``: the space's shared decoded atom (R75), or a lazy
         stub of this transaction when the space's atom cache is disabled."""
         check_not_extracting("load")
+        return self._load(ptr, type_name)
+
+    def _load(self, ptr: AtomPointer, type_name: str) -> Atom:
+        """:meth:`load` without the purity check: what the engine's own decoding uses to resolve the
+        atoms a value references (R27 forbids a read *through* the transaction, not that)."""
         atoms = self._atoms
         if atoms is not None:
             return atoms.load(ptr, type_name)

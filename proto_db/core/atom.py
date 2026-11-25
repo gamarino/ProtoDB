@@ -184,6 +184,12 @@ _STRIPES = 64
 _LOCKS = tuple(threading.RLock() for _ in range(_STRIPES))
 
 
+def _engine_load(context):
+    """The context's load for the engine's own decoding: a transaction's unguarded ``_load`` (a pure
+    extractor may resolve the atoms its value references, R27), else the context's ``load``."""
+    return getattr(context, "_load", None) or context.load
+
+
 def _lock_for(atom) -> "threading.RLock":
     """Return the striped lock that guards ``atom`` (load, oid assignment, save publication).
 
@@ -867,7 +873,7 @@ class Atom:
         this atom's context, never kept by this atom."""
         ref = links[name]
         if type(ref) is tuple:
-            return self.context.load(ref[0], ref[1].__type_name__)
+            return _engine_load(self.context)(ref[0], ref[1].__type_name__)
         if isinstance(ref, Atom) and ref.atom_pointer is not None and self.context is not None:
             links[name] = _link_ref(ref)        # saved since: from now on held by pointer only
         return ref
@@ -954,12 +960,12 @@ class Atom:
                     object.__setattr__(self, "_loaded", pending)
             context = self.context
             payload = pending.payload
-            state = codec.decode_state(payload["s"], context.load)
+            state = codec.decode_state(payload["s"], _engine_load(context))
             missing = [name for name in type(self)._required_fields if name not in payload["s"]]
             if missing:
                 raise ProtoCorruptionError(f"Atom at {self.atom_pointer} "
                                            f"({type(self).__type_name__}) lacks the required fields {missing}")
-            parents = _decode_parents(payload["p"], context.load, self.atom_pointer) if "p" in payload else None
+            parents = _decode_parents(payload["p"], _engine_load(context), self.atom_pointer) if "p" in payload else None
             oid = uuid.UUID(bytes=payload["oid"])
             with lock:
                 if self._loaded:
@@ -1156,7 +1162,7 @@ class Atom:
         and no runtime state (no op log, for example).  This atom itself is left untouched.
         ``inline``, a one-item list, accumulates the bytes of its ``str``/``bytes`` values."""
         from . import codec
-        load = context.load
+        load = _engine_load(context)
         decoded = {name: codec.redecode_value(value, load, inline) for name, value in state.items()}
         twin = object.__new__(type(self))
         osa = object.__setattr__
