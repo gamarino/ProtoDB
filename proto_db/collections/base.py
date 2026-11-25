@@ -575,6 +575,14 @@ class IndexedCollection(_Immutable, Atom):
 
     # -- the index units of the precondition model (spec section 7) ------------------------------
 
+    def _indexed(self) -> bool:
+        """Whether this version has an index (an engine read: records nothing).  On an indexed
+        collection the removal intentions of the D26 types and of a Set take a declared fine
+        precondition: their reapplication takes out a stored element, whose index keys the
+        preparation computed only for the form the base stores (spec section 7, R49)."""
+        with engine_reads():
+            return len(self.indexes) > 0
+
     def _record_index_definitions(self) -> None:
         """On a linked version: record ``Unit(INDEX_DEFS, root)`` expecting the base's index
         definitions (R25, R8); nothing on an unlinked one or inside ``engine_reads``."""

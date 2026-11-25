@@ -36,6 +36,17 @@ per element and logged as ``("transform", element, removes, adds)``.  ``has(e)``
 and ``count_of(e)`` record ``Unit(COUNT, root, key=e)`` with e's count in the base
 (R18: the version's count composes the base's).
 
+Indexed sets (spec section 7, R49).  The reapplication under the space root maintains the
+indexes from keys computed in preparation for the elements the intentions name and the members
+the BASE stores for them.  A removal takes out the member the CURRENT collection stores, which a
+concurrent commit may have replaced by an equal member of another exact form (``1`` by ``1.0``)
+whose keys nobody computed.  So on a collection with an index, the ``ELEMENT`` and ``COUNT``
+tokens also hold the exact stored member, and ``CountedSet.remove`` records
+``Unit(COUNT, root, key=e)`` from the base (``Set.remove`` already records ``ELEMENT``): such a
+concurrent change is a declared conflict on that unit (R36).  ``CountedSet.add`` needs none: on
+the current collection it either finds the element (no index event) or files the very element
+it names.  Unindexed collections keep D26 composition without any precondition.
+
 A subclass that overrides an operation the model relies on (``SET_OPERATIONS``,
 ``COUNTED_SET_OPERATIONS``; ``_bucket_hash`` included) is an object root (N5).
 
@@ -256,10 +267,14 @@ class Set(_HashBuckets):
 
     def _unit_token(self, kind, key):
         """The token of unit ``kind`` for the canonical element ``key``: for ``ELEMENT`` its
-        presence; ``NOT_A_UNIT`` for any other kind."""
+        presence, and on an indexed set also the exact stored member (a removal takes that one
+        out of the indexes: see the module docstring); ``NOT_A_UNIT`` for any other kind."""
         if kind is not UnitKind.ELEMENT:
             return NOT_A_UNIT
-        return token(self._find(key)[2] >= 0)
+        _, bucket, position = self._find(key)
+        if not self._indexed():
+            return token(position >= 0)
+        return token((True, bucket[position]) if position >= 0 else (False,))
 
     # -- mutators -----------------------------------------------------------------------
 
@@ -406,12 +421,15 @@ class CountedSet(_HashBuckets):
     __contains__ = has
 
     def _unit_token(self, kind, key):
-        """The token of unit ``kind`` for the canonical element ``key``: for ``COUNT`` its count;
-        ``NOT_A_UNIT`` for any other kind."""
+        """The token of unit ``kind`` for the canonical element ``key``: for ``COUNT`` its count,
+        and on an indexed counted set also the exact stored member (a removal takes that one out
+        of the indexes: see the module docstring); ``NOT_A_UNIT`` for any other kind."""
         if kind is not UnitKind.COUNT:
             return NOT_A_UNIT
         _, bucket, position = self._find(key)
-        return token(0 if position < 0 else bucket[position][1])
+        if not self._indexed():
+            return token(0 if position < 0 else bucket[position][1])
+        return token(bucket[position] if position >= 0 else (0,))
 
     def items(self) -> Iterator[tuple]:
         """``(element, count)`` pairs in bucket-hash order."""
@@ -472,9 +490,12 @@ class CountedSet(_HashBuckets):
 
         An absent element yields a new version with the same content: the count never goes below
         0, also when the decrement is reapplied on a count a concurrent commit lowered (D26).
-        No precondition.
+        No precondition, except on an indexed counted set: ``Unit(COUNT, root, key=element)``
+        with the base's count and stored member (module docstring).
         """
         element = canonical_for(element, f"{type(self).__name__} element")
+        if self._link is not None and self._indexed():
+            record_key(self, element, UnitKind.COUNT, from_base=True)    # indexed: module docstring
         with engine_reads():
             return self._step(element, 1, 0, (_REMOVE, element))
 
@@ -505,14 +526,14 @@ class CountedSet(_HashBuckets):
 SET_OPERATIONS = ("has", "__contains__", "add", "remove", "union", "difference", "intersection", "_find",
                   "_bucket_hash", "_entry_element", "_element", "_put_bucket", "_unit_token", "elements",
                   "__iter__", "__len__", "content_equals", "_same_content", "_replay_op", "_net_ops", "_op_key",
-                  "_reapplied_on", "_with", "_intention_elements", "prepare_changes")
+                  "_reapplied_on", "_with", "_intention_elements", "prepare_changes", "_indexed")
 
 #: The operations of a CountedSet the precondition model lists or relies on (N5, as above).
 COUNTED_SET_OPERATIONS = ("has", "__contains__", "count_of", "add", "remove", "_transform", "_step",
                           "_retarget_at", "_find", "_bucket_hash", "_entry_element", "_element", "_put_bucket",
                           "_unit_token", "elements", "items", "__iter__", "__len__", "content_equals",
                           "_same_content", "_replay_op", "_net_ops", "_op_key", "_reapplied_on", "_with",
-                          "_intention_elements", "prepare_changes")
+                          "_intention_elements", "prepare_changes", "_indexed")
 
 register_fine_grained(Set, SET_OPERATIONS)
 register_fine_grained(CountedSet, COUNTED_SET_OPERATIONS)

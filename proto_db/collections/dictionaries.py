@@ -35,6 +35,15 @@ if the version has one and then the counter transform of the record ops after it
 ``Unit(RECORDS, root, key=k)`` with the token of k's CountedSet in the base,
 unless the version cleared k (R9); the CountedSet returned has no units (R5).
 
+On an indexed RepeatedKeysDictionary (spec section 7, R49) ``remove_key``/``remove_at`` and
+``remove_record`` record ``Unit(RECORDS, root, key=k)`` with the token of k's records in the
+base: their reapplication takes out the records the CURRENT collection stores under k (records
+a concurrent commit added, or a record it replaced by an equal one of another exact form), whose
+index keys the preparation, outside the space root, could not compute.  A concurrent change of
+k's records is then a declared conflict on that unit (R36); changes of other keys compose.
+``set_at`` needs none (it files the record it names, or finds it stored).  Unindexed, every
+write composes (D26).
+
 Thread safety: a version is immutable once built and may be shared between
 threads; lazily loaded nodes are published atomically by the atom layer.
 """
@@ -483,7 +492,14 @@ class RepeatedKeysDictionary(ConcurrentOptimized, IndexedCollection):
         same content; the record must be orderable even then.
         """
         key, record = self._key(key), canonical_for(record, f"{type(self).__name__} record")
+        self._record_removal(key)
         return self._record_step(key, record, 1, 0, (_REMOVE_RECORD, key, record))
+
+    def _record_removal(self, key) -> None:
+        """On a linked, indexed version: ``Unit(RECORDS, root, key=key)`` from the base before a
+        removal under ``key`` (module docstring); nothing otherwise (D26)."""
+        if self._link is not None and self._indexed():
+            record_key(self, key, UnitKind.RECORDS, from_base=True)
 
     def _transform_record(self, key, record, removes: int, adds: int) -> "RepeatedKeysDictionary":
         """Apply a composed counter transform to one record as one adjustment (reapplication, D26)."""
@@ -495,9 +511,11 @@ class RepeatedKeysDictionary(ConcurrentOptimized, IndexedCollection):
 
         An absent key yields a new version with the same content.  No precondition: the clear
         is an intention, serializable after any concurrent change of the key (D26); after it the
-        key's records are this version's own (R9).
+        key's records are this version's own (R9).  On an indexed multimap it records
+        ``Unit(RECORDS, root, key=key)`` from the base (module docstring).
         """
         key = self._key(key)
+        self._record_removal(key)
         log = self._logged((_REMOVE_KEY, key))
         with engine_reads():
             written = written_with(self, key)
@@ -590,7 +608,8 @@ REPEATED_KEYS_DICTIONARY_OPERATIONS = (
     "get_at", "get", "has", "__contains__", "_recorded_key", "set_at", "add", "remove_record", "remove_at",
     "remove_key", "_transform_record", "_record_step", "_record_stepped", "_key", "_record", "_unit_token",
     "elements", "items", "keys", "__iter__", "__len__", "content_equals", "_same_content", "_replay_op",
-    "_net_ops", "_op_key", "_reapplied_on", "_with", "_intention_elements", "prepare_changes")
+    "_net_ops", "_op_key", "_reapplied_on", "_with", "_intention_elements", "prepare_changes", "_indexed",
+    "_record_removal")
 
 register_fine_grained(RepeatedKeysDictionary, REPEATED_KEYS_DICTIONARY_OPERATIONS)
 

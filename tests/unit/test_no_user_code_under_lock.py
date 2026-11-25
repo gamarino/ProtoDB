@@ -56,8 +56,8 @@ CASES = {
             lambda c: sorted(c.elements()) == [21, 35, 47]),
     "CountedSet": (lambda tr: tr.new_counted_set().add(11).add(11).add(21),
                    lambda c: c.remove(11).add(35),
-                   lambda c: c.remove(11),
-                   lambda c: sorted(c.items()) == [(21, 1), (35, 1)]),
+                   lambda c: c.add(21),
+                   lambda c: sorted(c.items()) == [(11, 1), (21, 2), (35, 1)]),
     "RepeatedKeysDictionary": (lambda tr: tr.new_repeated_keys_dictionary().set_at("a", 11).set_at("b", 21),
                                lambda c: c.remove_key("a").set_at("n", 35),
                                lambda c: c.set_at("b", 22),
@@ -99,10 +99,10 @@ def test_reapplication_without_a_concurrent_change_needs_no_extractor_under_lock
 
 
 def test_element_without_precomputed_key_conflicts(db, extractor):
-    """A concurrent commit replaced a Set member by an equal member of another exact value (1 by
-    1.0): A's removal must take the stored 1.0 out of the index, whose key A never computed.
-    Computing it under the root would run the extractor there: the commit conflicts instead
-    (P-A), naming the whole collection, and the retry succeeds."""
+    """A concurrent commit replaced a Set member by an equal member of another exact value (10 by
+    10.0): A's removal would take the stored 10.0 out of the index, whose key A never computed.
+    On an indexed set the ELEMENT token holds the exact stored member, so the commit conflicts
+    on the declared unit (R36) before any reapplication, and the retry succeeds."""
     db.run(lambda tr: tr.set_root_object("s", tr.new_set().add(10).add(20).add_index(
         EqualityIndex("e", extractor.key_spec))))
     a, b = db.new_transaction(), db.new_transaction()
@@ -112,7 +112,7 @@ def test_element_without_precomputed_key_conflicts(db, extractor):
     extractor.reset()
     with pytest.raises(ProtoConflictError) as e:
         a.commit()
-    assert e.value.unit == Unit(UnitKind.WHOLE, "s")
+    assert e.value.unit == Unit(UnitKind.ELEMENT, "s", key=10)
     assert extractor.held_calls() == 0
     db.run(lambda tr: tr.set_root_object("s", tr.get_root_object("s").remove(10)))
     with db.new_transaction() as tr:

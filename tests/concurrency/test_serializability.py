@@ -26,7 +26,7 @@ match the published versions, and a read-only transaction that sees no consisten
 report line counts the class changes committed and the R12 conflicts they caused, the conflicts
 by unit and root kind, and the commits whose collection intentions were reapplied over a
 concurrent change of the same root (composed).  Task 9 adds equality lookups through the
-index every dictionary carries (``x_eq``, ``x_in``: one INDEX_GROUP per decade read, R28) and
+index every dictionary carries (``x_eq``, ``x_in``: one INDEX_GROUP per group read, R28) and
 so makes every dictionary write an indexed write, maintained from precomputed keys (R24, R49);
 the report counts the lookups committed and the INDEX_GROUP/INDEX_DEFS conflicts, and the test
 asserts that the index extractor never ran with the space root held (P-C).  Task 10 adds its
@@ -47,8 +47,8 @@ from proto_db.transactions import ObjectSpace
 from tests.concurrency.harness import report, run_threads
 from tests.support.serial_model import (COLLECTIONS, COUNTED_SET_OPS, DICTIONARY_AND_CELL_OPS, LIST_OPS,
                                         LOOKUP_OPS, MULTIMAP_OPS, OBJECT, RECORDS, SET_OPS, Op, Record, StateNames,
-                                        capture, check_history, decade_index, execute, extractor_calls_under_root,
-                                        family_of, kinds_by_version, random_program, roots_by_version)
+                                        capture, check_history, group_index, execute, extractor_calls_under_root,
+                                        family_of, group_of, kinds_by_version, random_program, roots_by_version)
 
 SEED = 20261124
 THREADS = 4
@@ -90,7 +90,7 @@ def _seed_state(db, rng):
             d = cls(context=tr)
             for k in rng.sample(NAMES.keys, 3):
                 d = d.set_at(k, rng.choice(NAMES.values))
-            tr.set_root_object(name, d.add_index(decade_index()))
+            tr.set_root_object(name, d.add_index(group_index()))
         s = tr.new_set()
         for k in rng.sample(NAMES.keys, 3):
             s = s.add(k)
@@ -241,6 +241,40 @@ def conflicts_by_root_kind(records, initial, stats) -> dict:
     return dict(sorted(counts.items()))
 
 
+def group_exposure(programs) -> dict:
+    """From the seeded programs alone (no interleaving): how much they expose B4's INDEX_GROUP
+    preconditions.  ``lookup_programs``: programs with an indexed lookup; ``group_writers``:
+    programs whose ``d_set`` writes a value into a group some lookup of another thread reads
+    (same root); ``pairs``: (lookup program, writer program) pairs of different threads on a
+    common (root, group) -- the chances a lookup's group changes under it."""
+    def looked(program):
+        out = set()
+        for op in program:
+            if op.kind == "x_eq":
+                out.add((op.target, op.key))
+            elif op.kind == "x_in":
+                out.update((op.target, g) for g in op.key)
+        return out
+
+    def written(program):
+        return {(op.target, group_of(op.value)) for op in program if op.kind == "d_set"}
+
+    looks = [[looked(p) for p in thread] for thread in programs]
+    writes = [[written(p) for p in thread] for thread in programs]
+    lookup_programs = sum(1 for thread in looks for g in thread if g)
+    pairs = writers = 0
+    for t, thread in enumerate(writes):
+        others = set().union(*(g for u, th in enumerate(looks) if u != t for g in th))
+        for groups in thread:
+            if groups & others:
+                writers += 1
+    for t, thread in enumerate(looks):
+        for groups in thread:
+            if groups:
+                pairs += sum(1 for u, th in enumerate(writes) if u != t for w in th if groups & w)
+    return {"lookup_programs": lookup_programs, "group_writers": writers, "pairs": pairs}
+
+
 def test_serializability_over_the_closed_operation_set(db):
     rng = random.Random(SEED)
     _seed_state(db, rng)
@@ -249,6 +283,11 @@ def test_serializability_over_the_closed_operation_set(db):
                 for _ in range(THREADS)]
     per_thread = [[] for _ in range(THREADS)]
     stats = Stats()
+    # Deterministic: the seeded programs give lookups and same-group writes of other threads
+    # enough chances to meet (B4); how many actually meet depends on the interleaving (reported).
+    exposure = group_exposure(programs)
+    assert exposure["lookup_programs"] >= 100 and exposure["group_writers"] >= 50 \
+        and exposure["pairs"] >= 1000, exposure
 
     calls_before = extractor_calls_under_root()
     elapsed = run_threads([_worker(db, t, programs[t], per_thread[t], stats) for t in range(THREADS)])
@@ -267,6 +306,7 @@ def test_serializability_over_the_closed_operation_set(db):
            f"conflicts by unit {dict(sorted(by_unit.items()))}",
            f"by unit@root kind {conflicts_by_root_kind(records, initial, stats)}",
            f"composed {composed_counts(records, initial)}",
+           f"group exposure {exposure}",
            f"lookups {dict(sorted(lookups.items()))}, index group conflicts {by_unit.get('INDEX_GROUP', 0)}, "
            f"index definition conflicts {by_unit.get('INDEX_DEFS', 0)}, extractor calls {calls}",
            class_change_counts(records, initial, stats))

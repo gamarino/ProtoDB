@@ -315,3 +315,123 @@ def test_hnsw_and_exact_reapply_from_vector(db, backend):
             index = d.get_index("v")
             index.validate(list(d.elements()))
             assert index.explain()["invalid"] == 1 and index.explain()["vectors"] == 3
+
+
+# -- Removals of the D26 types on an indexed collection (declared fine preconditions) ---------------
+
+def _rkd(db, indexed):
+    def build(tr):
+        r = tr.new_repeated_keys_dictionary().set_at("k", 1).set_at("j", 5)
+        tr.set_root_object("r", r.add_index(EqualityIndex("e", KeySpec.element())) if indexed else r)
+    db.run(build)
+
+
+def _rkd_content(db):
+    with db.new_transaction() as tr:
+        r = tr.get_root_object("r")
+        return sorted((k, rec) for k in r.keys() for rec in r.get_at(k).elements())
+
+
+@pytest.mark.parametrize("remove", ["remove_key", "remove_at"])
+def test_indexed_rkd_remove_key_conflicts_on_records(db, remove):
+    """T1 adds a record under k and commits; T2 clears k.  Reapplied, the clear would take out
+    T1's record, whose key T2's preparation never computed: on an indexed multimap the clear
+    records Unit(RECORDS, k) and the conflict is declared on it (R36), not a reapplication
+    failure."""
+    _rkd(db, indexed=True)
+    t1, t2 = db.new_transaction(), db.new_transaction()
+    t1.set_root_object("r", t1.get_root_object("r").set_at("k", 2))
+    t2.set_root_object("r", getattr(t2.get_root_object("r"), remove)("k"))
+    assert Unit(UnitKind.RECORDS, "r", key="k") in t2._read_log
+    t1.commit()
+    with pytest.raises(ProtoConflictError) as e:
+        t2.commit()
+    assert e.value.unit == Unit(UnitKind.RECORDS, "r", key="k")
+    assert _rkd_content(db) == [("j", 5), ("k", 1), ("k", 2)]
+
+
+def test_unindexed_rkd_remove_key_composes(db):
+    """The same interleaving without an index: the clear composes after T1 (D26), no precondition."""
+    _rkd(db, indexed=False)
+    t1, t2 = db.new_transaction(), db.new_transaction()
+    t1.set_root_object("r", t1.get_root_object("r").set_at("k", 2))
+    t2.set_root_object("r", t2.get_root_object("r").remove_key("k"))
+    assert Unit(UnitKind.RECORDS, "r", key="k") not in t2._read_log
+    t1.commit()
+    t2.commit()
+    assert _rkd_content(db) == [("j", 5)]
+
+
+def test_indexed_rkd_other_key_change_composes(db):
+    _rkd(db, indexed=True)
+    t1, t2 = db.new_transaction(), db.new_transaction()
+    t1.set_root_object("r", t1.get_root_object("r").set_at("j", 6).remove_record("j", 5))
+    t2.set_root_object("r", t2.get_root_object("r").remove_key("k").remove_record("j", 9).set_at("n", 7))
+    t1.commit()
+    with pytest.raises(ProtoConflictError) as e:      # t2's remove_record on j meets t1's change of j
+        t2.commit()
+    assert e.value.unit == Unit(UnitKind.RECORDS, "r", key="j")
+    t3 = db.new_transaction()
+    t3.set_root_object("r", t3.get_root_object("r").remove_key("k").set_at("n", 7))
+    t4 = db.new_transaction()
+    t4.set_root_object("r", t4.get_root_object("r").set_at("j", 8))
+    t4.commit()
+    t3.commit()                                       # k and n untouched by t4: composes
+    assert _rkd_content(db) == [("j", 6), ("j", 8), ("n", 7)]
+    with db.new_transaction() as tr:
+        r = tr.get_root_object("r")
+        r.get_index("e").validate(list(r.elements()))
+
+
+@pytest.mark.parametrize("indexed", [True, False], ids=["indexed", "unindexed"])
+def test_counted_set_exact_form_concurrent_change(db, indexed):
+    """A concurrent commit replaced the stored 10 by an equal 10.0 with the same count.  Indexed:
+    A's decrement would take 10.0 out of the index with a key never computed, so ``remove``
+    records Unit(COUNT, 10) whose token holds the exact stored member: a declared conflict.
+    Unindexed: the decrement composes (D26)."""
+    def build(tr):
+        c = tr.new_counted_set().add(10).add(20)
+        tr.set_root_object("c", c.add_index(EqualityIndex("e", KeySpec.element())) if indexed else c)
+    db.run(build)
+    a, b = db.new_transaction(), db.new_transaction()
+    a.set_root_object("c", a.get_root_object("c").remove(10))
+    b.set_root_object("c", b.get_root_object("c").remove(10).add(10.0))
+    b.commit()
+    if indexed:
+        with pytest.raises(ProtoConflictError) as e:
+            a.commit()
+        assert e.value.unit == Unit(UnitKind.COUNT, "c", key=10)
+        expected = [(10.0, 1), (20, 1)]
+    else:
+        a.commit()
+        expected = [(20, 1)]
+    with db.new_transaction() as tr:
+        c = tr.get_root_object("c")
+        assert sorted(c.items()) == expected
+        assert [type(e) for e, _ in sorted(c.items())] == [type(e) for e, _ in expected]
+
+
+def test_indexed_counted_set_concurrent_counts_compose(db):
+    """On an indexed counted set increments take no precondition and a decrement composes with
+    concurrent changes of other elements; a concurrent change of the decremented element's
+    count conflicts, declared on its COUNT unit."""
+    def build(tr):
+        tr.set_root_object("c", tr.new_counted_set().add(10).add(10).add(20).add_index(
+            EqualityIndex("e", KeySpec.element())))
+    db.run(build)
+    a, b = db.new_transaction(), db.new_transaction()
+    a.set_root_object("c", a.get_root_object("c").remove(10).add(30))
+    b.set_root_object("c", b.get_root_object("c").add(20).add(30))
+    b.commit()
+    a.commit()
+    with db.new_transaction() as tr:
+        c = tr.get_root_object("c")
+        assert sorted(c.items()) == [(10, 1), (20, 2), (30, 2)]
+        c.get_index("e").validate(list(c.elements()))
+    a, b = db.new_transaction(), db.new_transaction()
+    a.set_root_object("c", a.get_root_object("c").remove(10))
+    b.set_root_object("c", b.get_root_object("c").add(10))
+    b.commit()
+    with pytest.raises(ProtoConflictError) as e:
+        a.commit()
+    assert e.value.unit == Unit(UnitKind.COUNT, "c", key=10)
