@@ -179,7 +179,7 @@ class TestRebase:
         rng = random.Random(7)
         for _ in range(200):
             start = [rng.randrange(4) for _ in range(rng.randrange(6))]
-            snapshot = make(start)._with(_op_log=())
+            snapshot = make(start)._with(_changes=())
             theirs, mine = snapshot, snapshot
             for _ in range(rng.randrange(8)):
                 e = rng.randrange(4)
@@ -188,7 +188,7 @@ class TestRebase:
                 e = rng.randrange(4)
                 mine = mine.add(e) if rng.random() < 0.5 else mine.remove(e)
             merged = mine.rebase_onto(theirs)
-            assert counts(merged) == literal(counts(theirs), mine._op_log)
+            assert counts(merged) == literal(counts(theirs), mine._changes)
             assert merged.total_count == sum(n for _, n in merged.items())
 
 
@@ -196,7 +196,7 @@ class TestBulk:
     @both
     def test_from_iterable(self, cls):
         s = cls.from_iterable(["a", "b", "a", 1, 1.0, True])
-        assert s.count == 4 and s.total_count == 6 and s._op_log == ()
+        assert s.count == 4 and s.total_count == 6 and s._changes == ()
         assert s.count_of("a") == 2 and s.count_of(1) == 2 and s.count_of(True) == 1
         avl.check_invariants(s.root)
         assert cls.from_iterable([]).count == 0
@@ -243,13 +243,13 @@ class TestReviewFixes:
         merged = mine.rebase_onto(theirs)
         assert merged.get_index("i").events_since(theirs.get_index("i")) == ()
         assert merged.count_of("b") == 3 and merged.count_of("a") == 1
-        assert len(merged._op_log) == len(theirs._op_log) + 2  # one logged step per element
+        assert len(merged._changes) == len(theirs._changes) + 2  # one logged step per element
 
     def test_random_replay_emits_no_events_for_survivors(self):
         rng = random.Random(3)
         for _ in range(150):
             snapshot = make([rng.randrange(4) for _ in range(rng.randrange(6))], indexes=("i",))
-            snapshot = snapshot._with(_op_log=())
+            snapshot = snapshot._with(_changes=())
             theirs, mine = snapshot, snapshot
             for _ in range(rng.randrange(6)):
                 e = rng.randrange(4)
@@ -258,10 +258,10 @@ class TestReviewFixes:
                 e = rng.randrange(4)
                 mine = mine.add(e) if rng.random() < 0.5 else mine.remove(e)
             merged = mine.rebase_onto(theirs)
-            assert counts(merged) == literal(counts(theirs), mine._op_log)
+            assert counts(merged) == literal(counts(theirs), mine._changes)
             events = merged.get_index("i").events_since(theirs.get_index("i"))
             assert len(events) == len({order_key(ev[1]) for ev in events})  # at most one event per element
             for kind, e in events:
                 assert (kind == "add") == (not theirs.has(e) and merged.has(e))
             # A merged version can itself be rebased (its log holds transform ops).
-            assert counts(merged.rebase_onto(theirs)) == literal(counts(theirs), merged._op_log)
+            assert counts(merged.rebase_onto(theirs)) == literal(counts(theirs), merged._changes)

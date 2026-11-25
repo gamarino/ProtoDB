@@ -34,17 +34,17 @@ class ToySet(ConcurrentOptimized, IndexedCollection):
         """Return a set with ``e`` added; when already present, a new version logging the intent only."""
         root, replaced, _ = avl.key_put(self.root, e, True)
         if replaced:
-            return self._with(_op_log=self._logged(("add", e)))
+            return self._with(_changes=self._logged(("add", e)))
         return self._with(root=root, count=self.count + 1, indexes=self._after_add(e),
-                          _op_log=self._logged(("add", e)))
+                          _changes=self._logged(("add", e)))
 
     def discard(self, e) -> "ToySet":
         """Return a set without ``e``; when absent, a new version logging the intent only."""
         root, removed, _ = avl.key_remove(self.root, e)
         if not removed:
-            return self._with(_op_log=self._logged(("remove", e)))
+            return self._with(_changes=self._logged(("remove", e)))
         return self._with(root=root, count=self.count - 1, indexes=self._after_remove(e),
-                          _op_log=self._logged(("remove", e)))
+                          _changes=self._logged(("remove", e)))
 
     def replace(self, old, new) -> "ToySet":
         """Return a set where member ``old`` is replaced by non-member ``new`` (one index event)."""
@@ -53,7 +53,7 @@ class ToySet(ConcurrentOptimized, IndexedCollection):
         root, _, _ = avl.key_remove(self.root, old)
         root, _, _ = avl.key_put(root, new, True)
         return self._with(root=root, indexes=self._after_replace(old, new),
-                          _op_log=self._logged(("remove", old), ("add", new)))
+                          _changes=self._logged(("remove", old), ("add", new)))
 
     def _replay_op(self, target: "ToySet", op) -> "ToySet":
         kind, e = op

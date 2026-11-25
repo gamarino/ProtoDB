@@ -2,8 +2,8 @@
 R12, R36, R37; section 5 "Roots and mutables").
 
 Every root write compares against the root's value in the transaction's base: a blind write no
-longer lets the last writer win, and a collection assigned with ``set_root_object`` is unlinked
-until the linked collections land (R11), so it replaces the root, comparing against the base,
+longer lets the last writer win, and a collection assigned with ``set_root_object`` that is not
+linked to that root of the transaction (R11, R46) replaces the root, comparing against the base,
 instead of being merged.  Interleavings are explicit: open A, open B, commit B, commit A.
 """
 import pytest
@@ -131,7 +131,7 @@ def test_root_names_holds_when_only_values_change(db):
     assert read(db, "a") == 2 and read(db, "b") == 1
 
 
-_MERGE_KEPT = pytest.mark.xfail(strict=True, reason="merge removed in Task 4/6")
+_MERGE_KEPT = pytest.mark.xfail(strict=True, reason="merge removed in Task 6")
 
 
 def test_non_mergeable_collection_replaces_and_compares_base(db):
@@ -161,11 +161,11 @@ def test_replace_true_compares_against_the_base(db):
 
 
 def test_collection_over_a_concurrently_removed_root_conflicts(db):
-    """The transitional merge needs a current value of the same class; otherwise the write replaces
-    and its precondition (the base value) applies, checked at commit."""
+    """An unlinked collection replaces the root, and its precondition (the base value) applies,
+    checked at commit (a Dictionary is never merged: R11)."""
     db.run(lambda tr: tr.set_root_object("d", tr.new_dictionary().set_at("a", 1)))
     a = db.new_transaction()
-    a.set_root_object("d", a.new_dictionary().set_at("x", 1))       # may merge: no precondition yet
+    a.set_root_object("d", a.new_dictionary().set_at("x", 1))
     db.run(lambda tr: tr.remove_root_object("d"))
     with pytest.raises(ProtoConflictError) as e:
         a.commit()
@@ -173,7 +173,6 @@ def test_collection_over_a_concurrently_removed_root_conflicts(db):
     assert read(db, "d") is None
 
 
-@_MERGE_KEPT
 def test_unlinked_collection_replaces_and_compares_base(db):
     db.run(lambda tr: tr.set_root_object("d", tr.new_dictionary().set_at("a", 1)))
     a, b = db.new_transaction(), db.new_transaction()
@@ -254,9 +253,9 @@ def test_removed_collection_root_conflicts_with_its_reader(db):
 
 def test_reads_record_their_units(db):
     db.run(lambda tr: (tr.set_root_object("o", tr.new_object(v=1)), tr.set_root_object("plain", 3),
-                       tr.set_root_object("c", tr.new_dictionary())))
+                       tr.set_root_object("c", tr.new_dictionary()), tr.set_root_object("s", tr.new_set())))
     tr = db.new_transaction()
-    o, c = tr.get_root_object("o"), tr.get_root_object("c")
+    o, c, s = tr.get_root_object("o"), tr.get_root_object("c"), tr.get_root_object("s")
     tr.get_root_object("plain")
     tr.get_root_object("missing")
     tr.root_names()
@@ -265,10 +264,13 @@ def test_reads_record_their_units(db):
     assert pre[root("plain")] == exact_token(3)
     assert pre[root("missing")] is ABSENT
     assert pre[Unit(UnitKind.ROOT_PRESENCE, "c")] == type(c).__type_name__
-    # Until the linked collections record their content, a collection read also records the whole
-    # root (P-A: coarser is safe).
-    assert Unit(UnitKind.WHOLE, "c") in pre
+    # A linked collection (a Dictionary) records its content through its own reads (section 9).
+    assert Unit(UnitKind.WHOLE, "c") not in pre
     assert root("c") not in pre
+    # Until the other collections are linked (Tasks 6/7), their read also records the whole root
+    # (P-A: coarser is safe).
+    assert pre[Unit(UnitKind.ROOT_PRESENCE, "s")] == type(s).__type_name__
+    assert Unit(UnitKind.WHOLE, "s") in pre
     assert Unit(UnitKind.ROOT_NAMES) in pre
     tr.abort()
 

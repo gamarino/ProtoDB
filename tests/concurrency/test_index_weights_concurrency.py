@@ -1,4 +1,4 @@
-"""Index occurrence weights stay exact under concurrent commits that merge and retry (Task 8.4b, D56).
+"""Index occurrence weights stay exact under concurrent commits that reapply and retry (Task 8.4b, D56; R34).
 
 Threads insert, update the indexed field of, and remove entries of one indexed
 ``Dictionary`` (``ConcurrentOptimized``: a commit that loses the race replays its op log on
@@ -60,9 +60,9 @@ def test_weights_are_exact_after_concurrent_merges_and_retries(monkeypatch):
                 def change(tx, i=i, key=key):
                     roll = rnd.random()
                     if seed_ % 2:
-                        # Blind writer: an op log built from an empty collection, written without
-                        # reading the root, is replayed onto the newest root at commit (D33 merge).
-                        tx.set_root_object("d", tx.new_dictionary()
+                        # Writer that reads nothing: the linked root's intentions are reapplied
+                        # on the newest root at commit (R34).
+                        tx.set_root_object("d", tx.get_root_object("d")
                                            .set_at(key, {"k": rnd.randrange(10), "w": seed_, "i": i})
                                            .set_at(2000 + 100 * seed_ + i, {"k": rnd.randrange(10)}))
                         return
@@ -101,4 +101,4 @@ def test_weights_are_exact_after_concurrent_merges_and_retries(monkeypatch):
         _check(d)
         _check(lst)
     assert final[0].count > 0 and final[1].count > 0
-    assert replayed[0] > 0, "no commit went through the merge (replay) path"
+    assert replayed[0] > 0, "no commit went through the reapplication path"

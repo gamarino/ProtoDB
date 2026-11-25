@@ -145,7 +145,9 @@ class List(IndexedCollection):
         if len(indexes):
             items = list(avl.pos_iter(root))
             indexes = indexes._map(lambda index: index.empty().build(items))
-        return self._with(root=root, count=hi - lo, indexes=indexes)
+        # Not an operation the precondition model lists: a version assigned to a root takes the
+        # whole collection (P-B).
+        return self._with(root=root, count=hi - lo, indexes=indexes, _whole=True)
 
     def head(self, n: int) -> "List":
         """Return the first ``n`` items (``slice(None, n)``; a negative ``n`` drops items from the end)."""

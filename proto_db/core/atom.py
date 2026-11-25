@@ -1173,6 +1173,33 @@ class Atom:
         osa(twin, "_loaded", _Generation(names))
         return twin
 
+    def _pointer_copy(self) -> "Atom":
+        """A new loaded instance of this saved atom's class with the same loaded state, ``oid``,
+        ``atom_pointer`` and ``context`` (protected; used by the linked collections, spec R41).
+
+        This atom is loaded first if it is a stub, and is left untouched.  The copy is never
+        known to a decoded-atom cache (it is not in ``_AtomCache._ident`` and is not marked as
+        produced by one), so the cache never serves it, admits it or unloads it: runtime state set
+        on the copy stays the copy's own.  Saving it is a no-op (it has the pointer).
+        ``ProtoValidationError`` for an atom that is not saved."""
+        ptr = self.atom_pointer
+        if ptr is None:
+            raise ProtoValidationError(f"Only a saved atom has a pointer-preserving copy, not {self!r}")
+        snapshot = self._snapshot()
+        oid = snapshot.get("oid")
+        if oid is None:
+            oid = self.oid
+        copy = object.__new__(type(self))
+        osa = object.__setattr__
+        osa(copy, "_loaded", True)
+        for name, value in snapshot.items():
+            if name not in _STUB_KEYS:
+                osa(copy, name, value)
+        osa(copy, "atom_pointer", ptr)
+        osa(copy, "context", snapshot.get("context", self.context))
+        osa(copy, "oid", oid)
+        return copy
+
     # -- identity -------------------------------------------------------------------
 
     def __eq__(self, other):

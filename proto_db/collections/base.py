@@ -19,9 +19,16 @@ framework): an index exposes a non-empty ``str`` ``name`` and the hooks
 Collections always build an index as ``index.empty().build(elements)``, so an
 index passed with content of its own never leaks that content into a collection.
 
-:class:`ConcurrentOptimized` adds a runtime-only operation log to a collection so
-that a transaction can replay its net effect onto a concurrently committed
-version (:meth:`ConcurrentOptimized.rebase_onto`, ruling R6).
+:class:`ConcurrentOptimized` adds a runtime-only record of intentions (``_changes``) to a
+collection, so that a transaction can reapply its net effect onto a concurrently committed
+version (:meth:`ConcurrentOptimized._reapplied_on`, spec R34).
+
+Linked collections (:mod:`proto_db.collections.linking`, spec section 9): a version a transaction
+obtained from a root carries a link (``_link``), its intentions (``_changes``) and a whole mark
+(``_whole``, set by an operation the precondition model does not list: ``add_index``,
+``remove_index``, ``rebuilt``, ...), all runtime fields carried by :meth:`IndexedCollection._with`.
+A linked instance holds its persisted fields apart, so that a read of one by user code records
+the whole collection (B3); the engine's own reads run inside ``engine_reads()``.
 
 Thread safety: collections and index sets are immutable once constructed (fields
 are set only by constructors and ``_with``), so they may be shared freely between
@@ -36,6 +43,7 @@ from ..errors import ProtoConflictError, ProtoMisfiledError, ProtoUserError, Pro
 from ..query.plans import CollectionScanPlan
 from ..values import canonical, is_atom, order_key, values_equal
 from . import avl
+from .linking import engine_reading, record_whole
 
 __all__ = ["IndexSet", "IndexedCollection", "ConcurrentOptimized", "net_effect", "same_value"]
 
@@ -254,7 +262,13 @@ class IndexedCollection(_Immutable, Atom):
 
     __type_name__ = "proto_db.collections.IndexedCollection"
     _fields: tuple = ("count", "indexes")
-    _runtime_fields: tuple = ()
+    #: Runtime state of the precondition model (spec section 9): the link of a linked version
+    #: (R40), its record of intentions (R43) and the whole mark of a version an unlisted
+    #: operation produced (P-B).  Never persisted.
+    _link = None
+    _changes: tuple = ()
+    _whole: bool = False
+    _runtime_fields: tuple = ("_link", "_changes", "_whole")
     _all_runtime_fields: tuple = ()
 
     def __init_subclass__(cls, **kwargs):
@@ -285,6 +299,33 @@ class IndexedCollection(_Immutable, Atom):
         super().__init__(context=context)
         object.__setattr__(self, "indexes", IndexSet(context=context))
         object.__setattr__(self, "count", 0)
+
+    # -- linked instances (spec section 9, B3) -------------------------------------------------
+
+    def __getattr__(self, name: str):
+        # A linked instance holds its persisted fields apart (linking.linked_copy): a read of one
+        # by user code reveals the whole collection (R18, B3); an engine read records nothing.
+        held = object.__getattribute__(self, "__dict__").get("_linked_state")
+        if held is not None and name in held:
+            if not engine_reading():
+                record_whole(self)
+            return held[name]
+        return Atom.__getattr__(self, name)
+
+    def _snapshot(self) -> dict:
+        """See :meth:`Atom._snapshot`; a linked instance's persisted fields are given back by name."""
+        state = super()._snapshot()
+        held = state.pop("_linked_state", None)
+        if held:
+            state.update(held)
+        return state
+
+    def _probe(self, name: str):
+        """See :meth:`Atom._probe`; a linked instance's persisted fields are read without recording."""
+        held = object.__getattribute__(self, "__dict__").get("_linked_state")
+        if held is not None and name in held:
+            return held[name]
+        return super()._probe(name)
 
     # -- content ------------------------------------------------------------------------
 
@@ -352,12 +393,13 @@ class IndexedCollection(_Immutable, Atom):
         built = index.empty().build(self.elements())
         if built is None or _index_name(built) != name:
             raise ProtoValidationError(f"Index {name!r} build() returned {built!r}; expected the same name")
-        return self._with(indexes=self.indexes.with_index(built),
+        return self._with(indexes=self.indexes.with_index(built), _whole=True,
                           **self._index_log((_INDEX_ADD, name, index)))
 
     def remove_index(self, name: str) -> "IndexedCollection":
         """Return a version without the index ``name``; ``ProtoValidationError`` if absent."""
-        return self._with(indexes=self.indexes.without(name), **self._index_log((_INDEX_REMOVE, name)))
+        return self._with(indexes=self.indexes.without(name), _whole=True,
+                          **self._index_log((_INDEX_REMOVE, name)))
 
     def get_index(self, name: str):
         """Return the index ``name`` or ``None``."""
@@ -374,7 +416,11 @@ class IndexedCollection(_Immutable, Atom):
         return None
 
     def as_query_plan(self) -> CollectionScanPlan:
-        """A full-scan plan over this collection; the planner reads ``collection.indexes`` from it."""
+        """A full-scan plan over this collection; the planner reads ``collection.indexes`` from it.
+
+        Every query plan over a collection starts here, so a linked collection records the whole
+        collection (spec section 6, R22), also for a result the query cache serves."""
+        record_whole(self)
         return CollectionScanPlan(self)
 
     # -- protected helpers for mutators ---------------------------------------------------
@@ -397,8 +443,19 @@ class IndexedCollection(_Immutable, Atom):
         new = object.__new__(cls)
         Atom.__init__(new, context=self.context)
         osa = object.__setattr__
-        for name in cls._fields:
-            osa(new, name, changes[name] if name in changes else getattr(self, name))
+        held = object.__getattribute__(self, "__dict__").get("_linked_state")
+        if held is None:
+            for name in cls._fields:
+                osa(new, name, changes[name] if name in changes else getattr(self, name))
+        else:
+            # A version of a linked instance is linked (R42): its fields are held apart too.
+            fields = {}
+            for name in cls._fields:
+                if name in changes:
+                    fields[name] = changes[name]
+                elif name in held:
+                    fields[name] = held[name]
+            osa(new, "_linked_state", fields)
         for name in runtime:
             osa(new, name, changes[name] if name in changes else getattr(self, name))
         return new
@@ -437,11 +494,12 @@ class IndexedCollection(_Immutable, Atom):
         index rebuilt from the elements (D58).  Entries that become one key are merged when
         they are one value (a set member, a counted member's counts add up) and refused with
         ``ProtoValidationError`` naming the key when they map one key to two different values:
-        a repair never drops a value.  The op log is not extended, so a transaction that
-        conflicts with another writer of this collection fails instead of merging.
+        a repair never drops a value.  It is not one of the operations the precondition model
+        lists: the version is marked whole, so a transaction that assigns it publishes it with a
+        whole-collection precondition (P-B).
         """
         new = self._refiled()
-        return new._with(indexes=new.indexes.rebuilt_all(new.elements))
+        return new._with(indexes=new.indexes.rebuilt_all(new.elements), _whole=True)
 
     def _refiled(self) -> "IndexedCollection":
         """The content refiled (the default, positional content, needs nothing)."""
@@ -501,12 +559,13 @@ def _default_op_key(op: tuple):
 
 
 class ConcurrentOptimized:
-    """Mixin for collections whose concurrent writers can be merged by net-effect replay (ruling R6).
+    """Mixin for collections whose intentions can be reapplied on a concurrently committed version
+    (spec R34, R43; ruling R6).
 
-    Each version carries ``_op_log``, a runtime-only tuple of the operations
-    applied since the version was loaded or created (never persisted: a loaded
-    version starts with an empty log).  Mutators extend it immutably with
-    ``_with(..., _op_log=self._logged(op))``; an op is a tuple whose first item
+    Each version carries ``_changes`` (:class:`IndexedCollection`), a runtime-only tuple of the
+    operations applied since the version was loaded or created (never persisted: a loaded
+    version starts with none).  Mutators extend it immutably with
+    ``_with(..., _changes=self._logged(op))``; an op is a tuple whose first item
     is a ``str`` kind not starting with ``"@"`` (reserved for index-definition
     changes, which :class:`IndexedCollection` logs itself).
 
@@ -518,15 +577,17 @@ class ConcurrentOptimized:
     must therefore be idempotent with respect to their intent, so that
     replaying an op onto any version forces its key to the intended state.
 
-    :meth:`rebase_onto` replays the net intent of the log onto another version.
+    :meth:`_reapplied_on` applies the net intent of a linked version's changes on the current
+    collection (R34); :meth:`rebase_onto` (transitional) also replays index changes.
     Subclasses implement :meth:`_replay_op` and, when ``op[1]`` is not the key an
     op touches, override :meth:`_op_key`.  It must precede
     :class:`IndexedCollection` in the class bases.
 
-    The log grows with every mutation of a version chain; it lives as long as the
+    The record grows with every mutation of a version chain; it lives as long as the
     versions holding it (typically one transaction).
 
-    :attr:`log_is_complete` tells whether the log describes the whole content of
+    Transitional: removed when linked intentions land for every collection (precondition model,
+    Task 6).  :attr:`log_is_complete` tells whether the log describes the whole content of
     the version (D33): true for a collection constructed empty in this process and
     for versions derived from it only through logged mutators; false for loaded
     versions, bulk-built ones (``from_items``/``from_iterable``) and rebased ones,
@@ -535,9 +596,8 @@ class ConcurrentOptimized:
     drop content the log does not describe.
     """
 
-    _op_log: tuple = ()
-    _log_complete: bool = False
-    _runtime_fields: tuple = ("_op_log", "_log_complete")
+    _log_complete: bool = False     # Transitional (Task 6), with log_is_complete
+    _runtime_fields: tuple = ("_log_complete",)
 
     def __init__(self, *args, **kwargs):
         """Initialise the collection (cooperatively) and mark its empty log as complete."""
@@ -558,19 +618,19 @@ class ConcurrentOptimized:
         if "_log_complete" not in changes:
             complete = self._log_complete
             if complete and any(name in type(self)._fields for name in changes):
-                complete = len(changes.get("_op_log", ())) > len(self._op_log)
+                complete = len(changes.get("_changes", ())) > len(self._changes)
             changes["_log_complete"] = complete
         return super()._with(**changes)
 
     def _logged(self, *ops: tuple) -> tuple:
-        """Return this version's op log extended with ``ops`` (the receiver's log is unchanged)."""
+        """Return this version's changes extended with ``ops`` (the receiver's are unchanged)."""
         for op in ops:
             if not isinstance(op, tuple) or not op or not isinstance(op[0], str):
                 raise ProtoValidationError(f"An op must be a tuple starting with a str kind, not {op!r}")
-        return self._op_log + ops
+        return self._changes + ops
 
     def _index_log(self, op: tuple) -> dict:
-        return {"_op_log": self._op_log + (op,)}
+        return {"_changes": self._changes + (op,)}
 
     def _op_key(self, op: tuple):
         """Key identifying what ``op`` touches, for :func:`net_effect` (default ``order_key(op[1])``)."""
@@ -591,6 +651,20 @@ class ConcurrentOptimized:
         """Apply one net element op to ``target`` through mutators that maintain its indexes and log; return it."""
         raise NotImplementedError(f"{type(self).__name__} must implement _replay_op()")
 
+    def _reapplied_on(self, current):
+        """``current`` with the net intent of this version's changes applied (R34): the net ops of
+        :meth:`_net_ops` replayed through :meth:`_replay_op`, the same tree operations the
+        transaction used.  Only a version without index changes is reapplied: an index change
+        marks the version whole (P-B), and a whole version is published as is."""
+        if type(current) is not type(self):
+            raise ProtoValidationError(f"Cannot reapply a {type(self).__name__} on a {type(current).__name__}")
+        if any(op[0] in (_INDEX_ADD, _INDEX_REMOVE) for op in self._changes):
+            raise ProtoValidationError("A version with index changes is whole; it is not reapplied")
+        target = current
+        for op in self._net_ops(list(self._changes)):
+            target = self._replay_op(target, op)
+        return target
+
     def rebase_onto(self, current):
         """Return ``current`` with the net effect of this version's op log applied.
 
@@ -608,7 +682,7 @@ class ConcurrentOptimized:
         if type(current) is not type(self):
             raise ProtoValidationError(f"Cannot rebase a {type(self).__name__} onto a {type(current).__name__}")
         element_ops, index_ops = [], []
-        for op in self._op_log:
+        for op in self._changes:
             (index_ops if op[0] in (_INDEX_ADD, _INDEX_REMOVE) else element_ops).append(op)
         target = current
         for op in self._net_ops(element_ops):

@@ -31,12 +31,29 @@ Snapshot isolation and preconditions (spec sections 4-6)
       transactions that write the same root, or different attributes of the same
       object, conflict; two creators of the same absent root conflict.
     - A **collection root** read with ``get_root_object`` records
-      ``Unit(ROOT_PRESENCE, name)``: still present and of the same class (R12).  Until the
-      linked collections record their content, the read also records
-      ``Unit(WHOLE, name)``, the whole root's base value (P-A: coarser is safe).
+      ``Unit(ROOT_PRESENCE, name)``: still present and of the same class (R12).
+    - A **fine-grained** collection root (a Dictionary or HashDictionary, or a subclass that
+      overrides none of the listed operations: :func:`~proto_db.collections.linking.fine_grained`,
+      N5) is returned as a **linked copy** (:mod:`proto_db.collections.linking`, spec section 9):
+      the transaction's own instance, with the base collection's fields and pointer and a
+      link to this transaction and root.  Its versions record what they read
+      (``Unit(KEY, name, key=k)`` for ``get_at``/``has``/``in``, ``Unit(WHOLE, name)`` for
+      every other read) and what they write (``set_at``/``remove_at`` record the key's base
+      value and add an intention to the version's ``_changes``).  Assigning such a version to
+      the same root with ``set_root_object`` publishes its intentions: at commit, after
+      every precondition holds, they are reapplied on the current collection, last
+      intention per key (R34).  A version an unlisted operation produced (``rebuilt``,
+      ``add_index``, ...) or a root with a WHOLE precondition publishes the transaction's
+      value as is, under the whole-collection precondition.  A version derived and not
+      assigned publishes nothing; its reads stay recorded (R45).  The link ends with the
+      transaction (R47).
+    - The other collection roots (Set, CountedSet, RepeatedKeysDictionary, List) are not
+      linked yet: their read also records ``Unit(WHOLE, name)``, the whole root's base value
+      (P-A: coarser is safe).
     - Every write that replaces a root's value (an object root, a collection that is not
-      merged as below, ``replace=True``, ``remove_root_object``) is compared against the
-      base like an object root, ``Unit(ROOT, name)``: no last writer wins.
+      linked to that root of this transaction (R11, R46) nor merged as below,
+      ``replace=True``, ``remove_root_object``) is compared against the base like an
+      object root, ``Unit(ROOT, name)``: no last writer wins.
     - ``root_names()`` records ``Unit(ROOT_NAMES)``: a concurrent creation or removal of a
       root conflicts, a change of a root's value does not.
     - Reading or writing a root this transaction already wrote records nothing more (R9).
@@ -46,6 +63,9 @@ Snapshot isolation and preconditions (spec sections 4-6)
     their writes are the merges described below.
 
 Merge of collection roots written but not read (D33; transitional, until linked intentions)
+    Transitional: removed when linked intentions land for Set, CountedSet and
+    RepeatedKeysDictionary (precondition model, Task 6); a Dictionary or HashDictionary is
+    never merged (it is linked, or it replaces).
     A root that was written without being read is merged when the written value is
     :class:`~proto_db.collections.base.ConcurrentOptimized`, its op log is complete
     (:attr:`~proto_db.collections.base.ConcurrentOptimized.log_is_complete`: the
@@ -125,9 +145,12 @@ Commit protocol (D34)
        storage is append-only, so unpublished records are harmless.
     3. The root lock is taken with the space's ``lock_timeout``; a timeout raises and
        the commit never proceeds unlocked.
-    4. The current root is read and every precondition is checked against it.
-    5. The written roots and cells are applied on the current maps (unread mergeable
-       roots rebased onto their current values, the reserved roots merged); new
+    4. The current root is read and every precondition is checked against it (R33: all
+       of them before any intention).  Whether each written root is reapplied, merged
+       or replaced is decided once, before the checks.
+    5. The written roots and cells are applied on the current maps (linked collections'
+       intentions reapplied on their current values, unread mergeable roots rebased onto
+       their current values, the reserved roots merged); new
        DatabaseRoot and SpaceRoot atoms are built and saved.
     6. ``storage.flush()`` makes the data durable according to the storage's
        durability mode, then ``publish_root(ptr, expected_epoch)`` publishes the root
@@ -184,6 +207,7 @@ from typing import Any, Callable, Iterator, Optional
 
 from .catalog.atoms import INTENT_LOG_ROOT, SEMANTIC_CATALOG_ROOT
 from .collections.base import ConcurrentOptimized, _Immutable
+from .collections.linking import Link, fine_grained, link_of, linked_copy, lookup_key, record_whole
 from .collections.dictionaries import Dictionary, RepeatedKeysDictionary
 from .collections.hash_dictionaries import HashDictionary
 from .collections.lists import List
@@ -204,8 +228,8 @@ from .storage.format import RootRecord, next_root_version
 from .cluster.coordinator import REFOUND_TERM_STEP
 from .cluster.lease import Permission
 from .cluster.rootlog import compare_roots
-from .preconditions import ABSENT, ReadLog, Unit, UnitKind
-from .values import canonical_for, check_text, exact_token
+from .preconditions import ABSENT, ReadLog, Unit, UnitKind, same_token, token
+from .values import canonical_for, check_text
 
 __all__ = ["ObjectSpace", "Database", "Transaction", "HistoryEntry", "SpaceRoot", "DatabaseRoot"]
 
@@ -234,7 +258,15 @@ def _utc_now() -> datetime.datetime:
 
 #: The registry's roots (:mod:`proto_db.registry`).
 # The classes whose root values are collection roots (R1); any other value is an object root.
-_COLLECTION_ROOT_TYPES = (Dictionary, HashDictionary, Set, CountedSet, RepeatedKeysDictionary, List)
+# The collections of R1 not linked yet: a read also records the whole root, and a write may merge (transitional,
+# until their units land: Set, CountedSet and RepeatedKeysDictionary in Task 6, List in Task 7).
+_UNLINKED_COLLECTION_TYPES = (Set, CountedSet, RepeatedKeysDictionary, List)
+
+# How _build_root applies a written root (Transaction._write_plan).
+_APPLY_REMOVE = _Sentinel("APPLY_REMOVE")
+_APPLY_SET = _Sentinel("APPLY_SET")
+_APPLY_REAPPLY = _Sentinel("APPLY_REAPPLY")
+_APPLY_MERGE = _Sentinel("APPLY_MERGE")
 _REGISTRY_ROOTS = frozenset({_registry.MODULES_ROOT, _registry.CATALOG_ROOT})
 #: The roots a semantic operation's checks depend on: the module list, the registry catalog and the semantic
 #: catalog.  A transaction that wrote through the semantic session reads them (final review I2).
@@ -1231,31 +1263,9 @@ def _load_space(context, record) -> Optional[SpaceRoot]:
 
 # -- read-set tokens --------------------------------------------------------------------------
 
-def _atom_token(atom: Atom) -> tuple:
-    return ("@atom", atom.atom_pointer)
-
-
-def _token(value):
-    """What the read set remembers of a root value (D34): ABSENT or an exact token.
-
-    Plain values are compared exactly (:func:`proto_db.values.exact_token`: same
-    type and same payload, so ``1`` and ``1.0``, ``Decimal("1")`` and
-    ``Decimal("1.00")`` or one instant in two time zones differ); atoms, nested
-    ones included, are identified by their storage pointer.
-    """
-    if value is _ABSENT:
-        return _ABSENT
-    if isinstance(value, Atom):
-        # Directly, not through exact_token: its is_atom() probe reads ``oid``, which
-        # loads a stub (D21) -- under the root lock, for the commit-time check.
-        return _atom_token(value)
-    return exact_token(value, _atom_token)
-
-
-def _same_token(a, b) -> bool:
-    if a is _ABSENT or b is _ABSENT:
-        return a is b
-    return a == b
+# What the read set remembers of a value (D34, R6): proto_db.preconditions.token.
+_token = token
+_same_token = same_token
 
 
 # -- the publish protocol ---------------------------------------------------------------------
@@ -2767,6 +2777,11 @@ class Transaction:
         # Transitional: removed when linked intentions land (precondition model, Tasks 4/6)
         self._replaced: set = set()     # names whose write never merges (replace=True, after a removal)
         self._read_roots: set = set()   # names read through get_root_object (a read root never merges)
+        # Linked collections (spec section 9): the linked copy returned for each fine-grained root
+        # read (one per root), and the written roots whose value is linked to that root (R46),
+        # decided when it is written, while the transaction is active.
+        self._linked: dict = {}
+        self._linked_writes: set = set()
         self._mwrites: dict = {}        # mutable name -> value or REMOVED
         # The runtime registry (proto_db.registry): modules to add at commit (name -> depends, in
         # install order), catalog objects to add (registry name -> DBObject), the names whose new
@@ -2877,9 +2892,11 @@ class Transaction:
         """Return the value of root ``name`` (``None`` if absent); records the read (see module docs).
 
         An absent or object root records ``Unit(ROOT, name)`` with its base value (ABSENT
-        included); a collection root records ``Unit(ROOT_PRESENCE, name)`` with its class (R12)
-        and, until the linked collections record their content, ``Unit(WHOLE, name)``.  A root
-        this transaction wrote returns its own value and records nothing (R9).
+        included); a collection root records ``Unit(ROOT_PRESENCE, name)`` with its class (R12).
+        A fine-grained collection root returns a linked copy (one per root and transaction),
+        whose reads and writes record their own units (spec section 9); a collection not linked
+        yet also records ``Unit(WHOLE, name)``.  A root this transaction wrote returns its own
+        value and records nothing (R9).
 
         A registry root (``__currentModules``, ``__catalog``) is read here like any root: the
         whole root is recorded, so a concurrent install makes this transaction's commit conflict
@@ -2895,10 +2912,12 @@ class Transaction:
                 value = self._writes[name]
                 return None if value is _REMOVED else value
             value = self._objects.get_at(name, _ABSENT)
-            self._record_root_read(name, value)
+            linked = self._record_root_read(name, value)
             self._read_roots.add(name)
             if name in _REGISTRY_ROOTS and self._registry_pending():
                 return self._registry_view(name)
+            if linked is not None:
+                return linked
             return None if value is _ABSENT else value
 
     @property
@@ -2919,20 +2938,26 @@ class Transaction:
             if root_name in self._writes:
                 raise ProtoUserError(f"Root {root_name!r} was written in this transaction; a pager pages a "
                                      f"committed snapshot (commit first, or page from another transaction)")
-        self.get_root_object(root_name)
+        # A pager reads the whole collection (spec section 6).
+        record_whole(self.get_root_object(root_name))
         return Snapshot(self._database, self._db_root).pager(root_name, where=where, order_by=order_by,
                                                             page_size=page_size)
 
     def set_root_object(self, name: str, value, *, replace: bool = False) -> None:
         """Set root ``name`` to ``value`` (any canonical value or atom) at commit.
 
-        A write that replaces the root records ``Unit(ROOT, name)`` with the root's base value
-        (ABSENT included), also when the root was not read: at commit the root must still hold
-        that value, or ``ProtoConflictError`` is raised (no last writer wins).
+        A version of the linked collection this transaction got from root ``name`` (R46) records
+        nothing here: its operations recorded their preconditions, and at commit its intentions
+        are reapplied on the current collection (R34); a version marked whole (an unlisted
+        operation produced it, P-B) records ``Unit(WHOLE, name)`` and is published as is.
 
-        Transitionally, a fresh collection written to an existing root you did not read is
-        merged into it, not substituted: its operations (intent) are replayed onto the value
-        current at commit (D33), with no precondition.  Use ``replace=True`` to substitute (the
+        Any other write replaces the root and records ``Unit(ROOT, name)`` with the root's base
+        value (ABSENT included), also when the root was not read: at commit the root must still
+        hold that value, or ``ProtoConflictError`` is raised (no last writer wins, R11).
+
+        Transitionally, a fresh Set, CountedSet or RepeatedKeysDictionary written to an existing
+        root you did not read is merged into it, not substituted: its operations (intent) are
+        replayed onto the value current at commit (D33), with no precondition.  Use ``replace=True`` to substitute (the
         write then compares against the base, as above).  A set that follows a
         :meth:`remove_root_object` of the same name in this transaction is a replacement too.
         Once a name is marked for replacement it stays so for the rest of the transaction.  A
@@ -2948,6 +2973,16 @@ class Transaction:
         with self._lock:
             if self._state != _ACTIVE:
                 self._check_active()
+            link = link_of(value, self)
+            if link is not None and link.root == name and not replace:
+                self._linked_writes.add(name)
+                if value._whole:
+                    unit = Unit(UnitKind.WHOLE, name)
+                    if unit not in self._read_log:
+                        self._read_log.record(unit, self._base_whole_token(name))
+                self._writes[name] = value
+                return
+            self._linked_writes.discard(name)
             # Transitional: removed when linked intentions land (precondition model, Tasks 4/6)
             if replace or self._writes.get(name) is _REMOVED:
                 self._replaced.add(name)
@@ -2968,6 +3003,7 @@ class Transaction:
                 self._check_active()
             self._observe_root(name)
             self._writes[name] = _REMOVED
+            self._linked_writes.discard(name)
             # Transitional: removed when linked intentions land (precondition model, Tasks 4/6)
             self._replaced.add(name)
 
@@ -3001,7 +3037,8 @@ class Transaction:
         # Transitional: removed when linked intentions land (precondition model, Tasks 4/6)
         """
         return (name not in self._read_roots and name not in self._replaced
-                and isinstance(value, ConcurrentOptimized) and value.log_is_complete)
+                and isinstance(value, ConcurrentOptimized) and not isinstance(value, (Dictionary, HashDictionary))
+                and value.log_is_complete)
 
     def _merges(self, name: str, value, current) -> bool:
         """Whether the build merges ``value`` into root ``name``'s current value ``current``.
@@ -3018,19 +3055,33 @@ class Transaction:
         if unit not in self._read_log:
             self._read_log.record(unit, _token(self._objects.get_at(name, _ABSENT)))
 
-    def _record_root_read(self, name: str, value) -> None:
-        """Under the lock: record the read of root ``name`` whose base value is ``value`` (section 6)."""
+    def _record_root_read(self, name: str, value):
+        """Under the lock: record the read of root ``name`` whose base value is ``value`` (section 6);
+        return the linked copy of a fine-grained collection root (section 9), else ``None``."""
         log = self._read_log
-        if value is not _ABSENT and not name.startswith("__") and isinstance(value, _COLLECTION_ROOT_TYPES):
-            unit = Unit(UnitKind.ROOT_PRESENCE, name)
-            if unit not in log:
-                log.record(unit, type(value).__type_name__)
-                # Until the linked collections record their content, the whole root as well (P-A).
-                log.record(Unit(UnitKind.WHOLE, name), _token(value))
-            return
-        unit = Unit(UnitKind.ROOT, name)       # an absent root, an object root or a reserved root (R37)
+        if value is not _ABSENT and not name.startswith("__"):
+            if fine_grained(type(value)):
+                unit = Unit(UnitKind.ROOT_PRESENCE, name)
+                if unit not in log:
+                    log.record(unit, type(value).__type_name__)
+                linked = self._linked.get(name)
+                if linked is None:
+                    linked = linked_copy(value, Link(self, name, value.atom_pointer))
+                    self._linked[name] = linked
+                return linked
+            if isinstance(value, _UNLINKED_COLLECTION_TYPES):
+                unit = Unit(UnitKind.ROOT_PRESENCE, name)
+                if unit not in log:
+                    log.record(unit, type(value).__type_name__)
+                    # Until these collections are linked, the whole root as well (P-A).
+                    log.record(Unit(UnitKind.WHOLE, name), _token(value))
+                return None
+        # An absent root, an object root (a Dictionary subclass overriding a listed operation
+        # included, N5) or a reserved root (R37).
+        unit = Unit(UnitKind.ROOT, name)
         if unit not in log:
             log.record(unit, _token(value))
+        return None
 
     # -- mutable cells (D11, D35) ------------------------------------------------------------
 
@@ -3840,8 +3891,9 @@ class Transaction:
 
     def _build_root(self, current, stamp: Optional[_ClusterStamp] = None) -> AtomPointer:
         """Under the root lock (or the cluster lease): check the preconditions, apply the writes
-        (merging unread mergeable roots and the reserved roots), save and return
-        the new SpaceRoot pointer.  With a cluster ``stamp`` the stage timings are recorded in it."""
+        (reapplying linked collections' intentions, merging unread mergeable roots and the
+        reserved roots), save and return the new SpaceRoot pointer.  With a cluster ``stamp``
+        the stage timings are recorded in it."""
         clock = time.perf_counter
         started = clock()
         replay = 0.0
@@ -3850,28 +3902,37 @@ class Transaction:
         if (current.pointer if current is not None else None) == self._snapshot_pointer:
             space = self._snapshot_space
             db_root = self._db_root
+            plan = self._write_plan(db_root.objects, True)
         else:
             space = _load_space(self, current)
             db_root = space.databases.get_at(self._database.name) if space is not None else None
             if db_root is None:
                 raise ProtoConflictError(f"Database {self._database.name!r} no longer exists")
-            # Every precondition before any intention (R33, P-F).
+            # How each written root is applied, decided once (review of Task 3: the check and the
+            # application must agree); then every precondition before any intention (R33, P-F).
+            plan = self._write_plan(db_root.objects, False)
             self._check_roots(db_root.objects)
-            self._check_replaced_roots(db_root.objects)
+            self._check_replaced_roots(db_root.objects, plan)
             self._check_mutables(db_root.mutables)
         validated = clock()
         current_objects = db_root.objects
         objects = current_objects
         for name, value in self._writes.items():
-            if value is _REMOVED:
+            how = plan[name]
+            if how is _APPLY_REMOVE:
                 if objects.has(name):
                     objects = objects.remove_at(name)
                 continue
-            current_value = current_objects.get_at(name, _ABSENT)
-            if self._may_merge(name, value):
-                # Transitional: removed when linked intentions land (precondition model, Tasks 4/6)
+            if how is _APPLY_REAPPLY:
+                # R34: the intentions of the linked version on the current collection, which the
+                # preconditions just proved present and of the same class (R12).
                 merge_started = clock()
-                value = self._merged(value, current_value)
+                value = value._reapplied_on(current_objects.get_at(name))
+                replay += clock() - merge_started
+            elif how is _APPLY_MERGE:
+                # Transitional: removed when linked intentions land (precondition model, Task 6)
+                merge_started = clock()
+                value = self._merged(value, current_objects.get_at(name))
                 replay += clock() - merge_started
             objects = objects.set_at(name, value)
         if self._registry_pending():
@@ -3909,15 +3970,48 @@ class Transaction:
             stamp.timings["path_copy"] = clock() - validated - replay
         return ptr
 
+    def _write_plan(self, current: Dictionary, snapshot_current: bool) -> dict:
+        """How each written root is applied on the current root map ``current``: removed, set as
+        written, its linked intentions reapplied (R34) or (transitional) merged.  Decided once
+        per build, before the checks, so that the checks and the application agree.
+
+        A linked write is reapplied unless the snapshot is the current root (the written version
+        already derives from it), the version is marked whole or the root has a WHOLE
+        precondition: those publish the transaction's value (R34)."""
+        plan = {}
+        log = self._read_log
+        for name, value in self._writes.items():
+            if value is _REMOVED:
+                plan[name] = _APPLY_REMOVE
+            elif name in self._linked_writes:
+                plan[name] = (_APPLY_SET if snapshot_current or value._whole or log.whole(name)
+                              else _APPLY_REAPPLY)
+            elif self._merges(name, value, current.get_at(name, _ABSENT)):
+                plan[name] = _APPLY_MERGE
+            else:
+                plan[name] = _APPLY_SET
+        return plan
+
     def _check_roots(self, current: Dictionary) -> None:
         """Under the root lock: raise ``ProtoConflictError`` naming the unit if a ``ROOT``,
-        ``ROOT_PRESENCE``, ``WHOLE`` or ``ROOT_NAMES`` precondition does not hold against the
-        current root map (R6, R12, R36)."""
+        ``ROOT_PRESENCE``, ``WHOLE``, ``KEY`` or ``ROOT_NAMES`` precondition does not hold
+        against the current root map (R6, R12, R36).  A ``KEY`` unit compares the stored form
+        of the key in the current collection (D51: a box by its pointer, never loaded)."""
         database = self._database.name
         for unit, expected in self._read_log.preconditions().items():
             kind = unit.kind
             if kind is UnitKind.ROOT or kind is UnitKind.WHOLE:
                 holds = _same_token(expected, _token(current.get_at(unit.root, _ABSENT)))
+            elif kind is UnitKind.KEY:
+                value = current.get_at(unit.root, _ABSENT)
+                # R12: a root absent or of a class without keys now is a conflict.
+                holds = (value is not _ABSENT and fine_grained(type(value))
+                         and _same_token(expected, _token(value._stored_at(lookup_key(unit.key)))))
+                if not holds:
+                    raise ProtoConflictError(
+                        f"Key {lookup_key(unit.key)!r} of root {unit.root!r} of database {database!r} was "
+                        f"changed by a concurrent commit (unit {kind.name})", unit=unit, database=database)
+                continue
             elif kind is UnitKind.ROOT_PRESENCE:
                 value = current.get_at(unit.root, _ABSENT)
                 # A plain value (int, str, ...) has no type name: never the expected class.
@@ -3935,23 +4029,22 @@ class Transaction:
                     f"Root {unit.root!r} of database {database!r} was changed by a concurrent commit "
                     f"(unit {kind.name})", unit=unit, database=database)
 
-    def _check_replaced_roots(self, current: Dictionary) -> None:
-        """Under the root lock: a written root the build does not merge replaces the current value,
-        so it must still hold its base value (section 5).  Raises ``ProtoConflictError`` naming
-        ``Unit(ROOT, name)`` for such a write whose precondition was not recorded at write time
-        (a write that could still merge then, and does not now).
+    def _check_replaced_roots(self, current: Dictionary, plan: dict) -> None:
+        """Under the root lock: a written root the build sets as written without a linked
+        precondition replaces the current value, so it must still hold its base value
+        (section 5).  Raises ``ProtoConflictError`` naming ``Unit(ROOT, name)`` for such a write
+        whose precondition was not recorded at write time (a write that could still merge then,
+        and does not now).  ``plan`` is :meth:`_write_plan`'s decision for this build.
 
-        # Transitional: removed when linked intentions land (precondition model, Tasks 4/6)
+        # Transitional: removed when linked intentions land (precondition model, Task 6)
         """
         database = self._database.name
         log = self._read_log
-        for name, value in self._writes.items():
+        for name in self._writes:
             unit = Unit(UnitKind.ROOT, name)
-            if unit in log:
-                continue                # checked by _check_roots
+            if unit in log or name in self._linked_writes or plan[name] is _APPLY_MERGE:
+                continue                # checked by _check_roots, or linked, or merged
             now = current.get_at(name, _ABSENT)
-            if self._merges(name, value, now):
-                continue
             if not _same_token(_token(self._objects.get_at(name, _ABSENT)), _token(now)):
                 raise ProtoConflictError(
                     f"Root {name!r} of database {database!r} was changed by a concurrent commit "

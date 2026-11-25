@@ -12,9 +12,12 @@ Key equality is value equality: ``1``, ``1.0`` and ``Decimal(1)`` are one key,
 ``True`` is another.  Iteration order is the bucket-hash order: deterministic
 for a given content, but unrelated to key order and not part of the API.
 
-``elements()`` yields the values.  Index events, intent logging and
-``rebase_onto`` behave exactly as in :class:`~proto_db.collections.dictionaries.Dictionary`
-(``("set", key, value)`` / ``("remove", key)`` ops, per-key replay).
+``elements()`` yields the values.  Index events, the record of intentions (``_changes``) and
+the precondition model behave exactly as in :class:`~proto_db.collections.dictionaries.Dictionary`
+(``("set", key, value)`` / ``("remove", key)`` ops, ``Unit(KEY, root, key=k)`` for ``get_at``,
+``has``, ``in``, ``set_at`` and ``remove_at`` on a linked version, the whole collection for every
+other read, per-key reapplication at commit).  Values are stored inline in their bucket, so a
+key's precondition compares the value's exact token.
 
 Thread safety: a version is immutable once built (buckets are tuples) and may be
 shared between threads; lazily loaded nodes are published atomically by the
@@ -26,10 +29,12 @@ from collections.abc import Iterable, Iterator
 
 from ..core.atom import PersistenceContext
 from ..errors import ProtoValidationError
+from ..preconditions import ABSENT
 from ..values import canonical, canonical_for, check_wrapped, hash_key, order_key
 from . import avl
 from .base import ConcurrentOptimized, IndexedCollection, repair_pairs, same_value
 from .dictionaries import sorted_unique_pairs
+from .linking import engine_reads, record_key, register_fine_grained
 
 __all__ = ["HashDictionary"]
 
@@ -75,7 +80,7 @@ class HashDictionary(ConcurrentOptimized, IndexedCollection):
         for key, value in items:
             buckets.setdefault(empty._bucket_hash(key), []).append((key, value))
         tree = avl.key_from_sorted((h, tuple(buckets[h])) for h in sorted(buckets))
-        return empty._with(root=tree, count=len(items))
+        return empty._with(root=tree, count=len(items), _whole=True)   # not a listed operation (P-B)
 
     # -- lookup -------------------------------------------------------------------------
 
@@ -90,15 +95,36 @@ class HashDictionary(ConcurrentOptimized, IndexedCollection):
         return h, bucket, -1
 
     def get_at(self, key, default=None):
-        """Return the value stored under ``key`` (canonicalized, as stored keys are) or ``default`` when absent."""
-        _, bucket, position = self._find(canonical(key))
+        """Return the value stored under ``key`` (canonicalized, as stored keys are) or ``default`` when absent.
+
+        On a linked version it records ``Unit(KEY, root, key)`` (spec section 6)."""
+        key = canonical(key)
+        if self._link is not None:
+            record_key(self, key)
+            with engine_reads():
+                _, bucket, position = self._find(key)
+        else:
+            _, bucket, position = self._find(key)
         return default if position < 0 else bucket[position][1]
 
     def has(self, key) -> bool:
-        """True iff ``key`` (canonicalized) is present."""
-        return self._find(canonical(key))[2] >= 0
+        """True iff ``key`` (canonicalized) is present.  On a linked version it records
+        ``Unit(KEY, root, key)`` (spec section 6)."""
+        key = canonical(key)
+        if self._link is None:
+            return self._find(key)[2] >= 0
+        record_key(self, key)
+        with engine_reads():
+            return self._find(key)[2] >= 0
 
     __contains__ = has
+
+    def _stored_at(self, key):
+        """The value under the canonical ``key`` as its bucket stores it, or ABSENT: what
+        ``Unit(KEY, ...)`` compares.  Records nothing."""
+        with engine_reads():
+            _, bucket, position = self._find(key)
+        return ABSENT if position < 0 else bucket[position][1]
 
     def items(self) -> Iterator[tuple]:
         """``(key, value)`` pairs in bucket-hash order."""
@@ -135,8 +161,18 @@ class HashDictionary(ConcurrentOptimized, IndexedCollection):
     def set_at(self, key, value) -> "HashDictionary":
         """Return a hash dictionary with ``key`` mapped to ``value`` (add or replace event).
 
-        Replacing keeps the stored key object, as ``dict`` does.
+        Replacing keeps the stored key object, as ``dict`` does.  On a linked version it records
+        ``Unit(KEY, root, key)`` with the key's base value, unless this transaction already wrote
+        that key (spec section 5, R9).
         """
+        if self._link is None:
+            return self._set_at(key, value)
+        key = canonical_for(key, f"{type(self).__name__} key")
+        record_key(self, key)
+        with engine_reads():
+            return self._set_at(key, value)
+
+    def _set_at(self, key, value) -> "HashDictionary":
         name = type(self).__name__
         key, value = canonical_for(key, f"{name} key"), canonical_for(value, f"{name} value")
         check_wrapped(key, self.ENTRY_WRAPPING, f"{name} key", self._WRAPPER)
@@ -147,24 +183,34 @@ class HashDictionary(ConcurrentOptimized, IndexedCollection):
             stored_key, old = bucket[position]
             new_bucket = bucket[:position] + ((stored_key, value),) + bucket[position + 1:]
             root, _, _ = avl.key_put(self.root, h, new_bucket)
-            return self._with(root=root, indexes=self._after_replace(old, value), _op_log=log)
+            return self._with(root=root, indexes=self._after_replace(old, value), _changes=log)
         root, _, _ = avl.key_put(self.root, h, bucket + ((key, value),))
-        return self._with(root=root, count=self.count + 1, indexes=self._after_add(value), _op_log=log)
+        return self._with(root=root, count=self.count + 1, indexes=self._after_add(value), _changes=log)
 
     def remove_at(self, key) -> "HashDictionary":
-        """Return a hash dictionary without ``key``; an absent key yields a new version with the same content."""
+        """Return a hash dictionary without ``key``; an absent key yields a new version with the same content.
+
+        On a linked version it records ``Unit(KEY, root, key)`` with the key's base value (absent
+        included), unless this transaction already wrote that key (spec section 5, R9)."""
         key = canonical_for(key, f"{type(self).__name__} key")
+        if self._link is None:
+            return self._remove_at(key)
+        record_key(self, key)
+        with engine_reads():
+            return self._remove_at(key)
+
+    def _remove_at(self, key) -> "HashDictionary":
         h, bucket, position = self._find(key)
         log = self._logged((_REMOVE, key))
         if position < 0:
-            return self._with(_op_log=log)
+            return self._with(_changes=log)
         old = bucket[position][1]
         rest = bucket[:position] + bucket[position + 1:]
         if rest:
             root, _, _ = avl.key_put(self.root, h, rest)
         else:
             root, _, _ = avl.key_remove(self.root, h)
-        return self._with(root=root, count=self.count - 1, indexes=self._after_remove(old), _op_log=log)
+        return self._with(root=root, count=self.count - 1, indexes=self._after_remove(old), _changes=log)
 
     def _same_content(self, other) -> bool:
         """Order-independent: every key maps to an equal value (``same_value``) in ``other``."""
@@ -184,4 +230,15 @@ class HashDictionary(ConcurrentOptimized, IndexedCollection):
     def __repr__(self):
         if not self._loaded_now():
             return super().__repr__()  # never load a stub to describe it
-        return f"<HashDictionary count={self.count}>"
+        with engine_reads():           # describing it is not a read of the transaction
+            return f"<HashDictionary count={self.count}>"
+
+
+#: The operations of a HashDictionary the precondition model lists or relies on (N5); overriding
+#: ``_bucket_hash`` (a pure function of the key) keeps the treatment.
+HASH_DICTIONARY_OPERATIONS = ("get_at", "has", "__contains__", "set_at", "remove_at", "_set_at", "_remove_at",
+                              "_stored_at", "_find", "elements", "items", "keys", "values", "__iter__",
+                              "__len__", "content_equals", "_same_content", "_scan_window", "_replay_op",
+                              "_net_ops", "_op_key", "_reapplied_on", "_with")
+
+register_fine_grained(HashDictionary, HASH_DICTIONARY_OPERATIONS)

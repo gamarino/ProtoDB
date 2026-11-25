@@ -435,12 +435,12 @@ def _eligibility_check(planted):
     live = tr.get_root_object("ids").add(1).add(2)
     tr.set_root_object("ids", live)
     tr.commit()
-    assert live.atom_pointer is not None and live._op_log, "a saved live collection with an op log"
+    assert live.atom_pointer is not None and live._changes, "a saved live collection with an op log"
     space._atoms._admit(live)                       # what a stray admission would do
     space._atoms._unload_all()
     for i in range(50):                             # and eviction pressure
         db.run(lambda tr, i=i: tr.set_root_object(f"r{i}", i))
-    assert live.__dict__.get("_loaded") and live._op_log, "the live collection lost its loaded state"
+    assert live.__dict__.get("_loaded") and live._changes, "the live collection lost its loaded state"
     # The next transaction rebases over it as D33 expects.
     db.run(lambda tr: tr.set_root_object("ids", live.add(3)))
     with db.new_transaction() as tr:
@@ -453,7 +453,7 @@ def test_only_cache_produced_atoms_are_ever_unloaded():
 
 
 @pytest.mark.xfail(strict=True, reason="planted: eligibility by 'has a pointer' unloads a saved live collection")
-def test_planted_pointer_only_eligibility_loses_the_op_log(monkeypatch):
+def test_planted_pointer_only_eligibility_loses_the_changes(monkeypatch):
     monkeypatch.setattr(atom_mod, "_is_cache_produced",
                         lambda a: bool(a.__dict__.get("_loaded")) and a.__dict__.get("atom_pointer") is not None)
     _eligibility_check(planted=True)
@@ -799,7 +799,9 @@ def test_repr_never_materializes_the_instance_dict():
     db.run(build)
     names = ["row", "dict", "list", "set", "hash", "rep"]
     with db.new_transaction() as tr:
-        atoms = [tr.get_root_object(n) for n in names]
+        # The space's shared atoms themselves: get_root_object returns a dictionary root as a
+        # linked copy of the transaction's own (spec R41), never the cached atom.
+        atoms = [tr._objects.get_at(n) for n in names]
         for a in atoms:
             repr(a)                             # loaded (decoded twins)
         space._atoms._unload_all()

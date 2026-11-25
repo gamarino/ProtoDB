@@ -197,12 +197,12 @@ class TestIndexedCollection:
                 __type_name__ = "tests.unit.WrongOrder"
                 _fields = ("count", "indexes")
 
-    def test_stub_has_no_op_log_and_loads_lazily(self):
+    def test_stub_has_no_changes_and_loads_lazily(self):
         ctx = DirectContext(MemoryStorage())
         s = toy(1, 2, indexes=("i",))
-        assert s._op_log
+        assert s._changes
         loaded = ctx.load(ctx.save(s), ToySet.__type_name__)
-        assert loaded._op_log == ()
+        assert loaded._changes == ()
         assert list(loaded) == [1, 2] and loaded.get_index("i").events == s.get_index("i").events
         # A mutation of a loaded version keeps working and persists again.
         again = loaded.add(3)
@@ -257,14 +257,14 @@ class TestRebase:
     def test_logged_is_immutable_extension(self):
         s1 = toy(1)
         s2 = s1.add(2)
-        assert s1._op_log == (("add", 1),) and s2._op_log == (("add", 1), ("add", 2))
+        assert s1._changes == (("add", 1),) and s2._changes == (("add", 1), ("add", 2))
 
     def test_blind_writes_log_intent_without_index_work(self):
         s = toy(1, indexes=("i",))
         for new, op in ((s.add(1), ("add", 1)), (s.discard(9), ("remove", 9))):
-            assert new is not s and new._op_log == s._op_log + (op,)
+            assert new is not s and new._changes == s._changes + (op,)
             assert new.indexes is s.indexes and new.root is s.root and list(new) == [1]
-        assert s._op_log[-1] == ("add", 1) and len(s._op_log) == 2
+        assert s._changes[-1] == ("add", 1) and len(s._changes) == 2
 
     def test_blind_discard_wins_over_concurrent_add(self):
         stored = _snapshot(toy(1))

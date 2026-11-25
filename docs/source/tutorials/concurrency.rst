@@ -108,19 +108,22 @@ Four threads, one hot counter, no lost update. Three rules for the function you 
 Writes that merge instead of conflicting
 ----------------------------------------
 
-Retrying is the safe default, but it serialises writers of the same root. Some collections avoid that when
-a transaction **writes a root it never read**: a ``Dictionary``, ``HashDictionary``, ``Set``,
-``CountedSet`` or ``RepeatedKeysDictionary`` built from empty in the transaction records the operations
-you applied (per key, or per element), and the commit replays them onto whatever the root holds by then.
-Writers of different keys do not conflict, and writers of the same key are applied in commit order.
+Retrying is the safe default, but it serialises writers of the same root. A ``Dictionary`` or
+``HashDictionary`` root avoids that: the collection ``get_root_object`` returns is linked to your
+transaction, and it records exactly what you read and wrote, **per key**. At commit, the keys you touched
+must still hold what your transaction saw, and your changes are applied to whatever the root holds by
+then. Writers of different keys do not conflict; two writers of the same key do.
 
 .. code-block:: python
+
+   with db.new_transaction() as tr:
+       tr.set_root_object("events", tr.new_dictionary())
 
    def add_events(thread_number):
        for i in range(25):
            with db.new_transaction() as tr:
-               # Never read "events": its operations are merged at commit.
-               tr.set_root_object("events", tr.new_dictionary().set_at(f"t{thread_number}-{i}", i))
+               # Only the key written is recorded: other threads' keys never conflict.
+               tr.set_root_object("events", tr.get_root_object("events").set_at(f"t{thread_number}-{i}", i))
 
    threads = [threading.Thread(target=add_events, args=(n,)) for n in range(4)]
    for t in threads:
@@ -134,7 +137,7 @@ Writers of different keys do not conflict, and writers of the same key are appli
 
    events: 100 keys, no conflict, no retry
 
-The merge applies the *intent* of each transaction (set this key to this value), never a guess about what a
+The commit applies the *intent* of each transaction (set this key to this value), never a guess about what a
 value means: there is no "add the two numbers" for an integer, because ``proto_db`` cannot know that you meant a
 counter. For counting, use a ``CountedSet`` (``add`` and ``remove`` are counter operations that merge), or
 read-modify-write under ``run``.
@@ -156,14 +159,15 @@ A ``CountedSet`` merges its counts, so concurrent writers can count without retr
 
    3 1 4
 
-Reading the root first makes the write a read-modify-write again:
+Reading the whole dictionary (its length, an iteration, a query) records the whole dictionary, which makes
+the write a read-modify-write of all of it:
 
 .. code-block:: python
 
    first, second = db.new_transaction(), db.new_transaction()
    for tr, key in ((first, "a"), (second, "b")):
-       events = tr.get_root_object("events")                 # a read: it enters the read set
-       tr.set_root_object("events", events.set_at(key, 1))
+       events = tr.get_root_object("events")
+       tr.set_root_object("events", events.set_at(key, len(events)))     # len(): the whole dictionary
    first.commit()
    try:
        second.commit()
@@ -175,9 +179,9 @@ Reading the root first makes the write a read-modify-write again:
 
    conflict: the second transaction read what the first changed
 
-Choose per root. If a writer must base its write on the current content ("add this order only if the
-total is under the limit") it has to read, and conflicts are the correct outcome. If it only adds, do not
-read.
+Choose per operation. If a writer must base its write on the current content ("add this order only if the
+total is under the limit") it has to read, and conflicts are the correct outcome. If it only adds, read only
+the keys it needs.
 
 One mistake the model allows
 ----------------------------

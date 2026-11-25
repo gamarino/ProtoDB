@@ -134,7 +134,7 @@ class TestOpLogAndRebase:
     def test_every_call_is_logged(self):
         d = reload(make([("a", 1)]))
         d2 = d.set_at("b", 2).remove_at("a").remove_at("q").set_at("b", 2)
-        assert d2._op_log == (("set", "b", 2), ("remove", "a"), ("remove", "q"), ("set", "b", 2))
+        assert d2._changes == (("set", "b", 2), ("remove", "a"), ("remove", "q"), ("set", "b", 2))
 
     def test_rebase_per_key(self):
         snapshot = reload(make([("k", 1), ("j", 5)]))

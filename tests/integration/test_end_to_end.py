@@ -165,9 +165,9 @@ def test_reopen_keeps_roots_history_and_indexes(tmp_path):
                                      ("c", "cid", "Paris", 33)]:
             people = people.set_at(key, tr.new_object(name=name, city=city, age=age))
         tr.set_root_object("people", people)
-    # A blind merge maintains the indexes of the committed version.
+    # Changes through the linked root maintain the indexes of the committed version (R34).
     with db.new_transaction() as tr:
-        tr.set_root_object("people", tr.new_dictionary().set_at(
+        tr.set_root_object("people", tr.get_root_object("people").set_at(
             "d", tr.new_object(name="dan", city="Paris", age=19)).remove_at("b"))
     space.close()
 

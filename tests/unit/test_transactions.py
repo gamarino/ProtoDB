@@ -99,14 +99,13 @@ class TestDictionaryCommitMerge:
         assert self._read("gone") is None
         assert self._read("a") == 1
 
-    def test_blind_write_merges_only_its_own_keys(self):
+    def test_blind_write_replaces_the_root(self):
+        """R11: a dictionary built separately is not linked to the root; it replaces it."""
         self._update(lambda d: d.set_at("a", 10))
         tr = self.db.new_transaction()
         tr.set_root_object("d", tr.new_dictionary().set_at("c", 3))
         tr.commit()
-        assert self._read("a") == 10
-        assert self._read("b") == 5
-        assert self._read("c") == 3
+        assert dict(read_root(self.db, "d").items()) == {"c": 3}
 
 
 # -- space and databases ---------------------------------------------------------------------
@@ -380,7 +379,7 @@ def test_conflict_leaves_nothing_published(space, db):
     with db.new_transaction() as other:
         other.set_root_object("d", other.get_root_object("d").set_at("a", 2))
     root_before = space.storage.read_root()
-    tr.set_root_object("d", d.set_at("b", 9))
+    tr.set_root_object("d", d.set_at("b", d.get_at("a") + 8))      # reads key "a" (section 6)
     tr.set_root_object("other", 5)
     with pytest.raises(ProtoConflictError):
         tr.commit()
@@ -393,7 +392,9 @@ def test_conflict_leaves_nothing_published(space, db):
     assert [h.version for h in db.history()][0] == 2
 
 
-def test_read_root_is_not_merged_even_if_concurrent_optimized(db):
+def test_read_root_reapplies_its_changes_on_a_concurrent_replacement(db):
+    """R34: a linked root's intentions are reapplied on the current collection; the read recorded
+    only that the root is a Dictionary and that "b" is absent, which still hold."""
     with db.new_transaction() as tr:
         tr.set_root_object("d", tr.new_dictionary().set_at("a", 1))
     tr = db.new_transaction()
@@ -401,6 +402,19 @@ def test_read_root_is_not_merged_even_if_concurrent_optimized(db):
     with db.new_transaction() as other:
         other.set_root_object("d", other.new_dictionary().set_at("z", 1))
     tr.set_root_object("d", d.set_at("b", 2))
+    tr.commit()
+    assert dict(read_root(db, "d").items()) == {"z": 1, "b": 2}
+
+
+def test_read_root_conflicts_when_a_concurrent_replacement_changes_a_read_key(db):
+    """Section 6: the key read in the base must hold the same value in the current collection."""
+    with db.new_transaction() as tr:
+        tr.set_root_object("d", tr.new_dictionary().set_at("a", 1))
+    tr = db.new_transaction()
+    d = tr.get_root_object("d")
+    with db.new_transaction() as other:
+        other.set_root_object("d", other.new_dictionary().set_at("z", 1))
+    tr.set_root_object("d", d.set_at("b", d.get_at("a")))
     with pytest.raises(ProtoConflictError):
         tr.commit()
 
@@ -426,27 +440,42 @@ def test_concurrent_reader_of_an_unrelated_root_does_not_conflict(db):
 
 # -- blind writes (intent merge) -------------------------------------------------------------
 
-def test_blind_writes_of_two_transactions_both_survive(db):
+def test_blind_writes_of_two_transactions_conflict(db):
+    """Section 5, R11: two separately built dictionaries replace the root; the second conflicts."""
     with db.new_transaction() as tr:
         tr.set_root_object("d", tr.new_dictionary().set_at("a", 1))
     tr1, tr2 = db.new_transaction(), db.new_transaction()
     tr1.set_root_object("d", tr1.new_dictionary().set_at("x", 1))
     tr2.set_root_object("d", tr2.new_dictionary().set_at("y", 2))
     tr1.commit()
+    with pytest.raises(ProtoConflictError):
+        tr2.commit()
+    assert dict(read_root(db, "d").items()) == {"x": 1}
+
+
+def test_linked_writes_of_two_transactions_both_survive(db):
+    """Section 5: set_at of different keys through the linked root both publish."""
+    with db.new_transaction() as tr:
+        tr.set_root_object("d", tr.new_dictionary().set_at("a", 1))
+    tr1, tr2 = db.new_transaction(), db.new_transaction()
+    tr1.set_root_object("d", tr1.get_root_object("d").set_at("x", 1))
+    tr2.set_root_object("d", tr2.get_root_object("d").set_at("y", 2))
+    tr1.commit()
     tr2.commit()
-    d = read_root(db, "d")
-    assert dict(d.items()) == {"a": 1, "x": 1, "y": 2}
+    assert dict(read_root(db, "d").items()) == {"a": 1, "x": 1, "y": 2}
 
 
-def test_blind_remove_of_absent_key_over_concurrent_add(db):
+def test_blind_write_over_a_concurrent_change_conflicts(db):
+    """Section 5, R11: a separately built dictionary compares against the base value of the root."""
     with db.new_transaction() as tr:
         tr.set_root_object("d", tr.new_dictionary().set_at("a", 1))
     blind = db.new_transaction()
     blind.set_root_object("d", blind.new_dictionary().remove_at("k"))
     with db.new_transaction() as other:
         other.set_root_object("d", other.get_root_object("d").set_at("k", 5))
-    blind.commit()
-    assert dict(read_root(db, "d").items()) == {"a": 1}
+    with pytest.raises(ProtoConflictError):
+        blind.commit()
+    assert dict(read_root(db, "d").items()) == {"a": 1, "k": 5}
 
 
 def test_blind_set_and_counted_set_merge_by_intent(db):
@@ -621,7 +650,8 @@ def test_run_exhausts_retries_and_reraises_the_conflict(space, db):
     assert read_root(db, "n") == 3
 
 
-def test_run_retries_conflicts_raised_by_rebase(db):
+def test_run_retries_a_conflicting_blind_write(db):
+    """Section 5 (D9 retry): a blind write conflicting with a concurrent one is retried by run()."""
     from proto_db.indexing import EqualityIndex
     with db.new_transaction() as tr:
         tr.set_root_object("d", tr.new_dictionary())
@@ -634,9 +664,9 @@ def test_run_retries_conflicts_raised_by_rebase(db):
                 other.set_root_object("d", other.new_dictionary().add_index(EqualityIndex("i", "v")))
         tr.set_root_object("d", tr.new_dictionary().add_index(EqualityIndex("i", "v")))
 
-    with pytest.raises(ProtoConflictError):
-        db.run(add_index, retries=1, backoff=(0, 0))
+    db.run(add_index, retries=1, backoff=(0, 0))
     assert len(calls) == 2
+    assert read_root(db, "d").index_names() == ["i"]
 
 
 def test_run_does_not_retry_other_errors(space, db):
@@ -1117,7 +1147,7 @@ def test_set_with_replace_compares_against_the_base(db):
     tr1.commit()
     with pytest.raises(ProtoConflictError):
         tr2.commit()
-    assert dict(read_root(db, "x").items()) == {"a": 1, "b": 2}
+    assert dict(read_root(db, "x").items()) == {"b": 2}         # tr1 replaced the root (R11)
 
 
 def test_replace_mark_is_sticky_within_the_transaction(db):
@@ -1129,12 +1159,13 @@ def test_replace_mark_is_sticky_within_the_transaction(db):
     assert dict(read_root(db, "x").items()) == {"c": 3}
 
 
-def test_set_without_replace_still_merges(db):
+def test_set_without_replace_replaces_an_unlinked_dictionary(db):
+    """R11: a Dictionary is never merged; built separately, it replaces the root."""
     with db.new_transaction() as tr:
         tr.set_root_object("x", tr.new_dictionary().set_at("a", 1))
     with db.new_transaction() as tr:
         tr.set_root_object("x", tr.new_dictionary().set_at("c", 3), replace=False)
-    assert dict(read_root(db, "x").items()) == {"a": 1, "c": 3}
+    assert dict(read_root(db, "x").items()) == {"c": 3}
 
 
 def test_replace_must_be_a_bool(db):
@@ -1153,29 +1184,33 @@ def test_committed_value_reused_later_does_not_replay_its_ops(db):
     held = tr.new_dictionary().set_at("k", 1)
     tr.set_root_object("d", held)
     tr.commit()
-    assert not held.log_is_complete
+    assert dict(read_root(db, "d").items()) == {"k": 1}            # replaced (R11)
     with db.new_transaction() as tr:
         tr.set_root_object("d", tr.get_root_object("d").remove_at("k"))
     with db.new_transaction() as tr:
         tr.set_root_object("other", held)
-    assert dict(read_root(db, "d").items()) == {"a": 1}
+    assert dict(read_root(db, "d").items()) == {}
     with db.new_transaction() as tr:
         tr.set_root_object("d", held.set_at("z", 9))
     assert dict(read_root(db, "d").items()) == {"k": 1, "z": 9}
 
 
-def test_failed_commit_keeps_the_value_mergeable(db):
+def test_a_value_of_a_failed_commit_is_committed_by_a_later_transaction(db):
+    """Section 9 (log completeness retired for dictionaries): a value whose commit failed is stored
+    as it is by a later transaction."""
     with db.new_transaction() as tr:
         tr.set_root_object("d", tr.new_dictionary().set_at("a", 1))
     tr = db.new_transaction()
-    tr.get_root_object("d")
+    tr.get_root_object("d").get_at("a")
     held = tr.new_dictionary().set_at("k", 1)
     tr.set_root_object("d2", held)
     with db.new_transaction() as other:
         other.set_root_object("d", other.get_root_object("d").set_at("a", 2))
     with pytest.raises(ProtoConflictError):
         tr.commit()
-    assert held.log_is_complete
+    with db.new_transaction() as tr:
+        tr.set_root_object("d2", held)
+    assert dict(read_root(db, "d2").items()) == {"k": 1}
 
 
 class _ReleaseFailsOnError:

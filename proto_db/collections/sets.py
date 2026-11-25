@@ -226,9 +226,9 @@ class Set(_HashBuckets):
         h, bucket, position = self._find(element)
         log = self._logged((_ADD, element))
         if position >= 0:
-            return self._with(_op_log=log)
+            return self._with(_changes=log)
         root = avl.key_put(self.root, h, bucket + (element,))[0]
-        return self._with(root=root, count=self.count + 1, indexes=self._after_add(element), _op_log=log)
+        return self._with(root=root, count=self.count + 1, indexes=self._after_add(element), _changes=log)
 
     def remove(self, element) -> "Set":
         """Return a set without ``element``; an absent element yields a new version with the same content."""
@@ -236,10 +236,10 @@ class Set(_HashBuckets):
         h, bucket, position = self._find(element)
         log = self._logged((_REMOVE, element))
         if position < 0:
-            return self._with(_op_log=log)
+            return self._with(_changes=log)
         old = bucket[position]
         root = self._put_bucket(h, bucket[:position] + bucket[position + 1:])
-        return self._with(root=root, count=self.count - 1, indexes=self._after_remove(old), _op_log=log)
+        return self._with(root=root, count=self.count - 1, indexes=self._after_remove(old), _changes=log)
 
     def union(self, other: Iterable) -> "Set":
         """Return this set plus every element of ``other`` (a Set or any iterable of elements).
@@ -259,7 +259,7 @@ class Set(_HashBuckets):
         in this set's iteration order.  Always a new version.
         """
         keep = other if isinstance(other, _HashBuckets) else Set.from_iterable(other)
-        result = self._with()
+        result = self._with(_whole=True)    # takes the whole collection (spec section 5, P-B)
         for element in list(self.elements()):
             if not keep.has(element):
                 result = result.remove(element)
@@ -359,18 +359,18 @@ class CountedSet(_HashBuckets):
         h, bucket, position = found
         stored, n = bucket[position] if position >= 0 else (element, 0)
         if final == n:
-            return self._with(_op_log=log)
+            return self._with(_changes=log)
         total = self.total_count + final - n
         if n and final:
             bucket = bucket[:position] + ((stored, final),) + bucket[position + 1:]
-            return self._with(root=avl.key_put(self.root, h, bucket)[0], total_count=total, _op_log=log)
+            return self._with(root=avl.key_put(self.root, h, bucket)[0], total_count=total, _changes=log)
         if final:
             return self._with(root=avl.key_put(self.root, h, bucket + ((element, final),))[0],
                               count=self.count + 1, total_count=total,
-                              indexes=self._after_add(element), _op_log=log)
+                              indexes=self._after_add(element), _changes=log)
         root = self._put_bucket(h, bucket[:position] + bucket[position + 1:])
         return self._with(root=root, count=self.count - 1, total_count=total,
-                          indexes=self._after_remove(stored), _op_log=log)
+                          indexes=self._after_remove(stored), _changes=log)
 
     def _step(self, element, removes: int, adds: int, op: tuple) -> "CountedSet":
         """Apply the counter transform ``(removes, adds)`` to ``element`` (canonical) and log ``op``."""

@@ -14,9 +14,15 @@ fires ``on_add(value)``, setting an existing key fires
 ``on_remove(value)``.
 
 The dictionary is ``ConcurrentOptimized``: every ``set_at``/``remove_at`` call is
-logged as intent (``("set", key, value)`` / ``("remove", key)``), no-ops
-included, and :meth:`~proto_db.collections.base.ConcurrentOptimized.rebase_onto`
-replays the last intent per key onto a concurrently committed version.
+recorded as an intention in ``_changes`` (``("set", key, stored value)`` /
+``("remove", key)``), no-ops included.  Under the precondition model (spec sections 5, 6 and 9)
+a linked version -- one a transaction obtained from a root -- records ``Unit(KEY, root, key=k)``
+for ``get_at(k)``, ``has(k)``, ``k in d``, ``set_at(k, v)`` and ``remove_at(k)``, expecting the
+stored form of k in the base (a large value by its ``ValueBox`` pointer, D51), and the whole
+collection for every other read (iteration, ``len``, ``count``, ``items``, ``keys``, ``values``,
+``content_equals``, :meth:`Dictionary.key_at_position`, :meth:`Dictionary.position_of`).  At
+commit its changes are reapplied, last intention per key, on the current dictionary
+(:meth:`~proto_db.collections.base.ConcurrentOptimized._reapplied_on`, R34).
 
 ``RepeatedKeysDictionary`` is a multimap on the same keyed tree: each key maps to a
 :class:`~proto_db.collections.sets.CountedSet` of records (values must therefore
@@ -36,9 +42,11 @@ from itertools import islice
 
 from ..core.atom import PersistenceContext
 from ..errors import ProtoValidationError
+from ..preconditions import ABSENT
 from ..values import canonical, canonical_for, check_wrapped, order_key
 from . import avl
 from .base import ConcurrentOptimized, IndexedCollection, check_sorted_keys, repair_pairs, same_value
+from .linking import engine_reads, record_key, record_whole, register_fine_grained
 from .sets import CountedSet, counter_net_effect, counter_transform
 
 __all__ = ["Dictionary", "RepeatedKeysDictionary"]
@@ -96,7 +104,7 @@ class Dictionary(ConcurrentOptimized, IndexedCollection):
         empty = cls(context=context)
         if not items:
             return empty
-        return empty._with(root=avl.key_from_sorted(items), count=len(items))
+        return empty._with(root=avl.key_from_sorted(items), count=len(items), _whole=True)   # P-B
 
     # -- reading ------------------------------------------------------------------------
 
@@ -115,14 +123,59 @@ class Dictionary(ConcurrentOptimized, IndexedCollection):
         return islice((value for _, value in avl.key_iter_from(self.root, start)), stop - start)
 
     def get_at(self, key, default=None):
-        """Return the value stored under ``key`` (canonicalized, as stored keys are) or ``default`` when absent."""
-        return avl.key_get(self.root, canonical(key), default)
+        """Return the value stored under ``key`` (canonicalized, as stored keys are) or ``default`` when absent.
+
+        On a linked version it records ``Unit(KEY, root, key)`` (spec section 6)."""
+        key = canonical(key)
+        if self._link is None:
+            return avl.key_get(self.root, key, default)
+        record_key(self, key)
+        with engine_reads():
+            return avl.key_get(self.root, key, default)
 
     def has(self, key) -> bool:
-        """True iff ``key`` (canonicalized) is present."""
-        return avl.key_get(self.root, canonical(key), _ABSENT) is not _ABSENT
+        """True iff ``key`` (canonicalized) is present.  On a linked version it records
+        ``Unit(KEY, root, key)`` (spec section 6)."""
+        key = canonical(key)
+        if self._link is None:
+            return avl.key_get_stored(self.root, key, ABSENT) is not ABSENT
+        record_key(self, key)
+        with engine_reads():
+            return avl.key_get_stored(self.root, key, ABSENT) is not ABSENT
 
     __contains__ = has
+
+    def _stored_at(self, key):
+        """The stored form of the value under the canonical ``key`` (a :class:`~proto_db.collections.avl.ValueBox`
+        as is, never loaded) or ABSENT: what ``Unit(KEY, ...)`` compares (D51).  Records nothing."""
+        with engine_reads():
+            return avl.key_get_stored(self.root, key, ABSENT)
+
+    def key_at_position(self, i: int):
+        """The key at position ``i`` in key order (a negative ``i`` counts from the end), in
+        O(log n) by the node counts (R17).  ``ProtoValidationError`` for a position out of range.
+        On a linked version it records the whole collection (spec section 6)."""
+        record_whole(self)
+        if type(i) is not int:
+            raise ProtoValidationError(f"A Dictionary position must be an int, not {type(i).__name__}")
+        with engine_reads():
+            count, root = self.count, self.root
+        position = i + count if i < 0 else i
+        if not 0 <= position < count:
+            raise ProtoValidationError(f"Dictionary position {i} out of range for a dictionary of {count}")
+        return next(avl.key_iter_from(root, position))[0]
+
+    def position_of(self, key) -> int:
+        """The position of ``key`` in key order, in O(log n) by the node counts (R17).
+        ``ProtoValidationError`` when ``key`` is absent.  On a linked version it records the whole
+        collection (spec section 6)."""
+        record_whole(self)
+        key = _canonical_key(key, f"{type(self).__name__} key")
+        with engine_reads():
+            root = self.root
+        if avl.key_get_stored(root, key, ABSENT) is ABSENT:
+            raise ProtoValidationError(f"The key {key!r} is not in the {type(self).__name__}")
+        return avl.key_count_below(root, order_key(key))
 
     def items(self) -> Iterator[tuple]:
         """``(key, value)`` pairs in key order."""
@@ -150,27 +203,48 @@ class Dictionary(ConcurrentOptimized, IndexedCollection):
     # -- mutators -----------------------------------------------------------------------
 
     def set_at(self, key, value) -> "Dictionary":
-        """Return a dictionary with ``key`` mapped to ``value`` (add or replace event)."""
+        """Return a dictionary with ``key`` mapped to ``value`` (add or replace event).
+
+        On a linked version it records ``Unit(KEY, root, key)`` with the key's base value, unless
+        this transaction already wrote that key (spec section 5, R9)."""
+        if self._link is None:
+            return self._set_at(key, value)
+        key = _canonical_key(key, f"{type(self).__name__} key")
+        record_key(self, key)
+        with engine_reads():
+            return self._set_at(key, value)
+
+    def _set_at(self, key, value) -> "Dictionary":
         name = type(self).__name__
         key = _canonical_key(key, f"{name} key")
         stored = avl.boxed(canonical_for(value, f"{name} value"))
         value = avl.unboxed(stored)
         root, replaced, old = avl.key_put(self.root, key, stored)
-        # The log keeps the stored form: a merge replaying it (D33) reuses the box, which the
-        # transaction saved before the merge, instead of writing a large value twice (D51).
+        # The changes keep the stored form: reapplying them (R34) reuses the box, which the
+        # transaction saved before the commit, instead of writing a large value twice (D51).
         log = self._logged((_SET, key, stored))
         if replaced:
-            return self._with(root=root, indexes=self._after_replace(old, value), _op_log=log)
-        return self._with(root=root, count=self.count + 1, indexes=self._after_add(value), _op_log=log)
+            return self._with(root=root, indexes=self._after_replace(old, value), _changes=log)
+        return self._with(root=root, count=self.count + 1, indexes=self._after_add(value), _changes=log)
 
     def remove_at(self, key) -> "Dictionary":
-        """Return a dictionary without ``key``; an absent key yields a new version with the same content."""
+        """Return a dictionary without ``key``; an absent key yields a new version with the same content.
+
+        On a linked version it records ``Unit(KEY, root, key)`` with the key's base value (absent
+        included), unless this transaction already wrote that key (spec section 5, R9)."""
         key = _canonical_key(key, f"{type(self).__name__} key")
+        if self._link is None:
+            return self._remove_at(key)
+        record_key(self, key)
+        with engine_reads():
+            return self._remove_at(key)
+
+    def _remove_at(self, key) -> "Dictionary":
         root, removed, old = avl.key_remove(self.root, key)
         log = self._logged((_REMOVE, key))
         if not removed:
-            return self._with(_op_log=log)
-        return self._with(root=root, count=self.count - 1, indexes=self._after_remove(old), _op_log=log)
+            return self._with(_changes=log)
+        return self._with(root=root, count=self.count - 1, indexes=self._after_remove(old), _changes=log)
 
     def _same_content(self, other) -> bool:
         """Equal ``(key, value)`` pairs in key order (keys by ``order_key``, values by ``same_value``)."""
@@ -187,7 +261,18 @@ class Dictionary(ConcurrentOptimized, IndexedCollection):
     def __repr__(self):
         if not self._loaded_now():
             return super().__repr__()  # never load a stub to describe it
-        return f"<Dictionary count={self.count}>"
+        with engine_reads():           # describing it is not a read of the transaction
+            return f"<Dictionary count={self.count}>"
+
+
+#: The operations of a Dictionary the precondition model lists (spec sections 5 and 6) or relies
+#: on to validate and reapply them: a subclass overriding one is an object root (N5).
+DICTIONARY_OPERATIONS = ("get_at", "has", "__contains__", "set_at", "remove_at", "_set_at", "_remove_at",
+                         "_stored_at", "elements", "items", "keys", "values", "__iter__", "__len__",
+                         "content_equals", "_same_content", "_scan_window", "key_at_position", "position_of",
+                         "_replay_op", "_net_ops", "_op_key", "_reapplied_on", "_with")
+
+register_fine_grained(Dictionary, DICTIONARY_OPERATIONS)
 
 
 _ADD = "add"
@@ -305,13 +390,13 @@ class RepeatedKeysDictionary(ConcurrentOptimized, IndexedCollection):
         records = avl.key_get(self.root, key)
         if records is None:
             if not adds:
-                return self._with(_op_log=log)
+                return self._with(_changes=log)
             records = CountedSet(context=self.context)
         found = records._find(record)
         n = found[1][found[2]][1] if found[2] >= 0 else 0
         final = counter_transform(n, removes, adds)
         if final == n:
-            return self._with(_op_log=log)
+            return self._with(_changes=log)
         updated = records._retarget_at(found, record, final, ())
         if updated.count:
             root = avl.key_put(self.root, key, updated)[0]
@@ -319,13 +404,13 @@ class RepeatedKeysDictionary(ConcurrentOptimized, IndexedCollection):
             root = avl.key_remove(self.root, key)[0]
         total = self.total_count + final - n
         if n and final:
-            return self._with(root=root, total_count=total, _op_log=log)
+            return self._with(root=root, total_count=total, _changes=log)
         if final:
             return self._with(root=root, count=self.count + 1, total_count=total,
-                              indexes=self._after_add(record), _op_log=log)
+                              indexes=self._after_add(record), _changes=log)
         stored = found[1][found[2]][0]
         return self._with(root=root, count=self.count - 1, total_count=total,
-                          indexes=self._after_remove(stored), _op_log=log)
+                          indexes=self._after_remove(stored), _changes=log)
 
     def set_at(self, key, record) -> "RepeatedKeysDictionary":
         """Return a multimap with one more occurrence of ``record`` under ``key``.
@@ -360,10 +445,10 @@ class RepeatedKeysDictionary(ConcurrentOptimized, IndexedCollection):
         log = self._logged((_REMOVE_KEY, key))
         root, removed, records = avl.key_remove(self.root, key)
         if not removed:
-            return self._with(_op_log=log)
+            return self._with(_changes=log)
         return self._with(root=root, count=self.count - records.count,
                           total_count=self.total_count - records.total_count,
-                          indexes=self._after_removes(records.elements()), _op_log=log)
+                          indexes=self._after_removes(records.elements()), _changes=log)
 
     def _same_content(self, other) -> bool:
         """Equal keys in key order, each with an equal CountedSet of records."""

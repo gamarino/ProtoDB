@@ -18,8 +18,8 @@ BIG = b"v" * 100_000
 TEXT = "t" * 1_000
 
 
-def _bytes_of_next_commit(db, body) -> int:
-    """Atom bytes pushed to storage by one ``db.run(body)``."""
+def _bytes_pushed(db, action) -> int:
+    """Atom bytes pushed to storage while ``action()`` runs."""
     storage = db.space.storage
     pushed = []
     original = storage.push_atom
@@ -29,10 +29,15 @@ def _bytes_of_next_commit(db, body) -> int:
         return original(payload)
     storage.push_atom = push_atom
     try:
-        db.run(body)
+        action()
     finally:
         del storage.push_atom
     return sum(pushed)
+
+
+def _bytes_of_next_commit(db, body) -> int:
+    """Atom bytes pushed to storage by one ``db.run(body)``."""
+    return _bytes_pushed(db, lambda: db.run(body))
 
 
 def test_large_values_are_boxed_and_small_ones_are_not():
@@ -86,19 +91,29 @@ def test_a_large_value_round_trips_through_storage(tmp_path, make):
 
 
 def test_a_commit_writes_a_large_value_once():
-    """Blind writes merged into a dictionary holding 200 large values (D33 merge path): each
-    commit writes about one value, not one per copied ancestor, and the merge reuses the box
-    the transaction saved before it (no second copy)."""
+    """Linked writes to a dictionary holding 200 large values: each commit writes about one value,
+    not one per copied ancestor; and when a concurrent commit makes the transaction's changes be
+    reapplied on the current dictionary (R34), the reapplication reuses the box the transaction
+    saved before it (no second copy, D51)."""
     space = ObjectSpace(MemoryStorage())
     space.new_database("db")
     db = space.open_database("db")
+    db.run(lambda tr: tr.set_root_object("blobs", tr.new_dictionary()))
     for i in range(200):
-        db.run(lambda tr, i=i: tr.set_root_object("blobs", tr.new_dictionary().set_at(i, BIG)))
-    written = _bytes_of_next_commit(db, lambda tr: tr.set_root_object("blobs", tr.new_dictionary().set_at(200, BIG)))
+        db.run(lambda tr, i=i: tr.set_root_object("blobs", tr.get_root_object("blobs").set_at(i, BIG)))
+    written = _bytes_of_next_commit(
+        db, lambda tr: tr.set_root_object("blobs", tr.get_root_object("blobs").set_at(200, BIG)))
+    assert len(BIG) < written < 1.2 * len(BIG), written
+    a, b = db.new_transaction(), db.new_transaction()
+    a.set_root_object("blobs", a.get_root_object("blobs").set_at(201, BIG))
+    b.set_root_object("blobs", b.get_root_object("blobs").set_at(202, "small"))
+    b.commit()
+    written = _bytes_pushed(db, a.commit)
     assert len(BIG) < written < 1.2 * len(BIG), written
     with db.new_transaction() as tr:
         blobs = tr.get_root_object("blobs")
-        assert blobs.count == 201 and blobs.get_at(200) == BIG and blobs.get_at(0) == BIG
+        assert blobs.count == 203 and blobs.get_at(201) == BIG and blobs.get_at(0) == BIG
+        assert blobs.get_at(202) == "small"
 
 
 def test_a_value_box_is_immutable():

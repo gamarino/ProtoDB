@@ -179,8 +179,8 @@ def test_a_cached_saved_atom_is_what_a_load_produces(tmp_path):
     assert cached is not None and cached is not live and type(cached) is type(live)
     assert cached.__dict__.get("_loaded"), "the cached atom is decoded already"
     assert cached.context is space._atoms
-    assert cached._op_log == () and cached.log_is_complete is False
-    assert live._op_log != ()                          # the live version keeps its own log
+    assert cached._changes == () and cached.log_is_complete is False
+    assert live._changes != ()                          # the live version keeps its own log
     assert cached.root is not live.root and cached.root is space._atoms._cache.get(live.root.atom_pointer)
     reference = ObjectSpace(space.storage, atom_cache_entries=0)
     with reference.open_database("db").new_transaction() as rtr:

@@ -7,9 +7,9 @@ exact token, atoms by storage pointer); one that does not raises
 :class:`~proto_db.errors.ProtoConflictError` naming its unit (R36).
 
 This module holds only data: :class:`Unit` (a conflict unit), :class:`KeyRange` (a range
-invariant, R67), the :data:`ABSENT` token and :class:`ReadLog`, the per-transaction record of
-preconditions with the first-observation rule (R8, R9) and the escalation of R66.  Nothing here
-runs user code (P-C).
+invariant, R67), the :data:`ABSENT` token, :func:`token` (the comparable form of a value, R6) and
+:class:`ReadLog`, the per-transaction record of preconditions with the first-observation rule
+(R8, R9) and the escalation of R66.  Nothing here runs user code (P-C).
 """
 from __future__ import annotations
 
@@ -18,7 +18,11 @@ import threading
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
-__all__ = ["ABSENT", "UnitKind", "Unit", "KeyRange", "PRECONDITION_ESCALATION_LIMIT", "ReadLog"]
+from .core.atom import Atom
+from .values import exact_token
+
+__all__ = ["ABSENT", "UnitKind", "Unit", "KeyRange", "PRECONDITION_ESCALATION_LIMIT", "ReadLog", "token",
+           "same_token"]
 
 
 class _AbsentToken:
@@ -83,6 +87,34 @@ class Unit:
     root: str | None = None
     key: Any = None
     index: str | None = None
+
+
+def _atom_token(atom: Atom) -> tuple:
+    return ("@atom", atom.atom_pointer)
+
+
+def token(value):
+    """The comparable form of a unit's value (R6, D34): :data:`ABSENT` or an exact token.
+
+    Plain values are compared exactly (:func:`proto_db.values.exact_token`: same type and same
+    payload, so ``1`` and ``1.0``, ``Decimal("1")`` and ``Decimal("1.00")`` or one instant in two
+    time zones differ); atoms, nested ones included, are identified by their storage pointer, so
+    an atom that is the value itself (a collection, a ``ValueBox``) is never loaded.
+    """
+    if value is ABSENT:
+        return ABSENT
+    if isinstance(value, Atom):
+        # Directly, not through exact_token: its is_atom() probe reads ``oid``, which
+        # loads a stub (D21) -- under the root lock, for the commit-time check.
+        return _atom_token(value)
+    return exact_token(value, _atom_token)
+
+
+def same_token(a, b) -> bool:
+    """Whether two tokens of :func:`token` denote the same value."""
+    if a is ABSENT or b is ABSENT:
+        return a is b
+    return a == b
 
 
 @dataclass(frozen=True)

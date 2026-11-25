@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Transactions under concurrency: snapshot isolation, conflicts, retries and merges.
+"""Transactions under concurrency: snapshot isolation, conflicts, retries and per-key writes.
 
 Run from the repository root::
 
@@ -11,9 +11,9 @@ ProtoDB resolves concurrent commits and checks that no update is lost:
 1. A read-modify-write of a root raises ``ProtoConflictError`` when another commit
    changed that root first; ``Database.run`` retries the whole function on a fresh
    snapshot.
-2. A collection written without being read (a "blind" write) is merged: its
-   operations are replayed onto the current version, so concurrent writers of
-   different keys never conflict.
+2. A dictionary root records what each transaction read and wrote per key: its
+   changes are applied onto the current version at commit, so concurrent writers
+   of different keys never conflict.
 3. A ``MutableObject`` names a mutable cell outside the roots, with the same
    conflict detection.
 """
@@ -39,12 +39,13 @@ def run_threads(target) -> None:
 
 
 def main() -> None:
-    """Show conflicts, retried read-modify-writes, blind merges and a mutable counter."""
+    """Show conflicts, retried read-modify-writes, per-key dictionary writes and a mutable counter."""
     space = ObjectSpace(MemoryStorage())
     try:
         db = space.new_database("counters")
         with db.new_transaction() as tr:
             tr.set_root_object("counter", 0)
+            tr.set_root_object("events", tr.new_dictionary())
             visits_cell = tr.new_mutable("visits", 0)  # a MutableObject handle
 
         # 1. Two transactions read the same snapshot; the second commit is a conflict.
@@ -68,13 +69,13 @@ def main() -> None:
 
         run_threads(worker)
 
-        # 2. Blind writes: each thread adds its own keys to a dictionary it never reads.
-        def blind_writer(n):
+        # 2. Per-key writes: each thread adds its own keys to the dictionary, without retries.
+        def key_writer(n):
             for i in range(INCREMENTS):
                 with db.new_transaction() as tr:
-                    tr.set_root_object("events", tr.new_dictionary().set_at(f"t{n}-{i}", i))
+                    tr.set_root_object("events", tr.get_root_object("events").set_at(f"t{n}-{i}", i))
 
-        run_threads(blind_writer)
+        run_threads(key_writer)
 
         # 3. A mutable cell, incremented through its handle.
         def visit(tr):

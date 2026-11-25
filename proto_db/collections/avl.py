@@ -526,6 +526,23 @@ def key_get(root: KeyNode | None, key, default=None):
     return default
 
 
+def key_get_stored(root: KeyNode | None, key, default=None):
+    """Return the stored form of the value under ``key`` (a :class:`ValueBox` is returned as is,
+    never loaded) or ``default`` when absent: what a per-key precondition compares (D51)."""
+    _check_kind(root, KeyNode)
+    k = order_key(key)
+    node = root
+    while node is not None:
+        nk = node._order_key()
+        if k < nk:
+            node = node.left
+        elif k > nk:
+            node = node.right
+        else:
+            return node.value
+    return default
+
+
 def key_put(root: KeyNode | None, key, value, *, node_class: type = KeyNode):
     """Return ``(new_root, replaced, old_value)`` with ``key`` mapped to ``value``.
 

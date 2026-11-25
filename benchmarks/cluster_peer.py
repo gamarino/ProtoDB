@@ -10,8 +10,8 @@ of THREADS threads commits for SECONDS seconds; a commit adds BATCH unique ids t
 ``ids`` CountedSet root, written blind (merged at commit, D9).  Ids are
 ``node * 10**9 + thread * 10**7 + j``, so the parent can rebuild the exact expected set
 from the per-thread counts.  With PAYLOAD > 0 bytes, each commit also writes one value of
-exactly PAYLOAD bytes under its first id in the ``blobs`` Dictionary root (also written blind
-and merged at commit), so the parent can verify one value per acknowledged commit.  With CPU >
+exactly PAYLOAD bytes under its first id in the ``blobs`` Dictionary root (written through the
+linked root: per-key preconditions, changes reapplied at commit), so the parent can verify one value per acknowledged commit.  With CPU >
 0, each transaction body first runs :func:`cpu_work` for CPU iterations (a CPU-heavy body; its
 result is checked).  THREADS may be 0: the peer then only serves as a voter and replica.
 
@@ -190,7 +190,11 @@ def main() -> None:
                         s = s.add(x)
                     tr.set_root_object("ids", s)
                     if payload:
-                        tr.set_root_object("blobs", tr.new_dictionary().set_at(first, payload_value(first, payload)))
+                        # Through the linked root: only the key written is recorded (spec section 5), so
+                        # concurrent writers of different ids do not conflict.
+                        blobs = tr.get_root_object("blobs")
+                        blobs = blobs if blobs is not None else tr.new_dictionary()
+                        tr.set_root_object("blobs", blobs.set_at(first, payload_value(first, payload)))
                 t0 = time.perf_counter()
                 db.run(fn, **RUN_KW)
                 latencies[t].append(time.perf_counter() - t0)
