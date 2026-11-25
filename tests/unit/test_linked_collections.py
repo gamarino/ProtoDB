@@ -245,3 +245,39 @@ def test_query_on_a_linked_collection_records_whole(db, space):
     assert sorted(result) == [1, 2]
     assert whole("d") in tr._read_log
     tr.abort()
+
+
+class ClearingDictionary(Dictionary):
+    """A fine-grained subclass (it overrides no listed operation, N5) whose own method builds a
+    version through ``_with`` without logging an op and without reading a persisted field."""
+
+    __type_name__ = "tests.linked.ClearingDictionary"
+
+    def clear(self):
+        return self._with(root=None, count=0)
+
+
+@pytest.mark.parametrize("concurrent", ["none", "other root", "same root"])
+def test_unlogged_content_change_takes_whole_collection(db, concurrent):
+    """P-B: a content change that extends no ``_changes`` cannot be reapplied, so the version is
+    whole: it is published as is, or conflicts on WHOLE; it is never silently dropped."""
+    assert fine_grained(ClearingDictionary)
+    db.run(lambda tr: (tr.set_root_object("d", ClearingDictionary(context=tr).set_at("a", 1).set_at("b", 2)),
+                       tr.set_root_object("e", 0)))
+    a = db.new_transaction()
+    cleared = a.get_root_object("d").clear()
+    assert cleared._whole and link_of(cleared) is not None
+    a.set_root_object("d", cleared)
+    assert whole("d") in a._read_log
+    if concurrent == "other root":
+        db.run(lambda tr: tr.set_root_object("e", 1))
+    elif concurrent == "same root":
+        db.run(lambda tr: tr.set_root_object("d", tr.get_root_object("d").set_at("z", 3)))
+    if concurrent == "same root":
+        with pytest.raises(ProtoConflictError) as e:
+            a.commit()
+        assert e.value.unit == whole("d")
+        assert content(db, "d") == {"a": 1, "b": 2, "z": 3}
+    else:
+        a.commit()
+        assert content(db, "d") == {}

@@ -614,12 +614,21 @@ class ConcurrentOptimized:
 
         A change of persisted content keeps the log complete only when it also
         extends the log; a version built from an incomplete one stays incomplete.
+
+        The same rule marks the version whole (P-B): a change of persisted content that
+        extends no ``_changes`` (an operation outside the listed ones, e.g. a subclass method
+        calling ``_with`` directly) cannot be reapplied at commit, so the version is published
+        as is under a whole-collection precondition instead of being silently dropped.
         """
+        content = any(name in type(self)._fields for name in changes)
+        logged = len(changes.get("_changes", ())) > len(self._changes)
         if "_log_complete" not in changes:
             complete = self._log_complete
-            if complete and any(name in type(self)._fields for name in changes):
-                complete = len(changes.get("_changes", ())) > len(self._changes)
+            if complete and content:
+                complete = logged
             changes["_log_complete"] = complete
+        if content and not logged and "_whole" not in changes:
+            changes["_whole"] = True
         return super()._with(**changes)
 
     def _logged(self, *ops: tuple) -> tuple:
