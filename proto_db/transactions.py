@@ -32,28 +32,30 @@ Snapshot isolation and preconditions (spec sections 4-6)
       object, conflict; two creators of the same absent root conflict.
     - A **collection root** read with ``get_root_object`` records
       ``Unit(ROOT_PRESENCE, name)``: still present and of the same class (R12).
-    - A **fine-grained** collection root (a Dictionary, HashDictionary, Set, CountedSet or
-      RepeatedKeysDictionary, or a subclass that overrides none of the listed operations:
+    - A **fine-grained** collection root (a Dictionary, HashDictionary, Set, CountedSet,
+      RepeatedKeysDictionary or List, or a subclass that overrides none of the listed operations:
       :func:`~proto_db.collections.linking.fine_grained`, N5) is returned as a **linked copy**
       (:mod:`proto_db.collections.linking`, spec section 9): the transaction's own instance,
       with the base collection's fields and pointer and a link to this transaction and root.
       Its versions record what they read (``Unit(KEY, name, key=k)`` for a dictionary's
       ``get_at``/``has``/``in``, ``Unit(ELEMENT, ...)`` for a Set's ``has``/``in``,
       ``Unit(COUNT, ...)`` for a CountedSet's ``has``/``count_of``, ``Unit(RECORDS, ...)`` for a
-      RepeatedKeysDictionary's ``get_at``/``get``/``has``, ``Unit(WHOLE, name)`` for every other
-      read) and what they write (a dictionary's ``set_at``/``remove_at`` and a Set's ``remove``
-      record the unit's base value; every write adds an intention to the version's
-      ``_changes``; a Set's ``add``, a CountedSet's and a RepeatedKeysDictionary's writes have
-      no precondition: they compose, D26).  Assigning such a version to the same root with
+      RepeatedKeysDictionary's ``get_at``/``get``/``has``, ``Unit(POSITION, ...)`` for a List's
+      ``get_at`` of a base position, ``Unit(WHOLE, name)`` for every other read, a negative List
+      position included) and what they write (a dictionary's ``set_at``/``remove_at``, a Set's
+      ``remove`` and a List's ``set_at`` of a base position record the unit's base value; every
+      write adds an intention to the version's ``_changes``; a Set's ``add``, a CountedSet's and
+      a RepeatedKeysDictionary's writes and a List's ``append_last``/``extend`` have no
+      precondition: they compose, D26, or are appended in commit order; a List's structural
+      operations -- ``insert_at``, ``remove_at``, ``append_first``, ``slice`` -- take the whole
+      list, R14).  Assigning such a version to the same root with
       ``set_root_object`` publishes its intentions: at commit, after every precondition holds,
       they are reapplied on the current collection, last intention per key or element, composed
-      counter transforms for the counters (R34).  A version an unlisted operation produced (``rebuilt``,
+      counter transforms for the counters, the List's appends after the concurrent ones (R34).  A version an unlisted operation produced (``rebuilt``,
       ``add_index``, ...) or a root with a WHOLE precondition publishes the transaction's
       value as is, under the whole-collection precondition.  A version derived and not
       assigned publishes nothing; its reads stay recorded (R45).  The link ends with the
       transaction (R47).
-    - A List root is not linked yet (transitional -- removed in Task 7): its read also records
-      ``Unit(WHOLE, name)``, the whole root's base value (P-A: coarser is safe).
     - Every write that replaces a root's value (an object root, a collection that is not
       linked to that root of this transaction (R11, R46), ``remove_root_object``) is compared
       against the base like an object root, ``Unit(ROOT, name)``: no last writer wins.
@@ -236,20 +238,15 @@ def _utc_now() -> datetime.datetime:
     return datetime.datetime.now(datetime.timezone.utc)
 
 
-#: The registry's roots (:mod:`proto_db.registry`).
-# The classes whose root values are collection roots (R1); any other value is an object root.
-# The collections of R1 not linked yet: a read also records the whole root.  Transitional -- removed in
-# Task 7, when List gets its units.
-_UNLINKED_COLLECTION_TYPES = (List,)
-
 # How _build_root applies a written root (Transaction._write_plan).
 _APPLY_REMOVE = _Sentinel("APPLY_REMOVE")
 _APPLY_SET = _Sentinel("APPLY_SET")
 _APPLY_REAPPLY = _Sentinel("APPLY_REAPPLY")
 # The units a fine-grained collection compares through its _unit_token, and how an error names them.
 _UNIT_NOUNS = {UnitKind.KEY: "Key", UnitKind.ELEMENT: "Element", UnitKind.COUNT: "The count of element",
-               UnitKind.RECORDS: "The records of key"}
+               UnitKind.RECORDS: "The records of key", UnitKind.POSITION: "Position"}
 _COLLECTION_UNIT_KINDS = frozenset(_UNIT_NOUNS)
+#: The registry's roots (:mod:`proto_db.registry`).
 _REGISTRY_ROOTS = frozenset({_registry.MODULES_ROOT, _registry.CATALOG_ROOT})
 #: The roots a semantic operation's checks depend on: the module list, the registry catalog and the semantic
 #: catalog.  A transaction that wrote through the semantic session reads them (final review I2).
@@ -2883,9 +2880,8 @@ class Transaction:
         An absent or object root records ``Unit(ROOT, name)`` with its base value (ABSENT
         included); a collection root records ``Unit(ROOT_PRESENCE, name)`` with its class (R12).
         A fine-grained collection root returns a linked copy (one per root and transaction),
-        whose reads and writes record their own units (spec section 9); a collection not linked
-        yet also records ``Unit(WHOLE, name)``.  A root this transaction wrote returns its own
-        value and records nothing (R9).
+        whose reads and writes record their own units (spec section 9).  A root this transaction
+        wrote returns its own value and records nothing (R9).
 
         A registry root (``__currentModules``, ``__catalog``) is read here like any root: the
         whole root is recorded, so a concurrent install makes this transaction's commit conflict
@@ -3028,13 +3024,6 @@ class Transaction:
                     linked = linked_copy(value, Link(self, name, value.atom_pointer))
                     self._linked[name] = linked
                 return linked
-            if isinstance(value, _UNLINKED_COLLECTION_TYPES):
-                unit = Unit(UnitKind.ROOT_PRESENCE, name)
-                if unit not in log:
-                    log.record(unit, type(value).__type_name__)
-                    # Until these collections are linked, the whole root as well (P-A).
-                    log.record(Unit(UnitKind.WHOLE, name), _token(value))
-                return None
         # An absent root, an object root (a Dictionary subclass overriding a listed operation
         # included, N5) or a reserved root (R37).
         unit = Unit(UnitKind.ROOT, name)
@@ -3945,10 +3934,11 @@ class Transaction:
     def _check_roots(self, current: Dictionary) -> None:
         """Under the root lock: raise ``ProtoConflictError`` naming the unit if a ``ROOT``,
         ``ROOT_PRESENCE``, ``WHOLE``, ``ROOT_NAMES`` or collection unit (``KEY``, ``ELEMENT``,
-        ``COUNT``, ``RECORDS``) precondition does not hold against the current root map (R6, R12,
+        ``COUNT``, ``RECORDS``, ``POSITION``) precondition does not hold against the current root map (R6, R12,
         R36).  A collection unit compares the current collection's ``_unit_token`` (a Dictionary
         key's stored form, D51: a box by its pointer, never loaded; a Set element's presence; a
-        CountedSet element's count; the pointer of a RepeatedKeysDictionary key's records)."""
+        CountedSet element's count; the pointer of a RepeatedKeysDictionary key's records; a List
+        position's item, ``NOT_A_UNIT`` when it no longer exists)."""
         database = self._database.name
         for unit, expected in self._read_log.preconditions().items():
             kind = unit.kind

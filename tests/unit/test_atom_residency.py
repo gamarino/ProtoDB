@@ -441,7 +441,8 @@ def _eligibility_check(planted):
     for i in range(50):                             # and eviction pressure
         db.run(lambda tr, i=i: tr.set_root_object(f"r{i}", i))
     assert live.__dict__.get("_loaded") and live._changes, "the live collection lost its loaded state"
-    # The next transaction rebases over it as D33 expects.
+    # The next transaction writes it to the root: an unlinked collection replaces the root,
+    # compared against the base (R11).
     db.run(lambda tr: tr.set_root_object("ids", live.add(3)))
     with db.new_transaction() as tr:
         assert sorted(tr.get_root_object("ids").items()) == [(0, 1), (1, 1), (2, 1), (3, 1)]

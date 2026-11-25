@@ -44,7 +44,7 @@ from collections.abc import Iterable, Iterator
 from itertools import islice
 
 from ..core.atom import PersistenceContext
-from ..errors import ProtoValidationError
+from ..errors import ProtoCorruptionError, ProtoValidationError
 from ..preconditions import ABSENT, UnitKind, token
 from ..values import canonical, canonical_for, check_wrapped, order_key
 from . import avl
@@ -370,12 +370,14 @@ class RepeatedKeysDictionary(ConcurrentOptimized, IndexedCollection):
     def _unit_token(self, kind, key):
         """The token of unit ``kind`` for the canonical ``key``: for ``RECORDS`` the token of the
         key's CountedSet (compared by storage pointer, never loaded) or ABSENT; ``NOT_A_UNIT`` for
-        any other kind.  A CountedSet not saved has no identity yet: its token equals no other."""
+        any other kind.  Tokens are taken from saved versions only (the base, the current root),
+        whose nested sets are saved: an unsaved one is a ``ProtoCorruptionError``."""
         if kind is not UnitKind.RECORDS:
             return NOT_A_UNIT
         records = avl.key_get(self.root, key, ABSENT)
         if records is not ABSENT and records.atom_pointer is None:
-            return object()
+            raise ProtoCorruptionError(
+                f"The records of key {key!r} of a saved {type(self).__name__} are not saved: no token")
         return token(records)
 
     def keys(self) -> Iterator:

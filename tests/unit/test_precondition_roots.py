@@ -257,11 +257,11 @@ def test_reads_record_their_units(db):
     assert root("c") not in pre
     assert pre[Unit(UnitKind.ROOT_PRESENCE, "s")] == type(s).__type_name__
     assert Unit(UnitKind.WHOLE, "s") not in pre
-    # Until List is linked (Task 7), its read also records the whole root (P-A: coarser is safe).
+    # A List is linked too (Task 7): reading the root records presence and class only.
     lst = tr.get_root_object("l")
     pre = tr._read_log.preconditions()
     assert pre[Unit(UnitKind.ROOT_PRESENCE, "l")] == type(lst).__type_name__
-    assert Unit(UnitKind.WHOLE, "l") in pre
+    assert Unit(UnitKind.WHOLE, "l") not in pre
     assert Unit(UnitKind.ROOT_NAMES) in pre
     tr.abort()
 

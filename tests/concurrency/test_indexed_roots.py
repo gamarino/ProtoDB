@@ -1,17 +1,18 @@
 """Indexed collection roots written by many threads (Task 5.2).
 
-* 16 threads append records to an indexed ``List`` root.  ``List`` is not
-  ``ConcurrentOptimized``, so every append is a read-modify-write that conflicts and
-  retries.  The final list holds every record exactly once, each thread's records in
-  its own order, and both indexes validate and answer exactly like a scan.
-* 16 threads blind ``set_at`` into an indexed ``Dictionary`` root (written, never
-  read: intent merge, D33), over disjoint keys and keys shared by all threads.
+* 16 threads append records to an indexed ``List`` root through its linked copy.  An
+  append has no precondition (spec section 5): it is reapplied at the end of the current
+  list, in commit order.  The final list holds every record exactly once, each thread's
+  records in its own order, and both indexes validate and answer exactly like a scan.
+* 16 threads ``set_at`` into an indexed ``Dictionary`` root through its linked copy (a
+  per-key precondition, section 5), over disjoint keys and keys shared by all threads.
   Disjoint keys hold exactly what their writer wrote; a shared key holds one of the
-  values written to it; the indexes validate and match a scan; no attempt conflicts.
+  values written to it; the indexes validate and match a scan; only a shared key
+  written concurrently conflicts and is retried.
 
 Catches: lost appends, duplicated records from a retried attempt, an index updated
-by one interleaving but not another (stale or doubled entries), and a blind merge
-that bypasses the current root's indexes.
+by one interleaving but not another (stale or doubled entries), and a reapplied
+intention that bypasses the current root's indexes.
 """
 import pytest
 

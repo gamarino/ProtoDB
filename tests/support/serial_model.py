@@ -18,18 +18,20 @@ and ``d_set`` a collection over an object, so a linked collection write can meet
 class change (R12).  Every operation looks at the root's current kind; one that does not apply
 to it reads ``("kind", <kind>)`` and writes nothing.
 
-The operation set is closed: Tasks 2-4 and 6 (object roots, mutable cells, Dictionary,
-HashDictionary, Set, CountedSet and RepeatedKeysDictionary roots).  A later task adds its
+The operation set is closed: Tasks 2-4, 6 and 7 (object roots, mutable cells, Dictionary,
+HashDictionary, Set, CountedSet, RepeatedKeysDictionary and List roots).  A later task adds its
 collections to :data:`COLLECTIONS`, its kinds to an ops tuple and to :data:`ALL_OPS`, and each
 operation as a ``@_real``-registered function plus a ``Model._<kind>`` method; the import-time
 check below rejects a kind missing either.
 
 Each collection family has its operations (``d_*`` dictionaries, ``s_*`` Set, ``cs_*``
-CountedSet, ``r_*`` RepeatedKeysDictionary).  A read of a root holding another kind reads the
-marker; a write that creates (``d_set``, ``s_add``, ``cs_add``, ``r_add``) replaces an absent or
-object root with a new collection of the family; any other write on a root of another kind
-writes nothing.  Model contents: a dictionary ``{key: value}``, a Set ``{element: True}``, a
-CountedSet ``{element: count}``, a RepeatedKeysDictionary ``{key: {record: count}}``.
+CountedSet, ``r_*`` RepeatedKeysDictionary, ``l_*`` List).  A read of a root holding another kind
+reads the marker; a write that creates (``d_set``, ``s_add``, ``cs_add``, ``r_add``,
+``l_append``) replaces an absent or object root with a new collection of the family; any other
+write on a root of another kind writes nothing.  Model contents: a dictionary ``{key: value}``,
+a Set ``{element: True}``, a CountedSet ``{element: count}``, a RepeatedKeysDictionary
+``{key: {record: count}}``, a List ``[item, ...]``.  A List operation on a position outside the
+list (``ProtoValidationError``) reads :data:`OUT_OF_RANGE` and writes nothing.
 """
 import copy
 from collections import namedtuple
@@ -37,6 +39,7 @@ from dataclasses import dataclass, field
 
 from proto_db.collections.dictionaries import Dictionary, RepeatedKeysDictionary
 from proto_db.collections.hash_dictionaries import HashDictionary
+from proto_db.collections.lists import List
 from proto_db.collections.sets import CountedSet, Set
 from proto_db.errors import ProtoValidationError
 
@@ -44,7 +47,7 @@ from proto_db.errors import ProtoValidationError
 OBJECT = "object"
 #: The collection kinds of fine-grained roots, by class name.
 COLLECTIONS = {"Dictionary": Dictionary, "HashDictionary": HashDictionary, "Set": Set, "CountedSet": CountedSet,
-               "RepeatedKeysDictionary": RepeatedKeysDictionary}
+               "RepeatedKeysDictionary": RepeatedKeysDictionary, "List": List}
 #: Every kind a root can hold.
 KINDS = (OBJECT,) + tuple(COLLECTIONS)
 #: Collection kinds whose keys have a position (R17).
@@ -54,6 +57,13 @@ DICTIONARIES = ("Dictionary", "HashDictionary")
 SETS = ("Set",)
 COUNTED_SETS = ("CountedSet",)
 MULTIMAPS = ("RepeatedKeysDictionary",)
+LISTS = ("List",)
+#: Positions a List operation draws from (some beyond the list, on purpose), and the depth of a
+#: negative ``get_at``.
+LIST_POSITIONS = 6
+NEGATIVE_DEPTH = 3
+#: What a List operation on a position outside the list reads.
+OUT_OF_RANGE = "out of range"
 #: How many distinct records a RepeatedKeysDictionary operation draws from (collisions on purpose).
 RECORDS = 3
 
@@ -72,14 +82,16 @@ DICTIONARY_AND_CELL_OPS = ROOT_OPS + OBJECT_OPS + DICTIONARY_OPS + CELL_OPS
 SET_OPS = ("s_has", "s_add", "s_remove", "s_union", "s_difference", "s_intersection", "s_len")
 COUNTED_SET_OPS = ("cs_count", "cs_has", "cs_add", "cs_remove", "cs_items")
 MULTIMAP_OPS = ("r_get", "r_has", "r_add", "r_remove_record", "r_remove_key", "r_len")
+#: The operations of Task 7 (``l_insert``/``l_remove`` are structural: the whole list, R14).
+LIST_OPS = ("l_get", "l_get_neg", "l_set", "l_append", "l_extend", "l_insert", "l_remove", "l_len")
 #: Every operation kind the model knows (each must have a real and a model implementation).
-ALL_OPS = DICTIONARY_AND_CELL_OPS + SET_OPS + COUNTED_SET_OPS + MULTIMAP_OPS
+ALL_OPS = DICTIONARY_AND_CELL_OPS + SET_OPS + COUNTED_SET_OPS + MULTIMAP_OPS + LIST_OPS
 #: The kinds each family's operations act on, by operation prefix.
-_FAMILIES = {"d_": DICTIONARIES, "s_": SETS, "cs_": COUNTED_SETS, "r_": MULTIMAPS}
+_FAMILIES = {"d_": DICTIONARIES, "s_": SETS, "cs_": COUNTED_SETS, "r_": MULTIMAPS, "l_": LISTS}
 #: Operations that read or write several elements at once (``value`` is a tuple of keys).
-_MULTI = ("s_union", "s_difference", "s_intersection")
+_MULTI = ("s_union", "s_difference", "s_intersection", "l_extend")
 #: Operations that only read the whole collection, or the root (no key).
-_KEYLESS = ("root_get", "root_remove", "d_len", "d_items", "s_len", "cs_items", "r_len")
+_KEYLESS = ("root_get", "root_remove", "d_len", "d_items", "s_len", "cs_items", "r_len", "l_len")
 
 #: Operations that need no target.
 _UNTARGETED = ("root_names", "c_names")
@@ -167,8 +179,18 @@ def _draw(rng, names: StateNames, kind: str) -> Op:
         return Op(kind, target)
     if kind == "d_key_at":
         return Op(kind, target, rng.randrange(len(names.keys)))
+    if kind == "l_extend":
+        return Op(kind, target, value=tuple(rng.choice(names.values) for _ in range(rng.randint(0, 3))))
     if kind in _MULTI:
         return Op(kind, target, value=tuple(sorted(rng.sample(names.keys, rng.randint(0, 3)))))
+    if kind in ("l_get", "l_remove"):
+        return Op(kind, target, rng.randrange(LIST_POSITIONS))
+    if kind == "l_get_neg":
+        return Op(kind, target, -rng.randint(1, NEGATIVE_DEPTH))
+    if kind in ("l_set", "l_insert"):
+        return Op(kind, target, rng.randrange(LIST_POSITIONS), value)
+    if kind == "l_append":
+        return Op(kind, target, value=value)
     if kind in ("r_add", "r_remove_record"):
         return Op(kind, target, key, rng.randrange(RECORDS))
     return Op(kind, target, key, value if kind in ("obj_set", "d_set") else None)
@@ -202,7 +224,10 @@ def _attributes(obj, keys) -> tuple:
 def fresh_content(kind: str, items: dict) -> dict:
     """The model content of a new value of ``kind`` built from ``items`` (key -> value), as
     :func:`_fresh` builds it: a Set holds the keys, a CountedSet each key ``value % 3 + 1``
-    times, a RepeatedKeysDictionary the record ``value % RECORDS`` under each key."""
+    times, a RepeatedKeysDictionary the record ``value % RECORDS`` under each key, a List the
+    values in key order."""
+    if kind == "List":
+        return [v for _, v in sorted(items.items())]
     if kind == "Set":
         return {k: True for k in items}
     if kind == "CountedSet":
@@ -217,6 +242,8 @@ def _fresh(tr, kind: str, items: dict):
     if kind == OBJECT:
         return tr.new_object(**items)
     collection = COLLECTIONS[kind](context=tr)
+    if kind == "List":
+        return collection.extend(v for _, v in sorted(items.items()))
     for k, v in sorted(items.items()):
         if kind == "Set":
             collection = collection.add(k)
@@ -237,6 +264,8 @@ def content_of(value) -> dict:
         return {e: True for e in value.elements()}
     if kind == "RepeatedKeysDictionary":
         return {k: dict(records.items()) for k, records in value.items()}
+    if kind == "List":
+        return list(value.elements())
     return dict(value.items())
 
 
@@ -474,6 +503,73 @@ def _real_r_remove_key(tr, op, names):
 def _real_r_len(tr, op, names):
     r, marker = _collection(tr, op, MULTIMAPS)
     return marker if r is None else len(r)
+
+
+def _list_op(tr, op, fn):
+    """``fn(list)`` on the root's linked List (None on another kind): what it reads, or
+    :data:`OUT_OF_RANGE` when the position is outside the list (``ProtoValidationError``)."""
+    lst, _ = _collection(tr, op, LISTS)
+    if lst is None:
+        return None
+    try:
+        return fn(lst)
+    except ProtoValidationError as e:
+        assert "out of range" in str(e), e
+        return OUT_OF_RANGE
+
+
+def _list_read(tr, op, fn):
+    lst, marker = _collection(tr, op, LISTS)
+    return marker if lst is None else _list_op(tr, op, fn)
+
+
+def _list_write(tr, op, write):
+    """``write(list)`` through the root's linked List, assigned to the root; reads None, or
+    :data:`OUT_OF_RANGE` (nothing assigned)."""
+    def assign(lst):
+        tr.set_root_object(op.target, write(lst))
+    return _list_op(tr, op, assign)
+
+
+@_real
+def _real_l_get(tr, op, names):
+    return _list_read(tr, op, lambda lst: lst.get_at(op.key))
+
+
+@_real
+def _real_l_get_neg(tr, op, names):
+    return _list_read(tr, op, lambda lst: lst.get_at(op.key))
+
+
+@_real
+def _real_l_set(tr, op, names):
+    return _list_write(tr, op, lambda lst: lst.set_at(op.key, op.value))
+
+
+@_real
+def _real_l_append(tr, op, names):
+    # A new List over an absent or object root: fresh_content's List of [value].
+    _creating_write(tr, op, names, LISTS, lambda lst: lst.append_last(op.value), {0: op.value})
+
+
+@_real
+def _real_l_extend(tr, op, names):
+    return _list_write(tr, op, lambda lst: lst.extend(op.value))
+
+
+@_real
+def _real_l_insert(tr, op, names):
+    return _list_write(tr, op, lambda lst: lst.insert_at(op.key, op.value))
+
+
+@_real
+def _real_l_remove(tr, op, names):
+    return _list_write(tr, op, lambda lst: lst.remove_at(op.key))
+
+
+@_real
+def _real_l_len(tr, op, names):
+    return _list_read(tr, op, len)
 
 
 @_real
@@ -722,6 +818,52 @@ class Model:
     def _r_len(self, op):
         content, marker = self._content(op, MULTIMAPS)
         return marker if content is None else sum(len(records) for records in content.values())
+
+    def _l_get(self, op):
+        content, marker = self._content(op, LISTS)
+        if content is None:
+            return marker
+        return content[op.key] if -len(content) <= op.key < len(content) else OUT_OF_RANGE
+
+    _l_get_neg = _l_get
+
+    def _l_set(self, op):
+        content, _ = self._content(op, LISTS)
+        if content is None:
+            return None
+        if not 0 <= op.key < len(content):
+            return OUT_OF_RANGE
+        content[op.key] = op.value
+
+    def _l_append(self, op):
+        content = self._creating(op, LISTS)
+        if content is not None:
+            content.append(op.value)
+
+    def _l_extend(self, op):
+        content, _ = self._content(op, LISTS)
+        if content is not None:
+            content.extend(op.value)
+
+    def _l_insert(self, op):
+        content, _ = self._content(op, LISTS)
+        if content is None:
+            return None
+        if not 0 <= op.key <= len(content):
+            return OUT_OF_RANGE
+        content.insert(op.key, op.value)
+
+    def _l_remove(self, op):
+        content, _ = self._content(op, LISTS)
+        if content is None:
+            return None
+        if not 0 <= op.key < len(content):
+            return OUT_OF_RANGE
+        del content[op.key]
+
+    def _l_len(self, op):
+        content, marker = self._content(op, LISTS)
+        return marker if content is None else len(content)
 
     def _c_get(self, op):
         return self.cells.get(op.target)

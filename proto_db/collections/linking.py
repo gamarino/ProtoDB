@@ -13,7 +13,8 @@ What a read records (spec section 6):
 * the operations a collection class lists record their own units (a Dictionary's ``get_at(k)``
   records ``Unit(KEY, root, key=k)``, a Set's ``has(e)`` ``Unit(ELEMENT, root, key=e)``, a
   CountedSet's ``count_of(e)`` ``Unit(COUNT, root, key=e)``, a RepeatedKeysDictionary's
-  ``get_at(k)`` ``Unit(RECORDS, root, key=k)``), through :func:`record_key`; the expected value
+  ``get_at(k)`` ``Unit(RECORDS, root, key=k)``, a List's ``get_at(i)`` ``Unit(POSITION, root,
+  key=i)``), through :func:`record_key`; the expected value
   is what the collection's ``_unit_token(kind, key)`` gives;
 * every other read by user code of a linked instance -- a persisted field (``count``, ``root``,
   ``indexes``, ...), iteration, ``len`` -- records ``Unit(WHOLE, root)`` through
@@ -26,7 +27,7 @@ afterwards, and nothing is recorded any more.
 
 Classification (R1, N5): a class is **fine-grained** (:func:`fine_grained`) if it is one of the
 classes registered with :func:`register_fine_grained` (Dictionary, HashDictionary, Set,
-CountedSet and RepeatedKeysDictionary; List joins with its units) or a subclass of one that
+CountedSet, RepeatedKeysDictionary and List) or a subclass of one that
 overrides none of its listed operations, compared by method identity.  Any other root is an
 object root.
 
@@ -100,7 +101,9 @@ def engine_reads() -> _EngineReads:
 def linked_copy(atom, link: Link):
     """A linked instance of the saved collection ``atom`` (R41): a new instance with the same
     persisted fields, ``oid`` and ``atom_pointer`` (``atom`` is loaded first and left untouched;
-    the copy is outside the atom cache), carrying ``link``, no intentions and no whole mark.
+    the copy is outside the atom cache), carrying ``link`` and every other runtime field at its
+    class default: no intentions, no whole mark, nothing written (the saved atom may be a version
+    a transaction built and committed, with runtime state of its own).
 
     Its persisted fields are held apart (``_linked_state``) so that reading one by user code goes
     through :meth:`IndexedCollection.__getattr__`, which records the whole collection (B3)."""
@@ -112,10 +115,10 @@ def linked_copy(atom, link: Link):
             held[name] = state.pop(name)
     osa = object.__setattr__
     osa(copy, "_linked_state", held)
+    cls = type(atom)
+    for name in cls._all_runtime_fields:
+        osa(copy, name, getattr(cls, name, None))
     osa(copy, "_link", link)
-    osa(copy, "_changes", ())
-    osa(copy, "_whole", False)
-    osa(copy, "_written", None)
     return copy
 
 

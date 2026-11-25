@@ -1,18 +1,20 @@
 """Serializability checker over the closed set of operations (spec section 12 item 2).
 
 Threads run randomly generated programs (fixed seed) on a small state: an object root, a
-Dictionary, a HashDictionary, a Set, a CountedSet and a RepeatedKeysDictionary root, a key space
-shared by all, and mutable cells.  A root's kind changes too: ``root_reset`` writes a value of
-any kind, ``obj_set`` an object over a collection and a creating collection write (``d_set``,
-``s_add``, ``cs_add``, ``r_add``) a collection over an object, so linked collection writes meet
-concurrent class changes (R12).  Each thread starts at one barrier
+Dictionary, a HashDictionary, a Set, a CountedSet, a RepeatedKeysDictionary and a List root, a
+key space shared by all, and mutable cells.  A root's kind changes too: ``root_reset`` writes a
+value of any kind, ``obj_set`` an object over a collection and a creating collection write
+(``d_set``, ``s_add``, ``cs_add``, ``r_add``, ``l_append``) a collection over an object, so
+linked collection writes meet concurrent class changes (R12).  Each thread starts at one barrier
 and retries a conflicting program in a fresh transaction (no sleep).  For each committed transaction the test records the database
 version it published (``Transaction.committed_version``, its place in the commit order), its
 program and every value it read; a transaction that published nothing (R23) records the
 version it read.  :func:`tests.support.serial_model.check_history` then re-runs the programs in
 commit order on the serial model: every value read and the final state must match.  The
 CountedSet and RepeatedKeysDictionary writes have no precondition: the checker proves their
-composition (D26) serializable, including a decrement past 0.
+composition (D26) serializable, including a decrement past 0; the List appends have none either
+(appended in commit order), its ``set_at``/``get_at`` take a position unit, a negative position
+and the structural operations (``insert_at``, ``remove_at``) the whole list (R14, R15).
 
 The interleaving is nondeterministic; the assertion is not: whatever order the commits took,
 the history must be serializable in that order (spec section 2).
@@ -23,7 +25,7 @@ a linked write reapplied over a root whose class changed (R12), a commit order t
 match the published versions, and a read-only transaction that sees no consistent prefix.  The
 report line counts the class changes committed and the R12 conflicts they caused, the conflicts
 by unit and root kind, and the commits whose collection intentions were reapplied over a
-concurrent change of the same root (composed).  Later tasks (7, 9, 10) add their operations to
+concurrent change of the same root (composed).  Later tasks (9, 10) add their operations to
 the mix.
 """
 import random
@@ -39,9 +41,10 @@ from proto_db.preconditions import UnitKind
 from proto_db.storage.memory import MemoryStorage
 from proto_db.transactions import ObjectSpace
 from tests.concurrency.harness import report, run_threads
-from tests.support.serial_model import (COLLECTIONS, COUNTED_SET_OPS, DICTIONARY_AND_CELL_OPS, MULTIMAP_OPS,
-                                        OBJECT, RECORDS, SET_OPS, Op, Record, StateNames, capture, check_history,
-                                        execute, family_of, kinds_by_version, random_program, roots_by_version)
+from tests.support.serial_model import (COLLECTIONS, COUNTED_SET_OPS, DICTIONARY_AND_CELL_OPS, LIST_OPS,
+                                        MULTIMAP_OPS, OBJECT, RECORDS, SET_OPS, Op, Record, StateNames, capture,
+                                        check_history, execute, family_of, kinds_by_version, random_program,
+                                        roots_by_version)
 
 SEED = 20261124
 THREADS = 4
@@ -49,19 +52,20 @@ PER_THREAD = 200
 
 NAMES = StateNames(
     roots={"obj": OBJECT, "dict": "Dictionary", "hdict": "HashDictionary", "set": "Set", "cset": "CountedSet",
-           "rkd": "RepeatedKeysDictionary"},
+           "rkd": "RepeatedKeysDictionary", "list": "List"},
     keys=tuple(f"k{i}" for i in range(6)),
     cells=tuple(f"c{i}" for i in range(4)),
 )
 
-#: The draw: every operation of Tasks 2-4 and 6, with the operations on fine units (keys,
-#: elements, counts, records) and the name-set reads drawn more often, so the class changes that
-#: root_reset, obj_set and the creating writes, and the six roots, do not crowd out the
-#: unit-level interleavings (each dropped precondition kind was detected in 5 of 5 runs).
+#: The draw: every operation of Tasks 2-4, 6 and 7, with the operations on fine units (keys,
+#: elements, counts, records, positions) and the name-set reads drawn more often, so the class
+#: changes that root_reset, obj_set and the creating writes, and the seven roots, do not crowd out
+#: the unit-level interleavings.
 MIX = (DICTIONARY_AND_CELL_OPS + ("root_names", "c_names") * 2 + ("d_get", "d_has", "d_set", "d_remove") * 4
        + SET_OPS + ("s_has", "s_add", "s_remove") * 3
        + COUNTED_SET_OPS + ("cs_count", "cs_has", "cs_add", "cs_remove") * 4
-       + MULTIMAP_OPS + ("r_get", "r_has", "r_add", "r_remove_record") * 3)
+       + MULTIMAP_OPS + ("r_get", "r_has", "r_add", "r_remove_record") * 3
+       + LIST_OPS + ("l_get", "l_set", "l_append", "l_extend") * 3)
 
 pytestmark = [pytest.mark.freethreaded, pytest.mark.timeout(240)]
 
@@ -95,6 +99,7 @@ def _seed_state(db, rng):
         for k in rng.sample(NAMES.keys, 3):
             r = r.set_at(k, rng.randrange(RECORDS))
         tr.set_root_object("rkd", r)
+        tr.set_root_object("list", tr.new_list().extend(rng.choice(NAMES.values) for _ in range(3)))
         for name in NAMES.cells[:3]:
             tr.new_mutable(name, rng.choice(NAMES.values))
     db.run(build)
@@ -112,7 +117,8 @@ def _capture(db):
 MAX_ATTEMPTS = 100_000
 #: Operations that write a collection through its linked copy when the root holds one.
 _COLLECTION_WRITES = ("d_set", "d_remove", "s_add", "s_remove", "s_union", "s_difference", "s_intersection",
-                      "cs_add", "cs_remove", "r_add", "r_remove_record", "r_remove_key")
+                      "cs_add", "cs_remove", "r_add", "r_remove_record", "r_remove_key", "l_set", "l_append",
+                      "l_extend", "l_insert", "l_remove")
 
 
 class Stats:

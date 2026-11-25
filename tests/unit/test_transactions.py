@@ -316,12 +316,14 @@ def test_values_survive_the_transaction_that_loaded_them(db):
 
 
 def test_reading_a_root_and_checking_it_at_commit_do_not_load_it(tmp_path, monkeypatch):
-    """The read set tokenises atoms by pointer so that stubs stay unloaded (D34), also under the root lock."""
+    """The read set tokenises atoms by pointer so that stubs stay unloaded (D34), also under the root lock.
+
+    An object root: a collection root is linked when read (spec section 9), which loads it."""
     path = str(tmp_path / "space")
     s = ObjectSpace(FileStorage(path))
     db = s.new_database("db")
     with db.new_transaction() as tr:
-        tr.set_root_object("l", tr.new_list().append_last(1))
+        tr.set_root_object("l", tr.new_object(v=1))
         tr.set_root_object("x", 0)
     s.close()
     s = ObjectSpace(FileStorage(path))
@@ -339,7 +341,7 @@ def test_reading_a_root_and_checking_it_at_commit_do_not_load_it(tmp_path, monke
         tr.set_root_object("y", 2)
         tr.commit()     # the read set is compared with a newer root
         assert ptr not in fetched
-        assert list(read_root(db, "l")) == [1] and read_root(db, "y") == 2
+        assert read_root(db, "l").v == 1 and read_root(db, "y") == 2
     finally:
         s.close()
 
@@ -518,7 +520,8 @@ def test_blind_write_of_a_new_root_stores_it_as_written(db):
 
 
 def test_blind_write_of_a_value_whose_log_is_incomplete_replaces(db):
-    """A bulk-built or loaded collection carries content its log does not describe: last writer wins."""
+    """A collection not linked to the root (bulk-built, or another root's) replaces the root, compared
+    against the base (R11): with no concurrent change it is published as is."""
     with db.new_transaction() as tr:
         tr.set_root_object("d", tr.new_dictionary().set_at("a", 1))
         tr.set_root_object("src", Dictionary.from_items([("z", 26)], context=tr))
@@ -551,7 +554,7 @@ def test_blind_writes_of_a_non_mergeable_type_conflict(db):
     assert list(read_root(db, "l")) == [2]
 
 
-def test_rebase_conflict_is_a_conflict_and_publishes_nothing(space, db):
+def test_concurrent_replacements_conflict_and_publish_nothing(space, db):
     from proto_db.indexing import EqualityIndex
     with db.new_transaction() as tr:
         tr.set_root_object("d", tr.new_dictionary())

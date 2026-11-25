@@ -45,7 +45,8 @@ from ..values import canonical, is_atom, order_key, values_equal
 from . import avl
 from .linking import engine_reading, record_whole
 
-__all__ = ["IndexSet", "IndexedCollection", "ConcurrentOptimized", "net_effect", "same_value"]
+__all__ = ["IndexSet", "IndexedCollection", "ConcurrentOptimized", "net_effect", "same_value",
+           "whole_unless_logged"]
 
 #: Op-log kinds reserved for index-definition changes; collection ops must not start with "@".
 _INDEX_ADD = "@index_add"
@@ -541,6 +542,19 @@ class IndexedCollection(_Immutable, Atom):
 
 # -- ConcurrentOptimized -------------------------------------------------------------------
 
+def whole_unless_logged(collection, changes: dict) -> dict:
+    """``changes`` for ``collection._with``, marked whole (P-B) when they change persisted content
+    and extend no ``_changes`` (an operation outside the listed ones, e.g. a subclass method
+    calling ``_with`` directly): such a change cannot be reapplied at commit, so the version is
+    published as is under a whole-collection precondition instead of being silently dropped.
+    An explicit ``_whole`` is kept."""
+    content = any(name in type(collection)._fields for name in changes)
+    logged = len(changes.get("_changes", ())) > len(collection._changes)
+    if content and not logged and "_whole" not in changes:
+        changes["_whole"] = True
+    return changes
+
+
 def net_effect(ops: Iterable[tuple], key: Callable | None = None) -> list[tuple]:
     """Return the last op per key, ordered by the position of that last occurrence.
 
@@ -598,11 +612,7 @@ class ConcurrentOptimized:
         commit, so the version is published as is under a whole-collection precondition instead
         of being silently dropped.
         """
-        content = any(name in type(self)._fields for name in changes)
-        logged = len(changes.get("_changes", ())) > len(self._changes)
-        if content and not logged and "_whole" not in changes:
-            changes["_whole"] = True
-        return super()._with(**changes)
+        return super()._with(**whole_unless_logged(self, changes))
 
     def _logged(self, *ops: tuple) -> tuple:
         """Return this version's changes extended with ``ops`` (the receiver's are unchanged)."""

@@ -211,8 +211,8 @@ def test_subclass_overriding_set_at_is_object_root(db):
 
 def test_slice_result_assigned_takes_whole_collection(db):
     """P-B: a version from an unlisted operation (List.slice; Dictionary.rebuilt) is published with a
-    whole-collection precondition.  The List is linked in Task 7; until then its read records the
-    whole root (transitional), with the same effect."""
+    whole-collection precondition (the List's slice records it in the transaction as it reads the
+    whole list, R14)."""
     db.run(lambda tr: (tr.set_root_object("l", tr.new_list().extend([1, 2, 3])),
                        tr.set_root_object("d", tr.new_dictionary().set_at("a", 1))))
     a, b = db.new_transaction(), db.new_transaction()
