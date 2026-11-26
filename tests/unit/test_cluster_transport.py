@@ -171,17 +171,31 @@ def test_tcp_malformed_frame_drops_the_connection_not_the_listener(baseline_thre
 
 
 def test_tcp_send_to_a_peer_not_yet_listening_is_dropped_then_reconnects(baseline_threads):
-    probe = socket.socket()
-    probe.bind(("127.0.0.1", 0))
-    port = probe.getsockname()[1]
-    probe.close()
+    """A send to a peer whose port nobody listens on is dropped (never raised), and a later
+    send reaches the peer once it listens there.
+
+    No port race (the 2.0.0rc5 CI failure "Address already in use"): the peer's port is held for
+    the whole test by a socket bound with ``SO_REUSEADDR`` that never listens, so connects to it
+    are refused, no other socket (an outgoing connect's ephemeral port included) can take it,
+    and the transport later binds and listens on it alongside the held socket (Linux allows a
+    second ``SO_REUSEADDR`` bind while no socket listens on the address; the transport sets the
+    option).  No sleep decides the order either: the first message is known dropped (the drop
+    counter) before the peer listens, so every message the peer receives is a later one.  The
+    waits are liveness bounds, never asserted durations."""
+    holder = socket.socket()
+    holder.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    holder.bind(("127.0.0.1", 0))
+    port = holder.getsockname()[1]
     a = TcpTransport(reconnect_backoff=0.01)
     ia = Inbox()
     a.start("a", {"a": a.address, "b": ("127.0.0.1", port)}, ia)
     b = None
     try:
         a.send("b", _req("a", 1))        # nobody listens: dropped, never raises
-        time.sleep(0.05)
+        deadline = time.monotonic() + 5
+        while a.dropped < 1:
+            assert time.monotonic() < deadline, "the send to a peer nobody listens on was not dropped"
+            time.sleep(0.002)
         b = TcpTransport(port=port)
         ib = Inbox()
         b.start("b", {"a": a.address, "b": b.address}, ib)
@@ -194,6 +208,7 @@ def test_tcp_send_to_a_peer_not_yet_listening_is_dropped_then_reconnects(baselin
         a.stop()
         if b is not None:
             b.stop()
+        holder.close()
 
 
 def test_tcp_send_after_stop_is_a_silent_drop(baseline_threads):
