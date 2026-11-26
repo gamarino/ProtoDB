@@ -34,9 +34,10 @@ import pytest
 
 from proto_db.cluster.protocol import decode_labeled_root
 from proto_db.core.atom import AtomPointer
-from proto_db.errors import ProtoDBError, ProtoOutcomeUnknownError
+from proto_db.errors import ProtoConflictError, ProtoDBError, ProtoOutcomeUnknownError, ProtoTimeoutError
 from proto_db.storage.tiered import TieredStorage
 from proto_db.transactions import ObjectSpace
+from tests.support import stress
 from tests.support.cluster_load import Load, check_after_faults as _check
 from tests.support.power_loss import FrozenPowerLoss as _FrozenPowerLoss
 from tests.support.outcomes import CommitTokens, assert_outcomes_resolved, snapshot_of, write_token
@@ -368,10 +369,8 @@ def _die_in_window(tc, fs, point, *, persist_after: bool, rolled: bool = False) 
         # Durable at n1: its synced entry precedes the copy write (with three voters, n1
         # also accepted the root in that entry).
         ptr = AtomPointer(state["root"].segment, state["root"].offset)
-        deadline = time.monotonic() + 5.0
-        while st1._local_record(ptr) is None:
-            assert time.monotonic() < deadline, "the replica did not store during the holder's append"
-            time.sleep(0.001)
+        stress.wait(lambda: st1._local_record(ptr) is not None, 5.0,
+                    "the replica did not store during the holder's append", poll=0.001)
 
     def holder(*a, **kw):
         if point == "records sent":
@@ -402,12 +401,22 @@ def _die_in_window(tc, fs, point, *, persist_after: bool, rolled: bool = False) 
             die()
         send0(to, msg)
 
+    with c0._lock:
+        # n1 is n0's data replica by placement (its successor, D54) unless a setup commit hedged
+        # past it under load, which demotes it for a lease duration (timing only); the window's
+        # records would then go to n2 and n1 would never store them.  The schedule needs n1.
+        c0._replica_suspects.clear()
     st0.accept_replication = holder
     st1.accept_replication = data_replica
     c0.transport.send = n0_send
-    with pytest.raises(ProtoDBError):
-        tc.db("n0").run(write_z, retries=0)
-    assert n0_dead.is_set() and "root" in state, "the schedule did not run"
+    for _ in range(stress.attempts(10)):
+        with pytest.raises(ProtoDBError) as raised:
+            tc.db("n0").run(write_z, retries=0)
+        if n0_dead.is_set() or "root" in state or not isinstance(raised.value, (ProtoConflictError, ProtoTimeoutError)):
+            break
+        # The attempt ended before its records left (a lease or permission that ended under load,
+        # R82: "nothing was replicated"): it applied nothing, so the window is tried again.
+    assert n0_dead.is_set() and "root" in state, f"the schedule did not run: {raised.value!r}"
     if rolled:
         assert not state["had_file"], "the window's segment had a file before the window"
     tc.kill("n0")
@@ -643,7 +652,26 @@ def test_a_data_replica_holds_the_recarried_records_of_its_own_segment(tmp_path,
         ptrs = [AtomPointer(seg, start) for seg, start, _ in ranges if seg in stored._own]
         assert ptrs, "the window wrote no record of n0's own segment"
         assert all(stored._local_record(p) is None for p in ptrs), "n0 kept window records"
+        # Every term of n2 must be granted by n1, the one voter that accepted the root of the
+        # window: only then must n2 re-propose it.  That root was accepted by one voter of three,
+        # so it was never chosen, and a term granted by {n2, n0} rightly builds on the root
+        # before it (counter 3): n2's commit then gives 4, and the scenario under test never
+        # happens.  Which voters grant is up to the scheduler -- under load n0's grant can win
+        # the race, or n2's first terms (granted by n1) can end before the re-proposal commits
+        # and a later one be granted by n0 (the 2.0.0rc5 CI failure: 4, not 5).  So n0's grants
+        # to n2 are lost on the network until n2 has committed, a fault of the model: n0 still
+        # receives and acknowledges everything else, the records of the re-proposed root (as
+        # n2's data replica) included.
+        revived_send = tc["n0"].transport.send
+
+        def n0_grants_lost(to, msg):
+            if to == "n2" and msg["type"] == "grant":
+                return
+            revived_send(to, msg)
+
+        tc["n0"].transport.send = n0_grants_lost
         tc.commit("n2", incr)             # n2's term re-proposes the root, n0 its replica
+        tc["n0"].transport.send = revived_send
         assert _converge(tc, tc.ids, {4, 5}) == 5, "the root of the window was not re-proposed"
         _no_tier_failed(tc)
         tc.storages["n0"].checkpoint()
