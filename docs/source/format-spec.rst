@@ -36,15 +36,16 @@ The key words MUST, MUST NOT, SHOULD and MAY are used as in RFC 2119. A section 
      - Value
      - Where it is written
    * - Storage format (``FORMAT_VERSION``)
-     - 6
-     - every segment header and every root record; versions 2 to 6 are read, and 4 is written
-       unless the data uses a feature of 5 or 6 (`Format stability`_)
+     - 7
+     - every segment header and every root record; versions 2 to 7 are read; a segment is written
+       at 4 unless its records use a feature of 5 or 6, and every root record is written at 7
+       (feature ``preconditions``, `Format stability`_)
    * - Framed log format (``LOG_FORMAT_VERSION``)
      - 3
      - the header of every framed log file; versions 2 and 3 are read, and 2 is written unless the
        log is an acceptor log holding a versioned entry (kind 7, `The acceptor log (kind ROOT)`_)
    * - Cluster protocol (``PROTOCOL_VERSION``)
-     - 15
+     - 16
      - the ``v`` field of every cluster message; no other version is accepted
 
 There are three levels of conformance:
@@ -119,7 +120,25 @@ revision (``proto_db.storage.format.WRITE_FORMAT_VERSION``) for data that uses n
 envelope has the key ``"p"``) is version 5, and so is ``registry`` (a record of one of the
 runtime registry's built-in types, aliases 22 and 23, `Registry roots`_); ``catalog`` (a record of
 one of the semantic catalog's built-in types, aliases 24 to 34, `Semantic catalog (format 6)`_) is
-version 6.
+version 6; ``preconditions`` (the commit validation of the precondition concurrency model) is
+version 7 and marks root records only (below).
+
+**The version-7 root mark (feature ``preconditions``).** Every writer that validates commits by
+the precondition model (each commit's read and write preconditions checked against the root it
+publishes on, in every process and every cluster node) writes **every** root record at version 7,
+whatever the data reachable from it (``proto_db.storage.format.ROOT_WRITE_VERSION``). The mark
+adds no byte to any record: segments keep the lowest-sufficient-version rule (a space whose data
+uses no feature after 4 keeps version-4 segments), and the root record's shape is unchanged. Its
+only meaning is a lock-out: a writer that predates the model applies "the last writer wins" and
+would break the guarantee of every other writer, so it must not write the space, and a reader of
+version 6 or lower refuses a version-7 root (``ProtoNotSupportedError``) before it writes. The
+upgrade is **one-way**: the first commit of a model writer to a space of version 2 to 6 opens it
+without any migration (no segment or record is rewritten, the persisted content of collections
+and roots is read as it is) and publishes a version-7 root; from then on software without the
+model can neither read nor write the space. A frozen space of format 6 written by ``v2.0.0rc4``
+(``tests/conformance/frozen/v6-catalog/``, its digests in ``v6-catalog.json``) is the test of that
+upgrade. The rule "a root's version is never lower than the root it replaces" is unchanged; the
+floor of 4 below becomes 7 for root records.
 
 A segment header is written before the segment's records, so ``proto_db`` opens a new segment
 for a record that needs a later version than the open segment's, and a segment's version is the
@@ -128,8 +147,8 @@ record never lands in a segment of a lower version than it needs). Every feature
 the bytes of the records that use it. A node that writes replicated or recovered records into a
 segment file it did not create (a cluster copy, a redo from the acceptor log) writes the header
 version of the segment's first record, and the highest version it writes while it lacks that
-record. A root record's version is the highest of 4, the version of the root it replaces and the
-highest segment version its writer has written; in cluster mode the committer's root version
+record. A root record's version is the highest of 7 (the root mark above; 4 before it), the
+version of the root it replaces and the highest segment version its writer has written; in cluster mode the committer's root version
 travels with the root (the fifth element of a wire *root*, `Cluster wire protocol`_, and the
 versioned entry of the acceptor log), and a node that persists the root writes the highest of
 that version and its own, so a root over format-5 data is format 5 whichever node persists it.
@@ -140,13 +159,28 @@ record needs 5; this is conservative (nothing is lost or misread) and accepted.
 
 **The pinned vectors.** ``tests/conformance/vectors.sha256`` lists the SHA-256 of every file
 under ``tests/conformance/vectors/`` (``<hex digest>  <path>``, one line per file, sorted by path
-in code point order, ``/`` as the separator), then the digest of ``manifest.json``. The SHA-256
-of that list file is ``278e791c2741d3a74500089efbdc34bf489860e5e2a175ad557edce44085185e``. ``test_conformance.py`` checks that the committed files
+in code point order, ``/`` as the separator), then the digest of ``manifest.json``, then the
+digests of the conformance data written by hand and never generated, by path relative to
+``vectors/``: the concurrency scenarios (``../concurrency_scenarios.json``, below) and every file
+of the frozen spaces (``../frozen/``, sorted by path). The SHA-256
+of that list file is ``9a0cc6def86aaa299b8591df1fbfec96971f785df089b63f1e10196d9a73bfea``. ``test_conformance.py`` checks that the committed files
 match the list and that this page states the list's digest. Each vector file is governed by
 the number that covers what it holds: ``vectors/cluster/*.log`` by ``LOG_FORMAT_VERSION``,
 ``vectors/cluster/messages/`` by ``PROTOCOL_VERSION``, every other file by ``FORMAT_VERSION``.
 A change to an existing vector file is a change of its number's items; a new vector adds lines
 and changes the manifest's line, and raises nothing by itself.
+
+**The concurrency scenarios.** ``tests/conformance/concurrency_scenarios.json`` holds, as data
+only, the conformance scenarios of the precondition model: a base state, the operations of two
+transactions opened on it, the commit order, and the expected final state or the conflict unit
+of the second commit, with at least one scenario per row of the model's tables of writes and
+reads. Its ``notation`` entry defines the operations and the state. A state is compared as exact
+JSON text, so a published ``10`` where the serial order leaves ``10.0`` is a different state, and
+after a conflict the state is the first commit's. ``proto_db`` runs every
+scenario in standalone, group-commit and cluster mode
+(``tests/conformance/test_concurrency_scenarios.py``); another implementation runs the same file
+with its own runner. The file is governed by ``FORMAT_VERSION`` like the vectors: a changed
+outcome is a change of the version-7 items.
 
 Two extensions were decided after the freeze. Both are **additive**: no existing byte, order,
 hash or token changes, data written without them keeps its version and its meaning, and they
@@ -319,7 +353,8 @@ Segment header (26 bytes)
      - magic ``PDB2SEG\0`` (``50 44 42 32 53 45 47 00``)
    * - 8
      - 2
-     - format version, ``u16``: 4 (writers); 2, 3 or 4 accepted by readers
+     - format version, ``u16``: the lowest sufficient (4, 5 or 6, `Format stability`_) by
+       writers; 2 to 7 accepted by readers
    * - 10
      - 16
      - the segment's UUID; it MUST equal the UUID in the file or object name
@@ -379,12 +414,13 @@ Root records
 ``space.root`` holds ``crc32 (u32) | msgpack body``, where the CRC covers the body and the
 body is the map, in this key order::
 
-    {"version": 4, "segment": <16 bytes>, "offset": <int >= 0>, "epoch": <int >= 0>}
+    {"version": 7, "segment": <16 bytes>, "offset": <int >= 0>, "epoch": <int >= 0>}
 
 ``segment`` and ``offset`` point at the record of the space's :ref:`SpaceRoot <spaceroot>` atom;
 ``epoch`` counts the publications (the compare-and-swap token). A reader checks the CRC and the
-field types (``ProtoCorruptionError`` otherwise) and accepts ``version`` 2, 3 or 4, reading
-each as the current version (the shape did not change); another version is
+field types (``ProtoCorruptionError`` otherwise) and accepts ``version`` 2 to 7, reading
+each as the current version (the shape did not change); writers write 7 (the root mark,
+`Format stability`_); another version is
 ``ProtoNotSupportedError``. Extra keys are ignored by the file storage's decoder. A missing
 ``space.root`` file means the space is empty.
 
@@ -1438,6 +1474,15 @@ Key-group indexes
     MISSING is filed under the key MISSING. A key with no member left is removed from
     ``groups``. The two classes differ only in the plans they offer.
 
+    ``unique`` (bool, ``EqualityIndex`` only): part of the index definition. A writer writes it
+    only when it is True; an index without the attribute (every index written before it, and
+    every non-unique index) reads as not unique. A unique index holds at most one occurrence
+    under each key other than MISSING and None, and no element with an unorderable key (its
+    ``side`` group is empty). The attribute adds no format version: a reader that does not know
+    it reads a unique index as a plain one, and a writer that does not know it maintains the
+    index without enforcing the constraint, so a collection with a unique index should only be
+    changed by a writer that knows ``unique``.
+
     Indexes written before format 3's CountedKeyNode (plain KeyNode trees, no ``weight``) are
     still read and answer every query; they offer no rank access until rebuilt (D56).
 
@@ -1598,8 +1643,9 @@ To commit a new version a writer appends the new atoms (children before the atom
 to them), then a new DatabaseRoot (``version`` + 1, ``previous`` the version it was built on,
 ``origin`` carried, ``committed_at`` now in UTC), a new ``databases`` Dictionary and a new
 SpaceRoot, and publishes the SpaceRoot's pointer as the new root (`Storage layouts`_). Conflict
-detection between concurrent writers (read sets, merges of concurrently written collections)
-is the library's job and leaves no trace in the format, except the epoch check of the publish.
+detection between concurrent writers (preconditions and the reapplication of intentions) is the
+library's job and leaves no trace in the format, except the epoch check of the publish and the
+version-7 root mark (`Format stability`_).
 
 
 Semantic catalog (format 6)
@@ -1971,8 +2017,8 @@ read it as specified.
 * **Relationships.** A relationship atom is created with every one of its roles and its required
   fields; an atom never changes, so a role it lacks could never be added later.
 * **Version-bound roles** (``binding="version"``). The ``version`` of a bound reference is the
-  target's **field version**, current when the operation is applied (in direct mode in the
-  transaction's view, validated by its read set at commit; in intent mode at replay). The rule
+  target's **field version**, current when the operation is applied in the transaction's view,
+  and validated at commit by the precondition on the target's cell. The rule
   compares the target's fields only (attributes of kind ``field``, by value), never how they were
   written. The transaction keeps at most one record per target, the **kept record**, which no
   binding has before the first one that needs it. A binding binds:
@@ -2007,9 +2053,8 @@ published. Raw cell writes are not checked: these rules bind the semantic operat
   **MUST** hold at least one member. A relationship atom holds every role by construction. ``0..1`` and
   ``many`` always hold. The rule is named ``<type name>.<role>.cardinality``.
 * **Enforced invariants** (a Constraint whose ``enforced`` is true) are evaluated on every entity whose
-  operands changed (an entity created counts as changed), on the state the commit publishes: after the
-  replay in intent mode, and in direct mode when each operation is applied, on the transaction's view,
-  the reads entering its read set. The tree is evaluated on the entity's record (`The expression
+  operands changed (an entity created counts as changed), when each operation is applied, on the transaction's
+  view, the reads it makes recorded as preconditions validated at commit. The tree is evaluated on the entity's record (`The expression
   language`_); true holds, false and MISSING violate the invariant, and any other result is
   ``ProtoValidationError``. A Constraint whose ``enforced`` is false is never checked.
 * **Enforceable invariants.** An enforced invariant **MUST** read only its entity's own attributes:
@@ -2066,7 +2111,9 @@ ran, and nothing older (history is the chain of versions, `Space and database ro
 that is not a ``List``, or an element that is not an IntentRecord, is ``ProtoCorruptionError``
 when read. ``IntentRecord.transaction`` is the ``version`` of the DatabaseRoot the commit
 produced. A database that never used intents has no ``__intentLog``; a commit that records no
-operation writes none, and so removes the one the version before held.
+operation writes none, and so removes the one the version before held. ``proto_db`` 2.0.0rc5 removed the
+intents mode (D73): it reads an ``__intentLog`` as described here, never writes one, and its next commit to
+that base drops it.
 
 Each record is one top-level operation of an intent transaction: an intent invocation or one of the
 five primitives ``create``, ``update``, ``link``, ``unlink`` and ``relate``. An ``Intent`` record
@@ -2349,8 +2396,12 @@ protocol 15. The vectors hold one frame of every type.
 A minimal external writer (file storage)
 ----------------------------------------
 
-A writer that implements neither the merge of concurrent writers nor the cluster protocol can
-still share a file-storage directory with ``proto_db`` processes. It commits by optimistic
+A writer that implements neither the commit validation of concurrent writers nor the cluster
+protocol could share a file-storage directory with ``proto_db`` processes up to format 6. Since the
+version-7 root mark (`Format stability`_) it can no longer: every root ``proto_db`` publishes is
+version 7, which step 4 below refuses, and the version-4 root of step 7 would lower the root's version.
+The procedure is kept as the specification of root publication, and for spaces whose root is still
+version 6 or lower. Such a writer commits by optimistic
 retry: when the published root moved since it read it, it **re-reads the root and redoes its
 commit**; it never publishes over a root it did not build on.
 
@@ -2423,8 +2474,8 @@ fingerprint).
 Implementation-specific (nothing on disk depends on them, and an implementation MAY do
 otherwise): lazy loading and stubs (portable as a technique, R83a); the decoded-atom cache, the
 record and page caches, residency and unloading; the query result cache and query plans; the
-per-version operation logs of collections (never persisted) and the merge of concurrent
-writers; group commit; durability modes (``fsync``, ``flush``, ``none``) other than the acceptor
+per-version records of intentions of collections (never persisted) and how concurrent writers
+are validated and their intentions reapplied; group commit; durability modes (``fsync``, ``flush``, ``none``) other than the acceptor
 log's unconditional sync; segment size, sealing, shipping and checkpoint timing; the
 ``ValueBox`` threshold, tree shapes, bucket order and IVF training (they change bytes, not
 meaning); pager tokens (a client-side msgpack

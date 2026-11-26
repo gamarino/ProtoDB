@@ -16,10 +16,13 @@ index events the mutation implies: ``("add", e)``, ``("remove", e)``,
 ``("replace", old, new)``.  An empty sequence declares a no-op on the content:
 the mutator may then return the receiver itself or a new collection with the
 same content; otherwise it must return a new object.  ConcurrentOptimized
-collections log intent (D22): every mutator call, no-ops included, returns a
-new version with a longer op log, and a no-op reuses the receiver's indexes.
-Their factories also provide ``rebase_model`` so that ``check_rebase`` can
-verify ``rebase_onto`` against an independent model.
+collections record intent (D22): every mutator call, no-ops included, returns a
+new version with longer ``_changes``, and a no-op reuses the receiver's indexes.
+Their factories also provide ``apply_op`` (one recorded op applied through the
+collection's public mutators) so that ``check_intentions`` can verify the
+intention contract of the precondition model (spec R34): a version's changes
+reapplied on a concurrently modified collection equal the serial execution of
+the same operations after the concurrent ones.
 """
 from __future__ import annotations
 
@@ -29,6 +32,7 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 from proto_db.collections.base import ConcurrentOptimized, IndexedCollection
+from proto_db.errors import ProtoValidationError
 from proto_db.query.plans import CollectionScanPlan
 from proto_db.storage.memory import MemoryStorage
 from proto_db.values import order_key
@@ -49,10 +53,9 @@ class CollectionFactory:
     ``mutators`` maps a name to a mutator (see the module docstring);
     ``element_key`` maps an element to a hashable key that is equal for equal
     elements (default ``order_key``; override for unorderable elements);
-    ``rebase_model(theirs, op_log) -> Counter`` (required for ConcurrentOptimized
-    collections) returns the element-key multiset expected from replaying the
-    net intent of ``op_log`` onto collection ``theirs``, computed independently
-    of the collection's own replay code.
+    ``apply_op(collection, op) -> collection`` (required for ConcurrentOptimized
+    collections) applies one op of ``_changes`` through the collection's public
+    mutators, independently of its own reapplication code: the serial execution.
     """
 
     name: str
@@ -60,7 +63,7 @@ class CollectionFactory:
     populate: Callable[[IndexedCollection, random.Random], IndexedCollection]
     mutators: dict = field(default_factory=dict)
     element_key: Callable = order_key
-    rebase_model: Callable | None = None
+    apply_op: Callable | None = None
 
 
 COLLECTION_FACTORIES: list[CollectionFactory] = []
@@ -80,7 +83,7 @@ def mutator_cases():
             for f in COLLECTION_FACTORIES for m in f.mutators for s in SEEDS]
 
 
-def rebase_cases():
+def intention_cases():
     """``(factory, seed)`` pairs for every ConcurrentOptimized factory."""
     import pytest
     return [pytest.param(f, s, id=f"{f.name}-{s}") for f in COLLECTION_FACTORIES
@@ -139,7 +142,7 @@ def assert_round_trip(factory, coll, context=None) -> None:
     for name in coll.index_names():
         assert loaded.get_index(name).events == coll.get_index(name).events
     if isinstance(coll, ConcurrentOptimized):
-        assert loaded._op_log == ()
+        assert loaded._changes == ()
 
 
 # -- checks -------------------------------------------------------------------------------
@@ -153,7 +156,7 @@ def check_mutator(factory: CollectionFactory, mutator_name: str, seed: int) -> N
     before_count = coll.count
     before_indexes = coll.indexes
     before_events = {n: coll.get_index(n).events for n in coll.index_names()}
-    before_log = getattr(coll, "_op_log", None)
+    before_log = getattr(coll, "_changes", None)
 
     result = factory.mutators[mutator_name](coll, rng)
     if result is None:
@@ -169,8 +172,8 @@ def check_mutator(factory: CollectionFactory, mutator_name: str, seed: int) -> N
     if isinstance(coll, ConcurrentOptimized):
         # Intent logging: every call yields a new version with a longer log; a no-op does no index work.
         assert new is not coll, "a ConcurrentOptimized mutator must return a new version"
-        assert len(new._op_log) > len(before_log), "the mutator did not log its intent"
-        assert new._op_log[:len(before_log)] == before_log
+        assert len(new._changes) > len(before_log), "the mutator did not log its intent"
+        assert new._changes[:len(before_log)] == before_log
         if not expected:
             assert new.indexes is coll.indexes, "a no-op must reuse the receiver's indexes"
 
@@ -178,7 +181,7 @@ def check_mutator(factory: CollectionFactory, mutator_name: str, seed: int) -> N
     assert _sequence(factory, coll) == before_seq
     assert coll.count == before_count
     assert coll.indexes is before_indexes
-    assert getattr(coll, "_op_log", None) == before_log
+    assert getattr(coll, "_changes", None) == before_log
     for name, events in before_events.items():
         assert coll.get_index(name).events == events
 
@@ -250,16 +253,19 @@ def _snapshot(coll):
 
 
 def _state(factory, coll):
-    return (_sequence(factory, coll), coll.count, coll.indexes, coll._op_log,
+    return (_sequence(factory, coll), coll.count, coll.indexes, coll._changes,
             {n: coll.get_index(n).events for n in coll.index_names()})
 
 
-def check_rebase(factory: CollectionFactory, seed: int, steps: int = 15) -> None:
-    """``mine.rebase_onto(theirs)`` from a common snapshot equals the intent model and keeps indexes."""
-    assert factory.rebase_model is not None, f"{factory.name} is ConcurrentOptimized but has no rebase_model"
+def check_intentions(factory: CollectionFactory, seed: int, steps: int = 15) -> None:
+    """The intention contract (spec R34): from a common snapshot, ``mine._reapplied_on(theirs)``
+    equals the serial execution of ``mine``'s recorded operations after ``theirs``'s
+    (``factory.apply_op`` one by one), keeps every index consistent and leaves both versions
+    unchanged."""
+    assert factory.apply_op is not None, f"{factory.name} is ConcurrentOptimized but has no apply_op"
     rng = random.Random(seed)
     snapshot = _snapshot(indexed_sample(factory, rng))
-    assert snapshot._op_log == ()
+    assert snapshot._changes == ()
     names = sorted(factory.mutators)
 
     def mutate(coll):
@@ -272,15 +278,26 @@ def check_rebase(factory: CollectionFactory, seed: int, steps: int = 15) -> None
     mine, theirs = mutate(snapshot), mutate(snapshot)
     mine_before, theirs_before = _state(factory, mine), _state(factory, theirs)
 
-    merged = mine.rebase_onto(theirs)
+    if mine._whole:
+        import pytest
+        # A whole version (an operation that takes the whole collection, e.g. Set.intersection,
+        # or an index change) is published as is under Unit(WHOLE), never reapplied (P-B, R26).
+        with pytest.raises(ProtoValidationError):
+            mine._reapplied_on(theirs)
+        assert _state(factory, mine) == mine_before and _state(factory, theirs) == theirs_before
+        return
+    reapplied = mine._reapplied_on(theirs)
+    serial = theirs
+    for op in mine._changes:
+        serial = factory.apply_op(serial, op)
 
     assert _state(factory, mine) == mine_before and _state(factory, theirs) == theirs_before
-    assert type(merged) is type(mine)
-    assert _content(factory, merged) == factory.rebase_model(theirs, mine._op_log)
-    assert merged.count == len(list(merged.elements()))
-    assert merged.index_names() == theirs.index_names()
-    assert_indexes_consistent(factory, merged)
-    assert_round_trip(factory, merged, snapshot.context)
+    assert type(reapplied) is type(mine)
+    assert _content(factory, reapplied) == _content(factory, serial)
+    assert reapplied.count == len(list(reapplied.elements())) == serial.count
+    assert reapplied.index_names() == theirs.index_names()
+    assert_indexes_consistent(factory, reapplied)
+    assert_round_trip(factory, reapplied, snapshot.context)
 
 
 # == REGISTRATIONS ========================================================================
@@ -326,14 +343,11 @@ def _toy_factory() -> CollectionFactory:
         new = fresh(coll, rng)
         return coll.replace(old, new), [("replace", old, new)]
 
-    def rebase_model(theirs, op_log):
-        members = {order_key(e) for e in theirs.elements()}
-        for kind, e in op_log:
-            (members.add if kind == "add" else members.discard)(order_key(e))
-        return Counter(members)
+    def apply_op(coll, op):
+        return coll.add(op[1]) if op[0] == "add" else coll.discard(op[1])
 
     return CollectionFactory(
-        name="ToySet", empty=ToySet, populate=populate, rebase_model=rebase_model,
+        name="ToySet", empty=ToySet, populate=populate, apply_op=apply_op,
         mutators={"add_new": add_new, "add_existing": add_existing, "discard_present": discard_present,
                   "discard_absent": discard_absent, "replace": replace})
 
@@ -426,17 +440,11 @@ def _dictionary_like_factory(name, cls) -> CollectionFactory:
     def remove_absent(coll, rng):
         return coll.remove_at(fresh_key(coll, rng)), []
 
-    def rebase_model(theirs, op_log):
-        mapping = {order_key(k): v for k, v in theirs.items()}
-        for op in op_log:
-            if op[0] == "set":
-                mapping[order_key(op[1])] = op[2]
-            elif op[0] == "remove":
-                mapping.pop(order_key(op[1]), None)
-        return Counter(order_key(v) for v in mapping.values())
+    def apply_op(coll, op):
+        return coll.set_at(op[1], op[2]) if op[0] == "set" else coll.remove_at(op[1])
 
     return CollectionFactory(
-        name=name, empty=cls, populate=populate, rebase_model=rebase_model,
+        name=name, empty=cls, populate=populate, apply_op=apply_op,
         mutators={"set_new": set_new, "set_existing": set_existing, "remove_present": remove_present,
                   "remove_absent": remove_absent})
 
@@ -518,25 +526,14 @@ def _set_factory() -> CollectionFactory:
         other = other_set(coll, rng)
         return coll.difference(other), [("remove", e) for e in other.elements() if coll.has(e)]
 
-    def rebase_model(theirs, op_log):
-        members = {order_key(e) for e in theirs.elements()}
-        for kind, e in op_log:
-            (members.add if kind == "add" else members.discard)(order_key(e))
-        return Counter(members)
+    def apply_op(coll, op):
+        return coll.add(op[1]) if op[0] == "add" else coll.remove(op[1])
 
     return CollectionFactory(
-        name="Set", empty=Set, populate=populate, rebase_model=rebase_model,
+        name="Set", empty=Set, populate=populate, apply_op=apply_op,
         mutators={"add_new": add_new, "add_existing": add_existing, "remove_present": remove_present,
                   "remove_absent": remove_absent, "union": union, "intersection": intersection,
                   "difference": difference})
-
-
-def _counter_replay(counter: Counter, kind: str, key) -> None:
-    """Apply one counter op to ``counter`` (``add`` increments, ``remove`` decrements, clamped at 0)."""
-    if kind == "add":
-        counter[key] += 1
-    elif counter[key] > 0:
-        counter[key] -= 1
 
 
 def _counted_set_factory() -> CollectionFactory:
@@ -566,14 +563,11 @@ def _counted_set_factory() -> CollectionFactory:
     def remove_absent(coll, rng):
         return coll.remove(_fresh_element(coll.has, rng)), []
 
-    def rebase_model(theirs, op_log):
-        counter = Counter({order_key(e): n for e, n in theirs.items()})
-        for kind, e in op_log:
-            _counter_replay(counter, kind, order_key(e))
-        return Counter(k for k, n in counter.items() if n > 0)
+    def apply_op(coll, op):
+        return coll.add(op[1]) if op[0] == "add" else coll.remove(op[1])
 
     return CollectionFactory(
-        name="CountedSet", empty=CountedSet, populate=populate, rebase_model=rebase_model,
+        name="CountedSet", empty=CountedSet, populate=populate, apply_op=apply_op,
         mutators={"add_new": add_new, "add_existing": add_existing, "remove_last": remove_last,
                   "remove_decrement": remove_decrement, "remove_absent": remove_absent})
 
@@ -629,20 +623,16 @@ def _repeated_keys_dictionary_factory() -> CollectionFactory:
     def remove_key_absent(coll, rng):
         return coll.remove_at(fresh_key(coll, rng)), []
 
-    def rebase_model(theirs, op_log):
-        model = {order_key(k): Counter({order_key(v): n for v, n in cs.items()}) for k, cs in theirs.items()}
-        for op in op_log:
-            k = order_key(op[1])
-            if op[0] == "remove_key":
-                model.pop(k, None)
-            else:
-                _counter_replay(model.setdefault(k, Counter()), "add" if op[0] == "add" else "remove",
-                                order_key(op[2]))
-        return Counter(v for counter in model.values() for v, n in counter.items() if n > 0)
+    def apply_op(coll, op):
+        if op[0] == "remove_key":
+            return coll.remove_at(op[1])
+        if op[0] == "add":
+            return coll.set_at(op[1], op[2])
+        return coll.remove_record(op[1], op[2])
 
     return CollectionFactory(
         name="RepeatedKeysDictionary", empty=RepeatedKeysDictionary, populate=populate,
-        rebase_model=rebase_model,
+        apply_op=apply_op,
         mutators={"add_new_key": add_new_key, "add_new_value": add_new_value,
                   "add_existing_value": add_existing_value, "remove_record_last": remove_record_last,
                   "remove_record_decrement": remove_record_decrement,

@@ -2,10 +2,10 @@
 persistent update cost (versions) and the canonical() re-walk.
 
 Durability is matched explicitly when SQLite is the reference (rulings R37, R45): a
-ProtoDB :class:`~proto_db.FileStorage` in ``fsync`` / ``flush`` / ``none`` mode is
+proto_db :class:`~proto_db.FileStorage` in ``fsync`` / ``flush`` / ``none`` mode is
 compared with SQLite (WAL journal) at ``synchronous=FULL`` / ``NORMAL`` / ``OFF``
 (:data:`benchmarks.support.SQLITE_SYNC`).  Every variant's final state is read back and
-checked (counts and id sums), the ProtoDB ones through a newly opened space.
+checked (counts and id sums), the proto_db ones through a newly opened space.
 """
 import os
 import random
@@ -251,7 +251,7 @@ def commit_durability(ctx, p):
         result.add_rate(f"sqlite3 synchronous={SQLITE_SYNC[mode]} commits/s", [k / s for s in samples], "commits/s")
     result.checksum, result.expected = checksum, expected
     result.notes.append("flush and SQLite NORMAL are in the same class: process-crash safe, not power-loss "
-                        "safe. ProtoDB flush also fsyncs the root (D19), which costs sync work without making "
+                        "safe. proto_db flush also fsyncs the root (D19), which costs sync work without making "
                         "the commit's data power-loss safe; no crash-matrix test covers flush under power loss")
     return result
 

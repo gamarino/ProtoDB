@@ -14,6 +14,15 @@ proto_db.transactions
 .. automodule:: proto_db.transactions
    :members:
 
+proto_db.preconditions
+----------------------
+
+The units, ranges and read log of the precondition concurrency model (:doc:`concurrency-model`, D73).
+``ProtoConflictError.unit`` is a :class:`~proto_db.preconditions.Unit`.
+
+.. automodule:: proto_db.preconditions
+   :members: UnitKind, Unit, KeyRange, ReadLog, PRECONDITION_ESCALATION_LIMIT
+
 proto_db.core.atom
 ------------------
 

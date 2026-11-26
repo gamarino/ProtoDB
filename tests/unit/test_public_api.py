@@ -1,4 +1,4 @@
-"""The top-level ``proto_db`` package: the public API of ProtoDB 2.0 (Task 8.5, D47).
+"""The top-level ``proto_db`` package: the public API of proto_db 2.0 (Task 8.5, D47).
 
 Catches: a public name that no longer resolves or resolves to the wrong object, a public
 name without a docstring, ``import proto_db`` importing submodules or optional

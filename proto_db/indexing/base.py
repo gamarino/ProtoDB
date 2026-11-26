@@ -141,6 +141,13 @@ class Index(Atom, metaclass=ABCMeta):
     _plan_cacheable: bool = False
     #: Public fields holding a :class:`KeySpec`, persisted as plain data.
     _keyspec_fields: tuple = ("key_spec",)
+    #: True when :meth:`with_added_key`, :meth:`with_removed_key` and :meth:`with_replaced_keys`
+    #: maintain this index from precomputed keys alone (spec R49), so a collection holding it can
+    #: reapply a transaction's intentions under the space root without running an extractor.
+    #: False by default: like ``_plan_cacheable`` it is read from the index's own class only, so a
+    #: subclass (which may change what its hooks do) opts in by restating it.  A collection with an
+    #: index that does not reapply from keys takes the whole collection on every write (R30).
+    _keyed_reapplication: bool = False
 
     def __init_subclass__(cls, **kwargs):
         missing = {"name", "key_spec"} - set(cls._definition)
@@ -234,6 +241,50 @@ class Index(Atom, metaclass=ABCMeta):
             raise ProtoNotSupportedError(
                 f"Index {self.name!r} ({type(self).__name__} on {self.key_spec.describe()}) "
                 f"does not support {term.op!r} on {term.path!r}")
+
+    # -- precomputed keys (spec R24, R49) ---------------------------------------------------
+
+    def key_of(self, element):
+        """The key this index files ``element`` under: ``key_spec.extract(element)`` (runs the
+        extractor).  The preparation phase of a commit computes it, outside the space root, for
+        every element a transaction's intentions add, remove or replace (R24)."""
+        return self.key_spec.extract(element)
+
+    def reapplies_from_keys(self) -> bool:
+        """Whether the ``*_key`` hooks maintain this index from precomputed keys alone (see
+        ``_keyed_reapplication``; read from the index's own class only)."""
+        return vars(type(self)).get("_keyed_reapplication", False) is True
+
+    def with_added_key(self, element, key, *, check_unique: bool = True) -> "Index":
+        """The index after one more occurrence of ``element``, whose key (:meth:`key_of`) is
+        ``key``: no extractor runs (R49).  ``check_unique`` False defers a uniqueness check to the
+        caller (a reapplication checks the final state).  The default is
+        ``ProtoNotSupportedError``: an index kind opts in with ``_keyed_reapplication``."""
+        raise ProtoNotSupportedError(f"Index {self.name!r} ({type(self).__name__}) cannot be maintained "
+                                     f"from a precomputed key")
+
+    def with_removed_key(self, element, key) -> "Index":
+        """The index after one occurrence of ``element`` (whose key is ``key``) fewer: no extractor
+        runs (R49).  Default ``ProtoNotSupportedError`` (see :meth:`with_added_key`)."""
+        raise ProtoNotSupportedError(f"Index {self.name!r} ({type(self).__name__}) cannot be maintained "
+                                     f"from a precomputed key")
+
+    def with_replaced_keys(self, old, old_key, new, new_key, *, check_unique: bool = True) -> "Index":
+        """The index after replacing one occurrence of ``old`` (key ``old_key``) by ``new`` (key
+        ``new_key``): no extractor runs (R49).  Default: remove then add with the keys."""
+        return self.with_removed_key(old, old_key).with_added_key(new, new_key, check_unique=check_unique)
+
+    def definition_data(self) -> tuple:
+        """The persisted definition of this index as plain data, for the precondition on a
+        collection's index definitions (R25): its type name and each ``_definition`` field
+        (a KeySpec as :meth:`KeySpec.to_data`).  An extractor is identified by its name only."""
+        fields = []
+        for name in self._definition:
+            value = getattr(self, name)
+            if isinstance(value, KeySpec):
+                value = value.to_data()
+            fields.append((name, value))
+        return (type(self).__type_name__, tuple(fields))
 
     # -- abstract hooks ------------------------------------------------------------------
 

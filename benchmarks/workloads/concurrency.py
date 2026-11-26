@@ -11,9 +11,10 @@ CPU and lock cost, not the disk):
 * ``blind merge``: every commit adds a unique id to a ``CountedSet`` root written without
   being read: never a conflict, the op log is replayed onto the current value under the
   root lock (D9, D33);
-* ``blind merge, indexed dict``: the same onto a 1000-entry ``Dictionary`` carrying a
-  RangeIndex (carry item "blind merges queue on the root lock", ~8 ms per commit when it
-  was noted): the replay maintains the index inside the critical section;
+* ``blind merge, indexed dict`` (label kept for result comparisons): every commit sets a unique
+  key of a 1000-entry ``Dictionary`` carrying a RangeIndex through the linked root (a per-key
+  precondition, never a conflict): its changes are reapplied on the current value under the
+  root lock (R34), which maintains the index inside the critical section;
 * ``disjoint roots``: every thread increments its own counter root (no conflict; commits
   still serialise on the root lock).
 
@@ -81,9 +82,14 @@ def concurrent_commits(ctx, p):
                                 if variant == "conflicting":
                                     tr.set_root_object("n", tr.get_root_object("n") + 1)
                                 elif variant == "blind merge":
-                                    tr.set_root_object("ids", tr.new_counted_set().add(uid))
+                                    # Through the linked root: CountedSet adds compose without a
+                                    # precondition (spec section 5, D26).
+                                    ids = tr.get_root_object("ids")
+                                    ids = ids if ids is not None else tr.new_counted_set()
+                                    tr.set_root_object("ids", ids.add(uid))
                                 elif variant == "blind merge, indexed dict":
-                                    tr.set_root_object("people", tr.new_dictionary().set_at(
+                                    # Through the linked root: per-key preconditions (spec section 5).
+                                    tr.set_root_object("people", tr.get_root_object("people").set_at(
                                         uid, tr.new_object(id=uid, score=uid)))
                                 else:
                                     tr.set_root_object(f"n{t}", tr.get_root_object(f"n{t}") + 1)

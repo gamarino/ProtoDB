@@ -5,7 +5,7 @@ in a new transaction.  The writers update random keys of a ``catalog`` (one key 
 readers either read random catalog keys (``point``) or run ``products where cat == c`` (``query``),
 on a ``products`` collection the writers never touch.  Peers: :mod:`benchmarks.cache_peer`.
 
-ProtoDB cells (R110 cases 1-3):
+proto_db cells (R110 cases 1-3):
 
 1. ``point`` reads with the decoded-atom cache at its default size (it holds the working set),
    at a size below the working set, and off (``atom_cache_entries=0``): the same work, so the
@@ -24,8 +24,8 @@ point read (``SELECT v FROM catalog WHERE id = ?``) or query (``SELECT id FROM p
 
 Verification, in every cell: every read is checked (a point value must be a well-formed value of
 its key; a query must return exactly the model's ids); the final catalog, read by a new instance
-from the store (ProtoDB) or by a ``strong`` query (rqlite), must equal the last value each writer
-committed for each key; ProtoDB reader nodes must report that their reads saw more than one
+from the store (proto_db) or by a ``strong`` query (rqlite), must equal the last value each writer
+committed for each key; proto_db reader nodes must report that their reads saw more than one
 database version (``versions_seen``: the reads crossed roots written on another node).
 """
 import http.client
@@ -69,10 +69,10 @@ def cell_label(system, read, atom, query, level) -> str:
     return f"protodb, {read} reads, {what}"
 
 
-# -- ProtoDB --------------------------------------------------------------------------------------
+# -- proto_db --------------------------------------------------------------------------------------
 
 def protodb_cell(ctx, read: str, atom: str, query: str, seconds: float, shape: dict) -> dict:
-    """One verified ProtoDB cell (module docstring); returns its figures, ``ok`` False on any failure."""
+    """One verified proto_db cell (module docstring); returns its figures, ``ok`` False on any failure."""
     from benchmarks.harness import child_command
     from benchmarks.cache_peer import catalog_value
     from benchmarks.support import DirObjectStore
@@ -246,7 +246,7 @@ def rqlite_cell(ctx, binary: str, read: str, level: str, seconds: float, shape: 
             cl.execute(conn, [["INSERT INTO products(id, cat, name) VALUES(?, ?, ?)", i, i % n_cats, f"product-{i}"]
                               for i in range(lo, min(n_prod, lo + 1000))], transaction=True)
         conn.close()
-        for port in cl.http:            # every node applied the data before the window (as ProtoDB)
+        for port in cl.http:            # every node applied the data before the window (as proto_db)
             _await_rows(port, "SELECT COUNT(*) FROM catalog", n_cat)
             _await_rows(port, "SELECT COUNT(*) FROM products", n_prod)
         writers, readers = shape["writers"], shape["readers"]

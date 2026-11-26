@@ -1,4 +1,13 @@
-"""Lease fairness under contention (Task 8.3e, defect D-LIVE-1, D46).
+"""Lease fairness under contention in real time (Task 8.3e, defect D-LIVE-1, D46): a probe.
+
+Moved here from ``tests/concurrency/test_cluster_fairness.py`` (final review F2): it measures
+wall-clock gaps and lease ratios, and the mechanism's deferral bounds are real-time by design
+(``_TURN_SILENCE``, one lease duration, on ``time.monotonic``), so no run of it can be
+deterministic, and the test suite holds no timing-dependent test.  What it proved as a test --
+no contending member starves, service is round robin -- is now proved on a logical clock (the
+grant count) by ``tests/unit/test_cluster_fairness.py::
+test_contending_members_are_served_in_turn_no_member_starves``; this probe keeps the real-time
+measurement.
 
 Every member runs several threads that loop ``acquire`` -> hold for a fixed critical section ->
 ``release`` for a few seconds.  Before Task 8.3e the process that released the lease re-asked
@@ -13,18 +22,21 @@ critical sections between two of its leases):
 * ``_MAX_GAP``: no member waits longer than this between two of its leases (or before its
   first) -- a starved member waits the whole run (the bounds' data is beside them);
 * ``_MIN_RATIO``: the fewest leases of a member over the most of any member;
-* each size runs ``_TRIALS`` times; the median trial must meet both bounds, and every trial
+* each case runs ``_TRIALS`` times; the median trial must meet both bounds, and every trial
   must give every member at least one lease (a starved member gets none in a trial).
+
+Self-reporting (benchmarks/README.md): ``python -m benchmarks.cluster_fairness [--json OUT]``
+prints every trial's leases, ratio, maximum gap, turns and deferral timeouts, then each case's
+verdict; the exit status is 1 when a case misses a bound.
 """
+import argparse
+import json
 import statistics
+import sys
 import threading
 import time
 
-import pytest
-
 from tests.support.cluster import Cluster
-
-pytestmark = [pytest.mark.timeout(240)]
 
 _HOLD = 0.01            # critical section, seconds (the fsync-mode TCP figure is 7-29 ms)
 _THREADS = 4
@@ -89,18 +101,44 @@ def _trial(n: int, seed: int, delay: float, threads=None) -> dict:
         cl.close()
 
 
-@pytest.mark.parametrize("n,delay,threads", [(2, 0.0, None), (3, 0.0, None), (3, 0.0005, None), (5, 0.0, None),
-                                             (3, 0.0, (1, 4, 4))])
-def test_every_contending_member_gets_the_lease_regularly(n, delay, threads, capsys):
-    """``threads=(1, 4, 4)``: a member with one thread releases without another thread waiting
-    (``more`` is False), so nobody queues it when its thread asks again: it must say ``want``
-    before deferring, or no release would ever name it."""
+#: The cases: (members, link delay in seconds, threads per member or None for _THREADS each).
+#: ``(1, 4, 4)``: a member with one thread releases without another thread waiting (``more`` is
+#: False), so nobody queues it when its thread asks again: it must say ``want`` before deferring,
+#: or no release would ever name it.
+CASES = [(2, 0.0, None), (3, 0.0, None), (3, 0.0005, None), (5, 0.0, None), (3, 0.0, (1, 4, 4))]
+
+
+def run_case(n: int, delay: float, threads) -> dict:
+    """Run one case's trials; return the trials and whether the case met every bound."""
     trials = [_trial(n, seed, delay, threads) for seed in range(_TRIALS)]
-    with capsys.disabled():
-        print(f"\nFAIRNESS {n} members x {threads or _THREADS} threads, hold {_HOLD * 1e3:g} ms, link delay "
+    starved = not all(min(t["counts"]) > 0 for t in trials)
+    gap = statistics.median(t["max_gap"] for t in trials)
+    ratio = statistics.median(t["ratio"] for t in trials)
+    return {"members": n, "delay": delay, "threads": list(threads or (_THREADS,) * n), "trials": trials,
+            "starved": starved, "median_max_gap": gap, "median_ratio": ratio,
+            "ok": not starved and gap <= _MAX_GAP and ratio >= _MIN_RATIO}
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--json", help="write every case's figures to this file")
+    args = parser.parse_args(argv)
+    results = []
+    for n, delay, threads in CASES:
+        case = run_case(n, delay, threads)
+        results.append(case)
+        print(f"FAIRNESS {n} members x {threads or _THREADS} threads, hold {_HOLD * 1e3:g} ms, link delay "
               f"{delay * 1e3:g} ms: " + "; ".join(
                   f"leases {t['counts']} ratio {t['ratio']:.2f} max gap {t['max_gap'] * 1e3:.0f} ms "
-                  f"turns {t['turns']} timeouts {t['timeouts']}" for t in trials))
-    assert all(min(t["counts"]) > 0 for t in trials), trials                  # nobody starved outright
-    assert statistics.median(t["max_gap"] for t in trials) <= _MAX_GAP, trials
-    assert statistics.median(t["ratio"] for t in trials) >= _MIN_RATIO, trials
+                  f"turns {t['turns']} timeouts {t['timeouts']}" for t in case["trials"])
+              + f" -> median gap {case['median_max_gap'] * 1e3:.0f} ms (bound {_MAX_GAP * 1e3:g}), median ratio "
+                f"{case['median_ratio']:.2f} (bound {_MIN_RATIO}), starved {case['starved']}: "
+                f"{'ok' if case['ok'] else 'FAILED'}", flush=True)
+    if args.json:
+        with open(args.json, "w") as f:
+            json.dump(results, f, indent=1)
+    return 0 if all(case["ok"] for case in results) else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

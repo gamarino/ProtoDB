@@ -26,6 +26,7 @@ from proto_db.catalog.model import canonical_form, from_atoms, to_atoms
 from proto_db.errors import ProtoCorruptionError, ProtoNotSupportedError, ProtoUserError, ProtoValidationError
 from proto_db.registry import Registry
 from proto_db.semantic import SemanticSession, semantic
+from proto_db.preconditions import Unit, UnitKind
 from proto_db.semantic import store
 from proto_db.semantic.compose import compose
 from proto_db.storage.file import FileStorage
@@ -83,7 +84,8 @@ def test_install_writes_the_semantic_catalog(tmp_path):
         db.run(lambda tr: tr.set_root_object("plain", 1))
         assert _stored(db) is None
         _install(db, "acme_sales")
-        assert space.storage.read_root().version == 6
+        # Every root is version 7 (R63); the catalog's records need format 6 segments.
+        assert space.storage.read_root().version == 7 and space.storage.written_version == 6
         tr = db.new_transaction()
         try:
             assert isinstance(tr._objects.get_at(SEMANTIC_CATALOG_ROOT), SemanticCatalog)
@@ -142,7 +144,8 @@ def test_a_database_without_semantic_modules_writes_no_v6_segment(tmp_path):
         db.run(lambda tr: tr.set_root_object("thing", tr.new_object(parents=("reg8.Thing",))))
         _install(db, "reg8_base")
         assert _stored(db) is None
-        assert space.storage.read_root().version == 5
+        # Every root is version 7 (R63); no segment above format 5 was written.
+        assert space.storage.read_root().version == 7 and space.storage.written_version == 5
         with pytest.raises(ProtoNotSupportedError, match="no semantic catalog; install a module to add it"):
             db.run(lambda tr: semantic(tr).catalog())
     finally:
@@ -192,7 +195,7 @@ def test_rc4_database_without_semantic_catalog(tmp_path):
                 semantic(tr).catalog()
             with pytest.raises(ProtoNotSupportedError, match="no semantic catalog"):
                 Order.describe(tr)
-            assert SEMANTIC_CATALOG_ROOT not in tr._reads
+            assert Unit(UnitKind.ROOT, SEMANTIC_CATALOG_ROOT) not in tr._read_log
         finally:
             tr.abort()
         _install(db, "acme_delivery")
@@ -324,7 +327,7 @@ def test_reading_the_catalog_does_not_enter_the_read_set():
         assert semantic(reader).list_entities("order")
         reader.set_root_object("mine", 1)
         _install(db, "acme_delivery")                        # a concurrent install commits first
-        assert SEMANTIC_CATALOG_ROOT not in reader._reads
+        assert Unit(UnitKind.ROOT, SEMANTIC_CATALOG_ROOT) not in reader._read_log
         reader.commit()                                      # no conflict
         assert db.run(lambda tr: tr.get_root_object("mine")) == 1
     finally:

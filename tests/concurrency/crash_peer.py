@@ -34,6 +34,7 @@ from proto_db.storage.tiered import TieredStorage  # noqa: E402
 from proto_db.transactions import ObjectSpace  # noqa: E402
 from tests.support import stress  # noqa: E402
 from tests.support.dir_object_store import DirObjectStore  # noqa: E402
+from tests.support.roots import counted_set_root  # noqa: E402
 
 # No startup_grace: the default, lease_duration + drift_margin, is the shortest a restart may
 # use (ruling R51); the peers restart on their logs.
@@ -84,7 +85,7 @@ def main():
 
                 def fn(tr, uid=uid):
                     tr.set_root_object("n", (tr.get_root_object("n") or 0) + 1)
-                    tr.set_root_object("ids", tr.new_counted_set().add(uid))
+                    tr.set_root_object("ids", counted_set_root(tr, "ids").add(uid))
                 _say({"attempt": uid})       # a kill before its outcome leaves it in flight
                 try:
                     db.run(fn, retries=10_000, backoff=(0.0005, 0.01))

@@ -177,10 +177,10 @@ class TestAlgebra:
         assert a.union(make([1])).indexes is a.indexes
 
     def test_algebra_logs_intent(self):
-        a = make([1, 2, 3])._with(_op_log=())
-        assert a.union([3, 4])._op_log == (("add", 3), ("add", 4))
-        assert a.difference([1, 9])._op_log == (("remove", 1), ("remove", 9))
-        assert a.intersection([2])._op_log == tuple(("remove", e) for e in a if e != 2)
+        a = make([1, 2, 3])._with(_changes=())
+        assert a.union([3, 4])._changes == (("add", 3), ("add", 4))
+        assert a.difference([1, 9])._changes == (("remove", 1), ("remove", 9))
+        assert a.intersection([2])._changes == tuple(("remove", e) for e in a if e != 2)
 
 
 class TestIndexEvents:
@@ -194,13 +194,13 @@ class TestIndexEvents:
         assert s.remove("zz").indexes is s.indexes
 
 
-class TestRebase:
+class TestReapply:
     @both
-    def test_rebase_per_element_last_intent(self, cls):
+    def test_reapply_per_element_last_intent(self, cls):
         snapshot = reload(make([1, 2, 3], indexes=("i",), cls=cls))
         theirs = snapshot.remove(1).add(7).remove(2)
         mine = snapshot.add(2).remove(3).add(8).remove(8).add(9).remove(77)
-        merged = mine.rebase_onto(theirs)
+        merged = mine._reapplied_on(theirs)
         assert keys(merged) == keys(make([2, 7, 9]))
         assert merged.get_index("i").live() == Counter(order_key(e) for e in merged)
 
@@ -209,7 +209,7 @@ class TestBulk:
     @both
     def test_from_iterable(self, cls):
         s = cls.from_iterable([3, 1, 1.0, True, "a", 3])
-        assert keys(s) == keys(make([1, 3, True, "a"])) and s.count == 4 and s._op_log == ()
+        assert keys(s) == keys(make([1, 3, True, "a"])) and s.count == 4 and s._changes == ()
         avl.check_invariants(s.root)
         assert cls.from_iterable([]).count == 0
         with pytest.raises(ProtoValidationError):

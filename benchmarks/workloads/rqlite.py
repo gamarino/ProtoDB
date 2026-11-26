@@ -1,7 +1,7 @@
 """rqlite as the external, functionally comparable cluster reference (ruling R45).
 
 rqlite is a replicated SQLite on Raft: a local consensus cluster that works offline, the
-closest functional match to a ProtoDB cluster (single coherent state, majority-replicated
+closest functional match to a proto_db cluster (single coherent state, majority-replicated
 commits).  The workload starts three ``rqlited`` nodes on loopback (data directories in the
 work directory), creates ``t(id INTEGER PRIMARY KEY)``, and drives it from
 ``3 x threads`` client threads (each bound to one node; followers forward writes to the
@@ -10,18 +10,18 @@ leader) for ``seconds``:
 * per request: each HTTP request inserts one row (one Raft entry);
 * batched: each request inserts ``batch`` rows in one transaction (``?transaction``);
 * payload (Task 8.3f): each request inserts one row carrying a TEXT value of 100 B, 10 KB or
-  100 KB into ``b(id, v)``; the ProtoDB side writes one value of the same size per commit.
+  100 KB into ``b(id, v)``; the proto_db side writes one value of the same size per commit.
 
-The same work runs on a 3-peer ProtoDB TCP cluster (:func:`~benchmarks.workloads.cluster.run_tcp_cluster`):
+The same work runs on a 3-peer proto_db TCP cluster (:func:`~benchmarks.workloads.cluster.run_tcp_cluster`):
 one commit adds one id, or ``batch`` ids, to a CountedSet.  Both sides are verified: rqlite
 by a strongly consistent ``SELECT COUNT(*), SUM(id)`` against the acknowledged inserts,
-ProtoDB by reading the persisted root.
+proto_db by reading the persisted root.
 
 The binary is located by ``--rqlite PATH`` or the environment variable
 ``PROTODB_BENCH_RQLITED``.  Without it the workload is reported as pending: rqlite numbers
 are never quoted from memory.  Settings are rqlite's defaults; the client is Python's
 ``http.client`` with one keep-alive connection per thread, so the rqlite figures include an
-HTTP round trip per request that the embedded ProtoDB does not pay.
+HTTP round trip per request that the embedded proto_db does not pay.
 """
 import http.client
 import json
@@ -205,8 +205,8 @@ def _drive_rqlite_payload(cl: RqliteCluster, threads: int, seconds: float, size:
 
 def _payload_comparison(ctx, result, checksum, expected, p) -> None:
     """The payload dimension (Task 8.3f): the same values, one per commit or request, on rqlite
-    and on a 3-peer ProtoDB TCP cluster in fsync mode (:func:`run_tcp_cluster` with ``payload``).
-    Both are verified (rqlite: row count and total value length read strongly; ProtoDB: every
+    and on a 3-peer proto_db TCP cluster in fsync mode (:func:`run_tcp_cluster` with ``payload``).
+    Both are verified (rqlite: row count and total value length read strongly; proto_db: every
     persisted value).  Wire bytes are loopback bytes per commit (clients included)."""
     from benchmarks.workloads.cluster import loopback_bytes, payload_figures, run_tcp_cluster
     nodes, threads = 3, p["threads"]
@@ -251,7 +251,7 @@ def _payload_comparison(ctx, result, checksum, expected, p) -> None:
 @benchmark("rqlite_reference", quick={"threads": 2, "seconds": 0.5, "batch": 10, "repeat": 1, "payloads": [100]},
            full={"threads": 4, "seconds": 3.0, "batch": 50, "repeat": 2, "payloads": [100, 10240, 102400]})
 def rqlite_reference(ctx, p):
-    """3-node rqlite on loopback vs a 3-peer ProtoDB TCP cluster: small commits, per request and batched."""
+    """3-node rqlite on loopback vs a 3-peer proto_db TCP cluster: small commits, per request and batched."""
     binary = ctx.rqlite
     if not binary or not os.access(binary, os.X_OK):
         return BenchResult.pending("rqlite not available (pass --rqlite PATH or set PROTODB_BENCH_RQLITED)")

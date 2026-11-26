@@ -660,6 +660,79 @@ def test_one_transaction_entered_by_two_threads():
     space.close()
 
 
+@pytest.mark.parametrize("outcome", ["commit", "abort"])
+def test_block_exit_decides_the_outcome_under_the_transaction_lock(outcome):
+    """Final review I3: the end of a ``with tr:`` block checks that the transaction is active and
+    ends it in one step, holding the transaction's lock; two threads leaving the same block can
+    no longer both find it active (the second one raised 'The transaction is committed')."""
+    space = _space()
+    db = space.new_database("db")
+    tr = db.new_transaction()
+    held = []
+    original = getattr(tr, outcome)
+
+    def ending():
+        held.append(tr._lock._is_owned())
+        original()
+
+    setattr(tr, outcome, ending)
+    try:
+        with tr:
+            tr.set_root_object("r", 1)
+            if outcome == "abort":
+                raise KeyError("leave the block with an exception")
+    except KeyError:
+        pass
+    assert held == [True]
+    assert not tr.is_active
+    space.close()
+
+
+def test_block_exit_finding_the_transaction_ended_by_another_thread_is_a_no_op():
+    """Final review I3: thread A's block exit is inside the commit when thread B leaves the same
+    block; B's exit waits for the outcome and returns without raising (deterministic: A's commit
+    waits until B's exit has started)."""
+    space = _space()
+    db = space.new_database("db")
+    tr = db.new_transaction()
+    entered, in_commit = threading.Barrier(2), threading.Event()
+    b_exiting, release = threading.Event(), threading.Event()
+    original = tr._commit
+    calls, errors = [], []
+
+    def paused_commit():
+        calls.append(threading.current_thread().name)
+        in_commit.set()
+        assert release.wait(timeout=30)
+        original()
+
+    tr._commit = paused_commit
+
+    def body(name):
+        try:
+            with tr:
+                tr.set_root_object(name, 1)
+                entered.wait(timeout=30)
+                if name == "b":
+                    assert in_commit.wait(timeout=30)       # A's exit is committing
+                    b_exiting.set()
+        except Exception as e:          # reported below
+            errors.append(e)
+
+    a = threading.Thread(target=body, args=("a",), name="a")
+    b = threading.Thread(target=body, args=("b",), name="b")
+    a.start()
+    b.start()
+    assert b_exiting.wait(timeout=30)
+    release.set()
+    a.join()
+    b.join()
+    assert errors == []
+    assert calls == ["a"]
+    assert db.run(lambda t: (t.get_root_object("a"), t.get_root_object("b"))) == (1, 1)
+    space.close()
+
+
 def test_one_snapshot_entered_by_two_asyncio_tasks():
     import asyncio
     space = _space()

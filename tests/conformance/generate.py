@@ -1209,6 +1209,8 @@ def gen_legacy_database(manifest):
                mock.patch.object(values_module, "check_map_keys", any_keys),
                mock.patch.object(DatabaseRoot, "__init__", no_origin)]
     patches.append(mock.patch.object(fmt, "WRITE_FORMAT_VERSION", 3))   # read at call time by every writer
+    # Format 3 wrote a format-3 root: the root floor of format 7 (R63) is read at call time too.
+    patches.append(mock.patch.object(fmt, "ROOT_WRITE_VERSION", 3))
     with _Deterministic(0x3000):
         for p in patches:
             p.start()
@@ -1305,6 +1307,10 @@ def _cluster_commit(directory: Path):
     the database vector's root (its ``cluster_previous``), in a segment of its own."""
     db_dir = VECTORS / "database"
     base = fmt.decode_root((db_dir / "space.root").read_bytes())
+    # The plain log and message vectors show roots of the base version (no versioned entry, the
+    # four-element wire root); the database vector's root is format 7 (R63), and the versioned
+    # forms have vectors of their own (roots_log_v5).
+    base = fmt.RootRecord(fmt.WRITE_FORMAT_VERSION, base.segment, base.offset, base.epoch)
     shutil.rmtree(directory, ignore_errors=True)
     shutil.copytree(db_dir, directory)
     with _Deterministic(0x2000):
@@ -1457,7 +1463,7 @@ def main():
     shutil.rmtree(VECTORS, ignore_errors=True)
     VECTORS.mkdir(parents=True)
     manifest = {
-        "about": "Conformance vectors of the ProtoDB storage format; see tests/conformance/README.md "
+        "about": "Conformance vectors of the proto_db storage format; see tests/conformance/README.md "
                  "and docs/source/format-spec.rst.",
         "versions": {"format": fmt.FORMAT_VERSION, "readable_formats": sorted(fmt.READABLE_FORMAT_VERSIONS),
                      "log_format": logfile.LOG_FORMAT_VERSION, "protocol": protocol.PROTOCOL_VERSION},
@@ -1481,8 +1487,14 @@ def main():
 
 
 #: The pinned digests of the vectors (format-spec.rst, "Format stability"): one line
-#: ``<sha256 hex>  <path under vectors/>`` per file, sorted by path, then the manifest's line.
+#: ``<sha256 hex>  <path under vectors/>`` per file, sorted by path, then the manifest's line, then
+#: the lines of the hand-written conformance data that is never generated: the concurrency
+#: scenarios (R60) and the frozen spaces of earlier formats (R52), by path relative to ``vectors/``.
 PINS = Path(__file__).resolve().parent / "vectors.sha256"
+#: The concurrency scenarios (spec R60): data written by hand, pinned with the vectors.
+SCENARIOS = Path(__file__).resolve().parent / "concurrency_scenarios.json"
+#: Spaces written by earlier releases (spec R52), never regenerated: pinned with the vectors.
+FROZEN = Path(__file__).resolve().parent / "frozen"
 
 
 def pin_lines() -> str:
@@ -1491,6 +1503,9 @@ def pin_lines() -> str:
     lines = [f"{hashlib.sha256(f.read_bytes()).hexdigest()}  {f.relative_to(VECTORS).as_posix()}"
              for f in sorted(VECTORS.rglob("*"), key=lambda f: f.relative_to(VECTORS).as_posix()) if f.is_file()]
     lines.append(f"{hashlib.sha256(MANIFEST.read_bytes()).hexdigest()}  ../manifest.json")
+    lines.append(f"{hashlib.sha256(SCENARIOS.read_bytes()).hexdigest()}  ../{SCENARIOS.name}")
+    lines += [f"{hashlib.sha256(f.read_bytes()).hexdigest()}  ../frozen/{f.relative_to(FROZEN).as_posix()}"
+              for f in sorted(FROZEN.rglob("*"), key=lambda f: f.relative_to(FROZEN).as_posix()) if f.is_file()]
     return "\n".join(lines) + "\n"
 
 

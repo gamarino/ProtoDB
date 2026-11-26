@@ -95,8 +95,11 @@ def test_readers_share_lazy_stubs_while_writers_commit(tmp_path, request):
     try:
         db = space.open_database("db")
         tr0 = db.new_transaction()
-        shared_items, shared_meta = tr0.get_root_object("items"), tr0.get_root_object("meta")
-        tr0.abort()     # the stubs outlive the transaction that loaded them (D34)
+        # From a Snapshot of the transaction's version: a transaction's read of a collection root
+        # links it, which loads the root (spec section 9, R41); a Snapshot's does not (R21).
+        snapshot = db.snapshot_at(tr0.snapshot_ref)
+        shared_items, shared_meta = snapshot.get_root_object("items"), snapshot.get_root_object("meta")
+        tr0.abort()     # the stubs outlive the transaction whose version they are (D34)
         # Reading a root does not load it (D34 amendment): the readers race on the first load.
         assert not object.__getattribute__(shared_items, "_loaded"), "the shared root must start as a stub"
         attempts = Attempts()

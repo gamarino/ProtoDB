@@ -78,7 +78,7 @@ immutable. So:
 **Decoded atoms (D53).** Each ``ObjectSpace`` keeps one bounded cache of decoded atoms keyed by storage pointer
 (``atom_cache_entries``), shared by all its transactions and threads. ``Transaction.load`` returns the cached
 atom for a pointer. The children of a shared atom are loaded through the same cache, so they are shared too.
-Conflict control is unchanged: a read set records pointers, and a pointer identifies a version exactly.
+Conflict control is unchanged: a precondition records atoms by pointer, and a pointer identifies a version exactly.
 
 Measured (D53, probe ``r75/readbench.py``, 10,000 point reads each in a fresh transaction, 100,000-entry
 ``Dictionary`` on ``FileStorage``, three runs, ``c78e4fd``): median **821 to 4,721 reads per second (5.8x)**,

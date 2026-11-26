@@ -1,6 +1,6 @@
 """Count ``os.fsync`` / ``os.fdatasync`` calls by call site and by role, in-process.
 
-ProtoDB calls ``os.fsync`` through the ``os`` module at call time (``file.py``,
+proto_db calls ``os.fsync`` through the ``os`` module at call time (``file.py``,
 ``tiered.py``, ``logfile.py``, ``rootlog.py``), so replacing the two functions in ``os``
 observes every sync the engine issues.  Each call is attributed to
 

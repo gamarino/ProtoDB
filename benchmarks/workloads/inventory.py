@@ -14,13 +14,13 @@ against the model without holding the model in memory:
   of its site, when that port exists and is linked, so a path trace wanders across sites;
 * "objects" counts every persisted node: sites + equipment + cards + ports + links.
 
-ProtoDB: one :class:`~proto_db.Dictionary` per type keyed by id, values :class:`~proto_db.DBObject`,
+proto_db: one :class:`~proto_db.Dictionary` per type keyed by id, values :class:`~proto_db.DBObject`,
 an :class:`~proto_db.EqualityIndex` on each parent reference (``sites.region``,
 ``equipment.site``, ``cards.equipment``, ``ports.card``), a :class:`~proto_db.FileStorage` with
 ``durability="fsync"``.  SQLite: the same five tables with primary keys and the same four
 indexes, WAL with ``synchronous=FULL``; history in ``equipment_audit``, kept by a trigger on
 status updates and stamped with a version counter, so an "as of" query does the equal work of
-undoing later changes (ProtoDB reads the earlier root itself: :meth:`Database.snapshot_at`).
+undoing later changes (proto_db reads the earlier root itself: :meth:`Database.snapshot_at`).
 Both are built the same way: one transaction per site (its equipment, cards, ports and the
 links whose lower port it holds).
 
@@ -30,17 +30,17 @@ Operations, each verified against the model in every repetition:
 * all equipment at a site (the ``site`` index);
 * all ports at a site (site -> equipment -> cards -> ports: three index levels; a 3-way join);
 * path trace: from a linked port, follow link -> far port -> cross-connect, up to 16 hops
-  (ProtoDB: dictionary reads; SQLite: a recursive CTE);
+  (proto_db: dictionary reads; SQLite: a recursive CTE);
 * bulk status change of every equipment of one region (5 % of the sites) in one commit;
 * "as of": the status of those equipment in the version before the last bulk change;
 * cold against warm: the first point lookup / site query / path trace of a new
-  storage instance (ProtoDB) or a new connection (SQLite) against the same requests repeated.
+  storage instance (proto_db) or a new connection (SQLite) against the same requests repeated.
   The OS page cache and the ZFS ARC are not dropped (that needs root): "cold" means empty
   in-process caches.
 
 Memory (Task 9c CARRY): the process's peak RSS (``getrusage``, both systems in one process) after
 the build and at the end, and the decoded-atom cache counters.  ``atom_cache_entries`` (a
-parameter, default: the ``ObjectSpace`` default) sizes the ProtoDB cache, e.g.
+parameter, default: the ``ObjectSpace`` default) sizes the proto_db cache, e.g.
 ``--param inventory.atom_cache_entries=3000000`` for a cache that holds the 10^6 working set.
 """
 import os
@@ -164,10 +164,10 @@ def site_rows(m: Model, s: int) -> dict:
             "links": [(lid, a, b, "fiber") for lid, a, b in m.links_of_site(s)]}
 
 
-# -- ProtoDB ----------------------------------------------------------------------------------
+# -- proto_db ----------------------------------------------------------------------------------
 
 class ProtoInventory:
-    """The ProtoDB copy (module docstring)."""
+    """The proto_db copy (module docstring)."""
 
     ROOTS = ("sites", "equipment", "cards", "ports", "links")
 
@@ -438,7 +438,7 @@ def _apparent(path: str) -> int:
 @benchmark("inventory", quick={"objects": 8_000, "requests": 5, "path_requests": 3},
            full={"objects": 100_000, "requests": 100, "path_requests": 20})
 def inventory(ctx, p):
-    """Telecom inventory graph (sites/equipment/cards/ports/links, history): ProtoDB vs sqlite3."""
+    """Telecom inventory graph (sites/equipment/cards/ports/links, history): proto_db vs sqlite3."""
     sites = max(2, round(p["objects"] / OBJECTS_PER_SITE))
     m = Model(sites)
     rng = random.Random(9)
@@ -446,7 +446,7 @@ def inventory(ctx, p):
     t0 = time.perf_counter()
     objects = m.objects()
     result = BenchResult({"sites": sites, "objects": objects, "fan_out": "10 equipment/site, 10 cards/equipment, "
-                          "8-48 ports/card, links on about half the ports", "durability": "ProtoDB fsync, SQLite FULL",
+                          "8-48 ports/card, links on about half the ports", "durability": "proto_db fsync, SQLite FULL",
                           "model_count_s": round(time.perf_counter() - t0, 2)}, None, None)
     proto = ProtoInventory(os.path.join(base, "protodb"), p.get("atom_cache_entries"))
     result.work["atom_cache_entries"] = p.get("atom_cache_entries") or "default"

@@ -70,7 +70,7 @@ class Transport(Protocol):
 
 
 def _deliver(handler, msg: dict, where: str) -> None:
-    """Call ``handler``; a ProtoDB error raised for one message is logged, not fatal to the thread."""
+    """Call ``handler``; a proto_db error raised for one message is logged, not fatal to the thread."""
     try:
         handler(msg)
     except ProtoDBError as e:

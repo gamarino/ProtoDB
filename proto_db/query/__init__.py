@@ -1,4 +1,4 @@
-"""ProtoDB 2.0 query layer (spec section 10): expressions, physical plans, planner and front ends.
+"""proto_db 2.0 query layer (spec section 10): expressions, physical plans, planner and front ends.
 
 :mod:`.terms` holds the term model and scan oracle (D28), :mod:`.expressions`
 the boolean expression layer and the 0.1 prefix syntax compiler,

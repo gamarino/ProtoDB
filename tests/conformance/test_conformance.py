@@ -297,7 +297,8 @@ def test_parents_database_segments():
     assert [r["parents"][-1] for r in with_parents] == [name, name]
     assert sorted(len(r["parents"]) for r in with_parents) == [1, 3]
     root = fmt.decode_root(_bytes(f"{db['dir']}/space.root"))
-    assert root.version == 5 and db["root"]["version"] == 5
+    # Format-5 segments, a format-7 root: every root this revision publishes is version 7 (R63).
+    assert root.version == fmt.ROOT_WRITE_VERSION == 7 and db["root"]["version"] == 7
     assert fmt.encode_root(root) == _bytes(f"{db['dir']}/space.root")
 
 
@@ -340,7 +341,7 @@ def test_registry_database_segments():
     catalog_objects = [r for r in second["records"] if "parents" in r]
     assert sorted(r["parents"][0]["str"] for r in catalog_objects) == db["catalog_names"]
     root = fmt.decode_root(_bytes(f"{db['dir']}/space.root"))
-    assert root.version == 5 and db["root"]["version"] == 5
+    assert root.version == fmt.ROOT_WRITE_VERSION == 7 and db["root"]["version"] == 7     # R63
 
 
 def test_registry_database_contents_through_the_public_api(tmp_path):
@@ -379,7 +380,7 @@ def test_catalog_database_segments():
         if record.get("type") in catalog_types:
             assert record["tag"] == fmt.CATALOG_TYPES[record["type"]] and "parents" not in record
     root = fmt.decode_root(_bytes(f"{db['dir']}/space.root"))
-    assert root.version == 6 and db["root"]["version"] == 6
+    assert root.version == fmt.ROOT_WRITE_VERSION == 7 and db["root"]["version"] == 7     # R63
     assert fmt.encode_root(root) == _bytes(f"{db['dir']}/space.root")
 
 
@@ -486,7 +487,9 @@ def test_database_root(name):
     db = MANIFEST[name]
     data = _bytes(f"{db['dir']}/space.root")
     record = fmt.decode_root(data)
-    assert _root_fields(record) == dict(db["root"], version=fmt.WRITE_FORMAT_VERSION)
+    # A format-3 root is read as the base version; a root this revision wrote is version 7 (R63).
+    assert _root_fields(record) == dict(db["root"], version=max(db["root"]["version"], fmt.WRITE_FORMAT_VERSION))
+    assert db["root"]["version"] == (3 if name == "legacy_database" else fmt.ROOT_WRITE_VERSION)
     assert msgpack.unpackb(data[4:])["version"] == db["root"]["version"]
     if name != "legacy_database":
         assert fmt.encode_root(record) == data

@@ -130,30 +130,30 @@ class TestIndexEvents:
         assert d.remove_at("zz").indexes is d.indexes
 
 
-class TestOpLogAndRebase:
+class TestOpLogAndReapply:
     def test_every_call_is_logged(self):
         d = reload(make([("a", 1)]))
         d2 = d.set_at("b", 2).remove_at("a").remove_at("q").set_at("b", 2)
-        assert d2._op_log == (("set", "b", 2), ("remove", "a"), ("remove", "q"), ("set", "b", 2))
+        assert d2._changes == (("set", "b", 2), ("remove", "a"), ("remove", "q"), ("set", "b", 2))
 
-    def test_rebase_per_key(self):
+    def test_reapply_per_key(self):
         snapshot = reload(make([("k", 1), ("j", 5)]))
         theirs = snapshot.set_at("k", 2).set_at("x", 9)
         mine = snapshot.set_at("k", 3).remove_at("j").set_at("y", 4)
-        merged = mine.rebase_onto(theirs)
+        merged = mine._reapplied_on(theirs)
         assert dict(merged.items()) == {"k": 3, "x": 9, "y": 4}
 
     def test_blind_remove_wins_over_concurrent_insert(self):
         snapshot = reload(make([("a", 1)]))
         theirs = snapshot.set_at("j", 5)
         mine = snapshot.remove_at("j")  # a no-op on mine, logged as intent
-        assert dict(mine.rebase_onto(theirs).items()) == {"a": 1}
+        assert dict(mine._reapplied_on(theirs).items()) == {"a": 1}
 
-    def test_rebase_keeps_indexes_consistent(self):
+    def test_reapply_keeps_indexes_consistent(self):
         snapshot = reload(make([("a", 1), ("b", 2)], indexes=("i",)))
         theirs = snapshot.set_at("b", 20).set_at("c", 3)
         mine = snapshot.set_at("b", 200).remove_at("a")
-        merged = mine.rebase_onto(theirs)
+        merged = mine._reapplied_on(theirs)
         assert dict(merged.items()) == {"b": 200, "c": 3}
         assert merged.get_index("i").live() == Counter(order_key(v) for v in merged.values())
 

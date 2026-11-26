@@ -21,7 +21,7 @@ Some conventions apply throughout:
   the history of the main choices: :doc:`design-guide/coordinator`, :doc:`design-guide/pipelined-permits`
   and :doc:`design-guide/unknown-outcomes`.
 * **What this page does not repeat.** The byte layouts of messages, the acceptor log and the root records are
-  in :doc:`format-spec` ("Cluster wire protocol", "The acceptor log"). Snapshot isolation, read sets and merges
+  in :doc:`format-spec` ("Cluster wire protocol", "The acceptor log"). Snapshot isolation, preconditions and their units
   are in :doc:`concurrency-model`. Local durability, durability modes and recovery on open are in
   :doc:`durability`. A runnable three-node example is :doc:`tutorials/cluster`.
 
@@ -34,8 +34,8 @@ The problem in one paragraph
 ----------------------------
 
 Several processes, each with ``proto_db`` embedded, write one database. A commit builds a new root (an immutable
-tree that shares structure with the previous root, P1) on top of the root it read, after validating the read set
-(D34) and merging the intents (D33). Two processes must never both publish a root built on the same predecessor,
+tree that shares structure with the previous root, P1) on top of the root it read, after validating the transaction's
+preconditions and reapplying its intentions (D34, D73). Two processes must never both publish a root built on the same predecessor,
 and a commit acknowledged to its caller must never disappear from the history. The first design (D5) made the
 object store's conditional write the arbiter; the maintainer reverted it (D44): contention is resolved among the
 processes (P4), with established techniques (P6): Paxos ballots and promises for the lease, a majority of voters
@@ -457,9 +457,16 @@ The commit path
    dropped unanswered; a duplicate ``(term, seq)`` is ignored; a permit nobody waits for is handed back at once
    with ``done("none")``.
 5. **Base and build.** The base follows `Choosing the base of a term's first root`_. Each queued transaction is
-   built in turn on the root the previous one produced: read-set validation (D34), intent merge (D33), path
-   copy; a conflicting transaction fails alone. Records of the base come from the cache (R89) or are fetched
+   built in turn on the root the previous one produced: precondition validation and reapplication of the
+   intentions (D73), path copy; a conflicting transaction fails alone. Records of the base come from the cache (R89) or are fetched
    from the members the locator names, then from every member, then from the object store (D54).
+   Under the precondition model (protocol 16) the validation and the reapplication run on the building node,
+   under its permission, with the standalone rules: the pre-pass validated against the newest root the node
+   knew (R0, outside the permission); when the base is another root, the build validates the diff R0 to base
+   and reapplies the commit's intentions on the base (a re-committed base differs by pointer only and is not a
+   conflict); when R0 could not be read, the full validation runs against the base. A conflict found by the
+   pre-pass is an ordinary failed attempt and takes the normal backoff. Every node of a cluster must validate
+   the same way, hence the protocol version.
 6. **Reserve (R121).** Before anything a voter may accept leaves the node, the permission must have at least
    ``send_reserve`` left; otherwise the round ends with a retryable ``ProtoConflictError`` and nothing is sent
    (H7). A node also never replicates under a term below its last rejoin ballot (D50 amendment after R78a).
@@ -976,7 +983,7 @@ Where the code is
 ``proto_db/cluster/persister.py``, ``proto_db/storage/tiered.py``
    Asynchronous persistence and the persisted-root compare-and-swap.
 ``proto_db/cluster/protocol.py``, ``proto_db/cluster/transport.py``
-   Messages (protocol version 15) and the TCP and in-process transports.
+   Messages (protocol version 16) and the TCP and in-process transports.
 ``proto_db/transactions.py``
    The commit round under a permission (``_run_round``, ``_permit_round``), the base (``_lease_base``,
    ``_phase_1_floor``, ``_commit_base``).

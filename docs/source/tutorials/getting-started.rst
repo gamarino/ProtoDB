@@ -157,5 +157,5 @@ What to read next
 * :doc:`modelling-data` for records, collections, values against ``MutableObject`` cells and versioned
   entities.
 * :doc:`indexing-querying` for indexes and the query planner.
-* :doc:`concurrency` for conflicts, ``Database.run`` and merges.
+* :doc:`concurrency` for conflicts and their units, and ``Database.run``.
 * :doc:`../concepts` for the ideas behind these calls.

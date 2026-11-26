@@ -1,4 +1,4 @@
-"""Cloud object-store storage of ProtoDB 2.0 (spec section 9, decisions D5 and D43).
+"""Cloud object-store storage of proto_db 2.0 (spec section 9, decisions D5 and D43).
 
 Layout under a key ``prefix`` of one bucket::
 
@@ -84,7 +84,7 @@ from .cache import BoundedCache
 from .format import (RECORD_HEADER_SIZE, SEGMENT_HEADER_SIZE, RecordKind,
                      RootRecord, atom_version, decode_root, decode_segment_header, encode_record,
                      encode_segment_header, read_record, record_size,
-                     undecodable_atom, write_version)
+                     root_version, undecodable_atom, write_version)
 
 __all__ = ["ObjectStore", "ObjectStoreError", "ObjectNotFoundError", "PreconditionFailedError",
            "TransientObjectStoreError", "OutcomeUnknownError", "CloudStorage", "S3ObjectStore",
@@ -613,20 +613,20 @@ class CloudStorage(SharedStorage):
                 current, etag, recent = self._read_root_object()
                 epoch = current.epoch if current is not None else 0
                 with self._state_lock:
-                    root_version = max(self._written_version, current.version if current is not None else 0,
-                                       version or 0)
+                    published = root_version(self._written_version,
+                                             current.version if current is not None else 0, version or 0)
                 if expected_epoch is not None and expected_epoch != epoch:
                     if uncertain:
                         # An earlier attempt of ours may be what moved the root.
                         verdict = self._verdict(current, recent, ptr.segment, ptr.offset, expected_epoch + 1)
                         if verdict is True:
-                            return RootRecord(root_version, ptr.segment, ptr.offset, expected_epoch + 1)
+                            return RootRecord(published, ptr.segment, ptr.offset, expected_epoch + 1)
                         if verdict is None:
                             raise ProtoOutcomeUnknownError(
                                 f"The root moved to epoch {epoch} after an attempt with an unknown outcome "
                                 f"and its history no longer reaches epoch {expected_epoch + 1}")
                     raise ProtoConflictError(f"Root epoch is {epoch}, expected {expected_epoch}")
-                mine = RootRecord(root_version, ptr.segment, ptr.offset, epoch + 1)
+                mine = RootRecord(published, ptr.segment, ptr.offset, epoch + 1)
                 history = ([(current.segment, current.offset, current.epoch)] + recent
                            if current is not None else [])
                 data = _encode_root_object(mine, history[:self._root_history])

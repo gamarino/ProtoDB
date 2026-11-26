@@ -144,14 +144,14 @@ class TestIndexEvents:
         assert s.get_index("i").live() == Counter(order_key(e) for e in ["a", "b"])
 
 
-class TestRebase:
+class TestReapply:
     @both
     def test_concurrent_increments_both_count(self, cls):
         """D26: counters merge by net delta, so two concurrent increments are both kept."""
         snapshot = reload(make(["a"], indexes=("i",), cls=cls))
         theirs = snapshot.add("a").add("b")
         mine = snapshot.add("a").add("c").add("c")
-        merged = mine.rebase_onto(theirs)
+        merged = mine._reapplied_on(theirs)
         assert counts(merged) == counts(make(["a", "a", "a", "b", "c", "c"]))
         assert merged.total_count == 6
         assert merged.get_index("i").live() == Counter(order_key(e) for e in merged)
@@ -161,25 +161,25 @@ class TestRebase:
         snapshot = reload(make(["a", "a"], cls=cls))
         theirs = snapshot.remove("a").remove("a")
         mine = snapshot.remove("a")
-        assert mine.rebase_onto(theirs).count_of("a") == 0
+        assert mine._reapplied_on(theirs).count_of("a") == 0
 
     def test_removes_beyond_zero_then_add(self):
         """Within one log, a remove that found nothing does not cancel a later add (serial equivalence)."""
         snapshot = reload(make(["a"]))
         mine = snapshot.remove("a").remove("a").add("a")
         assert mine.count_of("a") == 1
-        assert mine.rebase_onto(snapshot).count_of("a") == 1
+        assert mine._reapplied_on(snapshot).count_of("a") == 1
         # Serially after theirs {a: 2}: remove -> 1, remove -> 0, add -> 1.
-        assert mine.rebase_onto(snapshot.add("a")).count_of("a") == 1
-        assert mine.rebase_onto(snapshot.add("a").add("a")).count_of("a") == 2
-        assert mine.rebase_onto(snapshot.remove("a")).count_of("a") == 1
+        assert mine._reapplied_on(snapshot.add("a")).count_of("a") == 1
+        assert mine._reapplied_on(snapshot.add("a").add("a")).count_of("a") == 2
+        assert mine._reapplied_on(snapshot.remove("a")).count_of("a") == 1
 
-    def test_rebase_matches_serial_replay(self):
+    def test_reapply_matches_serial_replay(self):
         """Rebasing equals replaying mine's ops one by one after theirs (random logs)."""
         rng = random.Random(7)
         for _ in range(200):
             start = [rng.randrange(4) for _ in range(rng.randrange(6))]
-            snapshot = make(start)._with(_op_log=())
+            snapshot = make(start)._with(_changes=())
             theirs, mine = snapshot, snapshot
             for _ in range(rng.randrange(8)):
                 e = rng.randrange(4)
@@ -187,8 +187,8 @@ class TestRebase:
             for _ in range(rng.randrange(10)):
                 e = rng.randrange(4)
                 mine = mine.add(e) if rng.random() < 0.5 else mine.remove(e)
-            merged = mine.rebase_onto(theirs)
-            assert counts(merged) == literal(counts(theirs), mine._op_log)
+            merged = mine._reapplied_on(theirs)
+            assert counts(merged) == literal(counts(theirs), mine._changes)
             assert merged.total_count == sum(n for _, n in merged.items())
 
 
@@ -196,7 +196,7 @@ class TestBulk:
     @both
     def test_from_iterable(self, cls):
         s = cls.from_iterable(["a", "b", "a", 1, 1.0, True])
-        assert s.count == 4 and s.total_count == 6 and s._op_log == ()
+        assert s.count == 4 and s.total_count == 6 and s._changes == ()
         assert s.count_of("a") == 2 and s.count_of(1) == 2 and s.count_of(True) == 1
         avl.check_invariants(s.root)
         assert cls.from_iterable([]).count == 0
@@ -240,16 +240,16 @@ class TestReviewFixes:
         snapshot = reload(make(["a", "b", "b"], indexes=("i",)))
         theirs = snapshot.add("c")
         mine = snapshot.remove("a").add("a").remove("b").add("b").add("b")
-        merged = mine.rebase_onto(theirs)
+        merged = mine._reapplied_on(theirs)
         assert merged.get_index("i").events_since(theirs.get_index("i")) == ()
         assert merged.count_of("b") == 3 and merged.count_of("a") == 1
-        assert len(merged._op_log) == len(theirs._op_log) + 2  # one logged step per element
+        assert len(merged._changes) == len(theirs._changes) + 2  # one logged step per element
 
     def test_random_replay_emits_no_events_for_survivors(self):
         rng = random.Random(3)
         for _ in range(150):
             snapshot = make([rng.randrange(4) for _ in range(rng.randrange(6))], indexes=("i",))
-            snapshot = snapshot._with(_op_log=())
+            snapshot = snapshot._with(_changes=(), _whole=False)   # as loaded: no runtime record (Task 9)
             theirs, mine = snapshot, snapshot
             for _ in range(rng.randrange(6)):
                 e = rng.randrange(4)
@@ -257,11 +257,11 @@ class TestReviewFixes:
             for _ in range(rng.randrange(10)):
                 e = rng.randrange(4)
                 mine = mine.add(e) if rng.random() < 0.5 else mine.remove(e)
-            merged = mine.rebase_onto(theirs)
-            assert counts(merged) == literal(counts(theirs), mine._op_log)
+            merged = mine._reapplied_on(theirs)
+            assert counts(merged) == literal(counts(theirs), mine._changes)
             events = merged.get_index("i").events_since(theirs.get_index("i"))
             assert len(events) == len({order_key(ev[1]) for ev in events})  # at most one event per element
             for kind, e in events:
                 assert (kind == "add") == (not theirs.has(e) and merged.has(e))
-            # A merged version can itself be rebased (its log holds transform ops).
-            assert counts(merged.rebase_onto(theirs)) == literal(counts(theirs), merged._op_log)
+            # A merged version can itself be reapplied (its log holds transform ops).
+            assert counts(merged._reapplied_on(theirs)) == literal(counts(theirs), merged._changes)

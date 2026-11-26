@@ -3,16 +3,21 @@
 [![PyPI version](https://img.shields.io/pypi/v/proto_db.svg)](https://pypi.org/project/proto_db/)
 [![Python Version](https://img.shields.io/pypi/pyversions/proto_db.svg)](https://pypi.org/project/proto_db/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Project Status](https://img.shields.io/badge/status-2.0.0rc4-orange.svg)](#status)
+[![Project Status](https://img.shields.io/badge/status-2.0.0rc5_(unreleased)-orange.svg)](#status)
 
 `proto_db` is an embedded, transactional, object-oriented database for Python. It stores immutable,
 persistent collections with secondary indexes, runs queries through an index-aware planner, and
-commits serializable transactions per root, all in-process, without a separate server.
+commits serializable transactions whose conflicts are as narrow as a dictionary key, a set element or a
+cell, all in-process, without a separate server.
 
 ### Status
 
-`2.0.0rc4`: the 2.0 rebuild, release candidate (design: `docs/superpowers/specs/2026-11-01-protodb-v2-design.md`,
-decisions: `docs/decisions.md`). The 0.1 implementation has been removed; the API below is the 2.0 API.
+`2.0.0rc4` is the published release candidate of the 2.0 rebuild (design:
+`docs/superpowers/specs/2026-11-01-protodb-v2-design.md`, decisions: `docs/decisions.md`). This tree is the
+next one, `2.0.0rc5` (unreleased): it replaces conflict detection per root by the **precondition concurrency
+model** (decision D73, `docs/source/concurrency-model.rst`), a behaviour-incompatible change listed in the
+CHANGELOG, and the spaces it writes cannot be opened by earlier releases (format 7). The 0.1 implementation has
+been removed; the API below is the 2.0 API.
 Everything this page lists is implemented and covered by the test suite, which runs on CPython 3.14t
 (free-threaded) and with the GIL. The cluster is new: it is documented, tested and measured in this
 repository and has no production history. Open defects are listed where they apply (see the cluster item
@@ -58,9 +63,13 @@ If you read only one thing before the code, read
 
 ## Features
 
-- **Transactions**: snapshot isolation, read sets checked at commit (a conflict raises
-  `ProtoConflictError`; `Database.run` retries), per-key merges of collections written without being
-  read, named mutable cells (`MutableObject`), a version history per database.
+- **Transactions**: snapshot isolation and serializable commits under the precondition model: every read
+  and write declares what it saw of the transaction's snapshot (a dictionary key, a set element, a list
+  position, a cell, an index group, a key range, a whole root), and the commit checks exactly that before it
+  reapplies the transaction's changes on the newest state. Writers of different keys of one collection do not
+  conflict, counters compose, writes made without reading are compared too (no last writer wins), and a
+  conflict (`ProtoConflictError`, which `Database.run` retries) names the unit that failed. Named mutable
+  cells (`MutableObject`), unique equality indexes, and a version history per database.
 - **Values**: one value model with a total order across types (`1 == 1.0 == Decimal(1)`, `True != 1`),
   used identically by collections, indexes and queries.
 - **Collections**: `List`, `Dictionary` (key-ordered), `HashDictionary`, `RepeatedKeysDictionary`,
@@ -214,6 +223,37 @@ print(tr.get_root_object("hits"))  # 200
 tr.abort()
 space.close()
 ```
+
+A collection root is not one unit: writers of different keys commit side by side, and a conflict names
+the unit that failed.
+
+```python
+from proto_db import MemoryStorage, ObjectSpace, ProtoConflictError
+
+space = ObjectSpace(MemoryStorage())
+db = space.new_database("shop")
+with db.new_transaction() as tr:
+    tr.set_root_object("stock", tr.new_dictionary().set_at("pen", 10).set_at("ink", 5))
+
+a, b, c = db.new_transaction(), db.new_transaction(), db.new_transaction()
+for tr, item in ((a, "pen"), (b, "ink"), (c, "pen")):
+    stock = tr.get_root_object("stock")
+    tr.set_root_object("stock", stock.set_at(item, stock.get_at(item) - 1))
+a.commit()
+b.commit()                                  # another key: no conflict
+try:
+    c.commit()                              # the same key as a
+except ProtoConflictError as error:
+    print(error.unit.kind.name, error.unit.key)   # KEY pen
+tr = db.new_transaction()
+print(dict(tr.get_root_object("stock").items()))  # {'ink': 4, 'pen': 9}
+tr.abort()
+space.close()
+```
+
+The [concurrency tutorial](docs/source/tutorials/concurrency.rst) covers the units of every collection,
+"check and add", identifiers without a counter, lock cells and the one deliberate escape (a `Snapshot`); the
+[concurrency model](docs/source/concurrency-model.rst) states every rule and the known limits.
 
 ## Extensible models
 

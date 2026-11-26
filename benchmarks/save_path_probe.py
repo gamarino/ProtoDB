@@ -75,9 +75,16 @@ def main() -> None:
         first = next_id[0]
 
         def fn(tr):
-            tr.set_root_object("ids", tr.new_counted_set().add(first))
+            # Through the linked root: CountedSet adds compose (spec section 5, D26).
+            ids = tr.get_root_object("ids")
+            ids = ids if ids is not None else tr.new_counted_set()
+            tr.set_root_object("ids", ids.add(first))
             if args.payload:
-                tr.set_root_object("blobs", tr.new_dictionary().set_at(first, payload_value(first, args.payload)))
+                # Through the linked root: only the key written is recorded (spec section 5), so
+                # concurrent writers of different ids do not conflict.
+                blobs = tr.get_root_object("blobs")
+                blobs = blobs if blobs is not None else tr.new_dictionary()
+                tr.set_root_object("blobs", blobs.set_at(first, payload_value(first, args.payload)))
         db.run(fn)
         next_id[0] += 1
 

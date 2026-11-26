@@ -1,17 +1,18 @@
 """Indexed collection roots written by many threads (Task 5.2).
 
-* 16 threads append records to an indexed ``List`` root.  ``List`` is not
-  ``ConcurrentOptimized``, so every append is a read-modify-write that conflicts and
-  retries.  The final list holds every record exactly once, each thread's records in
-  its own order, and both indexes validate and answer exactly like a scan.
-* 16 threads blind ``set_at`` into an indexed ``Dictionary`` root (written, never
-  read: intent merge, D33), over disjoint keys and keys shared by all threads.
+* 16 threads append records to an indexed ``List`` root through its linked copy.  An
+  append has no precondition (spec section 5): it is reapplied at the end of the current
+  list, in commit order.  The final list holds every record exactly once, each thread's
+  records in its own order, and both indexes validate and answer exactly like a scan.
+* 16 threads ``set_at`` into an indexed ``Dictionary`` root through its linked copy (a
+  per-key precondition, section 5), over disjoint keys and keys shared by all threads.
   Disjoint keys hold exactly what their writer wrote; a shared key holds one of the
-  values written to it; the indexes validate and match a scan; no attempt conflicts.
+  values written to it; the indexes validate and match a scan; only a shared key
+  written concurrently conflicts and is retried.
 
 Catches: lost appends, duplicated records from a retried attempt, an index updated
-by one interleaving but not another (stale or doubled entries), and a blind merge
-that bypasses the current root's indexes.
+by one interleaving but not another (stale or doubled entries), and a reapplied
+intention that bypasses the current root's indexes.
 """
 import pytest
 
@@ -98,7 +99,9 @@ PER_THREAD_SETS = 60
 SHARED_KEYS = 10
 
 
-def test_blind_set_at_on_an_indexed_dictionary(space, request):
+def test_linked_set_at_on_an_indexed_dictionary(space, request):
+    """Section 5, R34: set_at through the linked root; own keys never conflict, a shared key
+    written concurrently conflicts and is retried (the blind D33 merge is retired for dictionaries)."""
     db = space.new_database("db")
     with db.new_transaction() as tr:
         tr.set_root_object("d", tr.new_dictionary()
@@ -114,7 +117,8 @@ def test_blind_set_at_on_an_indexed_dictionary(space, request):
                 own_key, value = f"t{t:02d}-{i:03d}", DBObject(t=t, i=i)
                 shared_key, shared_value = f"shared-{i % SHARED_KEYS}", DBObject(t=t, i=i)
                 attempts.run(db, lambda tr: tr.set_root_object(
-                    "d", tr.new_dictionary().set_at(own_key, value).set_at(shared_key, shared_value)), **RUN_KW)
+                    "d", tr.get_root_object("d").set_at(own_key, value).set_at(shared_key, shared_value)),
+                    **RUN_KW)
         return body
 
     for t in range(THREADS):
@@ -132,7 +136,6 @@ def test_blind_set_at_on_an_indexed_dictionary(space, request):
         assert value in written[key], f"{key} holds {value}, which nobody wrote there"
     assert d.count == len(content) == 1 + len(expected_own) + SHARED_KEYS
     assert attempts.commits == THREADS * PER_THREAD_SETS
-    assert attempts.conflicts == 0, attempts
     assert_index_matches_scan(d, "by_t", [Term("t", "==", t) for t in range(-1, THREADS)])
     assert_index_matches_scan(d, "by_i", [Term("i", "between[]", (10, 20)), Term("i", ">=", 55)])
     report(request.node.name, elapsed, attempts)

@@ -65,7 +65,7 @@ def test_the_parents_space_verifies_and_walks_parents(tmp_path, capsys):
     code, dump = _run(_copy("parents", tmp_path), tmp_path)
     assert code == 0, capsys.readouterr().err
     assert dump["databases"]["db"] == vector["contents"]
-    assert dump["root"]["version"] == 5
+    assert dump["root"]["version"] == 7     # every root of this revision (R63, Task 14)
     # The walk follows the parents (the envelope key "p") as it follows the state's references:
     # it decodes exactly the records reachable from the root through both, the "mixin" record
     # only through a parent.

@@ -49,14 +49,19 @@ Maintained aggregates
 from __future__ import annotations
 
 import copy
+import datetime
+import types
+import uuid
 from collections.abc import Mapping
+from decimal import Decimal
 
 from ..catalog.atoms import FIELD_DEFAULTS
 from ..catalog.model import check_model
 from ..errors import ProtoValidationError
 from ..registry import DESCRIPTOR, METHOD, Registry, _is_intent, _load_order
+from ..values import MISSING, FrozenDict, FrozenList
 from .constraints import check_enforceable, unenforced_reason
-from .descriptors import Aggregate
+from .descriptors import Aggregate, Computed, Field, IntentSpec, Invariant, Relation, RelationTo, Role, _Descriptor
 
 __all__ = ["module_contributions", "compose", "compose_modules", "describe", "subtypes", "is_a", "index_paths",
            "linearization"]
@@ -128,33 +133,156 @@ def _maintained(registry: Registry, module_name: str, registry_name: str) -> fro
     names = _ancestor_names(registry, registry_name)
     return frozenset(name for e in registry.extensions if e.module in modules and e.registry_name in names
                      for name, (kind, value) in e.definitions.items()
-                     if kind == DESCRIPTOR and isinstance(value, Aggregate) and value.maintained)
+                     if kind == DESCRIPTOR and _engine_class(value, (Aggregate,)) is not None
+                     and _INSTANCE_DICT.__get__(value).get("maintained") is True)
+
+
+# -- engine-only reads of declarations (P-C) ------------------------------------------------------------
+#
+# The composition runs under the space root when a commit merges the semantic catalog
+# (``Transaction._merged_semantic_catalog``, R37), and no application code may run there.  A module may
+# declare a subclass of a descriptor, of ``Invariant`` or of ``IntentSpec`` that overrides their methods,
+# so a declaration is never asked through dispatch: its state is read with the engine class's own
+# accessors, checked to be plain data, copied into an instance of the engine class itself, and that
+# class's method is called on the copy.  Reading the state uses C-level accessors only (the instance
+# dictionary's or the slots' descriptors of the engine class, the type's MRO by identity), never an
+# attribute lookup a class or a metaclass of the module could intercept.
+
+#: The engine's concrete descriptor classes, most derived first where they inherit from one another.
+_ENGINE_DESCRIPTORS = (Relation, Role, RelationTo, Field, Computed, Aggregate)
+#: The instance dictionary of every descriptor (``_Descriptor`` defines no slots).
+_INSTANCE_DICT = _Descriptor.__dict__["__dict__"]
+_MRO = type.__dict__["__mro__"]
+#: The types whose values are plain data: builtins and the engine's own canonical containers (exact types,
+#: so no subclass of a module), none of which runs application code when iterated, copied or hashed.  A
+#: function is accepted as a value and never called here; a Python ``Computed``'s function may be any
+#: callable (:func:`_descriptor_element` carries it apart).
+_PLAIN_TYPES = (str, int, float, bool, type(None), bytes, Decimal, datetime.date, datetime.datetime, datetime.time,
+                datetime.timedelta, uuid.UUID, list, tuple, dict, set, frozenset, FrozenDict, FrozenList,
+                types.FunctionType)
+
+
+def _engine_class(value, engines: tuple):
+    """The engine class among ``engines`` that ``value`` is an instance of (its nearest in the MRO), or
+    ``None``.  Identity comparisons over the MRO only."""
+    for cls in _MRO.__get__(type(value)):
+        for engine in engines:
+            if cls is engine:
+                return engine
+    return None
+
+
+def _plain(where: str, value):
+    """``value`` when it holds plain data only (:data:`_PLAIN_TYPES` and ``MISSING``, at any depth), else
+    ``ProtoValidationError``: a declaration holding another object is refused rather than read."""
+    stack = [value]
+    while stack:
+        item = stack.pop()
+        if item is MISSING:
+            continue
+        t = type(item)
+        if not any(t is plain for plain in _PLAIN_TYPES):
+            raise _invalid(f"{where}: a declaration holds a {t.__qualname__!s} value; only plain data is catalogued")
+        if t is dict or t is FrozenDict:
+            stack.extend(item.keys())
+            stack.extend(item.values())
+        elif t is list or t is tuple or t is set or t is frozenset or t is FrozenList:
+            stack.extend(item)
+    return value
+
+
+def _plain_copy(where: str, value):
+    """A copy of the plain data ``value`` (:func:`_plain`) built by the engine: lists and dicts rebuilt,
+    immutable values (the frozen containers included) shared.  It never calls a ``__deepcopy__``: the types it accepts define none."""
+    _plain(where, value)
+
+    def copied(item):
+        t = type(item)
+        if t is dict:
+            return {k: copied(v) for k, v in item.items()}
+        if t is list:
+            return [copied(v) for v in item]
+        if t is tuple:
+            return tuple(copied(v) for v in item)
+        return item
+    return copied(value)
+
+
+def _descriptor_element(value, name: str) -> dict:
+    """The catalog item of the descriptor ``value`` declared as ``name``, by its engine class's own
+    :meth:`element` over a copy of its state."""
+    engine = _engine_class(value, _ENGINE_DESCRIPTORS)
+    if engine is None:
+        raise _invalid(f"the descriptor {name!r} is of no engine descriptor class")
+    state = dict(_INSTANCE_DICT.__get__(value))
+    function = None
+    if engine is Computed:
+        # A Python computed's function is any callable (a function, a partial, a builtin, a bound
+        # method, a callable instance: Computed accepts each).  It is carried by identity, never
+        # called, copied or looked into here (Computed.element does not read it); ``callable`` reads
+        # the type's call slot only.
+        function = state.pop("function", None)
+        if function is not None and not callable(function):
+            raise _invalid(f"the descriptor {name!r}: its function is not callable")
+    state = _plain_copy(f"the descriptor {name!r}", state)
+    if engine is Computed:
+        state["function"] = function
+    shadow = object.__new__(engine)
+    _INSTANCE_DICT.__get__(shadow).update(state)
+    return engine.element(shadow, name)
+
+
+def _slotted_copy(value, engine, slots: tuple, where: str):
+    """An instance of the slotted engine class ``engine`` holding ``value``'s ``slots`` (read through the
+    engine class's slot descriptors), each checked to be plain data."""
+    if _engine_class(value, (engine,)) is None:
+        raise _invalid(f"{where}: not a {engine.__name__}")
+    shadow = object.__new__(engine)
+    for slot in slots:
+        member = engine.__dict__[slot]
+        member.__set__(shadow, _plain_copy(f"{where}, {slot}", member.__get__(value, engine)))
+    return shadow
+
+
+_INTENT_SLOTS = ("meaning", "requires", "commutes_with", "parameters")
+_INVARIANT_SLOTS = ("tree", "meaning", "enforced", "message", "name")
+
+
+def _intent_element(fn, name: str) -> dict:
+    """The Intent item of the intent function ``fn`` declared as ``name``: ``IntentSpec.element`` over an
+    engine copy of its spec (read from the function's own dictionary)."""
+    spec = types.FunctionType.__dict__["__dict__"].__get__(fn).get("__proto_intent__") \
+        if type(fn) is types.FunctionType else None
+    return IntentSpec.element(_slotted_copy(spec, IntentSpec, _INTENT_SLOTS, f"the intent {name!r}"), name)
 
 
 def _extension_item(registry: Registry, extension, relationships: frozenset) -> dict:
-    """The catalog Extension item of the registry extension ``extension``."""
+    """The catalog Extension item of the registry extension ``extension``; engine code only (see above)."""
     semantic = extension.semantic
     entity = {}
     if extension.registry_name in relationships:
         entity["kind"] = "relationship"
     for dunder, field in _DUNDER_FIELDS:
         if dunder in semantic:
-            value = semantic[dunder]
-            entity[field] = list(value) if isinstance(value, tuple) else copy.deepcopy(value)
+            value = _plain_copy(f"{extension.registry_name!r}.{dunder}", semantic[dunder])
+            entity[field] = list(value) if type(value) is tuple else value
     if semantic.get("supertypes"):
-        entity["supertypes"] = list(semantic["supertypes"])
+        entity["supertypes"] = list(_plain(f"{extension.registry_name!r} supertypes", semantic["supertypes"]))
     elements = []
     for name, (kind, value) in extension.definitions.items():
         if kind == DESCRIPTOR:
-            elements.append(value.element(name))
+            elements.append(_descriptor_element(value, name))
         elif kind == METHOD and _is_intent(value):
-            elements.append(value.__proto_intent__.element(name))
+            elements.append(_intent_element(value, name))
     constraints = semantic.get("__constraints__", ())
     if constraints:
         aggregates = _maintained(registry, extension.module, extension.registry_name)
+        if type(constraints) is not tuple:
+            raise _invalid(f"the constraints of {extension.registry_name!r} are not the checked tuple of Invariant")
         for constraint in constraints:
-            scope = "aggregate" if constraint.reads() & aggregates else "entity"
-            elements.append(constraint.element(scope))
+            shadow = _slotted_copy(constraint, Invariant, _INVARIANT_SLOTS, f"{extension.registry_name!r} constraint")
+            scope = "aggregate" if Invariant.reads(shadow) & aggregates else "entity"
+            elements.append(Invariant.element(shadow, scope))
     item = {"module": extension.module, "extends": extension.registry_name}
     if entity:
         item["entity"] = entity

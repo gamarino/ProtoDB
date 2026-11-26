@@ -3,7 +3,7 @@
 Every variant answers the same questions over the same :func:`~benchmarks.support.records`
 data set and is checked against a model computed from the plain record list: the sum of
 the matching ids for lookups, the count and id sum per range, the exact ordered id list
-for top-k.  ProtoDB data lives in a committed :class:`~proto_db.Dictionary` (key ``id``)
+for top-k.  proto_db data lives in a committed :class:`~proto_db.Dictionary` (key ``id``)
 read through a fresh transaction; ``code`` carries an :class:`~proto_db.EqualityIndex`,
 ``score`` (a unique permutation) a :class:`~proto_db.RangeIndex` and ``city`` an
 EqualityIndex.  An unindexed copy of the dictionary gives the scan variants.  SQLite holds
@@ -24,7 +24,7 @@ _DATA = {}
 
 
 class _Data:
-    """One committed ProtoDB data set and its SQLite and Python twins (built once per size)."""
+    """One committed proto_db data set and its SQLite and Python twins (built once per size)."""
 
     def __init__(self, n: int, workdir: str):
         from proto_db import EqualityIndex, MemoryStorage, ObjectSpace, RangeIndex

@@ -56,7 +56,8 @@ Saving
     ``context._atom_saved(atom, ptr, state)`` (private, so it never meets a user context's own
     attribute; no stripe held): a context that caches decoded atoms
     keeps the atom a load of ``ptr`` would produce (:meth:`Atom._decoded_twin`, Task 8.3i),
-    never the live object, whose runtime state (an op log, for example) a loaded atom has not.
+    never the live object, whose runtime state (a linked collection's link and record of intentions,
+    for example) a loaded atom has not.
 
 History links (Task 8.3l, ruling R92)
     A class lists in ``_history_links`` the persisted attributes that link an older version
@@ -182,6 +183,12 @@ class PersistenceContext(Protocol):
 #: Number of locks in the striped pool shared by all atoms (D21).
 _STRIPES = 64
 _LOCKS = tuple(threading.RLock() for _ in range(_STRIPES))
+
+
+def _engine_load(context):
+    """The context's load for the engine's own decoding: a transaction's unguarded ``_load`` (a pure
+    extractor may resolve the atoms its value references, R27), else the context's ``load``."""
+    return getattr(context, "_load", None) or context.load
 
 
 def _lock_for(atom) -> "threading.RLock":
@@ -867,7 +874,7 @@ class Atom:
         this atom's context, never kept by this atom."""
         ref = links[name]
         if type(ref) is tuple:
-            return self.context.load(ref[0], ref[1].__type_name__)
+            return _engine_load(self.context)(ref[0], ref[1].__type_name__)
         if isinstance(ref, Atom) and ref.atom_pointer is not None and self.context is not None:
             links[name] = _link_ref(ref)        # saved since: from now on held by pointer only
         return ref
@@ -954,12 +961,12 @@ class Atom:
                     object.__setattr__(self, "_loaded", pending)
             context = self.context
             payload = pending.payload
-            state = codec.decode_state(payload["s"], context.load)
+            state = codec.decode_state(payload["s"], _engine_load(context))
             missing = [name for name in type(self)._required_fields if name not in payload["s"]]
             if missing:
                 raise ProtoCorruptionError(f"Atom at {self.atom_pointer} "
                                            f"({type(self).__type_name__}) lacks the required fields {missing}")
-            parents = _decode_parents(payload["p"], context.load, self.atom_pointer) if "p" in payload else None
+            parents = _decode_parents(payload["p"], _engine_load(context), self.atom_pointer) if "p" in payload else None
             oid = uuid.UUID(bytes=payload["oid"])
             with lock:
                 if self._loaded:
@@ -1153,10 +1160,10 @@ class Atom:
         A new object of this atom's class, loaded, with this atom's ``oid``: every persisted
         attribute is :func:`~proto_db.core.codec.redecode_value` of the saved value -- what
         decoding its wire form gives, nested atoms obtained from ``context.load`` by pointer --
-        and no runtime state (no op log, for example).  This atom itself is left untouched.
+        and no runtime state (no link or record of intentions, for example).  This atom itself is left untouched.
         ``inline``, a one-item list, accumulates the bytes of its ``str``/``bytes`` values."""
         from . import codec
-        load = context.load
+        load = _engine_load(context)
         decoded = {name: codec.redecode_value(value, load, inline) for name, value in state.items()}
         twin = object.__new__(type(self))
         osa = object.__setattr__
@@ -1172,6 +1179,33 @@ class Atom:
         osa(twin, "oid", self.oid)
         osa(twin, "_loaded", _Generation(names))
         return twin
+
+    def _pointer_copy(self) -> "Atom":
+        """A new loaded instance of this saved atom's class with the same loaded state, ``oid``,
+        ``atom_pointer`` and ``context`` (protected; used by the linked collections, spec R41).
+
+        This atom is loaded first if it is a stub, and is left untouched.  The copy is never
+        known to a decoded-atom cache (it is not in ``_AtomCache._ident`` and is not marked as
+        produced by one), so the cache never serves it, admits it or unloads it: runtime state set
+        on the copy stays the copy's own.  Saving it is a no-op (it has the pointer).
+        ``ProtoValidationError`` for an atom that is not saved."""
+        ptr = self.atom_pointer
+        if ptr is None:
+            raise ProtoValidationError(f"Only a saved atom has a pointer-preserving copy, not {self!r}")
+        snapshot = self._snapshot()
+        oid = snapshot.get("oid")
+        if oid is None:
+            oid = self.oid
+        copy = object.__new__(type(self))
+        osa = object.__setattr__
+        osa(copy, "_loaded", True)
+        for name, value in snapshot.items():
+            if name not in _STUB_KEYS:
+                osa(copy, name, value)
+        osa(copy, "atom_pointer", ptr)
+        osa(copy, "context", snapshot.get("context", self.context))
+        osa(copy, "oid", oid)
+        return copy
 
     # -- identity -------------------------------------------------------------------
 

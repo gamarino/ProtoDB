@@ -1116,6 +1116,15 @@ def test_a_code_difference_reaches_the_agent_without_stored_catalog_values(monke
         first.close()
 
 
+def _leaves(value) -> list:
+    """Every scalar of a JSON-like answer (dict keys and values, list items), at any depth."""
+    if isinstance(value, dict):
+        return [leaf for k, v in value.items() for leaf in _leaves(k) + _leaves(v)]
+    if isinstance(value, (list, tuple)):
+        return [leaf for item in value for leaf in _leaves(item)]
+    return [value]
+
+
 def test_as_of_applies_the_stricter_of_then_and_now(space):
     """I3: a later module that tightens a sensitivity binds reads of earlier versions too."""
     db = space.new_database("db")
@@ -1128,7 +1137,9 @@ def test_as_of_applies_the_stricter_of_then_and_now(space):
     assert "credit_limit" not in query(db, customers)["rows"][0]["values"]
     then = query(db, dict(customers, as_of=before["version"]["ref"]))
     assert then["version"] == before["version"] and "credit_limit" not in then["rows"][0]["values"]
-    assert "777" not in json.dumps(then)
+    # The withheld value appears nowhere in the answer: compared by value, leaf by leaf, since
+    # "777" may occur inside a random UUID of the answer's text (final review F1).
+    assert all(str(leaf) != "777" for leaf in _leaves(then))
     term = next(t for t in query(db, dict(customers, select=["credit_limit"], as_of=before["version"]["ref"]))
                 ["terms"] if t["name"] == "credit_limit")
     assert term["withheld"] is True and term["sensitivity"] == "secret"

@@ -14,10 +14,11 @@ label of the order number; the catalog says which module defined each field.
 Step 3: relations navigable from both sides.  Orders with several lines are loaded.  From an order its
 products are reached; from a product, its sales by date through its own index, with no global structure;
 an invoice shows each product as it was when sold.
-Step 4: coexist or collide by meaning.  Several threads create orders for the same company concurrently, in
-intent mode, all from one snapshot.  The independent ones all commit, with no conflict; of two orders of
-Fabrikam that fit its credit limit each but not together, the one replayed second fails with
-``ProtoConstraintError``, whose message names the rule.  A walk of the database's history recomputes every
+Step 4: coexist or collide by meaning.  Several threads create orders for the same company concurrently, each in
+``Database.run``.  A conflict on a shared cell is retried, so the independent ones all commit; of two orders of
+Fabrikam that fit its credit limit each but not together, whichever commits second (either, depending on
+the thread schedule) is retried on the first one's result and fails with ``ProtoConstraintError``, whose
+message names the rule.  A walk of the database's history recomputes every
 customer's committed amount from the lines and finds no version above a limit.  The agent then describes the
 customer through the interface: the rule, its meaning and the aggregate's terms are its material to explain
 the refusal and propose alternatives.
@@ -345,8 +346,8 @@ def _verify_history(db, company: str) -> tuple:
 
 
 def step_4(db, world: dict) -> dict:
-    """Concurrent orders for one company, in intent mode: the independent ones commit, the one that exceeds a
-    limit together with a concurrent one fails with the rule.  Returns what the agent is asked about, and
+    """Concurrent orders for one company, each in ``Database.run``: the independent ones commit (a conflict is
+    retried), the one that exceeds a limit together with a concurrent one fails with the rule.  Returns what the agent is asked about, and
     updates ``world`` (the script's own record, for step 5's checks) with the new customers' limits, the
     orders that committed and the version read afterwards."""
     company, widget = MutableObject(world["company"]), MutableObject(world["widget"])
@@ -358,25 +359,20 @@ def step_4(db, world: dict) -> dict:
     customers = db.run(setup)
     customers.update(zip(("Northwind", "Contoso"), map(MutableObject, world["customers"])))
     say(f"{len(NEW_CUSTOMERS)} customers added, each with a credit limit of 100.00; "
-        f"{len(CONCURRENT)} threads each record one order, all from one snapshot, then commit together")
-    recorded = threading.Barrier(len(CONCURRENT))
+        f"{len(CONCURRENT)} threads each place one order, a conflict being retried")
     outcome = {}
 
     def place(number: int, customer: str, price: str) -> None:
-        tr = db.new_transaction(intents=True)
-        try:
+        def order_it(tr):
             s = semantic(tr)
             order = s.create(ORDER, number=number, date=date(2026, 7, 1), company=company,
                              customer=customers[customer])
             s.get(order).add_line(widget, Decimal("1"), Decimal(price))
-            recorded.wait(60)                   # every order recorded before any commit: one snapshot
-            tr.commit()
-            outcome[number] = ("committed", order)
+            return order
+        try:
+            outcome[number] = ("committed", db.run(order_it, retries=1000))
         except BaseException as error:          # reported and checked below
             outcome[number] = ("refused", error)
-        finally:
-            if tr.is_active:
-                tr.abort()
     threads = [threading.Thread(target=place, args=order, name=f"order {order[0]}") for order in CONCURRENT]
     for thread in threads:
         thread.start()
@@ -392,7 +388,7 @@ def step_4(db, world: dict) -> dict:
             refused[number] = what
     fabrikam = {number for number, customer, _ in CONCURRENT if customer == "Fabrikam"}
     check(not any(isinstance(error, ProtoConflictError) for error in refused.values()),
-          "no order conflicted: concurrent orders of one company and one customer are replayed one after another")
+          "no order failed by conflict: the conflicts of concurrent orders of one company were retried")
     check(len(refused) == 1 and set(refused) <= fabrikam,
           "zero independent orders rejected: only one of Fabrikam's two orders, which exceed its limit together")
     error = next(iter(refused.values()))

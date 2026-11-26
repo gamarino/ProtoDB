@@ -1,4 +1,4 @@
-# ProtoDB performance suite
+# proto_db performance suite
 
 A self-verifying benchmark suite (spec section 12, Tasks 9.1-9.3, decision D49). Every
 workload prints the work it did and checks its results against an independent computation
@@ -31,6 +31,22 @@ Probes outside the suite: `benchmarks/residency_probe.py` (Task 8.3m) measures p
 with a decoded-atom cache that fits the working set and with one 20 % smaller, and the thrash
 signal; it prints one JSON line (`python -X gil=0 -m benchmarks.residency_probe WORKDIR`, from the
 root of the tree to measure). Its log is `results/2026-11-06-8.3m-residency-probe.log`.
+
+`benchmarks/cluster_fairness.py` (Task 8.3e; moved from the test suite in the final review, F2, because
+it measures real time) runs 2, 3 and 5 contending in-process members for 1.5 s, three trials per case,
+and prints each member's leases, the lease ratio and the longest gap between two leases of a member;
+it exits 1 when a member starves or a median trial misses a bound (`python -m benchmarks.cluster_fairness
+--json OUT`). The test suite proves the same property on a logical clock
+(`tests/unit/test_cluster_fairness.py`, round-robin service counted in grants).
+
+`benchmarks/cluster_renewal.py` (Task 8.3f; moved from the test suite in the final re-review because it
+runs on real time: an owner's idle end is measured on the monotonic clock, D50) commits continuously on
+the owner of a two-member TieredCluster after a contender's higher request was refused, and prints each
+run's renewals, the widest gap from a permission request to the end of the next commit, the trials
+repeated for want of steady demand and the commits resolved by token on both members; it exits 1 when a
+renewal is refused under an active grant, the term ends with steady demand or an outcome stays
+unresolved (`python -m benchmarks.cluster_renewal --runs N --json OUT`). The test suite proves the
+property on a fake clock (`tests/unit/test_cluster_renewal.py`).
 
 The periodic cluster stress task (ruling R125) runs cluster tests beside CPU-bound busy processes
 and asserts safety only: `python -m benchmarks.cluster_stress --hogs 12 --runs 3 --json OUT`, from
@@ -71,13 +87,13 @@ Workloads added by the Task 9c CARRY:
   each read consistency level. Atom decodes per read are counted in each reader process
   (`benchmarks/decode_counter.py`); every read, the final catalog and the advance of every reader
   node's versions are verified.
-- `history_depth` (ProtoDB only, not a comparison): versioned entities built with the `previous`
+- `history_depth` (proto_db only, not a comparison): versioned entities built with the `previous`
   pattern at depths 1/10/100/1000 versions per entity, the same number of current entities each
   time; a current-state indexed query, warm and with no atom cache, with its latency and its atom
   decodes per query.
 - `inventory` takes `--param inventory.atom_cache_entries=N` and records the peak RSS and the
   atom-cache counters after the build and at the end; `mixed_read_write` asserts that every
-  ProtoDB node's readers saw the versions advance while writers committed.
+  proto_db node's readers saw the versions advance while writers committed.
 
 Every suite run also records the stray-process check (`check.stray_processes`, `checked_at`,
 `workdir_free_bytes`) in its results JSON and warns when the list is not empty.
@@ -121,7 +137,7 @@ with the results).
   imported on a free-threaded interpreter, so `vector_knn_hnsw` is flagged `isolate` and runs
   in a child interpreter with the same `-X` options; any other workload that changes the GIL
   state fails the run.
-- SQLite is a single-process reference only, at equal durability: ProtoDB `fsync` / `flush`
+- SQLite is a single-process reference only, at equal durability: proto_db `fsync` / `flush`
   / `none` against SQLite (WAL) `synchronous=FULL` / `NORMAL` / `OFF`. It is never used as a
   cluster reference (rulings R37, R45).
 - Cluster mode is compared with the CAS-only baseline (storage-arbitrated writers, the
@@ -158,7 +174,7 @@ from benchmarks.harness import BenchResult, benchmark, measure
 @benchmark("my_workload", quick={"n": 100}, full={"n": 10_000})
 def my_workload(ctx, p):
     """One-line description shown by --list."""
-    expected = ...                                  # computed independently of ProtoDB
+    expected = ...                                  # computed independently of proto_db
     result = BenchResult({"rows": p["n"]}, None, expected)
     samples, got = measure(lambda: ..., ctx.repeat, ctx.warmup, expect=expected)  # every run checked
     result.check("same rows as the model", got == expected, f"{got} != {expected}")

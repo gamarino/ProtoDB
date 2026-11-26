@@ -130,12 +130,13 @@ def test_the_value_comes_from_the_snapshot_the_tokens_came_from():
 
 
 def test_blind_tokens_merge_and_a_token_applied_twice_fails():
-    """``add_blind_token`` reads nothing, so two transactions adding concurrently both commit
-    (merged); a token present twice fails the read."""
-    from tests.support.outcomes import add_blind_token, blind_snapshot_of
+    """``add_blind_token`` reads no token, so two transactions adding concurrently to the existing
+    root both commit (their adds compose, D26); a token present twice fails the read."""
+    from tests.support.outcomes import BLIND_ROOT, add_blind_token, blind_snapshot_of
     space = ObjectSpace(MemoryStorage())
     try:
         db = space.new_database("db")
+        db.run(lambda tr: tr.set_root_object(BLIND_ROOT, tr.new_counted_set()))   # created once (section 5)
         t1, t2 = db.new_transaction(), db.new_transaction()
         add_blind_token(t1, "a")
         add_blind_token(t2, "b")

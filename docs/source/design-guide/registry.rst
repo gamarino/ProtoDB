@@ -136,11 +136,11 @@ The base module (R204-R209)
     are not ordered values (R175).
 
 Installs merge add-if-absent
-    At commit the two registry roots are merged against the root current at that moment, never through the
-    read set: the list only grows and the catalog only gains names, so the union is always right, two installs
+    At commit the two registry roots are merged against the root current at that moment, outside the precondition model
+    (D73, R37): the list only grows and the catalog only gains names, so the union is always right, two installs
     never conflict with each other, and the order of the list is the commit order (which is why the load order
     ignores it, R256). Reading the roots through
-    ``installed_modules`` and ``catalog_object`` (and for resolution) never enters the read set;
+    ``installed_modules`` and ``catalog_object`` (and for resolution) records no read;
     ``get_root_object`` of a registry root is an ordinary, recorded read, so a concurrent install makes that
     transaction conflict (R241). A raw ``commit()`` on a
     storage whose root lock is not global (``CloudStorage`` across processes) can still lose the root's

@@ -237,8 +237,11 @@ class CollectionScanPlan(QueryPlan):
                                                 "indexes": c.index_names()})
 
     def estimate(self) -> Estimate:
-        """A scan produces and touches every element: rows = cost = count."""
-        n = self.collection.count
+        """A scan produces and touches every element: rows = cost = count.  An engine read (R22): a
+        cost estimate records nothing; what a plan reads is recorded when it is planned or run."""
+        from ..collections.linking import engine_reads
+        with engine_reads():
+            n = self.collection.count
         return Estimate(rows=n, cost=n)
 
     def window(self, start: int, stop: int | None = None) -> Iterator | None:

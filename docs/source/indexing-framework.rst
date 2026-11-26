@@ -151,6 +151,14 @@ Follow the steps in the class documentation of :class:`proto_db.indexing.base.In
    ``supports_filtered`` / ``filtered_plan`` if your answer depends on the whole collection.
 5. Prove it: run an ``IndexContract`` for your kind (``tests/contracts/index_contract.py`` in a source
    checkout; register it there for ``proto_db`` itself, or call ``run_all()`` from your own tests).
+6. Decide whether it can be maintained from precomputed keys. Under the precondition model
+   (:doc:`concurrency-model`) a commit reapplies a transaction's changes with the space root held, where no
+   extractor may run; the keys are computed before. An index that sets ``_keyed_reapplication = True`` on its
+   own class (a subclass must restate it) and implements ``with_added_key``, ``with_removed_key`` and, if
+   useful, ``with_replaced_keys`` is maintained from those keys, and writes to its collection keep their fine
+   units. Without the opt-in, every write to a collection that carries the index takes the whole collection
+   as its unit: correct, and coarser under concurrency. Extractors must be pure: one that reads through a
+   transaction raises ``ProtoUserError``.
 
 The contract is the reusable test suite behind requirement 3 of the design. Given an index factory, a way to
 draw random elements and the terms to ask, it checks that: every supported term's plan equals the scan, plans

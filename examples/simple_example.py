@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Getting started with ProtoDB: a space, a database, transactions and persistent collections.
+"""Getting started with proto_db: a space, a database, transactions and persistent collections.
 
 Run from the repository root::
 

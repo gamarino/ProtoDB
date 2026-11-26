@@ -1,4 +1,4 @@
-"""Benchmark harness of the ProtoDB performance suite (spec section 12, Task 9.1, decision D49).
+"""Benchmark harness of the proto_db performance suite (spec section 12, Task 9.1, decision D49).
 
 A workload is a function registered with :func:`benchmark`::
 
@@ -18,7 +18,7 @@ directory) and the parameter set of the selected mode, does its work, and return
 
 The runner calls :meth:`BenchResult.verify` before it reports a single timing: a checksum
 mismatch or a failed check fails the run (exit status 1).  Baselines (dict/list, sqlite3,
-rqlite) do the same work as ProtoDB and are verified the same way.  A workload whose
+rqlite) do the same work as proto_db and are verified the same way.  A workload whose
 external reference is missing returns :meth:`BenchResult.pending` and is reported as
 pending, never as a number.
 
@@ -664,7 +664,7 @@ def compare(current: dict, base: dict, threshold: float) -> List[str]:
 
 def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     """Command-line options of ``python -m benchmarks``."""
-    p = argparse.ArgumentParser(prog="python -m benchmarks", description="ProtoDB performance suite (spec section 12).")
+    p = argparse.ArgumentParser(prog="python -m benchmarks", description="proto_db performance suite (spec section 12).")
     p.add_argument("--quick", action="store_true", help="tiny parameter sets (checks the harness, not speed)")
     p.add_argument("--json", metavar="OUT", help="write results and environment to this JSON file")
     p.add_argument("--compare", metavar="BASE", help="flag regressions against a previous JSON result")
@@ -770,7 +770,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         raise SystemExit(f"unknown workload(s): {', '.join(unknown)}; see --list")
     check = stray_check(workdir)
     env = capture_environment(ctx)
-    print(f"ProtoDB performance suite ({'quick' if args.quick else 'full'})")
+    print(f"proto_db performance suite ({'quick' if args.quick else 'full'})")
     print(f"python {env['python']} free-threaded build={env['free_threaded_build']} "
           f"gil_enabled={env['gil_enabled']} cpus={env['cpu_count']} ({env['cpu_model']}); "
           f"cpu frequency {env['cpu_frequency']}")

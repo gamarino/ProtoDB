@@ -66,7 +66,7 @@ from typing import Optional
 from ..core.atom import Atom
 from ..errors import ProtoConflictError, ProtoDBError, ProtoOutcomeUnknownError, ProtoTimeoutError, \
     ProtoUnexpectedError
-from ..storage.format import WRITE_FORMAT_VERSION, RootRecord
+from ..storage.format import WRITE_FORMAT_VERSION, RootRecord, root_version
 from .rootlog import LoggedRoots, RootsLog, compare_roots, memory_log_for, root_key
 
 __all__ = ["Persister", "PlainTier"]
@@ -216,8 +216,9 @@ class PlainTier:
                     return False
             try:
                 # The committer's version reaches the storage root (review I2); a root of the
-                # base version needs no hint, so storages of any revision of the contract work.
-                hint = {"version": record.version} if record.version > WRITE_FORMAT_VERSION else {}
+                # floor version every storage publishes at (ROOT_WRITE_VERSION, R63) needs no
+                # hint, so storages of any revision of the contract work.
+                hint = {"version": record.version} if record.version > root_version() else {}
                 self.storage.publish_root(record.pointer, current.epoch if current is not None else 0, **hint)
                 return True
             except ProtoConflictError:
@@ -433,6 +434,7 @@ class Persister:
                 break               # written outside cluster mode: persisted before the cluster
             ptr = previous.atom_pointer
             label = previous.cluster_term or 0
+            # A key only (compare_roots, root_key): the version is never read here.
             current = RootRecord(WRITE_FORMAT_VERSION, ptr.segment, ptr.offset, epoch)
             # The persisted root is on this root's chain (every committed root builds on the
             # newest committed one, and a refound starts from the persisted root), so any

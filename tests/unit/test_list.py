@@ -30,7 +30,8 @@ class TestBasics:
         assert lst.count == 0 and len(lst) == 0 and list(lst) == [] and list(lst.elements()) == []
 
     def test_not_concurrent_optimized(self):
-        """Positional writes do not merge: a List root is last-writer-wins (D23)."""
+        """A List keeps its own record of intentions (R48): positional writes need a position
+        precondition, which the ConcurrentOptimized contract (reapply anywhere) does not have."""
         assert not isinstance(List(), ConcurrentOptimized)
 
     def test_append_and_get(self):

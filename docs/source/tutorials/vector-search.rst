@@ -130,7 +130,7 @@ vectors (k-means, stored in the index) and searches only the ``nprobe`` nearest 
                                                      backend="ivf_flat", nlist=16, nprobe=nprobe))
            for i, topic, vec in docs:
                ivf = ivf.append_last(tr.new_object(i=i, topic=topic, vec=vec))
-           tr.set_root_object("ivf", ivf, replace=True)
+           tr.set_root_object("ivf", ivf)
        tr = db.new_transaction()
        coll, hits = tr.get_root_object("ivf"), 0
        for q in range(queries):
@@ -172,6 +172,11 @@ Limits and choices
   CPython when it is imported, so it costs the thread scalability the rest of ``proto_db`` has, and its graph is
   rebuilt from the stored vectors in each process, not stored. This tutorial does not measure it; see
   :doc:`../performance` for the vector results by backend before choosing it for a large collection.
+* Under concurrency (:doc:`../concurrency-model`), the ``exact`` and ``hnsw`` indexes are maintained from the
+  vector computed before the commit takes the space root, so writers of different elements of one collection
+  keep their fine units. An ``ivf_flat`` index cannot be: its lists depend on the whole collection, so every
+  write to a collection that carries one takes the whole collection, and two concurrent writers of it
+  conflict. A vector search itself is a read of the whole collection.
 * A dedicated vector database, or a library such as FAISS, is better than ``proto_db`` when vector search is the
   whole workload: (as general knowledge, not measured here) they typically offer more index types, quantisation and GPU execution. ``proto_db``'s advantage is that
   the vectors live in the same transactions, versions and queries as the records they describe, so a

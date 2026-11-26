@@ -17,7 +17,7 @@ a token unique to it, and once the members converge the test checks, token by to
 A reader returns a :class:`Snapshot`: the tokens and, from the SAME transaction, whatever else
 the test compares with them (P4: a counter read in another transaction can see an unknown
 commit that landed in between).  :func:`snapshot_of` builds one.  A workload of blind writes
-records its tokens with :func:`add_blind_token` instead (a ``CountedSet`` merged blind, which
+records its tokens with :func:`add_blind_token` instead (adds to a ``CountedSet`` that compose, which
 also catches a commit applied twice) and reads them with :func:`blind_snapshot_of`.
 
 Observations (P1) come from three places: :meth:`CommitTokens.observe`, which a test calls
@@ -126,15 +126,19 @@ def read_tokens_of(db, root: str = TOKENS_ROOT) -> frozenset:
     return snapshot_of(db, root=root).tokens
 
 
-#: The root of :func:`add_blind_token`: a ``CountedSet`` written blind (merged, never read).
+#: The root of :func:`add_blind_token`: a ``CountedSet`` whose content is never read by the workload.
 BLIND_ROOT = "commit-token-set"
 
 
 def add_blind_token(tr, token, root: str = BLIND_ROOT) -> None:
-    """Record ``token`` without reading anything: a blind add to a ``CountedSet`` root, merged
-    with concurrent adds (D33 intent merge), so a workload of blind writes keeps its contention
-    profile (a read of the token root would make every commit conflict with every other)."""
-    tr.set_root_object(root, tr.new_counted_set().add(token))
+    """Record ``token`` without reading any token: an add through the ``CountedSet`` root's linked
+    version, which records only the root's presence and composes with concurrent adds (spec
+    section 5, D26), so a workload of blind writes keeps its contention profile (a read of the
+    tokens would make every commit conflict with every other).  The first add creates the root
+    (two concurrent creators conflict once, then compose)."""
+    counted = tr.get_root_object(root)
+    counted = counted if counted is not None else tr.new_counted_set()
+    tr.set_root_object(root, counted.add(token))
 
 
 def read_blind_tokens(tr, root: str = BLIND_ROOT) -> frozenset:

@@ -63,8 +63,11 @@ class PlainNote(DBObject):
 _PLAIN_KEYS_ON_THE_BASE = ["__module__", "__type_name__", "_custom_restore", "_legacy_attrs", "_legacy_held",
                            "_type_name_declared", "kind", "title"]
 #: The SHA-256 of the segment and root files :func:`_plain_workload` writes, computed once on the base
-#: commit b99285b (rc4 with the plan's rulings, before any semantic code) by the same workload.
-_PLAIN_DIGEST_ON_THE_BASE = "3bd9bfd95645996ec94bbe108a5391d9060da55c461bdd9bb7c2b07ab14420d4"
+#: commit b99285b (rc4 with the plan's rulings, before any semantic code) by the same workload, and
+#: re-pinned once by the precondition model (Task 14): its roots are format 7 (R63) and a commit draws
+#: the new DatabaseRoot's oid under the space root, after the pre-pass saved the maps (R64), which
+#: permutes the deterministic uuids among the records.  Was 3bd9bfd9...
+_PLAIN_DIGEST_ON_THE_BASE = "1bc024137e71dd8871485bfb897423b2749e25df68629937270bb7bd03a3ce4e"
 
 
 def _plain_workload(directory) -> str:
@@ -87,7 +90,7 @@ def _plain_workload(directory) -> str:
             tx.set_root_object("plain", DBObject(n=2, tags=["a", "b"]))
 
         def update(tx):
-            tx.set_root_object("notes", tx.get_root_object("notes").with_(number=2), replace=True)
+            tx.set_root_object("notes", tx.get_root_object("notes").with_(number=2))
 
         db.run(fill)
         db.run(update)

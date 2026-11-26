@@ -230,10 +230,14 @@ def test_a_base_read_failing_under_a_valid_permission_stays_an_honest_error():
         h.close()
 
 
-def test_database_run_retries_a_commit_whose_permission_expired_before_its_base_read(tmp_path):
+def test_database_run_retries_a_commit_whose_permission_expired_before_its_base_read(tmp_path, monkeypatch):
     """End to end: the first attempt's base read (inside the critical section, on a base a
     concurrent commit produced) fails with ``ProtoUnexpectedError`` once its permission
-    expired; ``Database.run`` retries the conflict and the commit lands exactly once."""
+    expired; ``Database.run`` retries the conflict and the commit lands exactly once.
+
+    The base moves between the commit's pre-pass and its lock step (spec section 8), so the new
+    base is read only inside the critical section."""
+    from proto_db import transactions
     with TieredCluster(tmp_path) as tc:
         tc.create_database("n0")
         tc.store.set_outage(True)                       # the store cannot serve the read
@@ -256,10 +260,20 @@ def test_database_run_retries_a_commit_whose_permission_expired_before_its_base_
         storage._record = failing_read
         replications = n2.stats()["replications"]
 
+        pending = []
+        lock_step = transactions._commit_root
+
+        def after_prepass(storage_, lock_timeout, build, coordinator=None):
+            if pending and coordinator is n2:
+                pending.clear()
+                tc.commit("n0", incr)                   # the base moves: n2's commit reads it
+            return lock_step(storage_, lock_timeout, build, coordinator)
+        monkeypatch.setattr(transactions, "_commit_root", after_prepass)
+
         def step(tr):
             state["attempts"] += 1
             if state["attempts"] == 1:
-                tc.commit("n0", incr)                   # the base moves: n2's commit reads it
+                pending.append(1)
             incr(tr)
 
         try:
@@ -351,13 +365,18 @@ def test_a_record_every_peer_and_the_store_lack_is_still_corruption(tmp_path):
             tc.storages["n2"].get_atom(ptr)
 
 
-def test_database_run_retries_a_commit_whose_base_segment_is_not_uploaded_and_permission_expired(tmp_path):
+def test_database_run_retries_a_commit_whose_base_segment_is_not_uploaded_and_permission_expired(tmp_path, monkeypatch):
     """R230 with R212, on one natural schedule: a concurrent commit's records never reached
     n2 and its segment is not in the store.  n2's commit reads that base inside its critical
     section; the permission expires as the page request starts (the injectable lease clock),
     so the request is capped at 0 s, the store lacks the segment, and the read is
     unavailable -- a retryable conflict.  ``Database.run`` retries and the commit lands once.
-    Before, the read raised ``ProtoCorruptionError`` and the commit failed."""
+    Before, the read raised ``ProtoCorruptionError`` and the commit failed.
+
+    The base moves between the commit's pre-pass and its lock step (spec section 8): the pre-pass
+    reads the root n2 knows, so the new base is read only under the permission, whatever n2 learnt
+    of the concurrent commit before."""
+    from proto_db import transactions
     with TieredCluster(tmp_path, **NOT_UPLOADED) as tc:
         tc.create_database("n0")
         tc.commit("n0", incr)
@@ -383,10 +402,20 @@ def test_database_run_retries_a_commit_whose_base_segment_is_not_uploaded_and_pe
                 raise
         st._record = observed
 
+        pending = []
+        lock_step = transactions._commit_root
+
+        def after_prepass(storage, lock_timeout, build, coordinator=None):
+            if pending and coordinator is n2:
+                pending.clear()
+                _commit_without(tc, "n0", "n2")         # the base moves; n2 lacks its records
+            return lock_step(storage, lock_timeout, build, coordinator)
+        monkeypatch.setattr(transactions, "_commit_root", after_prepass)
+
         def step(tr):
             state["attempts"] += 1
             if state["attempts"] == 1:
-                _commit_without(tc, "n0", "n2")         # the base moves; n2 lacks its records
+                pending.append(1)
             incr(tr)
 
         try:

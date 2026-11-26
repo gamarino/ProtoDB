@@ -1,4 +1,4 @@
-"""Durable file storage of ProtoDB 2.0 (spec sections 6 and 7, decision D19).
+"""Durable file storage of proto_db 2.0 (spec sections 6 and 7, decision D19).
 
 Layout of a space directory::
 
@@ -63,7 +63,7 @@ from .cache import BoundedCache
 from .format import (RECORD_HEADER_SIZE, SEGMENT_HEADER_SIZE, RecordKind,
                      RootRecord, atom_version, decode_root, decode_segment_header, encode_record,
                      encode_root, encode_segment_header, read_record, record_size,
-                     undecodable_atom, write_version)
+                     root_version, undecodable_atom, write_version)
 
 try:
     import fcntl
@@ -745,7 +745,8 @@ class FileStorage(SharedStorage):
             if expected_epoch is not None and expected_epoch != epoch:
                 raise ProtoConflictError(f"Root epoch is {epoch}, expected {expected_epoch}")
             with self._state_lock:
-                version = max(self._written_version, current.version if current is not None else 0, version or 0)
+                version = root_version(self._written_version, current.version if current is not None else 0,
+                                       version or 0)
             root = RootRecord(version, ptr.segment, ptr.offset, epoch + 1)
             try:
                 self._write_root(root)

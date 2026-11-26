@@ -32,6 +32,7 @@ MAPPING = {
     "acme_late_count": f"{_PACKAGE}.acme_late_count",
     "acme_credit_cap": f"{_PACKAGE}.acme_credit_cap",
     "acme_tighten": f"{_PACKAGE}.acme_tighten",
+    "acme_overrides": f"{_PACKAGE}.acme_overrides",
     **{name: f"{_PACKAGE}.acme_constraints" for name in ("acme_informative", "acme_far_invariant",
                                                           "acme_favourites")},
     **{f"r282_{field}": f"{_PACKAGE}.acme_r282" for field in ("value_type", "cardinality", "target", "binding",

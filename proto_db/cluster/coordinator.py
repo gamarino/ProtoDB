@@ -191,7 +191,8 @@ Roots and their labels (D46)
     (the newest root it knows a majority acknowledged).  Transactions read committed roots
     only; the holder builds on the highest accepted root of its granting majority.
 The commit point (D46)
-    Under the lease the holder validates and merges against that root, then
+    Under the lease the holder validates its preconditions and reapplies its intentions on that
+    root (D73), then
     :meth:`ClusterCoordinator.replicate` sends ``(epoch, root pointer)`` with the records
     the commit added to every peer (split into several frames when they do not fit in
     one).  A peer accepts it -- stores the records and logs the root on its own durable

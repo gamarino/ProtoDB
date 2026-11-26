@@ -43,6 +43,7 @@ from proto_db.storage.tiered import TieredStorage
 from proto_db.transactions import ObjectSpace
 from tests.concurrency.harness import run_threads
 from tests.support.cluster import CasCountingStorage, Cluster
+from tests.support.roots import counted_set_root
 from tests.support.fake_object_store import FakeObjectStore
 from tests.support.outcomes import (CommitTokens, add_blind_token, assert_outcomes_resolved, blind_snapshot_of,
                                     new_database_once)
@@ -125,7 +126,7 @@ def test_contending_peers_never_reach_the_storage(tmp_path, backend):
 
                     def fn(tr):
                         tr.set_root_object("n", (tr.get_root_object("n") or 0) + 1)
-                        tr.set_root_object("ids", tr.new_counted_set().add(uid))
+                        tr.set_root_object("ids", counted_set_root(tr, "ids").add(uid))
                     try:
                         db.run(fn, **RUN_KW)
                         outcome = acked
@@ -295,7 +296,7 @@ def test_a_read_before_the_release_is_handled_is_stale_never_lost(tmp_path):
         gate = threading.Event()
         _delay_releases(cl["n0"], gate)
         try:
-            dbs[1].run(lambda tr: tr.set_root_object("ids", tr.new_counted_set().add(1)), **RUN_KW)
+            dbs[1].run(lambda tr: tr.set_root_object("ids", counted_set_root(tr, "ids").add(1)), **RUN_KW)
             assert cl["n0"].accepted_root()[1] == cl["n1"].committed_root()[1]   # n0 acknowledged it
             _, counted = _read(spaces[0])
             assert sorted(counted.elements()) == [0]     # acknowledged, not yet known committed at n0
@@ -382,8 +383,15 @@ def test_forced_replication_failures_surface_and_lose_nothing(tmp_path):
     from tests.support.tiered_cluster import RUN_KW as TIERED_RUN_KW, incr
 
     tokens = CommitTokens()
+
+    def setup(tr):
+        incr(tr)
+        # The token root exists before the schedule: the two adds then compose (spec section 5,
+        # D26); two creators of an absent root would conflict at n1's build, before its store.
+        tr.set_root_object("ids", tr.new_counted_set())
+
     with _pipelined_cluster(tmp_path) as tc:
-        tc.commit("n0", incr)
+        tc.commit("n0", setup)
         _confirmed(tc)
         refused = _count_failed_replications(tc.cluster)
         a, b = tc["n0"], tc["n1"]

@@ -97,7 +97,7 @@ class TestBasics:
 
     def test_get_at_returns_counted_set_without_log(self):
         cs = make([("k", 1)]).get_at("k")
-        assert isinstance(cs, CountedSet) and cs._op_log == () and cs.index_names() == []
+        assert isinstance(cs, CountedSet) and cs._changes == () and cs.index_names() == []
 
     def test_key_constraints(self):
         for bad in ([1], {"a": 1}, float("nan")):
@@ -155,13 +155,13 @@ class TestIndexEvents:
         assert d.get_index("i").live() == Counter(order_key(v) for v in ["a", "b", "a"])
 
 
-class TestRebase:
-    def test_rebase_nested_deltas(self):
+class TestReapply:
+    def test_reapply_nested_deltas(self):
         snapshot = reload(make([("k", "a"), ("j", "x")], indexes=("i",)))
         theirs = snapshot.set_at("k", "a").set_at("n", 1).remove_at("j")
         mine = snapshot.set_at("k", "a").set_at("k", "b").remove_record("j", "x").set_at("m", 2)
-        merged = mine.rebase_onto(theirs)
-        assert content(merged) == literal(content(theirs), mine._op_log)
+        merged = mine._reapplied_on(theirs)
+        assert content(merged) == literal(content(theirs), mine._changes)
         assert merged.get_at("k").count_of("a") == 3 and merged.get_at("k").count_of("b") == 1
         assert not merged.has("j") and merged.has("n") and merged.has("m")
         assert merged.get_index("i").live() == Counter(order_key(v) for v in merged)
@@ -170,10 +170,10 @@ class TestRebase:
         snapshot = reload(make([("k", "a"), ("k", "a")]))
         theirs = snapshot.set_at("k", "b")
         mine = snapshot.remove_at("k").set_at("k", "c")
-        merged = mine.rebase_onto(theirs)
+        merged = mine._reapplied_on(theirs)
         assert content(merged) == {order_key("k"): {order_key("c"): 1}}
 
-    def test_rebase_matches_serial_replay(self):
+    def test_reapply_matches_serial_replay(self):
         rng = random.Random(11)
 
         def step(d):
@@ -186,14 +186,14 @@ class TestRebase:
 
         for _ in range(200):
             snapshot = make([(rng.randrange(3), rng.randrange(3)) for _ in range(rng.randrange(6))])
-            snapshot = snapshot._with(_op_log=())
+            snapshot = snapshot._with(_changes=())
             theirs, mine = snapshot, snapshot
             for _ in range(rng.randrange(8)):
                 theirs = step(theirs)
             for _ in range(rng.randrange(10)):
                 mine = step(mine)
-            merged = mine.rebase_onto(theirs)
-            assert content(merged) == literal(content(theirs), mine._op_log)
+            merged = mine._reapplied_on(theirs)
+            assert content(merged) == literal(content(theirs), mine._changes)
             assert merged.total_count == sum(n for _, cs in merged.items() for _, n in cs.items())
             assert merged.count == sum(1 for _ in merged)
 
@@ -202,7 +202,7 @@ class TestBulk:
     def test_from_items(self):
         d = RepeatedKeysDictionary.from_items([("k", 1), ("j", 2), ("k", 1), (1, "a"), (1.0, "a")])
         assert content(d) == content(make([("k", 1), ("j", 2), ("k", 1), (1, "a"), (1, "a")]))
-        assert d.total_count == 5 and d.count == 3 and d._op_log == ()
+        assert d.total_count == 5 and d.count == 3 and d._changes == ()
         avl.check_invariants(d.root)
         assert RepeatedKeysDictionary.from_items([]).count == 0
 
@@ -242,13 +242,13 @@ class TestReviewFixes:
                 d.remove_record("zz", bad)
             with pytest.raises(ProtoValidationError):
                 d.remove_record("k", bad)
-        assert d._op_log == (("add", "k", 1),)
+        assert d._changes == (("add", "k", 1),)
 
     def test_replay_does_not_churn_surviving_records(self):
         """A record that survives the merge sees no remove/add pair (one step per record)."""
         snapshot = reload(make([("k", "a"), ("k", "b")], indexes=("i",)))
         theirs = snapshot.set_at("j", 1)
         mine = snapshot.remove_record("k", "a").set_at("k", "a").remove_record("k", "b").remove_record("k", "b")
-        merged = mine.rebase_onto(theirs)
+        merged = mine._reapplied_on(theirs)
         assert merged.get_index("i").events_since(theirs.get_index("i")) == (("remove", "b"),)
         assert merged.get_at("k").count_of("a") == 1

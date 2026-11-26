@@ -995,6 +995,7 @@ class TieredStorage(SharedStorage):
                 raise ProtoCorruptionError(f"{RANGES_LOG} in {self._path} holds an entry of inconsistent length")
             ranges = [(uuid.UUID(bytes=seg), start, stop) for seg, start, stop in
                       _RANGE.iter_unpack(payload[_RANGES_HEAD.size:])]
+            # A key only (root_key, the ranges table): its version is never read or written.
             root = RootRecord(WRITE_FORMAT_VERSION, uuid.UUID(bytes=root_seg), root_off, epoch)
             self._ranges[(root.segment, root_off)] = (root_key(label, root), ranges)
 
@@ -1637,6 +1638,9 @@ class TieredStorage(SharedStorage):
         if previous is None or previous.cluster_epoch is None:
             return None
         ptr = previous.atom_pointer
+        # The parent's root record as a key (its pointer and epoch name its commit: root_key, the
+        # records and ranges of that commit); its version is not read from its header, and no caller
+        # publishes or persists this record, so the version written here is never used.
         return previous.cluster_term or 0, RootRecord(WRITE_FORMAT_VERSION, ptr.segment, ptr.offset,
                                                       previous.cluster_epoch)
 

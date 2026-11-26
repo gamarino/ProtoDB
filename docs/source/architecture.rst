@@ -60,8 +60,10 @@ Query
 
 Transactions
    ``ObjectSpace`` owns a storage, the space-wide decoded-atom cache (D53) and the query result cache (D56).
-   A ``Transaction`` reads the storage root once, records what it reads, and builds new atoms on
-   ``tr``. Committing saves them, validates the read set, builds the new database version and publishes.
+   A ``Transaction`` reads the storage root once, records every read and write as a precondition over a
+   fine unit plus an intention (D73, :doc:`concurrency-model`), and builds new atoms on ``tr``. Committing
+   saves them, validates the preconditions against the current root, reapplies the intentions on it,
+   builds the new database version and publishes.
 
 Storage
    A ``SharedStorage`` appends immutable records (``push_atom``, ``push_blob``), reads them back by pointer,
@@ -83,14 +85,18 @@ What a commit crosses
 
    tr.commit()
      1. no writes?  nothing is saved or published; done
-     2. save the written values, children first, to the storage (unpublished records are harmless:
-        the storage is append-only)
-     3. take the root lock (a thread lock plus an OS file lock; a cluster: the write permission)
-     4. read the current root; check the read set against it  ->  ProtoConflictError, nothing published
-     5. merge the unread mergeable roots onto their current values; build the new DatabaseRoot
-        and SpaceRoot atoms
+     2. preparation: one record per unit; index keys of the affected elements and new indexes; the
+        catch-up of index definitions; save the written values, children first (unpublished records
+        are harmless: the storage is append-only)
+     3. pre-pass, without the lock: read the last published root R0; validate every precondition
+        against it  ->  ProtoConflictError, the lock never taken; reapply the intentions on R0 and
+        keep the result as the candidate
+     4. take the root lock (a thread lock plus an OS file lock; a cluster: the write permission)
+     5. read the current root R1; if it is R0 by pointer, use the candidate; otherwise validate the
+        changes R0 -> R1 against the preconditions (delta validation)  ->  ProtoConflictError, nothing
+        published, and reapply the intentions on R1; build the new DatabaseRoot and SpaceRoot atoms
      6. flush the storage (data durable), then publish the root by compare-and-swap on the epoch
-     7. mark the written values' op logs consumed; release the lock (nothing here can fail the commit)
+     7. release the lock (nothing here can fail the commit)
 
 Step 6 is the commit point. Data is always durable before the root that refers to it, so a crash at any
 point leaves either the old root or the new one, never a root with missing data (:doc:`durability`).
@@ -110,6 +116,6 @@ it is optional and imported only when its backend is used (D13).
 Where to read next
 ------------------
 
-* :doc:`concurrency-model` for isolation, conflicts and merges.
+* :doc:`concurrency-model` for isolation, preconditions, conflicts and their units.
 * :doc:`indexing-framework` and :doc:`query-planner` for the two extension points of the data path.
 * :doc:`durability` for what each step above guarantees.

@@ -1,11 +1,11 @@
-"""Query result cache and deep pages (Task 8.4b, D56; rulings R76, R77): ProtoDB vs sqlite3.
+"""Query result cache and deep pages (Task 8.4b, D56; rulings R76, R77): proto_db vs sqlite3.
 
 One data set per size N: rows ``{id, k, g}`` with ``id`` = 0..N-1, ``k`` a unique permutation of
-0..N-1 (seeded) and ``g = id % 100``.  ProtoDB keeps them in a committed ``List`` with a
+0..N-1 (seeded) and ``g = id % 100``.  proto_db keeps them in a committed ``List`` with a
 ``RangeIndex`` on ``k``, in a :class:`~proto_db.FileStorage` in the work directory; SQLite keeps
 the same rows in a file database (WAL) with an index on ``k``.  Both are built once per size
 and reused by later runs (each checked for its row count and an id checksum before use).
-Every ProtoDB request opens a new transaction (as a server request would); every SQLite
+Every proto_db request opens a new transaction (as a server request would); every SQLite
 request runs on one open connection.  Every request returns full rows, and every result is
 verified: the ordered ids of a page against the permutation's inverse, the row count and id
 sum of a query against a Python model.
@@ -52,7 +52,7 @@ def _rows(n: int):
 
 
 class _Data:
-    """The ProtoDB and SQLite copies of the data set of size ``n`` (built once, reused)."""
+    """The proto_db and SQLite copies of the data set of size ``n`` (built once, reused)."""
 
     def __init__(self, n: int, workdir: str):
         from proto_db import FileStorage, ObjectSpace, RangeIndex
@@ -140,7 +140,7 @@ def _ids(rows) -> list:
            full={"n": 1_000_000, "offsets": [0, 10_000, 100_000, 900_000], "requests": 20,
                  "jump_max": 100_000, "islice_max": 100_000})
 def deep_page(ctx, p):
-    """Page of 50 rows at deep offsets: ProtoDB pager by rank vs islice vs sqlite3 OFFSET and keyset."""
+    """Page of 50 rows at deep offsets: proto_db pager by rank vs islice vs sqlite3 OFFSET and keyset."""
     from proto_db import plan_query
     d = _data(ctx, p["n"])
     n, requests = d.n, p["requests"]
@@ -256,7 +256,7 @@ def deep_page(ctx, p):
 @benchmark("query_cache", quick={"n": 2_000, "span": 400},
            full={"sizes": [100_000, 1_000_000], "span": 20_000, "b_max": 100_000})
 def query_cache(ctx, p):
-    """A repeated query: ProtoDB without cache, cache miss, cache hit vs sqlite3 re-execution."""
+    """A repeated query: proto_db without cache, cache miss, cache hit vs sqlite3 re-execution."""
     from proto_db import F, from_collection
     sizes = p.get("sizes", [p.get("n")])
     result = BenchResult({"sizes": sizes, "span": p["span"]}, None, None)

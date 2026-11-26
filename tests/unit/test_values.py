@@ -1,4 +1,4 @@
-"""Unit tests for the ProtoDB value model."""
+"""Unit tests for the proto_db value model."""
 import pickle
 import uuid
 import sys

@@ -4,7 +4,7 @@ Objects across transactions
 Objects are values. A committed object belongs to no transaction: it can be read, shared and built on by any
 transaction, thread or process. This page explains what that allows, why references cannot dangle, how to
 model things that change, and what is deliberately left outside the database. The principles are P1 and P2;
-the decisions D18, D35 and D53. The tutorials :doc:`modelling data <tutorials/modelling-data>` and :doc:`the
+the decisions D18, D35, D53 and D73. The tutorials :doc:`modelling data <tutorials/modelling-data>` and :doc:`the
 CAD example <tutorials/cad>` use it on running code.
 
 Committed objects are shared values
@@ -17,6 +17,13 @@ Everything in a committed version is immutable and addressed by a pointer that n
   reads the same object does not decode it again, and nothing needs invalidating because the content at a
   pointer cannot change;
 * two transactions that read the same object see the same object, not two copies that may diverge.
+
+One exception to "the same object": a collection root read through a transaction is returned as that
+transaction's own **linked** copy (same content, same storage pointer), which records the transaction's reads
+and writes of its keys (:doc:`concurrency-model`). The link is runtime state, never persisted, and it ends with
+the transaction, committed or not. The collection stays a shareable value: used in a later transaction, it is
+an ordinary unlinked value, and assigning it to a root replaces that root, compared against the root's value in
+the later transaction's snapshot, instead of replaying the earlier transaction's changes.
 
 The benefit and its limit (the working set must fit ``atom_cache_entries``) are shown with measured counters in
 the CAD tutorial.
@@ -102,9 +109,13 @@ Because a transaction commits only for what it read and wrote (P2), two mistakes
 documented instead of being policed with expensive checks:
 
 * a read-modify-write split across two transactions, where the second transaction wrote a value it computed
-  from a read it did not make, silently overwrites an update committed in between;
+  from a read it did not make, silently overwrites an update committed in between (its write is compared with
+  its own snapshot, which already holds that update);
 * reusing objects of a transaction whose commit failed: they are valid values, but they were never published,
   and anything built from them may refer to state no version of the database ever held.
+
+Objects brought from another transaction, like reads through a ``Snapshot``, are outside the serializability
+guarantee of the transaction that uses them: nothing records that they were read (spec R21).
 
 The :doc:`concurrency tutorial <tutorials/concurrency>` runs the first one.
 

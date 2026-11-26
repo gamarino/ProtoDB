@@ -71,7 +71,8 @@ byte ("Composition and the canonical form"; bytes in `tests/conformance/vectors/
 
 - **Writes** of any kind: step 6 only reads.
 - **Opcodes** or a bytecode form of expressions beyond evaluating the `expressions` vectors.
-- **Intents** (replaying or recording them), the intent log, enforcing constraints, and anything the
+- **Intents** (replaying or recording them; `proto_db` itself removed the intents mode before release, D73),
+  the intent log, enforcing constraints, and anything the
   specification marks as not specified by this revision.
 
 ## The output file and acceptance

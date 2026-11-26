@@ -16,7 +16,7 @@ from proto_db.storage.format import (FORMAT_VERSION, SEGMENT_MAGIC, RecordKind, 
 
 
 def test_constants():
-    assert SEGMENT_MAGIC == b"PDB2SEG\0" and FORMAT_VERSION == 6 and fmt.WRITE_FORMAT_VERSION == 4
+    assert SEGMENT_MAGIC == b"PDB2SEG\0" and FORMAT_VERSION == 7 and fmt.WRITE_FORMAT_VERSION == 4
     assert fmt.RECORD_MAGIC == b"\xc1\xd2" and fmt.RECORD_HEADER_SIZE == 15
     assert RecordKind.ATOM == 1 and RecordKind.BLOB == 2
 

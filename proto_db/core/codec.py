@@ -354,6 +354,14 @@ def _encode_ref(value, save_child):
     if type(save_child) is TokenAtoms:
         save_child.atoms.append(value)
         return _TOKEN_REF
+    # A linked collection (proto_db.collections.linking) nested in a value being saved publishes
+    # its whole content: its link records that dependency (final review C1).
+    try:
+        link = value.__dict__.get("_link")
+    except AttributeError:
+        link = None
+    if link is not None:
+        link.persisted()
     try:
         ptr = save_child(value)
     except ProtoValidationError as e:

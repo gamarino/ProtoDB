@@ -2,7 +2,7 @@
 
 Catches the 0.1 defects (proto_db/arrow_bridge.py): pyarrow imported eagerly
 under ``except Exception`` (any import-time failure hidden behind "not
-available"); a ``RuntimeError`` subclass outside the ProtoDB hierarchy;
+available"); a ``RuntimeError`` subclass outside the proto_db hierarchy;
 columns built from each row's own keys, so rows with different keys produced
 misaligned columns; ``row_group_size_bytes`` passed as a row count; vector
 rows of the wrong length accepted.  It also checks the 2.0 value mapping

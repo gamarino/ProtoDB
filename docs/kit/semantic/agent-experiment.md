@@ -10,7 +10,7 @@ model and the commit.
 - **Database.** The demo's database (`docs/kit/semantic/semantic_demo.py`, steps 3 and 4: one company, six
   customers, three products, 30 orders). The harness builds it, or reuses it in its work directory, and computes
   the ground truth before any agent runs. Which of Fabrikam's two concurrent orders the credit rule refuses
-  depends on the replay order, so a few answers (the orders' total, for one) differ between builds; the ground
+  depends on which of them commits first (the thread schedule), so a few answers (the orders' total, for one) differ between builds; the ground
   truth is always computed on the database the agents query.
 - **Two modes of the same MCP server** (`python -m proto_db.agent`), with the same four tools, the same prompt
   and the same agent:

@@ -408,9 +408,9 @@ always the right answer, and two installs never conflict with each other:
 The order of the list is the commit order, and it is only the install history: the load order ignores it, so
 two databases that installed the same modules in different orders, or whose concurrent installs committed in
 either order, compose the same registry and behave the same. Reading the list for resolution, or through ``installed_modules``
-and ``catalog_object``, never enters a transaction's read set either, so an install never makes ordinary work
+and ``catalog_object``, never records a read either, so an install never makes ordinary work
 conflict. ``tr.get_root_object("__currentModules")`` (or ``"__catalog"``) is an ordinary read, though: it
-enters the read set, and a concurrent install then makes that transaction's commit conflict. On a storage whose root lock is not global
+records a precondition on the root, and a concurrent install then makes that transaction's commit conflict. On a storage whose root lock is not global
 (``CloudStorage`` shared by several processes) a commit that installs can still lose the root's
 compare-and-swap, like any commit; it then raises ``ProtoConflictError`` and ``Database.run`` retries it,
 merging onto the winner. No module is ever imported while the root lock is held: a module's import-time code
@@ -1060,6 +1060,13 @@ the collection, so no query can meet them. The call record holds the identity (t
 the current lead. Every version keeps the parents ``with_`` carried over, so every version resolves the same
 methods. The history is reachable from the current version, through ``previous``, and costs nothing to the
 queries that ignore it.
+
+Under concurrency, ``advance`` declares exactly what it depends on (:doc:`../concurrency-model`): it reads the
+lead's cell before it writes it, and writes one key of ``leads``. Two concurrent advances of the same lead
+conflict on that cell, and ``Database.run`` retries the later one on the new version, so no stage is lost; two
+advances of different leads touch different cells and different keys, and both commit. A ``set_mutable``
+without the ``get_mutable`` before it would not change that: a write is compared with the cell's value in the
+transaction's snapshot, read or not, so it never overwrites a concurrent advance silently.
 
 The index reads the object's **own** attributes, never inherited ones: an index of an inherited default would
 have to change whenever a module or a catalog object changed it, for every object that inherits it. That is

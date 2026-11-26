@@ -383,6 +383,8 @@ class KeyGroupIndex(Index):
 
     __type_name__ = "proto_db.indexing.keyed.KeyGroupIndex"
     _required_fields = ("name", "key_spec", "groups", "side", "total_count")
+    #: The element hooks work from precomputed keys (R49): restated by every concrete subclass.
+    _keyed_reapplication = True
 
     def __init__(self, name: str, key_spec: KeySpec | str, *, context: PersistenceContext | None = None):
         """Create an EMPTY index on ``key_spec`` (a ``str`` means ``KeySpec.path(key_spec)``)."""
@@ -403,18 +405,62 @@ class KeyGroupIndex(Index):
 
     def with_added(self, element) -> "KeyGroupIndex":
         """The index after one more occurrence of ``element`` (filed under its key, MISSING included)."""
-        member = _member_key(element)
-        check_member_key(self, element, member)
-        key = self.key_spec.extract(element)
-        if not is_orderable(key):
-            return self._with(side=_group_add(self.side, element, member), total_count=self.total_count + 1)
-        group = avl.key_get(self.groups, key, EMPTY_GROUP)
-        groups = avl.key_put(self.groups, key, _group_add(group, element, member), node_class=CountedKeyNode)[0]
-        return self._with(groups=groups, total_count=self.total_count + 1)
+        return self.with_added_key(element, self.key_spec.extract(element))
 
     def with_removed(self, element) -> "KeyGroupIndex":
         """The index after one occurrence of ``element`` fewer; ``ProtoValidationError`` if it holds none."""
-        key = self.key_spec.extract(element)
+        return self.with_removed_key(element, self.key_spec.extract(element))
+
+    def with_replaced(self, old, new) -> "KeyGroupIndex":
+        """The index after replacing one occurrence of ``old`` by ``new`` (remove, then add)."""
+        extract = self.key_spec.extract
+        return self.with_replaced_keys(old, extract(old), new, extract(new))
+
+    def with_added_key(self, element, key, *, check_unique: bool = True) -> "KeyGroupIndex":
+        """:meth:`with_added` with the key ``element`` is filed under already computed (R49)."""
+        unique = self._is_unique()
+        if unique:
+            self._check_unique_key(key)
+        member = _member_key(element)
+        check_member_key(self, element, member)
+        if not is_orderable(key):
+            return self._with(side=_group_add(self.side, element, member), total_count=self.total_count + 1)
+        group = _group_add(avl.key_get(self.groups, key, EMPTY_GROUP), element, member)
+        if unique and check_unique and group[1] > 1 and key is not MISSING and key is not None:
+            self._duplicate(key)
+        groups = avl.key_put(self.groups, key, group, node_class=CountedKeyNode)[0]
+        return self._with(groups=groups, total_count=self.total_count + 1)
+
+    # -- uniqueness (R29; a unique EqualityIndex) -------------------------------------------
+
+    def _is_unique(self) -> bool:
+        """Whether this index refuses two occurrences under one key (EqualityIndex ``unique``)."""
+        return False
+
+    def _check_unique_key(self, key) -> None:
+        """A unique index files only orderable keys (B6): ``ProtoValidationError`` otherwise."""
+        if not is_orderable(key):
+            raise ProtoValidationError(
+                f"Index {self.name!r} ({type(self).__name__} on {self.key_spec.describe()}) is unique and "
+                f"cannot hold the key {key!r}: a key of a unique index must have an order (a list, a dict or "
+                f"NaN has none)")
+
+    def _duplicate(self, key):
+        raise ProtoValidationError(
+            f"Index {self.name!r} ({type(self).__name__} on {self.key_spec.describe()}) is unique and "
+            f"already holds an element with the key {key!r}")
+
+    def group_count(self, key) -> int:
+        """The occurrences filed under the orderable ``key`` (0 when none)."""
+        return avl.key_get(self.groups, key, EMPTY_GROUP)[1]
+
+    def group_token_data(self, key) -> tuple:
+        """The group of the orderable ``key`` as ``(members, total)`` (``EMPTY_GROUP`` when
+        absent): what a lookup by ``key`` reads, compared by token in a precondition (R28)."""
+        return avl.key_get(self.groups, key, EMPTY_GROUP)
+
+    def with_removed_key(self, element, key) -> "KeyGroupIndex":
+        """:meth:`with_removed` with the key ``element`` is filed under already computed (R49)."""
         if not is_orderable(key):
             side = _group_remove(self.side, element)
             if side is None:

@@ -103,9 +103,10 @@ def persistent(request, tmp_path):
 # --- the version table ----------------------------------------------------------------------------
 
 def test_the_parents_feature_is_version_5_and_plain_data_stays_4():
-    assert fmt.FEATURE_VERSIONS == {"parents": 5, "registry": 5, "catalog": 6}
-    assert fmt.FORMAT_VERSION == 6 and fmt.WRITE_FORMAT_VERSION == 4
-    assert fmt.READABLE_FORMAT_VERSIONS == frozenset({2, 3, 4, 5, 6})
+    # 7: the root mark of the precondition model (R63, Task 14), a feature of roots only.
+    assert fmt.FEATURE_VERSIONS == {"parents": 5, "registry": 5, "catalog": 6, "preconditions": 7}
+    assert fmt.FORMAT_VERSION == 7 and fmt.WRITE_FORMAT_VERSION == 4
+    assert fmt.READABLE_FORMAT_VERSIONS == frozenset({2, 3, 4, 5, 6, 7})
     assert fmt.write_version() == 4 and fmt.write_version({"parents"}) == 5
     assert fmt.write_version({"registry"}) == 5
     assert fmt.write_version({"catalog"}) == 6 and fmt.write_version({"catalog", "parents"}) == 6
@@ -230,6 +231,9 @@ def test_reopen_reads_mixed_v4_and_v5_segments(persistent):
 
 @pytest.mark.parametrize("make", [_File, _Cloud], ids=["file", "cloud"])
 def test_a_root_is_v4_until_the_space_writes_v5_and_stays_v5_after(make, tmp_path, monkeypatch):
+    # The version rule below the root floor: with the floor at the base version (a writer before
+    # the version-7 root mark, R63, as the legacy vectors are generated), a root follows the data.
+    monkeypatch.setattr(fmt, "ROOT_WRITE_VERSION", fmt.WRITE_FORMAT_VERSION)
     h = make(tmp_path)
     st = h.open()
     first = st.publish_root(st.push_atom(PLAIN), 0) if make is _File else _flushed_publish(st, PLAIN, 0)
@@ -384,7 +388,10 @@ def test_a_closed_memory_storage_keeps_no_segment_table():
 
 # --- the root version in cluster mode (review I2) --------------------------------------------------
 
-def test_the_next_root_version_is_the_space_version():
+def test_the_next_root_version_is_the_space_version(monkeypatch):
+    # The rule below the root floor (R63 sets it to 7; tests/unit/test_format_v7.py): with the
+    # floor at the base version, a root follows the space's data.
+    monkeypatch.setattr(fmt, "ROOT_WRITE_VERSION", fmt.WRITE_FORMAT_VERSION)
     st = MemoryStorage()
     seg = uuid.uuid4()
     assert fmt.next_root_version(None, st) == 4

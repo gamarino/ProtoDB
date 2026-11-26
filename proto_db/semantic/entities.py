@@ -1,16 +1,15 @@
-"""Entities and relations through the semantic session, in direct mode (spec sections 6, 7 and 10; ruling
-R260, R262, R272; Task 6).
+"""Entities and relations through the semantic session (spec sections 6, 7 and 10; ruling R260, R262, R272;
+Task 6 of the semantic-model plan).
 
-The semantic session (:mod:`proto_db.semantic.session`) delegates its operations here.  In direct mode each
-operation reads and writes cells of its transaction at once, under today's read set and conflict rules:
-every cell it reads enters the read set (``Transaction.get_mutable``), every cell it changes is written with
-``Transaction.set_mutable``.  A session over a ``Snapshot`` reads only; its write operations raise
+The semantic session (:mod:`proto_db.semantic.session`) delegates its operations here.  Each operation reads
+and writes cells of its transaction at once, under the precondition model (D73; the intents mode was removed
+before release, R53): every cell it reads records its value as a precondition (``Transaction.get_mutable``),
+every cell it changes is written with ``Transaction.set_mutable``, which records one too; the unit is the
+cell.  A session over a ``Snapshot`` reads only; its write operations raise
 ``ProtoUserError`` (preflight F24).
 
-In intent mode (``Database.new_transaction(intents=True)``, :mod:`proto_db.semantic.intents`) the same
-operations run on the transaction's record view when they are recorded, and on the cells current at commit
-when they are replayed: the session gives them their store (``_store``), their lock (``_guard``, none at
-replay) and the names of the cells they create (``_new_cell``, recorded once, never drawn at replay).
+The session gives the operations their store (``_store``), their lock (``_guard``) and the names of the
+cells they create (``_new_cell``).
 
 Storage (spec section 6)
     - An entity lives in a mutable cell named ``<type name>#<32 hex digits>`` (R260) whose value is a record
@@ -20,8 +19,8 @@ Storage (spec section 6)
       It is absent until first linked and holds nil after an unlink.  A ``one`` end that is linked is never
       overwritten: linking it again is refused ("unlink it first"); an unlink and a link in one transaction
       move it.
-    - ``binding="version"`` binds the target's **field version**, current when the operation is applied (in
-      direct mode the transaction's view, validated by its read set at commit; in intent mode at replay):
+    - ``binding="version"`` binds the target's **field version**, current when the operation is applied (the
+      transaction's view, validated by the precondition on the target's cell at commit):
       the committed record the transaction read while the target's fields equal it; otherwise the
       transaction's kept record for the target while the fields equal it; otherwise the record in view,
       which becomes the kept record.  The rule reads the fields only, never how they were written (an
@@ -78,12 +77,11 @@ Atomicity
       on its own thread (a computed attribute, a hook) is refused (``ProtoUserError``).
 
 Constraints (spec section 10; :mod:`proto_db.semantic.constraints`)
-    In direct mode the outermost write operation (a primitive, or an intent with everything it runs) is all
+    The outermost write operation (a primitive, or an intent with everything it runs) is all
     or nothing in the transaction (``Transaction.semantic_operation``): it checks the enforced invariants of
     the entities whose operands it changed, on the transaction's view, before it returns; a violation
     (``ProtoConstraintError``), like any failure, undoes its writes, and the transaction goes on.  The
-    commit checks the cardinality of every entity the operations wrote.  In intent mode the replay checks
-    both on the combined result (:mod:`proto_db.semantic.intents`).
+    commit checks the cardinality of every entity the operations wrote.
 
 Versions and navigation
     The session gives :class:`Version`\\ s: views over a stored record that navigate.  ``version.record`` is
@@ -94,9 +92,7 @@ Versions and navigation
     attribute named like ``entity`` or ``record``.
 
     An intent of the version's type (``order.add_line``) is a :class:`BoundIntent`: calling it invokes the
-    intent through the session (:meth:`Operations.invoke`; logged in intent mode).  In intent mode, a read
-    of a version records the fine read its caller decides on (:mod:`proto_db.semantic.intents`, "Fine reads
-    and condition reads"); ``version._bound`` marks the version a role binds, whose reads record nothing.
+    intent through the session (:meth:`Operations.invoke`).  ``version._bound`` marks the version a role binds.
 
     :class:`Members` is the member view of a ``many`` end (preflight row 44): it yields the members as
     versions, never the entries a maintained-key end stores.  ``members.collection`` is the stored ``List``
@@ -267,9 +263,8 @@ def _handle_of(value):
 
 def _atomic(method):
     """Run the write operation ``method`` holding its transaction's lock (see "Atomicity"): the session's
-    guard, once its store is known to be writable (a session over a snapshot raises ``ProtoUserError``).  A
-    replay (:mod:`proto_db.semantic.intents`) holds no lock.  The outermost operation of a direct-mode
-    transaction checks the enforced invariants of the entities it changed before it returns, and is undone
+    guard, once its store is known to be writable (a session over a snapshot raises ``ProtoUserError``).  The
+    outermost operation of a transaction checks the enforced invariants of the entities it changed before it returns, and is undone
     in the transaction when it raises (see "Constraints")."""
     @functools.wraps(method)
     def run(self, *args, **kwargs):
@@ -284,7 +279,7 @@ def _atomic(method):
 
 def _consistent(method):
     """Run the read ``method`` holding the lock of the session's transaction, if the session reads one (a
-    snapshot never changes, a replay holds no lock): see "Atomicity"."""
+    snapshot never changes): see "Atomicity"."""
     @functools.wraps(method)
     def run(self, *args, **kwargs):
         if self.session is None:
@@ -482,11 +477,7 @@ class Version:
 
     @property
     def record(self):
-        """The stored record (a ``DBObject`` of the type's semantic class).  In intent mode, reading what it
-        holds may decide anything, so taking it is a fine read of the whole cell
-        (:mod:`proto_db.semantic.intents`)."""
-        if self._session is not None:
-            self._session._record_read(self)
+        """The stored record (a ``DBObject`` of the type's semantic class)."""
         return self._record
 
     @property
@@ -529,8 +520,8 @@ class Version:
 class BoundIntent:
     """An intent of a version the session gave, as attribute access returns it (``order.add_line``): calling
     it binds the arguments to the intent's signature and invokes it through the session
-    (:meth:`~proto_db.semantic.SemanticSession.invoke`), which applies it in direct mode and logs and applies
-    it in intent mode.  Called while an intent runs, it runs as part of that intent."""
+    (:meth:`~proto_db.semantic.SemanticSession.invoke`), which applies it on the transaction's cells.  Called
+    while an intent runs, it runs as part of that intent."""
 
     __slots__ = ("_session", "_version", "_invoker")
 
@@ -555,8 +546,7 @@ class BoundIntent:
 
 class SessionContext(IntentContext):
     """The :class:`~proto_db.semantic.IntentContext` of an intent invoked through a session: ``target`` is the
-    target's handle, and the operations are the session's (direct mode: the transaction's cells; intent mode:
-    the record view, then the replay's cells).  The receiver passed to the implementation (``self``, the
+    target's handle, and the operations are the session's, on the transaction's cells.  The receiver passed to the implementation (``self``, the
     target's stored record) names the target wherever an entity is expected (``order=self``)."""
 
     def __init__(self, operations: "Operations", target: MutableObject, receiver):
@@ -727,26 +717,18 @@ class Operations:
     """The operations of one semantic session (see the module docstring); built per call by the session.
     With ``schema=None`` it is the query engine over stored structure alone (:func:`query_stored`)."""
 
-    __slots__ = ("session", "source", "schema", "reader", "tracker", "_resolver")
+    __slots__ = ("session", "source", "schema", "reader")
 
-    def __init__(self, session, source, schema: Schema | None, reader: Reader | None = None, tracker=None):
-        """``tracker``: the intent log whose fine reads this call's reads enter (intent mode, a read the caller
-        decides on; :mod:`proto_db.semantic.intents`), else ``None``."""
+    def __init__(self, session, source, schema: Schema | None, reader: Reader | None = None):
         self.session = session
         self.source = source
         self.schema = schema
-        self.tracker = tracker
-        self._resolver = source
-        if tracker is not None:
-            from .intents import Tracking
-            self._resolver = Tracking(source, tracker)
-        self.reader = _SessionReader(self._resolver) if reader is None else reader
+        self.reader = _SessionReader(source) if reader is None else reader
 
     @contextlib.contextmanager
     def reading(self):
-        """Resolution and evaluation read with the session's source as the reader (its registry); a tracked
-        read, through the view that records the cells it reads."""
-        token = resolution.set_reader(self._resolver)
+        """Resolution and evaluation read with the session's source as the reader (its registry)."""
+        token = resolution.set_reader(self.source)
         try:
             yield
         finally:
@@ -766,8 +748,8 @@ class Operations:
                        f"session, not {type(value).__name__}")
 
     def record(self, handle: MutableObject, where: str) -> tuple:
-        """``(record, type name)`` of the entity ``handle`` in the source's view (the read enters a
-        transaction's read set)."""
+        """``(record, type name)`` of the entity ``handle`` in the source's view (through a
+        transaction, the read records the cell's precondition)."""
         record = self.source.get_mutable(handle.name)
         if record is None:
             raise _invalid(f"{where}: the cell {handle.name!r} does not exist")
@@ -782,7 +764,7 @@ class Operations:
         """The version a stored role value designates: a handle's current version, a bound version, an
         atom; ``None`` for nothing linked or an absent cell.  It holds the transaction's lock (see
         "Atomicity"): a member read of an iteration (:class:`Members`) happens entirely before or after
-        another thread's operation, also in intent mode, whose record view takes no lock of its own."""
+        another thread's operation."""
         if _unset(raw):
             return None
         if isinstance(raw, MutableObject):
@@ -808,7 +790,7 @@ class Operations:
 
     def _bound(self, handle: MutableObject, record, type_name: str) -> dict:
         """The value a version-bound role stores for ``handle``, whose record in the transaction's view is
-        ``record`` (read with ``get_mutable``, so the read set validates the committed record at commit):
+        ``record`` (read with ``get_mutable``, so its precondition validates the committed record at commit):
         ``{"entity", "version"}`` with its field version (see "Storage").  The rule is history-free: the
         committed record while the fields equal it; otherwise the record kept for the transaction while the
         fields equal it; otherwise ``record``, kept from now on."""
@@ -831,17 +813,6 @@ class Operations:
         record, _ = self.record(handle, "get")
         return Version(self.session, record, handle)
 
-    def _track(self, cell: str | None, attribute: str | None) -> None:
-        """Record a fine read of ``attribute`` (``None``: the whole cell) of the entity ``cell`` when this
-        call tracks (intent mode, a read the caller decides on); ``cell`` ``None`` (a bound version, an atom:
-        nothing that changes) records nothing."""
-        if self.tracker is not None and cell is not None:
-            self.tracker.read(cell, attribute)
-
-    @staticmethod
-    def _cell_of(version: Version) -> str | None:
-        """The cell ``version`` was read from, or ``None`` (a relationship atom, a bound version)."""
-        return None if version.entity is None or version._bound else version.entity.name
 
     @_consistent
     def attribute(self, version: Version, name: str):
@@ -858,23 +829,19 @@ class Operations:
         element = self.schema.element(type_name, name)
         if element is not None and "target" in element:
             return self.navigate(version, name)
-        stored = element is not None and _kind(element) in ("field", "computed_stored")
-        self._track(self._cell_of(version), name if stored else None)
         with self.reading():
             return record[name]
 
     @_consistent
     def navigate(self, source, role: str):
         if isinstance(source, Version):
-            record, cell = source._record, self._cell_of(source)
+            record = source._record
         else:
-            handle = self.handle(source, "navigate")
-            (record, _), cell = self.record(handle, "navigate"), handle.name
+            record, _ = self.record(self.handle(source, "navigate"), "navigate")
         type_name = type(record).__type_name__
         element = self.schema.element(type_name, role)
         if element is None or "target" not in element:
             raise _invalid(f"{type_name!r} has no role {role!r}")
-        self._track(cell, role)
         value = _stored_step(record, role)
         if _single(element):
             return self.version_of(value)
@@ -1286,7 +1253,7 @@ class Operations:
     def _check_requires(self, handle: MutableObject, record, type_name: str, element: Mapping) -> None:
         """The intent's ``requires`` on ``record``, the target's current version: false (MISSING counts
         false) is ``ProtoConstraintError`` naming ``<type>.<intent>.requires``, with the intent's meaning and
-        the values it read (spec section 9; preflight F25, F26); the replay keeps that class."""
+        the values it read (spec section 9; preflight F25, F26)."""
         requires = element.get("requires")
         if requires is None:
             return
@@ -1301,13 +1268,13 @@ class Operations:
     def check_constraints(self, touched: Mapping, before: Mapping | None, *, cardinality: bool = True,
                           invariants: bool = True) -> None:
         """:func:`proto_db.semantic.constraints.check_constraints` over the session's catalog, reading through
-        its source (a transaction's reads enter its read set)."""
+        its source (a transaction's reads record their preconditions)."""
         with self.reading():
             _constraints.check_constraints(self.schema.model, touched, self.reader, before=before,
                                            cardinality=cardinality, invariants=invariants)
 
     def _check_operation(self) -> None:
-        """At the end of the outermost operation of a direct-mode transaction, still inside it: the enforced
+        """At the end of the outermost operation of a transaction, still inside it: the enforced
         invariants of the entities whose operands it changed (the cells it wrote, against their values before
         it), on the transaction's view."""
         tr = self.session._store()
@@ -1372,7 +1339,7 @@ class Operations:
             self._check_declared(origin, of_type, where, aggregate, select)
         session_reader = self.reader
         if self.schema is not None and type(session_reader) is _SessionReader:
-            self.reader = _QueryReader(self._resolver, self.schema)
+            self.reader = _QueryReader(self.source, self.schema)
         try:
             return self._query(tree, version, origin, where, select, aggregate, of_type, with_members, selection)
         finally:

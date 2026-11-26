@@ -287,9 +287,10 @@ def test_optional_fields_may_be_absent():
 
 # -- format 4, and indexes written with format-3 tokens -------------------------------------------
 
-def test_the_format_number_is_6_formats_2_to_6_read_and_4_is_written_without_features():
-    assert fmt.FORMAT_VERSION == 6 and fmt.WRITE_FORMAT_VERSION == 4
-    assert fmt.READABLE_FORMAT_VERSIONS == frozenset({2, 3, 4, 5, 6})
+def test_the_format_number_is_7_formats_2_to_7_read_and_4_is_written_without_features():
+    # 7: the root mark of the precondition model (R63, Task 14); segments keep 4 without features.
+    assert fmt.FORMAT_VERSION == 7 and fmt.WRITE_FORMAT_VERSION == 4 and fmt.ROOT_WRITE_VERSION == 7
+    assert fmt.READABLE_FORMAT_VERSIONS == frozenset({2, 3, 4, 5, 6, 7})
 
 
 def _legacy(index):

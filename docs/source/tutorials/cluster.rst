@@ -216,8 +216,10 @@ protocol forbids). That is why the barrier works, and why it has two conditions:
 
 The cost is a commit: a round trip to a majority and a write of the barrier root, instead of a memory
 read. It is also a **permanent** cost, because nothing is ever deleted: every barrier adds a version to
-``history()`` and the root ``_read_barrier`` to the database's root names, and since the barrier is a blind
-write of one value, concurrent barriers simply overwrite each other. A linearizable read path used at a
+``history()`` and the root ``_read_barrier`` to the database's root names. Concurrent barriers do not
+conflict with each other once that root exists: each writes ``True`` over ``True``, and a commit compares
+values, not versions (:doc:`../concurrency-model`); only the first barriers, which create the root, can
+conflict, and ``run`` retries them. A linearizable read path used at a
 high rate therefore grows the history by one version per read. Use it where the guarantee is worth that,
 and keep local snapshot reads for the rest. (A read that waits
 without writing is proposed in decision D46's amendment but not implemented in 2.0.) The

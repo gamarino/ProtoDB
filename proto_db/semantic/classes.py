@@ -39,11 +39,11 @@ Intents (spec sections 4 and 9, R278)
     through :func:`_invoke`, which runs the implementation with :func:`intent_context` bound; a call on
     a version that no ``SemanticSession`` gave raises ``ProtoUserError``.  A version the session gave
     invokes through the session (``proto_db.semantic.entities.BoundIntent``), which supplies the
-    context and, in intent mode, logs the call (:mod:`proto_db.semantic.intents`).  Inside a running
+    context.  Inside a running
     intent, an intent called on any version (also through ``_super()``) runs as part of it.  An intent
     that returns a new version of its receiver updates the target through ``context.update``.  An
-    intent may not be named like a logged session operation (:data:`PRIMITIVES`): its log records
-    would read as that operation's.
+    intent may not be named like a session operation (:data:`PRIMITIVES`): the catalog's IntentRecord
+    names would read as that operation's.
 """
 from __future__ import annotations
 
@@ -57,6 +57,7 @@ from ..catalog.atoms import RESERVED_INTENT_NAMES
 from ..core.dbobject import _DEFERRED_DUNDERS, SEMANTIC_DUNDERS, DBObject, deferred_dunder_refusal
 from ..errors import ProtoUserError, ProtoValidationError
 from ..values import values_equal
+from ..purity import check_not_holding_root
 from .descriptors import Invariant, Role, _names, _text, language_map
 
 __all__ = ["Extension", "Relationship", "IntentContext", "IntentInvoker", "intent_context",
@@ -65,7 +66,7 @@ __all__ = ["Extension", "Relationship", "IntentContext", "IntentInvoker", "inten
 #: Class-body names that configure a declaration and are not elements.
 _CONFIG = frozenset({"__type_name__", "__type_aliases__", "__registry_module__"})
 _EXTENSION_CONFIG = frozenset({"__extends__", "__parents__", "__registry_module__"})
-#: The session operations an intent log records by name beside the intents (spec section 9).
+#: The session operations an IntentRecord names beside the intents (spec section 9).
 PRIMITIVES = RESERVED_INTENT_NAMES
 
 
@@ -352,6 +353,7 @@ class IntentInvoker:
         return self._function.__proto_intent__.name
 
     def __call__(self, *args, **kwargs):
+        check_not_holding_root(f"The intent {self.name!r}")
         arguments = _arguments(self._function, self._receiver, args, kwargs)
         if _RUNNING.get() is not None:
             return self._function(self._receiver, **arguments)
@@ -389,6 +391,7 @@ def _invoke(version, name: str, arguments: Mapping, context):
     ``context.update(context.target, ...)``.  Returns the implementation's result.  Without a context
     (a version no ``SemanticSession`` gave), ``ProtoUserError``."""
     where = f"The intent {name!r} of {type(version).__type_name__!r}"
+    check_not_holding_root(where)
     if context is None:
         raise ProtoUserError(f"{where} is invoked on a version obtained from a SemanticSession (spec section 4); "
                              f"this version was not")
