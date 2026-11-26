@@ -895,11 +895,14 @@ pointer identity of R1 and R0 is the exact condition R32 protects.
 **A-7. A linked collection persisted elsewhere (completes section 6 and R46; final review C1).** A linked
 collection, or a version derived from it, persisted other than as the top-level linked write of its own
 root -- written to another root or a mutable cell, held in an object attribute, or as a value or element of
-another collection at any depth, also when the same version is written to its own root as well -- publishes
+another collection or inside a plain tuple, list or mapping written to a root or a cell, at any depth, also
+when the same version is written to its own root as well -- publishes
 the collection's whole content: the transaction records `Unit(WHOLE)` of its source root, exactly as a read
 of the whole content does (section 6: no read path left unrecorded; P-B). The written roots and cells are
 checked in the preparation; a linked collection nested in a value is recorded by the encoder when the value
 is saved, while the transaction is active and during the preparation's saves, before the pre-pass, so the
-pre-pass and delta validation see the unit; never in the pre-pass or the build. No user code runs (P-C).
+pre-pass and delta validation see the unit; never in the pre-pass or the build. The preparation's first
+save encodes every written value, a plain container as well as an atom, so a linked collection inside a
+tuple written to a root or a cell is met there (final re-review, C1 residual). No user code runs (P-C).
 A linked copy of another transaction stored by this one is unlinked here (R46) and records its usual ROOT
 unit only.

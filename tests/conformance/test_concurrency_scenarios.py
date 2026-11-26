@@ -206,6 +206,10 @@ def run_op(tr, op: list) -> None:
         tr.set_root_object(args[1], tr.new_object(**{args[2]: tr.get_root_object(args[0])}))
     elif kind == "copy_to_mutable":
         tr.new_mutable(args[1], tr.get_root_object(args[0]))
+    elif kind == "wrap":
+        tr.set_root_object(args[1], (tr.get_root_object(args[0]),))
+    elif kind == "wrap_to_mutable":
+        tr.new_mutable(args[1], (tr.get_root_object(args[0]),))
     elif kind == "read":
         root, method = args[0], args[1]
         READS[method](tr.get_root_object(root), *args[2:])

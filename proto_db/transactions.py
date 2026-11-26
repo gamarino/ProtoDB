@@ -203,6 +203,7 @@ from .collections.hash_dictionaries import HashDictionary
 from .collections.lists import List
 from .collections.sets import CountedSet, Set
 from .core.atom import _UNLOADED, Atom, AtomPointer, PersistenceContext
+from .core.codec import encode_value
 from .core.dbobject import DBObject, MutableObject
 from .errors import (ProtoClosedError, ProtoConflictError, ProtoCorruptionError, ProtoDBError, ProtoNotSupportedError,
                      ProtoOutcomeUnknownError, ProtoReferenceError, ProtoTimeoutError, ProtoUnexpectedError,
@@ -763,6 +764,10 @@ class Snapshot:
 
 
 # -- persistence helpers ----------------------------------------------------------------------
+
+#: Written values the preparation's container save skips: they hold no atom (a removal is a sentinel).
+_SCALARS = frozenset((int, str, bytes, float, bool, type(None), _Sentinel))
+
 
 def _own_link(value, transaction) -> Optional[Link]:
     """The link of ``value`` when it is a linked collection of ``transaction`` (whatever the
@@ -4016,7 +4021,7 @@ class Transaction:
         self._persisting_links = True
         try:
             self._record_linked_values()
-            self._save_written()
+            self._save_written(containers=True)
         finally:
             self._persisting_links = False
         self._prepare_writes()
@@ -4046,13 +4051,23 @@ class Transaction:
             if link is not None:
                 record_persisted(link)
 
-    def _save_written(self) -> None:
-        """Persist every written value (roots, cells, catalog objects): what the build publishes."""
+    def _save_written(self, containers: bool = False) -> None:
+        """Persist every written value (roots, cells, catalog objects): what the build publishes.
+
+        With ``containers``, a written value that is no atom (a tuple, a list, a mapping: a plain
+        container) is encoded too, the encoding discarded, so that every atom nested in it, at any
+        depth, is saved now: the codec is where a nested linked collection records its whole
+        source root (C1), and the root and cell maps that hold the container are encoded only in
+        the pre-pass or the build, where recording is off (final re-review, C1 residual).  The
+        preparation's first save passes it; the containers hold no version the preparation
+        rebuilds, so the second save does not re-encode them."""
         written = (list(self._writes.values()) + list(self._mwrites.values()) + list(self._catalog_new.values())
                    + [obj for _, obj in self._catalog_updates.values()])
         for value in written:
             if isinstance(value, Atom):
                 self.save(value)
+            elif containers and type(value) not in _SCALARS:
+                encode_value(value, self.save)
 
     def _prepass(self) -> Optional[_Candidate]:
         """The pre-pass (spec section 8 phase 3, R31, R64), without the space root: read the last

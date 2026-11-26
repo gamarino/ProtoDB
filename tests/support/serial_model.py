@@ -118,9 +118,12 @@ RANGE_OPS = ("x_range", "w_after", "w_window")
 #: root ``target``'s value into root ``key`` (a Dictionary or HashDictionary with the item
 #: ``value`` set first, when ``value`` is a pair: a version derived from the linked copy);
 #: ``p_nest`` writes into root ``key`` a new object whose attribute ``value`` holds root
-#: ``target``'s collection (a nested linked copy).  Either one makes the transaction depend on the
-#: whole source root, and composes with nothing.
-PERSIST_OPS = ("p_copy", "p_nest")
+#: ``target``'s collection (a nested linked copy); ``p_wrap`` writes into the cell
+#: :func:`wrap_cell` of ``key`` a plain tuple ``("w", collection)`` holding root ``target``'s
+#: collection (a linked copy inside a plain container: the re-review's C1 residual), and returns
+#: what the cell held before (so every stored copy is read by the next ``p_wrap``).  Each one
+#: makes the transaction depend on the whole source root, and composes with nothing.
+PERSIST_OPS = ("p_copy", "p_nest", "p_wrap")
 #: Every operation kind the model knows (each must have a real and a model implementation).
 ALL_OPS = (DICTIONARY_AND_CELL_OPS + SET_OPS + COUNTED_SET_OPS + MULTIMAP_OPS + LIST_OPS + LOOKUP_OPS + RANGE_OPS
            + PERSIST_OPS)
@@ -327,7 +330,7 @@ def _draw(rng, names: StateNames, kind: str) -> Op:
         return Op(kind, target, rng.choice(W_WINDOW_OFFSETS), 1)
     if kind == "p_copy":
         return Op(kind, target, rng.choice(roots), (key, value) if rng.random() < 0.5 else None)
-    if kind == "p_nest":
+    if kind in ("p_nest", "p_wrap"):
         return Op(kind, target, rng.choice(roots), key)
     return Op(kind, target, key, value if kind in ("obj_set", "d_set") else None)
 
@@ -376,6 +379,17 @@ def read_value(value):
     """An attribute value as the checker reads it: a collection by its kind and content."""
     kind = type(value).__name__
     return nested_value(kind, content_of(value)) if kind in COLLECTIONS else value
+
+
+def wrap_cell(key) -> str:
+    """The cell ``p_wrap`` writes for ``key`` (never one of the cells the ``c_*`` operations use)."""
+    return f"wrap-{key}"
+
+
+def read_cell(value):
+    """A cell value as the checker reads it: a tuple ``p_wrap`` stored by its parts (a collection
+    by :func:`read_value`), any other value as it is."""
+    return tuple(read_value(v) for v in value) if type(value) is tuple else value
 
 
 def fresh_content(kind: str, items: dict) -> dict:
@@ -795,6 +809,19 @@ def _real_p_nest(tr, op, names):
 
 
 @_real
+def _real_p_wrap(tr, op, names):
+    value = tr.get_root_object(op.target)
+    if kind_of(value) in COLLECTIONS:
+        cell = wrap_cell(op.value)
+        previous = tr.get_mutable(cell)
+        if previous is None:
+            tr.new_mutable(cell, ("w", value))
+        else:
+            tr.set_mutable(cell, ("w", value))
+        return read_cell(previous)
+
+
+@_real
 def _real_c_get(tr, op, names):
     return tr.get_mutable(op.target)
 
@@ -1124,6 +1151,13 @@ class Model:
         if kind in COLLECTIONS:
             self.roots[op.key] = (OBJECT, {op.value: nested_value(kind, content)})
 
+    def _p_wrap(self, op):
+        kind, content = self.roots.get(op.target, (None, None))
+        if kind in COLLECTIONS:
+            previous = self.cells.get(wrap_cell(op.value))
+            self.cells[wrap_cell(op.value)] = ("w", nested_value(kind, content))
+            return previous
+
     def _c_get(self, op):
         return self.cells.get(op.target)
 
@@ -1170,7 +1204,7 @@ def capture(tr, names: StateNames) -> Model:
         else:
             model.roots[name] = (kind, content_of(value))
     for name in tr.mutable_names():
-        model.cells[name] = tr.get_mutable(name)
+        model.cells[name] = read_cell(tr.get_mutable(name))
     return model
 
 

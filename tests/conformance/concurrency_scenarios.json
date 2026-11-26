@@ -3,7 +3,7 @@
  "notation": {
   "scenario": "name; row (one of rows); base; a and b, the operations of transactions A and B, both opened on the base and run A then B; order, the commit order; expect: state (the final state) or conflict (the unit the second commit raises ProtoConflictError on; only the fields given are compared; the state after it is the first commit's). note: a comment.",
   "state": "{roots: {name: root}, mutables: {name: value}}; a root is {value: v} (an object root holding a plain value), {dictionary: {k: v}}, {hash_dictionary: {k: v}} (string keys; with other keys {dictionary_items: [[k, v]]} or {hash_dictionary_items: [[k, v]]}, sorted by the JSON text of k), {set: [e]}, {counted_set: [[e, n]]}, {rkd: [[k, [record]]]}, {list: [v]}; a collection may add indexes: [kind], kind 'equality' (index 'e') or 'range' (index 'r'), both over the element (KeySpec.element()). Lists in a state are sorted, except a list root's items. States are compared as exact JSON text: 10 and 10.0 are one key or element of two forms, and a state differs when a form does.",
-  "operations": "[set_root, n, root], [remove_root, n], [get_root, n], [root_names], [new_mutable, n, v], [set_mutable, n, v], [remove_mutable, n], [get_mutable, n], [mutable_names], [write, root, method, args...] (the version the method returns is assigned to the root: set_at, remove_at, add, remove, union, difference, intersection, remove_record, remove_key, append_last, append_first, extend, insert_at, slice, add_index kind, remove_index kind), [copy, root, to] or [copy, root, to, method, args...] (root's value, or the version the method returns on it, is assigned to root to), [nest, root, to, attr] (root to is assigned a new object whose attribute attr holds root's value), [copy_to_mutable, root, n] (a new mutable cell n holds root's value), [read, root, method, args...] (get_at, get, has, count_of, len, count, items, elements, keys, key_at_position, position_of, index_names, get_index kind, lookup v (an equality query), greater_than v (a range query), scan (a query without a term))",
+  "operations": "[set_root, n, root], [remove_root, n], [get_root, n], [root_names], [new_mutable, n, v], [set_mutable, n, v], [remove_mutable, n], [get_mutable, n], [mutable_names], [write, root, method, args...] (the version the method returns is assigned to the root: set_at, remove_at, add, remove, union, difference, intersection, remove_record, remove_key, append_last, append_first, extend, insert_at, slice, add_index kind, remove_index kind), [copy, root, to] or [copy, root, to, method, args...] (root's value, or the version the method returns on it, is assigned to root to), [nest, root, to, attr] (root to is assigned a new object whose attribute attr holds root's value), [copy_to_mutable, root, n] (a new mutable cell n holds root's value), [wrap, root, to] (root to is assigned the plain tuple [root's value]), [wrap_to_mutable, root, n] (a new mutable cell n holds the plain tuple [root's value]), [read, root, method, args...] (get_at, get, has, count_of, len, count, items, elements, keys, key_at_position, position_of, index_names, get_index kind, lookup v (an equality query), greater_than v (a range query), scan (a query without a term))",
   "conflict": "{kind, root, key[, index]} (a range has no key): kind is the unit class (root, root_presence, root_names, cell, cell_names, key, element, count, records, position, whole, index_defs, index_group, range); root is null for cells and the name sets; key is the cell name for a cell."
  },
  "rows": [
@@ -4469,6 +4469,88 @@
      "mutables": {}
     }
    }
+  },
+  {
+   "name": "wrapped_in_a_tuple_in_another_root_takes_the_whole_source",
+   "row": "6.linked.persisted_elsewhere",
+   "base": {
+    "roots": {
+     "d": {
+      "dictionary": {
+       "a": 1
+      }
+     }
+    }
+   },
+   "a": [
+    [
+     "wrap",
+     "d",
+     "e"
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "d",
+     "set_at",
+     "b",
+     2
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "conflict": {
+     "kind": "whole",
+     "root": "d",
+     "key": null
+    }
+   },
+   "note": "a linked collection inside a plain container (a tuple) written to a root or a cell is persisted elsewhere all the same: the transaction depends on the whole source root"
+  },
+  {
+   "name": "wrapped_in_a_tuple_in_a_mutable_takes_the_whole_source",
+   "row": "6.linked.persisted_elsewhere",
+   "base": {
+    "roots": {
+     "d": {
+      "dictionary": {
+       "a": 1
+      }
+     }
+    }
+   },
+   "a": [
+    [
+     "wrap_to_mutable",
+     "d",
+     "m"
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "d",
+     "set_at",
+     "b",
+     2
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "conflict": {
+     "kind": "whole",
+     "root": "d",
+     "key": null
+    }
+   },
+   "note": "a linked collection inside a plain container (a tuple) written to a root or a cell is persisted elsewhere all the same: the transaction depends on the whole source root"
   },
   {
    "name": "dictionary_get_conflicts_same_key",

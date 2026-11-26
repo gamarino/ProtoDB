@@ -40,7 +40,7 @@ current state, then the intentions are reapplied on it. Committed transactions a
 - **Linked collections**: `get_root_object` on a collection root returns the transaction's own linked copy;
   its versions record their reads and intentions, and only a version assigned back to the same root of the same
   transaction publishes them. A linked collection stored anywhere else (another root, a mutable cell, an object
-  attribute, inside another collection) depends on its whole source root: any concurrent change of that root is
+  attribute, inside another collection or a plain tuple, list or mapping) depends on its whole source root: any concurrent change of that root is
   a conflict. Reading a List root through a transaction now loads its root atom, as it already did for the other
   collections.
 - **Collections**: Dictionary and HashDictionary keys, Set elements (`add` has no precondition), CountedSet and

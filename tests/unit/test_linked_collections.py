@@ -320,6 +320,22 @@ def _persist(variant, tr, a):
         tr.set_root_object("b", obj)
     elif variant == "value of its own root's write":
         tr.set_root_object("a", a.set_at("self", tr.new_object(copy=a)))
+    # Plain containers written as the value of a root or a cell (re-review C1 residual): the
+    # container is no atom, its nested linked copies are met by the preparation's save all the same.
+    elif variant == "tuple in other root":
+        tr.set_root_object("b", (a,))
+    elif variant == "dict in other root":
+        tr.set_root_object("b", {"k": a.set_at("z", 3)})
+    elif variant == "nested list in other root":
+        tr.set_root_object("b", [1, [a]])
+    elif variant == "tuple in its own root's linked write":
+        tr.set_root_object("a", a.set_at("self", (a.set_at("y", 2),)))
+    elif variant == "tuple in new mutable cell":
+        tr.new_mutable("m", (a,))
+    elif variant == "tuple in set mutable cell":
+        tr.set_mutable("cell", (a, 1))
+    elif variant == "nested dict in set mutable cell":
+        tr.set_mutable("cell", {"k": [{"j": a.set_at("z", 3)}]})
     else:
         raise AssertionError(variant)
 
@@ -327,7 +343,9 @@ def _persist(variant, tr, a):
 _PERSIST_VARIANTS = ["other root", "derived version in other root", "object attribute", "dictionary value",
                      "list element", "deep inside an unlinked value", "new mutable cell", "set mutable cell",
                      "own root and elsewhere", "same version in own root and elsewhere", "saved early",
-                     "value of its own root's write"]
+                     "value of its own root's write", "tuple in other root", "dict in other root",
+                     "nested list in other root", "tuple in its own root's linked write", "tuple in new mutable cell",
+                     "tuple in set mutable cell", "nested dict in set mutable cell"]
 
 
 def _seed_a(db):
@@ -424,3 +442,16 @@ def test_classification_runs_no_code_of_the_class_or_its_metaclass():
     assert fine_grained(_MetaPlain) is True
     assert fine_grained(_MetaOverriding) is False
     assert _META_LOOKUPS == []
+
+
+def test_preparation_save_of_plain_values_leaves_removals_alone(db):
+    """The preparation encodes every written value that is no atom (re-review C1 residual); a
+    removed root or cell is a removal, not a value, and is never encoded."""
+    _seed_a(db)
+    db.run(lambda tr: tr.set_root_object("b", (1, 2)))
+    with db.new_transaction() as t:
+        t.remove_root_object("b")
+        t.remove_mutable("cell")
+        t.set_root_object("c", (t.get_root_object("a"),))
+    assert db.run(lambda tr: (tr.get_root_object("b"), tr.get_mutable("cell"))) == (None, None)
+    assert content(db, "a") == {"x": 1}
