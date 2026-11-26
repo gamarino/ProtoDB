@@ -25,7 +25,7 @@ converted to the field's type.
 Value mapping (Python value after conversion -> Arrow type inferred by pyarrow):
 
 ========================================  ==========================================
-ProtoDB value                             Arrow
+proto_db value                             Arrow
 ========================================  ==========================================
 ``None``, ``MISSING``                     null
 ``bool`` / ``int`` / ``float``            bool / int64 / double (int beyond int64
@@ -100,7 +100,7 @@ def _dataset():
     return ds
 
 
-# -- conversion of ProtoDB values -------------------------------------------------------------
+# -- conversion of proto_db values -------------------------------------------------------------
 
 def _describe_path(column: str, path: tuple) -> str:
     return repr(column) + "".join(p if p == "[]" else f".{p}" for p in path)

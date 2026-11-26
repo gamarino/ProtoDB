@@ -5,7 +5,7 @@ Run from the repository root::
 
     python examples/linq_queries.py
 
-``from_collection`` accepts a ProtoDB collection, a query plan or any iterable.  Every
+``from_collection`` accepts a proto_db collection, a query plan or any iterable.  Every
 query builds a physical plan that ``explain()`` shows; Python lambdas are allowed and
 appear in the plan as an explicit ``PythonFilter``.  The script checks every result.
 """

@@ -1,10 +1,10 @@
-# Google Cloud Storage Support in ProtoDB
+# Google Cloud Storage Support in proto_db
 
-This document describes the implementation of Google Cloud Storage support in ProtoDB as an alternative to Amazon S3.
+This document describes the implementation of Google Cloud Storage support in proto_db as an alternative to Amazon S3.
 
 ## Overview
 
-ProtoDB now supports both Amazon S3 and Google Cloud Storage as backend storage options for `CloudFileStorage` and
+proto_db now supports both Amazon S3 and Google Cloud Storage as backend storage options for `CloudFileStorage` and
 `CloudClusterFileStorage`. This allows you to choose the cloud storage provider that best fits your needs.
 
 ## Implementation

@@ -1,4 +1,4 @@
-# ProtoDB 2.0 — Design
+# proto_db 2.0 — Design
 
 Date: 2026-11-01. Status: approved for unattended implementation (maintainer granted full design freedom).
 Branch: `fix/dict-merge-and-wal-durability` (F0 already committed as 087ec14).
@@ -7,14 +7,14 @@ a conflict is conceptual debt, resolved before implementation.
 
 ## 1. Intent
 
-ProtoDB is an embedded, transactional, object-oriented database for Python built on immutable,
+proto_db is an embedded, transactional, object-oriented database for Python built on immutable,
 structurally shared collections. A review on 2026-11-01 (claude.ai session + three review agents,
 all findings reproduced) showed that the 0.1 code base reached a green test suite by tuning code
 to the tests: integer values merged as `+1`, special cases for keys named `counter` and `k`,
 ~280 broad `except` handlers (126 of them `pass`), commits that were not durable, indexes lost on
 the first write, and queries that silently return empty or partial results.
 
-ProtoDB 2.0 keeps the ideas that are sound — persistent AVL collections, roots with history,
+proto_db 2.0 keeps the ideas that are sound — persistent AVL collections, roots with history,
 atomic root publication, read-set validation with retry — and rebuilds the rest so that every
 claim is backed by a test that would fail without it.
 
@@ -154,7 +154,7 @@ truth for the collections (key order), the indexes and the query evaluator.
   `(rank, payload)` with ranks `None < bool < number < str < bytes < date < time < datetime
   < timedelta < UUID < tuple < atom`. Numbers (`int`, `float`, `Decimal`) share one rank and
   compare **exactly** (Python's native mixed comparison is exact; never convert to `float`).
-  `bool` has its own rank: `True` is not the number 1 inside ProtoDB.
+  `bool` has its own rank: `True` is not the number 1 inside proto_db.
   Naive and aware datetimes get separate ranks (they are not comparable in Python).
   Atoms order by `oid`.
 - `values_equal(a, b)` ⇔ `order_key(a) == order_key(b)`. So `1 == 1.0 == Decimal(1)` is true,

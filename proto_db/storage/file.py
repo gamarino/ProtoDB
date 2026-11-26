@@ -1,4 +1,4 @@
-"""Durable file storage of ProtoDB 2.0 (spec sections 6 and 7, decision D19).
+"""Durable file storage of proto_db 2.0 (spec sections 6 and 7, decision D19).
 
 Layout of a space directory::
 

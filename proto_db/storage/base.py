@@ -1,4 +1,4 @@
-"""The storage contract of ProtoDB 2.0 (spec sections 6, 7 and 9).
+"""The storage contract of proto_db 2.0 (spec sections 6, 7 and 9).
 
 A :class:`SharedStorage` is an append-only store of atoms and blobs plus a single
 published *root* guarded by compare-and-swap on an epoch.  Implementations are

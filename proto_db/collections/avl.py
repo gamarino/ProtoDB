@@ -1,4 +1,4 @@
-"""Persistent AVL trees: the structure under every ProtoDB collection (spec section 8.2, D8, D20).
+"""Persistent AVL trees: the structure under every proto_db collection (spec section 8.2, D8, D20).
 
 Two node kinds share one balancing core:
 

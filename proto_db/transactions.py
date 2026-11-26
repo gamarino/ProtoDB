@@ -557,7 +557,7 @@ class DatabaseRoot(_Immutable, Atom):
             # Written before the mutable table existed (D35); no migration is provided.
             raise ProtoCorruptionError(
                 f"DatabaseRoot at {self.atom_pointer} has no mutable table: the database was written "
-                f"by a ProtoDB build older than decision D35 and cannot be opened")
+                f"by a proto_db build older than decision D35 and cannot be opened")
         return super()._absent_attribute(name)
 
 

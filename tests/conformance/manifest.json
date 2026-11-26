@@ -1,5 +1,5 @@
 {
- "about": "Conformance vectors of the ProtoDB storage format; see tests/conformance/README.md and docs/source/format-spec.rst.",
+ "about": "Conformance vectors of the proto_db storage format; see tests/conformance/README.md and docs/source/format-spec.rst.",
  "versions": {
   "format": 7,
   "readable_formats": [

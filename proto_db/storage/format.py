@@ -1,4 +1,4 @@
-"""On-disk byte formats of ProtoDB 2.0 (spec section 6).
+"""On-disk byte formats of proto_db 2.0 (spec section 6).
 
 Segment header: ``SEGMENT_MAGIC | format version (u16 LE) | segment UUID (16 bytes)``.
 Record (format version 2, D46 fix round 13)::

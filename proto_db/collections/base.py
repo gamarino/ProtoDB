@@ -1,4 +1,4 @@
-"""Indexed collections: the base every ProtoDB collection derives from (spec section 8.1, rulings R5, R6).
+"""Indexed collections: the base every proto_db collection derives from (spec section 8.1, rulings R5, R6).
 
 Every collection supports associated indexes (none by default) and exposes them to
 the planner through :meth:`IndexedCollection.as_query_plan`.  Collections are

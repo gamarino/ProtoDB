@@ -1,4 +1,4 @@
-"""``python -m benchmarks``: run the ProtoDB performance suite (see :mod:`benchmarks.harness`)."""
+"""``python -m benchmarks``: run the proto_db performance suite (see :mod:`benchmarks.harness`)."""
 import os
 import sys
 

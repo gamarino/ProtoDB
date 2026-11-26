@@ -100,7 +100,7 @@ def _protodb(ctx, a, seconds):
 
 def _rqlite(ctx, a, seconds):
     """3 rqlite nodes, 12 clients: ``batch`` id rows and one 100-byte row per request (one
-    ``?transaction`` request when ``batch`` > 1), the same work as a ProtoDB commit."""
+    ``?transaction`` request when ``batch`` > 1), the same work as a proto_db commit."""
     from benchmarks.support import run_threads
     from benchmarks.workloads.rqlite import RqliteCluster
     batch = a["batch"]

@@ -132,7 +132,7 @@ def test_a_failed_publish_fails_every_commit_of_the_group(tmp_path):
 
 
 def test_an_unexpected_error_of_one_commit_fails_only_that_commit(tmp_path):
-    """Review M2 (Task 8.3f-B fix round 1): a non-ProtoDB exception raised by one commit's
+    """Review M2 (Task 8.3f-B fix round 1): a non-proto_db exception raised by one commit's
     build failed every undecided commit of the round with a copy of it.  Now only that
     commit gets it; the others are published together."""
     import proto_db.transactions as tx

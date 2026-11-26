@@ -87,13 +87,13 @@ Workloads added by the Task 9c CARRY:
   each read consistency level. Atom decodes per read are counted in each reader process
   (`benchmarks/decode_counter.py`); every read, the final catalog and the advance of every reader
   node's versions are verified.
-- `history_depth` (ProtoDB only, not a comparison): versioned entities built with the `previous`
+- `history_depth` (proto_db only, not a comparison): versioned entities built with the `previous`
   pattern at depths 1/10/100/1000 versions per entity, the same number of current entities each
   time; a current-state indexed query, warm and with no atom cache, with its latency and its atom
   decodes per query.
 - `inventory` takes `--param inventory.atom_cache_entries=N` and records the peak RSS and the
   atom-cache counters after the build and at the end; `mixed_read_write` asserts that every
-  ProtoDB node's readers saw the versions advance while writers committed.
+  proto_db node's readers saw the versions advance while writers committed.
 
 Every suite run also records the stray-process check (`check.stray_processes`, `checked_at`,
 `workdir_free_bytes`) in its results JSON and warns when the list is not empty.
@@ -137,7 +137,7 @@ with the results).
   imported on a free-threaded interpreter, so `vector_knn_hnsw` is flagged `isolate` and runs
   in a child interpreter with the same `-X` options; any other workload that changes the GIL
   state fails the run.
-- SQLite is a single-process reference only, at equal durability: ProtoDB `fsync` / `flush`
+- SQLite is a single-process reference only, at equal durability: proto_db `fsync` / `flush`
   / `none` against SQLite (WAL) `synchronous=FULL` / `NORMAL` / `OFF`. It is never used as a
   cluster reference (rulings R37, R45).
 - Cluster mode is compared with the CAS-only baseline (storage-arbitrated writers, the
@@ -174,7 +174,7 @@ from benchmarks.harness import BenchResult, benchmark, measure
 @benchmark("my_workload", quick={"n": 100}, full={"n": 10_000})
 def my_workload(ctx, p):
     """One-line description shown by --list."""
-    expected = ...                                  # computed independently of ProtoDB
+    expected = ...                                  # computed independently of proto_db
     result = BenchResult({"rows": p["n"]}, None, expected)
     samples, got = measure(lambda: ..., ctx.repeat, ctx.warmup, expect=expected)  # every run checked
     result.check("same rows as the model", got == expected, f"{got} != {expected}")

@@ -1,6 +1,6 @@
 """Mixed read/write load on a 3-member cluster: readers that never wait (Task 9c, ruling R97).
 
-ProtoDB: three TCP subprocess peers (:func:`~benchmarks.workloads.cluster.run_tcp_cluster`,
+proto_db: three TCP subprocess peers (:func:`~benchmarks.workloads.cluster.run_tcp_cluster`,
 ``durability="fsync"``).  Node ``n0`` first commits a ``catalog`` Dictionary of ``catalog``
 entries; then, on every node, ``writers`` threads commit (one id and one 100-byte value per
 commit, the headline commit) while ``readers`` threads read random catalog entries, each in a
@@ -15,24 +15,24 @@ with a 100-byte value per request, and ``readers`` client threads per node run
 rqlite's documentation (https://rqlite.io/docs/api/read-consistency/), summarised in
 ``docs/source/performance.rst``.  The clients are Python ``http.client`` threads in the
 benchmark process, one keep-alive connection each, so every rqlite read pays an HTTP round
-trip that an embedded ProtoDB read does not.
+trip that an embedded proto_db read does not.
 
 Before the window, every node of either system must see the whole catalog in a local read
-(ProtoDB: a new transaction on that node; rqlite: a ``level=none`` count on that node): without
+(proto_db: a new transaction on that node; rqlite: a ``level=none`` count on that node): without
 that wait, ``level=none`` reads on a follower that had not applied the catalog yet returned no
 row in the first run of Task 9c (1-5 reads per run), as rqlite documents for that level.
 
 Cells, each run separately: writers only, readers only, writers and readers together.  Every
-read is checked against the catalog's value; on every ProtoDB node, the database versions its
+read is checked against the catalog's value; on every proto_db node, the database versions its
 readers saw must advance while writers commit (Task 9c CARRY: ``versions_seen`` asserted, not only
 recorded); every write is verified as in the write workloads
-(ProtoDB: the persisted state holds exactly the acknowledged ids and values; rqlite: a strong
+(proto_db: the persisted state holds exactly the acknowledged ids and values; rqlite: a strong
 ``COUNT(*), SUM(length(v))`` equals the acknowledged inserts).
 
 Caveats that the figures carry (R97):
-* a ProtoDB read whose records are not in the node's caches fetches them (from the local tier
+* a proto_db read whose records are not in the node's caches fetches them (from the local tier
   or, on a node that is not a data replica of them, from a peer: D54): that read waits for I/O;
-* a ProtoDB read is a snapshot of the root the node last learned, not a linearizable read;
+* a proto_db read is a snapshot of the root the node last learned, not a linearizable read;
   only a query to the owner first would make it one (not measured here).
 """
 import http.client
@@ -56,7 +56,7 @@ def catalog_value(key: int) -> str:
 
 
 def protodb_cell(ctx, writers: int, readers: int, seconds: float, catalog: int) -> dict:
-    """One verified ProtoDB cell; returns its figures (``ok`` False when any check failed)."""
+    """One verified proto_db cell; returns its figures (``ok`` False when any check failed)."""
     from benchmarks.workloads.cluster import run_tcp_cluster
     r = run_tcp_cluster(ctx, 3, writers, seconds, payload=PAYLOAD if writers else 0, readers=readers,
                         catalog=catalog)
@@ -131,7 +131,7 @@ def rqlite_cell(ctx, binary: str, writers: int, readers: int, level, seconds: fl
         if loaded != catalog:
             raise RuntimeError(f"rqlite catalog holds {loaded} rows, not {catalog}")
         nodes = len(cl.http)
-        # Every node must have applied the whole catalog before the window, as every ProtoDB peer
+        # Every node must have applied the whole catalog before the window, as every proto_db peer
         # waits until its own reads see it: a level=none read on a follower that has not applied
         # the catalog yet returns no row (rqlite's documented semantics for none, Task 9c).
         for port in cl.http:

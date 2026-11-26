@@ -1,4 +1,4 @@
-"""ProtoDB value model.
+"""proto_db value model.
 
 Single source of truth for what a storable value is and how values order,
 compare and hash.  Collections, indexes and the query evaluator all rely on

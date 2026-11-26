@@ -77,9 +77,9 @@ current state, then the intentions are reapplied on it. Committed transactions a
 - **Declarations are composed as plain data**: the merge of the semantic catalog under the space root never
   dispatches to module code; a Python `Computed` still takes any callable (a function, a `functools.partial`,
   a builtin, a bound method, a callable instance: carried, never called there), and a `str` subclass value
-  given to a declaration (a `StrEnum` member as `sensitivity`, `cardinality`, `binding`, `on_delete`, the target of a `Relation`,
-  `Role` or `RelationTo`, or an intent
-  parameter type) is stored as the plain `str` it holds.
+  given to a declaration (a `StrEnum` member as `sensitivity`, `cardinality`, `binding`, `on_delete`, the
+  target of a `Relation`, `Role` or `RelationTo`, or an intent parameter type) is stored as the plain `str`
+  it holds.
 - **A `with tr:` block left by two threads**: the block's end decides and ends the transaction in one step, so
   the second thread to leave finds it ended and its exit is a no-op (it used to raise `ProtoUserError`
   "The transaction is committed" now and then).

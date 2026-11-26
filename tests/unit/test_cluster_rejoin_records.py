@@ -421,7 +421,7 @@ def test_y3_a_forced_rejoin_does_not_inherit_a_committed_root_above_what_it_adop
 
 def _lease_base_via(h, name, lease, responders):
     """``_lease_base`` for ``name`` under ``lease``, a recovery round answered by ``responders``;
-    the result or the ProtoDB error raised."""
+    the result or the proto_db error raised."""
     from proto_db.transactions import _lease_base
     node = h.nodes[name]
 

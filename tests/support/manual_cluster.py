@@ -247,7 +247,7 @@ class Harness:
 
     def _run(self, fn, pump):
         """Run ``fn`` in a thread, calling ``pump()`` until it returns; return its result or
-        the ProtoDB error it raised."""
+        the proto_db error it raised."""
         out = {}
 
         def run():

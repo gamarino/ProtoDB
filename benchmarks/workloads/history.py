@@ -1,4 +1,4 @@
-"""Query cost against the depth of a versioned-entity history (Task 9c CARRY; ProtoDB only, R112).
+"""Query cost against the depth of a versioned-entity history (Task 9c CARRY; proto_db only, R112).
 
 The documented pattern (2026-11-08 entry of the plan's ledger): an entity is a chain of immutable
 versions, each holding its predecessor in a ``previous`` attribute set by the program; the current

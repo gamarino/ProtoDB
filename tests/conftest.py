@@ -1,4 +1,4 @@
-"""Shared pytest configuration for the ProtoDB test suite."""
+"""Shared pytest configuration for the proto_db test suite."""
 import os
 import sys
 

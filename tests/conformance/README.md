@@ -1,4 +1,4 @@
-# Conformance vectors of the ProtoDB storage format
+# Conformance vectors of the proto_db storage format
 
 These files are the contract between ProtoBase and any other implementation of its storage
 format, protoBaseST first (rulings R83, R83a; decision D57). The specification is

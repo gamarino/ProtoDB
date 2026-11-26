@@ -5,7 +5,7 @@ while the cluster keeps committing.  Nothing it needs may become unreadable.  Wh
 node reclaims is local only (D46): its own segments and its copies of other nodes' segments,
 deleted once the object store holds them in full and a persisted root covers them (checkpoint
 first, so the acceptor log names nothing deleted).  The object store is append-only: no
-ProtoDB code deletes an object.  So the old root's records move from the nodes' disks to the
+proto_db code deletes an object.  So the old root's records move from the nodes' disks to the
 store and stay readable from there.
 
 The test makes every node release the local segments that held the old version (small

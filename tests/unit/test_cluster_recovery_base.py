@@ -36,7 +36,7 @@ def _call(fn, *args):
 
 def _lease_base_via(h, name, lease, responders):
     """``_lease_base`` for ``name`` under ``lease``; its recovery round (if any) is answered by
-    ``responders`` only.  The result, or the ProtoDB error raised."""
+    ``responders`` only.  The result, or the proto_db error raised."""
     node = h.nodes[name]
 
     def pump():

@@ -163,7 +163,7 @@ in code point order, ``/`` as the separator), then the digest of ``manifest.json
 digests of the conformance data written by hand and never generated, by path relative to
 ``vectors/``: the concurrency scenarios (``../concurrency_scenarios.json``, below) and every file
 of the frozen spaces (``../frozen/``, sorted by path). The SHA-256
-of that list file is ``33d5f319a1ad347aec39155004b3b81be497cccf4c01d7e4104dc83c8aa2d12d``. ``test_conformance.py`` checks that the committed files
+of that list file is ``9a0cc6def86aaa299b8591df1fbfec96971f785df089b63f1e10196d9a73bfea``. ``test_conformance.py`` checks that the committed files
 match the list and that this page states the list's digest. Each vector file is governed by
 the number that covers what it holds: ``vectors/cluster/*.log`` by ``LOG_FORMAT_VERSION``,
 ``vectors/cluster/messages/`` by ``PROTOCOL_VERSION``, every other file by ``FORMAT_VERSION``.

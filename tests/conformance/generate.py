@@ -1463,7 +1463,7 @@ def main():
     shutil.rmtree(VECTORS, ignore_errors=True)
     VECTORS.mkdir(parents=True)
     manifest = {
-        "about": "Conformance vectors of the ProtoDB storage format; see tests/conformance/README.md "
+        "about": "Conformance vectors of the proto_db storage format; see tests/conformance/README.md "
                  "and docs/source/format-spec.rst.",
         "versions": {"format": fmt.FORMAT_VERSION, "readable_formats": sorted(fmt.READABLE_FORMAT_VERSIONS),
                      "log_format": logfile.LOG_FORMAT_VERSION, "protocol": protocol.PROTOCOL_VERSION},

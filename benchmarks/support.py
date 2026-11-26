@@ -197,7 +197,7 @@ class DirObjectStore:
 
 # -- SQLite ------------------------------------------------------------------------------------
 
-#: ProtoDB durability mode -> the SQLite ``synchronous`` setting giving the same guarantee
+#: proto_db durability mode -> the SQLite ``synchronous`` setting giving the same guarantee
 #: (WAL journal): ``fsync`` = FULL (fsync at every commit), ``flush`` = NORMAL (WAL not
 #: fsynced at commit: survives a process crash, not a power loss), ``none`` = OFF.
 SQLITE_SYNC = {"fsync": "FULL", "flush": "NORMAL", "none": "OFF"}

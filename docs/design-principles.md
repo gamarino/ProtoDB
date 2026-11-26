@@ -1,4 +1,4 @@
-# ProtoDB design principles
+# proto_db design principles
 
 These principles come before every decision record (`docs/decisions.md`), task and review. A decision
 cites the principles it relies on. A change that contradicts a principle is **conceptual debt**:
@@ -71,12 +71,12 @@ and under arbitrary pauses of processes.
 ## P6. Known techniques, honestly measured
 
 Where a mechanism has an established form (Paxos ballots and quorums, Raft learners, GFS/HDFS
-replication and re-replication, BookKeeper ensembles, VR recovery), ProtoDB adopts it and cites it
+replication and re-replication, BookKeeper ensembles, VR recovery), proto_db adopts it and cites it
 instead of inventing a variant. A rule that departs from its reference says why.
 
 - Every performance claim carries a measurement made on stated hardware with stated settings, and
   every benchmark verifies the work it reports.
-- Comparisons state where ProtoDB loses.
+- Comparisons state where proto_db loses.
 
 ## P7. Correct before fast
 

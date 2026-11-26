@@ -1,4 +1,4 @@
-"""Cloud object-store storage of ProtoDB 2.0 (spec section 9, decisions D5 and D43).
+"""Cloud object-store storage of proto_db 2.0 (spec section 9, decisions D5 and D43).
 
 Layout under a key ``prefix`` of one bucket::
 
