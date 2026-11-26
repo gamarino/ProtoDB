@@ -48,6 +48,7 @@ from ..catalog.model import ON_DELETE, SENSITIVITIES, VALUE_KINDS
 from ..core import codec
 from ..core.atom import TYPE_NAME_PATTERN
 from ..errors import ProtoValidationError
+from ..purity import check_not_holding_root
 from ..values import MISSING, MutableObject, canonical, is_atom
 from .expressions import Reader, check_ast, dependencies, evaluate, parse, total_rules
 
@@ -81,6 +82,16 @@ def _invalid(where: str, detail: str) -> ProtoValidationError:
 def _text(where: str, value) -> str:
     if type(value) is not str or not value:
         raise _invalid(where, f"a non-empty str, not {value!r}")
+    return value
+
+
+def _exact_str(value):
+    """``value`` with a ``str`` subclass instance (a ``StrEnum`` member, say) replaced by the exact
+    ``str`` it holds, so that a declaration stores plain data only (composition reads plain data
+    under the space root, P-C); any other value unchanged.  ``str.__str__`` reads the characters,
+    never the subclass's own ``__str__``."""
+    if isinstance(value, str) and type(value) is not str:
+        return str.__str__(value)
     return value
 
 
@@ -138,7 +149,7 @@ def semantic_fields(where: str, semantic: Mapping) -> dict:
     for key in _SEMANTIC_KEYS:
         if key not in semantic:
             continue
-        value, here = semantic[key], f"{where}, {key}"
+        value, here = _exact_str(semantic[key]), f"{where}, {key}"
         if key in ("meaning", "group", "caveats", "certification"):
             out[key] = _text(here, value)
         elif key in ("label", "help"):
@@ -377,6 +388,7 @@ class Computed(_Descriptor):
         return out
 
     def value(self, receiver):
+        check_not_holding_root(f"The computed attribute {self.name!r}")
         if self.function is not None:
             return self.function(receiver)
         return _evaluate_guarded(self.tree, receiver, self.name)
@@ -453,6 +465,7 @@ class _End(_Descriptor):
         for path in self.index_by:
             if not all(path.split(".")):
                 raise _invalid(f"{where}, index_by", f"{path!r} is not an attribute path")
+        binding, on_delete = _exact_str(binding), _exact_str(on_delete)
         if binding not in BINDINGS:
             raise _invalid(f"{where}, binding", f"{binding!r} is not one of {sorted(BINDINGS)}")
         self.binding = binding
@@ -512,6 +525,7 @@ class Relation(_End):
         super().__init__(semantic)
         self._role(target, inverse, ordered, index_by, binding, on_delete)
         where = f"{self._where()}, cardinality"
+        cardinality = _exact_str(cardinality)
         if cardinality in PAIR_CARDINALITIES:
             self.cardinality, self.inverse_cardinality = PAIR_CARDINALITIES[cardinality]
         elif cardinality in END_CARDINALITIES:
@@ -659,7 +673,7 @@ def _parameter_type(where: str, value):
             return VALUE_TYPES[value]
         return _type_name(where, value)
     if isinstance(value, str) and (value in VALUE_KINDS or TYPE_NAME_PATTERN.match(value)):
-        return value
+        return _exact_str(value)
     raise _invalid(where, f"{value!r} is neither a value kind {sorted(VALUE_KINDS)}, a type of Field, a semantic "
                           f"class nor an entity type name (declare it with parameters=)")
 

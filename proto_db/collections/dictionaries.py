@@ -171,6 +171,11 @@ class Dictionary(ConcurrentOptimized, IndexedCollection):
         with engine_reads():
             return avl.key_get(self.root, key, default)
 
+    def get(self, key, default=None):
+        """:meth:`get_at` (spec section 6 lists ``get(k)``): the same value or ``default``, and on a
+        linked version the same ``Unit(KEY, root, key)``."""
+        return self.get_at(key, default)
+
     def has(self, key) -> bool:
         """True iff ``key`` (canonicalized) is present.  On a linked version it records
         ``Unit(KEY, root, key)`` (spec section 6)."""
@@ -367,7 +372,7 @@ class Dictionary(ConcurrentOptimized, IndexedCollection):
 
 #: The operations of a Dictionary the precondition model lists (spec sections 5 and 6) or relies
 #: on to validate and reapply them: a subclass overriding one is an object root (N5).
-DICTIONARY_OPERATIONS = ("get_at", "has", "__contains__", "set_at", "remove_at", "_set_at", "_remove_at",
+DICTIONARY_OPERATIONS = ("get_at", "get", "has", "__contains__", "set_at", "remove_at", "_set_at", "_remove_at",
                          "_stored_at", "_unit_token", "elements", "items", "keys", "values", "__iter__", "__len__",
                          "content_equals", "_same_content", "_scan_window", "key_at_position", "position_of",
                          "_replay_op", "_net_ops", "_op_key", "_reapplied_on", "_with", "_intention_elements",

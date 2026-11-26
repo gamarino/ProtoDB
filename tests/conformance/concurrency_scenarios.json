@@ -4469,6 +4469,112 @@
      "mutables": {}
     }
    }
+  },
+  {
+   "name": "dictionary_get_conflicts_same_key",
+   "row": "6.linked.dictionary_get_at_get_has",
+   "base": {
+    "roots": {
+     "d": {
+      "dictionary": {
+       "k": 1
+      }
+     }
+    }
+   },
+   "a": [
+    [
+     "read",
+     "d",
+     "get",
+     "k"
+    ],
+    [
+     "set_root",
+     "w",
+     {
+      "value": 1
+     }
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "d",
+     "set_at",
+     "k",
+     2
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "conflict": {
+     "kind": "key",
+     "root": "d",
+     "key": "k"
+    }
+   },
+   "note": "Dictionary and HashDictionary get(k) is get_at(k): the same key unit"
+  },
+  {
+   "name": "hash_dictionary_get_composes_other_key",
+   "row": "6.linked.dictionary_get_at_get_has",
+   "base": {
+    "roots": {
+     "d": {
+      "hash_dictionary": {
+       "k": 1
+      }
+     }
+    }
+   },
+   "a": [
+    [
+     "read",
+     "d",
+     "get",
+     "k"
+    ],
+    [
+     "set_root",
+     "w",
+     {
+      "value": 1
+     }
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "d",
+     "set_at",
+     "j",
+     2
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "state": {
+     "roots": {
+      "d": {
+       "hash_dictionary": {
+        "j": 2,
+        "k": 1
+       }
+      },
+      "w": {
+       "value": 1
+      }
+     },
+     "mutables": {}
+    }
+   }
   }
  ]
 }

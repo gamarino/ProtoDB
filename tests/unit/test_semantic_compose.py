@@ -335,3 +335,66 @@ def test_a_maintained_aggregate_through_a_via_to_a_python_only_term_is_refused()
         compose(Registry.build(("base", "acme_via_python"), mapping=MAPPING))
     message = str(raised.value)
     assert "'acme.via.Thing'.via_parts" in message and "'acme.via.Part'.py" in message
+
+
+# -- declarations accepted at declaration are composed (final review I1) ----------------------------
+
+class _CallableInstance:
+    """A callable whose every use by the engine would show: composition must neither call it nor
+    look anything up on it."""
+
+    calls = 0
+
+    def __call__(self, receiver):
+        type(self).calls += 1
+        return 1
+
+    def __getattribute__(self, name):
+        type(self).calls += 1
+        return object.__getattribute__(self, name)
+
+    def method(self, receiver):
+        return 1
+
+
+def _plus(receiver, extra):
+    return extra
+
+
+@pytest.mark.parametrize("function", [
+    lambda r: 1,
+    __import__("functools").partial(_plus, extra=1),
+    len,
+    _CallableInstance().method,
+    _CallableInstance(),
+], ids=["lambda", "partial", "builtin", "bound method", "callable instance"])
+def test_a_python_computed_of_any_callable_is_composed_without_calling_it(function):
+    from proto_db.semantic import compose as composition
+    from proto_db.semantic.descriptors import Computed
+    computed = Computed(function)
+    _CallableInstance.calls = 0
+    assert composition._descriptor_element(computed, "c") == {"name": "c", "kind": "computed",
+                                                              "languages": ["python"]}
+    assert _CallableInstance.calls == 0
+
+
+def test_str_subclass_declarations_are_stored_as_exact_str():
+    import enum
+    from proto_db.semantic import compose as composition
+    from proto_db.semantic.descriptors import Computed, Relation
+
+    class Level(enum.StrEnum):
+        PUBLIC = "public"
+        AT_MOST_ONE = "0..1"
+        VERSION = "version"
+        CASCADE = "cascade"
+
+    computed = Computed("1", sensitivity=Level.PUBLIC)
+    item = composition._descriptor_element(computed, "c")
+    assert item["sensitivity"] == "public" and type(item["sensitivity"]) is str
+    relation = Relation("acme.sales.Customer", cardinality=Level.AT_MOST_ONE, binding=Level.VERSION,
+                        on_delete=Level.CASCADE)
+    item = composition._descriptor_element(relation, "customer")
+    for field in ("cardinality", "binding", "on_delete"):
+        assert type(item[field]) is str, field
+    assert (item["cardinality"], item["binding"], item["on_delete"]) == ("0..1", "version", "cascade")

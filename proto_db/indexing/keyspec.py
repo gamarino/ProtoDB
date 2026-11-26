@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 
 from ..core.atom import _ABSENT, RESERVED_NAMES, Atom
 from ..core.dbobject import DBObject
-from ..purity import extracting
+from ..purity import check_not_holding_root, extracting
 from ..errors import ProtoCorruptionError, ProtoValidationError
 from ..values import MISSING, canonical, check_text
 
@@ -230,6 +230,7 @@ class KeySpec:
         if self.kind == ELEMENT:
             return element
         if self.kind == EXTRACTOR:
+            check_not_holding_root(f"The key extractor {self.arg!r}")
             fn = _registered(self.arg)
             with extracting():
                 return canonical(fn(element))

@@ -115,6 +115,11 @@ class HashDictionary(ConcurrentOptimized, IndexedCollection):
             _, bucket, position = self._find(key)
         return default if position < 0 else bucket[position][1]
 
+    def get(self, key, default=None):
+        """:meth:`get_at` (spec section 6 lists ``get(k)``): the same value or ``default``, and on a
+        linked version the same ``Unit(KEY, root, key)``."""
+        return self.get_at(key, default)
+
     def has(self, key) -> bool:
         """True iff ``key`` (canonicalized) is present.  On a linked version it records
         ``Unit(KEY, root, key)`` (spec section 6)."""
@@ -285,7 +290,7 @@ class HashDictionary(ConcurrentOptimized, IndexedCollection):
 #: The operations of a HashDictionary the precondition model lists or relies on (N5).  ``_bucket_hash``
 #: is among them: validating a key's unit and reapplying an intention run it under the root lock,
 #: so an overriding subclass would run user code there (P-C); it is an object root.
-HASH_DICTIONARY_OPERATIONS = ("get_at", "has", "__contains__", "set_at", "remove_at", "_set_at", "_remove_at",
+HASH_DICTIONARY_OPERATIONS = ("get_at", "get", "has", "__contains__", "set_at", "remove_at", "_set_at", "_remove_at",
                               "_stored_at", "_unit_token", "_find", "_bucket_hash", "elements", "items", "keys",
                               "values", "__iter__", "__len__", "content_equals", "_same_content", "_scan_window",
                               "_replay_op", "_net_ops", "_op_key", "_reapplied_on", "_with",

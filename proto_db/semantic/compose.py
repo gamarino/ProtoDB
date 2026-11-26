@@ -155,7 +155,8 @@ _INSTANCE_DICT = _Descriptor.__dict__["__dict__"]
 _MRO = type.__dict__["__mro__"]
 #: The types whose values are plain data: builtins and the engine's own canonical containers (exact types,
 #: so no subclass of a module), none of which runs application code when iterated, copied or hashed.  A
-#: function is accepted as a value (a Python ``Computed``'s) and never called here.
+#: function is accepted as a value and never called here; a Python ``Computed``'s function may be any
+#: callable (:func:`_descriptor_element` carries it apart).
 _PLAIN_TYPES = (str, int, float, bool, type(None), bytes, Decimal, datetime.date, datetime.datetime, datetime.time,
                 datetime.timedelta, uuid.UUID, list, tuple, dict, set, frozenset, FrozenDict, FrozenList,
                 types.FunctionType)
@@ -213,7 +214,19 @@ def _descriptor_element(value, name: str) -> dict:
     engine = _engine_class(value, _ENGINE_DESCRIPTORS)
     if engine is None:
         raise _invalid(f"the descriptor {name!r} is of no engine descriptor class")
-    state = _plain_copy(f"the descriptor {name!r}", dict(_INSTANCE_DICT.__get__(value)))
+    state = dict(_INSTANCE_DICT.__get__(value))
+    function = None
+    if engine is Computed:
+        # A Python computed's function is any callable (a function, a partial, a builtin, a bound
+        # method, a callable instance: Computed accepts each).  It is carried by identity, never
+        # called, copied or looked into here (Computed.element does not read it); ``callable`` reads
+        # the type's call slot only.
+        function = state.pop("function", None)
+        if function is not None and not callable(function):
+            raise _invalid(f"the descriptor {name!r}: its function is not callable")
+    state = _plain_copy(f"the descriptor {name!r}", state)
+    if engine is Computed:
+        state["function"] = function
     shadow = object.__new__(engine)
     _INSTANCE_DICT.__get__(shadow).update(state)
     return engine.element(shadow, name)

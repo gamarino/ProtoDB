@@ -57,6 +57,7 @@ from ..catalog.atoms import RESERVED_INTENT_NAMES
 from ..core.dbobject import _DEFERRED_DUNDERS, SEMANTIC_DUNDERS, DBObject, deferred_dunder_refusal
 from ..errors import ProtoUserError, ProtoValidationError
 from ..values import values_equal
+from ..purity import check_not_holding_root
 from .descriptors import Invariant, Role, _names, _text, language_map
 
 __all__ = ["Extension", "Relationship", "IntentContext", "IntentInvoker", "intent_context",
@@ -352,6 +353,7 @@ class IntentInvoker:
         return self._function.__proto_intent__.name
 
     def __call__(self, *args, **kwargs):
+        check_not_holding_root(f"The intent {self.name!r}")
         arguments = _arguments(self._function, self._receiver, args, kwargs)
         if _RUNNING.get() is not None:
             return self._function(self._receiver, **arguments)
@@ -389,6 +391,7 @@ def _invoke(version, name: str, arguments: Mapping, context):
     ``context.update(context.target, ...)``.  Returns the implementation's result.  Without a context
     (a version no ``SemanticSession`` gave), ``ProtoUserError``."""
     where = f"The intent {name!r} of {type(version).__type_name__!r}"
+    check_not_holding_root(where)
     if context is None:
         raise ProtoUserError(f"{where} is invoked on a version obtained from a SemanticSession (spec section 4); "
                              f"this version was not")

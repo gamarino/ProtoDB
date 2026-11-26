@@ -175,6 +175,47 @@ def test_get_at_absent_then_concurrent_insert_conflicts(db, cls):
     assert conflict(a) == key("k")
 
 
+class _DictionaryOverridingGet(Dictionary):
+    __type_name__ = "tests.precondition_dictionary.DictionaryOverridingGet"
+
+    def get(self, key, default=None):
+        return default
+
+
+class _HashDictionaryOverridingGet(HashDictionary):
+    __type_name__ = "tests.precondition_dictionary.HashDictionaryOverridingGet"
+
+    def get(self, key, default=None):
+        return default
+
+
+_OVERRIDING_GET = {Dictionary: _DictionaryOverridingGet, HashDictionary: _HashDictionaryOverridingGet}
+
+
+@CLASSES
+def test_get_is_get_at_with_the_same_key_unit(db, cls):
+    """Spec section 6 lists ``get(k)`` with ``get_at(k)``: the same KEY unit, the same answer and
+    default; a listed operation, so a subclass overriding it is an object root (N5)."""
+    from proto_db.collections.linking import fine_grained
+    seed(db, cls, k=1, j=1)
+    a, b = db.new_transaction(), db.new_transaction()
+    d = a.get_root_object("d")
+    assert d.get("k") == 1 and d.get("absent") is None and d.get("absent", 7) == 7
+    assert key("k") in a._read_log and key("absent") in a._read_log and key("j") not in a._read_log
+    a.set_root_object("d", d.set_at("x", d.get("k") + 1))
+    write(b, lambda d: d.set_at("j", 2))
+    b.commit()
+    a.commit()
+    assert content(db) == {"k": 1, "j": 2, "x": 2}
+    c, e = db.new_transaction(), db.new_transaction()
+    d = c.get_root_object("d")
+    c.set_root_object("d", d.set_at("y", d.get("k")))
+    write(e, lambda d: d.set_at("k", 5))
+    e.commit()
+    assert conflict(c) == key("k")
+    assert not fine_grained(_OVERRIDING_GET[cls])
+
+
 @CLASSES
 @pytest.mark.parametrize("probe", ["has", "in"])
 def test_has_same_pair(db, cls, probe):
@@ -307,3 +348,4 @@ def test_reapplied_dictionary_keeps_the_exact_key_form(db, cls, case):
     _moved(db)
     a.commit()
     assert _typed_items(db) == expected
+

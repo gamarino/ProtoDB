@@ -212,7 +212,7 @@ from .resolution import enter_reader, exit_reader, new_cache, reset_reader, set_
 from .storage.base import check_lock_timeout
 from .storage.cache import BoundedCache
 from .query.cache import QUERY_CACHE_BYTES, QueryCache
-from .purity import check_not_extracting
+from .purity import HOLDING_ROOT, check_not_extracting, holding_root
 from .indexing.vector_backends import DERIVED
 from .query.pager import check_resumed, decode_ref, encode_ref, pager_arguments, portable_pager
 from .storage.format import RootRecord, next_root_version
@@ -257,27 +257,9 @@ _UNIT_NOUNS = {UnitKind.KEY: "Key", UnitKind.ELEMENT: "Element", UnitKind.COUNT:
                UnitKind.RECORDS: "The records of key", UnitKind.POSITION: "Position"}
 _COLLECTION_UNIT_KINDS = frozenset(_UNIT_NOUNS)
 
-#: Per thread: how many times this thread holds the space root (the root lock, or a cluster lease
-#: or permit) -- set around the lock region of a standalone round and around every build, which
-#: runs only while the space root is held (``Transaction._holding_root_lock``).
-_root_held = threading.local()
-
-
-class _HoldingRoot:
-    """Context manager marking this thread as holding the space root (re-entrant)."""
-
-    __slots__ = ()
-
-    def __enter__(self):
-        _root_held.depth = getattr(_root_held, "depth", 0) + 1
-        return self
-
-    def __exit__(self, *exc):
-        _root_held.depth -= 1
-        return False
-
-
-_HOLDING_ROOT = _HoldingRoot()
+#: Marks this thread as holding the space root around the lock region of a standalone round and
+#: around every build (``Transaction._holding_root_lock``; :mod:`proto_db.purity`, P-C).
+_HOLDING_ROOT = HOLDING_ROOT
 
 #: Test switch (the equivalence of delta and full validation, R65): when true, every delta validation under the space
 #: root also runs the full validation against the same current root and raises AssertionError
@@ -4137,8 +4119,9 @@ class Transaction:
     def _holding_root_lock() -> bool:
         """Whether the current thread holds the space root (the root lock, or a cluster lease or
         permit): true inside the lock region of a commit round and inside every build.  Nothing
-        that runs then may run user code (P-C); a test hook (and a guard) for that rule."""
-        return getattr(_root_held, "depth", 0) > 0
+        that runs then may run user code (P-C): a test hook for that rule, and the guard of every
+        entry point of user code (:func:`proto_db.purity.check_not_holding_root`)."""
+        return holding_root()
 
     def _prepare_writes(self) -> None:
         """The preparation phase of the commit (spec section 8 phase 2), before the space root is
@@ -4673,11 +4656,15 @@ class Transaction:
         nested, failed = True, False
         try:
             try:
-                if exc_type is None:
-                    if self.is_active:
-                        self.commit()
-                elif self.is_active:
-                    self.abort()
+                # Check and end in one step under the transaction's lock (final review I3): of two
+                # threads leaving the same block, the second finds the transaction ended (or being
+                # ended) by the first, and its exit is a no-op.
+                with self._lock:
+                    if exc_type is None:
+                        if self.is_active:
+                            self.commit()
+                    elif self.is_active:
+                        self.abort()
             except BaseException:
                 failed = True
                 raise

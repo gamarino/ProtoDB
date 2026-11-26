@@ -119,3 +119,64 @@ def test_element_without_precomputed_key_conflicts(db, extractor):
         s = tr.get_root_object("s")
         assert sorted(s.elements()) == [20]
         _assert_index_rebuilt_equal(s)
+
+
+# -- the production guard (final review I4) ---------------------------------------------------------
+
+_GUARD_CALLS = []
+
+
+def _guard_extractor(value):
+    _GUARD_CALLS.append(value)
+    return value
+
+
+def test_user_code_entry_points_refuse_to_run_with_the_space_root_held():
+    """Every entry point of user code raises ``ProtoUnexpectedError`` when its thread holds the space
+    root, before running anything: a regression that reaches one under the root fails loudly."""
+    from proto_db.errors import ProtoUnexpectedError
+    from proto_db.indexing.keyspec import KeySpec, register_extractor
+    from proto_db.purity import HOLDING_ROOT
+    from proto_db.semantic.classes import _invoke
+    from proto_db.semantic.descriptors import Computed
+    register_extractor("tests.no_user_code_under_lock.guard", _guard_extractor)
+    spec = KeySpec.extractor("tests.no_user_code_under_lock.guard")
+    computed = Computed(lambda receiver: _GUARD_CALLS.append(receiver))
+    computed.name = "c"
+    _GUARD_CALLS.clear()
+    with HOLDING_ROOT:
+        assert Transaction._holding_root_lock()
+        with pytest.raises(ProtoUnexpectedError, match="space root held"):
+            spec.extract(1)
+        with pytest.raises(ProtoUnexpectedError, match="space root held"):
+            computed.value("receiver")
+        with pytest.raises(ProtoUnexpectedError, match="space root held"):
+            _invoke(type("Version", (), {"__type_name__": "tests.Version"})(), "an_intent", {}, None)
+    assert _GUARD_CALLS == []
+    assert not Transaction._holding_root_lock()
+    assert spec.extract(1) == 1 and _GUARD_CALLS == [1]
+
+
+def test_an_extractor_reached_under_the_root_fails_the_commit(db, monkeypatch):
+    """A simulated regression: the build calls an extractor with the space root held.  The commit
+    fails with ``ProtoUnexpectedError``, the extractor never runs and nothing is published."""
+    from proto_db.errors import ProtoUnexpectedError
+    from proto_db.indexing.keyspec import KeySpec, register_extractor
+    register_extractor("tests.no_user_code_under_lock.guard", _guard_extractor)
+    spec = KeySpec.extractor("tests.no_user_code_under_lock.guard")
+    original = Transaction._build_root
+
+    def regressed(self, current, stamp=None):
+        assert Transaction._holding_root_lock()
+        spec.extract("under the root")
+        return original(self, current, stamp)
+
+    monkeypatch.setattr(Transaction, "_build_root", regressed)
+    _GUARD_CALLS.clear()
+    tr = db.new_transaction()
+    tr.set_root_object("r", 1)
+    with pytest.raises(ProtoUnexpectedError, match="space root held"):
+        tr.commit()
+    assert _GUARD_CALLS == []
+    monkeypatch.setattr(Transaction, "_build_root", original)
+    assert db.run(lambda t: t.get_root_object("r")) is None
