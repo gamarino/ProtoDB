@@ -58,6 +58,55 @@ def test_a_release_names_the_member_waiting_longest_then_the_next():
         h.close()
 
 
+def _says_want(h, name):
+    """``name`` says ``want`` (what a member nobody queues sends before deferring, see
+    :func:`test_a_member_nobody_queues_says_want_before_it_defers`), delivered to every peer."""
+    from proto_db.cluster.protocol import make_message
+    h.nodes[name]._broadcast(make_message("want", name))
+    for _, dst, msg in h.net.take(name, None, ("want",)):
+        h.net.handlers[dst](msg)
+        h.nodes[dst].wait_idle(5.0)
+
+
+@pytest.mark.parametrize("names", ["abc", "abcde"], ids=["3 members", "5 members"])
+def test_contending_members_are_served_in_turn_no_member_starves(names):
+    """No starvation, on a logical clock (final review F2: the grant count, not wall time).  Every
+    member contends all the time: the first holder takes the lease while every other member says
+    ``want`` in turn; from then on each holder releases, the member it names takes the lease, and
+    the member just served wants it again.  Each release must name the member waiting longest,
+    the named member must get the lease, and over ``4 N`` grants every member must hold exactly
+    four leases with at most ``N - 1`` grants to others between two of its own (round robin)."""
+    h = Harness(names)
+    members = list(names)
+    try:
+        holder = members[0]
+        lease = h.attempt(holder, set(members) - {holder})
+        assert isinstance(lease, Lease), lease
+        for name in members[1:]:
+            _says_want(h, name)
+        waiting = members[1:]                   # the order the members first wanted the lease
+        holders = [holder]
+        for _ in range(4 * len(members) - 1):
+            msg = _released(h, holder, lease)
+            assert msg["held"] and msg["next"] == waiting[0], (msg, waiting)
+            _deliver_release(h, msg, set(members) - {holder})
+            served, holder = holder, waiting.pop(0)
+            lease = h.attempt(holder, set(members) - {holder})
+            assert isinstance(lease, Lease), (holder, lease)
+            holders.append(holder)
+            _says_want(h, served)                   # the member just served contends again
+            waiting.append(served)
+        counts = {name: holders.count(name) for name in members}
+        assert set(counts.values()) == {4}, (counts, holders)
+        for name in members:
+            grants = [i for i, who in enumerate(holders) if who == name]
+            assert max(b - a for a, b in zip(grants, grants[1:])) == len(members), (name, holders)
+        stats = {name: h.nodes[name].stats() for name in members}
+        assert sum(s["turns_taken"] for s in stats.values()) == len(holders) - 1, stats
+    finally:
+        h.close()
+
+
 def test_without_waiting_members_a_release_names_nobody_and_nobody_defers():
     h = Harness()
     try:

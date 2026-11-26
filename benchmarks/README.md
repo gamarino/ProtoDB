@@ -1,4 +1,4 @@
-# ProtoDB performance suite
+# proto_db performance suite
 
 A self-verifying benchmark suite (spec section 12, Tasks 9.1-9.3, decision D49). Every
 workload prints the work it did and checks its results against an independent computation
@@ -31,6 +31,13 @@ Probes outside the suite: `benchmarks/residency_probe.py` (Task 8.3m) measures p
 with a decoded-atom cache that fits the working set and with one 20 % smaller, and the thrash
 signal; it prints one JSON line (`python -X gil=0 -m benchmarks.residency_probe WORKDIR`, from the
 root of the tree to measure). Its log is `results/2026-11-06-8.3m-residency-probe.log`.
+
+`benchmarks/cluster_fairness.py` (Task 8.3e; moved from the test suite in the final review, F2, because
+it measures real time) runs 2, 3 and 5 contending in-process members for 1.5 s, three trials per case,
+and prints each member's leases, the lease ratio and the longest gap between two leases of a member;
+it exits 1 when a member starves or a median trial misses a bound (`python -m benchmarks.cluster_fairness
+--json OUT`). The test suite proves the same property on a logical clock
+(`tests/unit/test_cluster_fairness.py`, round-robin service counted in grants).
 
 The periodic cluster stress task (ruling R125) runs cluster tests beside CPU-bound busy processes
 and asserts safety only: `python -m benchmarks.cluster_stress --hogs 12 --runs 3 --json OUT`, from
