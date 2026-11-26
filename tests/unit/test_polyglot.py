@@ -210,19 +210,21 @@ def test_a_field_named_like_a_metaclass_attribute_is_readable(field):
 # -- pre-tag review I-3: writers write the lowest sufficient format version -----------------------
 
 def test_a_writer_that_reads_a_newer_version_still_writes_the_lowest_sufficient_one(tmp_path, monkeypatch):
-    # This revision adds formats 5 (the feature ``parents``) and 6 (the feature ``catalog``): it reads
-    # them, but data using no later feature is written as version 4, so readers of the previous
-    # revision keep opening it.
+    # This revision adds formats 5 (the feature ``parents``), 6 (the feature ``catalog``) and 7
+    # (the feature ``preconditions``, a mark of root records only, R63): it reads them, but
+    # segments using no later feature are written as version 4.  Every root is version 7: a
+    # writer without the precondition model must not write the space (Task 14).
     import struct
     from proto_db.storage import format as fmt
-    assert fmt.FORMAT_VERSION == 6 and {5, 6} <= fmt.READABLE_FORMAT_VERSIONS
+    assert fmt.FORMAT_VERSION == 7 and {5, 6, 7} <= fmt.READABLE_FORMAT_VERSIONS
     path = tmp_path / "db"
     space = ObjectSpace(FileStorage(str(path)))
     with space.new_database("d").new_transaction() as tr:
         tr.set_root_object("x", DBObject(n=1))
     space.close()
     root = msgpack.unpackb((path / "space.root").read_bytes()[4:], raw=False)
-    assert root["version"] == 4
+    assert root["version"] == 7
     for segment in path.glob("*.seg"):
         assert struct.unpack_from("<8sH", segment.read_bytes())[1] == 4
-    assert fmt.WRITE_FORMAT_VERSION == 4 and fmt.FEATURE_VERSIONS == {"parents": 5, "registry": 5, "catalog": 6}
+    assert fmt.WRITE_FORMAT_VERSION == 4 and fmt.FEATURE_VERSIONS == {"parents": 5, "registry": 5, "catalog": 6,
+                                                                       "preconditions": 7}

@@ -110,7 +110,7 @@ class SharedStorage(ABC):
         ``expected_epoch=None`` publishes unconditionally and is meant for tooling only.
         Returns the new :class:`RootRecord`.
 
-        Its format version is the highest of :data:`~proto_db.storage.format.WRITE_FORMAT_VERSION`,
+        Its format version is the highest of :data:`~proto_db.storage.format.ROOT_WRITE_VERSION` (R63),
         the version of the root it replaces, the highest segment version this instance has
         written (:attr:`written_version`) and ``version``, the version of the root as its
         writer built it when another instance wrote some of its data (a cluster persisting a

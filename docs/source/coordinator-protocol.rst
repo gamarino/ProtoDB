@@ -460,6 +460,13 @@ The commit path
    built in turn on the root the previous one produced: read-set validation (D34), intent merge (D33), path
    copy; a conflicting transaction fails alone. Records of the base come from the cache (R89) or are fetched
    from the members the locator names, then from every member, then from the object store (D54).
+   Under the precondition model (protocol 16) the validation and the reapplication run on the building node,
+   under its permission, with the standalone rules: the pre-pass validated against the newest root the node
+   knew (R0, outside the permission); when the base is another root, the build validates the diff R0 to base
+   and reapplies the commit's intentions on the base (a re-committed base differs by pointer only and is not a
+   conflict); when R0 could not be read, the full validation runs against the base. A conflict found by the
+   pre-pass is an ordinary failed attempt and takes the normal backoff. Every node of a cluster must validate
+   the same way, hence the protocol version.
 6. **Reserve (R121).** Before anything a voter may accept leaves the node, the permission must have at least
    ``send_reserve`` left; otherwise the round ends with a retryable ``ProtoConflictError`` and nothing is sent
    (H7). A node also never replicates under a term below its last rejoin ballot (D50 amendment after R78a).
@@ -976,7 +983,7 @@ Where the code is
 ``proto_db/cluster/persister.py``, ``proto_db/storage/tiered.py``
    Asynchronous persistence and the persisted-root compare-and-swap.
 ``proto_db/cluster/protocol.py``, ``proto_db/cluster/transport.py``
-   Messages (protocol version 15) and the TCP and in-process transports.
+   Messages (protocol version 16) and the TCP and in-process transports.
 ``proto_db/transactions.py``
    The commit round under a permission (``_run_round``, ``_permit_round``), the base (``_lease_base``,
    ``_phase_1_floor``, ``_commit_base``).

@@ -21,7 +21,7 @@ import time
 
 import pytest
 
-from proto_db.cluster.rootlog import RECORDS_KIND
+from proto_db.cluster.rootlog import RECORDS_KIND, _entry_kind
 from proto_db.storage.logfile import read_log
 from tests.support.fake_object_store import FakeObjectStore
 from tests.support.power_loss import FrozenPowerLoss as _FrozenPowerLoss
@@ -95,7 +95,9 @@ def test_majority_power_loss_keeps_every_acknowledged_root_with_its_records(tmp_
 
 
 def _kind5_entries(path: str) -> int:
-    return sum(1 for p in read_log(os.path.join(path, "roots.log"), b"ROOT") if p and p[0] == RECORDS_KIND)
+    """The kind-5 entries of the acceptor log, plain or wrapped in a versioned entry (kind 7):
+    every root of format 7 (R63) is logged in the versioned form."""
+    return sum(1 for p in read_log(os.path.join(path, "roots.log"), b"ROOT") if p and _entry_kind(p) == RECORDS_KIND)
 
 
 def test_a_restart_redoes_the_records_and_checkpoints(tmp_path):

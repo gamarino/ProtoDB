@@ -31,7 +31,8 @@ from ..core.atom import AtomPointer
 from ..errors import ProtoCorruptionError, ProtoNotSupportedError, ProtoValidationError
 from ..values import MAX_VALUE_DEPTH
 
-__all__ = ["SEGMENT_MAGIC", "FORMAT_VERSION", "WRITE_FORMAT_VERSION", "FEATURE_VERSIONS", "write_version",
+__all__ = ["SEGMENT_MAGIC", "FORMAT_VERSION", "WRITE_FORMAT_VERSION", "FEATURE_VERSIONS", "ROOT_WRITE_VERSION",
+           "write_version", "root_version",
            "payload_features", "atom_version", "next_root_version", "peek_segment_header", "record_version",
            "framed_version", "READABLE_FORMAT_VERSIONS",
            "SEGMENT_HEADER_SIZE", "RECORD_HEADER_SIZE", "RECORD_MAGIC", "RecordKind", "RootRecord",
@@ -50,7 +51,11 @@ SEGMENT_MAGIC = b"PDB2SEG\0"
 #: written as version 4 (:data:`WRITE_FORMAT_VERSION`).
 #: 6: the feature ``catalog``, records of the semantic catalog's built-in types (:data:`CATALOG_TYPES`).
 #: Data that does not use it keeps version 4 or 5.
-FORMAT_VERSION = 6
+#: 7: the feature ``preconditions``, the mark of the precondition concurrency model (spec R50, R63):
+#: every root record this revision publishes is version 7, whatever the data it reaches, so a
+#: writer without the model (which would let the last writer win) refuses the space.  Segments
+#: keep the lowest version sufficient for their records.
+FORMAT_VERSION = 7
 #: The version written in every segment header and root record: the lowest version sufficient
 #: for what this revision can write.  It differs from :data:`FORMAT_VERSION` (the highest
 #: version read) once a later revision adds a feature: data that does not use it keeps this
@@ -61,7 +66,12 @@ WRITE_FORMAT_VERSION = 4
 #: ``parents``: an atom whose envelope has the key ``"p"`` (its parents tuple, runtime registry).
 #: ``registry``: a record of one of the runtime registry's built-in types (:data:`REGISTRY_TYPES`).
 #: ``catalog``: a record of one of the semantic catalog's built-in types (:data:`CATALOG_TYPES`).
-FEATURE_VERSIONS: dict = {"parents": 5, "registry": 5, "catalog": 6}
+#: ``preconditions``: a root record published under the precondition concurrency model (R63); a
+#: feature of root records only, never of an atom's payload.
+FEATURE_VERSIONS: dict = {"parents": 5, "registry": 5, "catalog": 6, "preconditions": 7}
+#: The lowest version of every root record this revision publishes (R63).  The upgrade is one-way:
+#: a root is never lower than the root it replaces (:func:`next_root_version`).
+ROOT_WRITE_VERSION = FEATURE_VERSIONS["preconditions"]
 
 #: The runtime registry's built-in types (``proto_db.registry``): their type names and their
 #: aliases (``proto_db.core.atom.BUILTIN_TYPE_ALIASES``; a test keeps the two in step).  A record
@@ -127,15 +137,23 @@ def atom_version(payload: dict, features=frozenset()) -> int:
     return write_version(used)
 
 
+def root_version(*versions: int) -> int:
+    """The version of a root record this revision publishes over ``versions`` (the version of the
+    root it replaces, the highest segment version its writer wrote, the committer's version of a
+    cluster root): the highest of them, never below :data:`ROOT_WRITE_VERSION` (R63).  Reads the
+    floor at call time, like :func:`write_version` reads :data:`WRITE_FORMAT_VERSION`."""
+    return max((ROOT_WRITE_VERSION,) + versions)
+
+
 def next_root_version(previous, storage) -> int:
     """The version of a root built on ``previous`` (a :class:`RootRecord` or ``None``) by a writer
-    on ``storage``: the highest of :data:`WRITE_FORMAT_VERSION`, ``previous``'s version and the
+    on ``storage``: the highest of :data:`ROOT_WRITE_VERSION`, ``previous``'s version and the
     highest segment version ``storage`` has written (``SharedStorage.written_version``).  A root
     is never lower than the root it replaces, so once a space holds data of a later version every
     later root of it is of that version, in cluster mode too, where the root's version travels on
     the wire and in the acceptor log ("Format stability" in format-spec.rst)."""
-    return max(WRITE_FORMAT_VERSION, previous.version if previous is not None else 0,
-               getattr(storage, "written_version", WRITE_FORMAT_VERSION))
+    return root_version(previous.version if previous is not None else 0,
+                        getattr(storage, "written_version", WRITE_FORMAT_VERSION))
 
 
 def record_version(kind: int, payload) -> int:
@@ -162,9 +180,9 @@ def framed_version(data, pos: int = 0) -> int:
 #: Versions this code reads: a format-2 segment still decodes (its references are read by the
 #: codec's format-2 branch), a format-3 one too (its zone datetimes by the codec's wall-clock
 #: branch, its indexes rebuilt at their first change); a root record of any of them is read as
-#: the current version.  A format-5 or format-6 segment or root is read as such (their features
-#: are additive).
-READABLE_FORMAT_VERSIONS = frozenset({2, 3, 4, 5, 6})
+#: the current version.  A format-5, format-6 or format-7 segment or root is read as such (their
+#: features are additive; a version-7 root marks the concurrency model, its shape is unchanged).
+READABLE_FORMAT_VERSIONS = frozenset({2, 3, 4, 5, 6, 7})
 _SEGMENT_HEADER = struct.Struct("<8sH16s")
 #: First two bytes of every record header.  ``0xC1`` is the one byte msgpack never emits as a
 #: type byte, so the magic is rare in msgpack payloads (it only marks candidates: the header

@@ -185,7 +185,11 @@ __all__ = ["PROTOCOL_VERSION", "MAX_FRAME_BYTES", "CHUNK_BYTES", "MAX_RECORD_BYT
 #: with aliases 24 to 34).  The layout of every message is unchanged: a protocol-14 node does not know
 #: those aliases, so it would derive a version-4 header for a segment opened by a catalog record and read
 #: its records as unknown types; as from 13 to 14, the two versions must not exchange messages.
-PROTOCOL_VERSION = 15
+#: 16: the precondition concurrency model (spec R51, R63).  Every node of a cluster validates a
+#: commit it builds with the same rules (preconditions and intentions, R38), and a root a committer
+#: builds is format 7: a protocol-15 node would build roots under the previous rules (the last writer
+#: wins) and refuse the version-7 roots it is sent, so the two versions must not exchange messages.
+PROTOCOL_VERSION = 16
 #: Largest accepted frame payload, in bytes (a replicate message carries a commit's records).
 MAX_FRAME_BYTES = 64 * 1024 * 1024
 #: Record bytes a replication puts in one frame at most (a single record may fill one alone).

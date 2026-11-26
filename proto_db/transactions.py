@@ -353,19 +353,13 @@ class _DeltaPlan:
 class _Candidate:
     """The pre-pass result (spec section 8 phase 3, R64): the root it was built on (R0, by
     pointer), that root's SpaceRoot and DatabaseRoot, the reapplied maps of objects and mutables
-    (saved), the module list the registry merge committed, the delta plan, and the oid of the
-    DatabaseRoot to build on the candidate.
+    (saved), the module list the registry merge committed, and the delta plan.  The DatabaseRoot
+    and the SpaceRoot are built under the space root (R64); the DatabaseRoot's oid is drawn there,
+    after the maps were saved (the record order of a commit is not part of the format)."""
 
-    That oid is drawn before the maps are saved: a build in one phase draws the new DatabaseRoot's
-    oid (adding it to the databases map) before it saves the maps' new nodes, and keeping that
-    order keeps the records a commit writes, byte for byte, those of a build in one phase (the
-    deterministic vectors and the plain-workload digests pin them)."""
+    __slots__ = ("pointer", "space", "db_root", "objects", "mutables", "committed_modules", "plan")
 
-    __slots__ = ("pointer", "space", "db_root", "objects", "mutables", "committed_modules", "plan", "oid")
-
-    def __init__(self, pointer, space, db_root, objects, mutables, committed_modules, plan: _DeltaPlan,
-                 oid: uuid.UUID):
-        self.oid = oid
+    def __init__(self, pointer, space, db_root, objects, mutables, committed_modules, plan: _DeltaPlan):
         self.pointer = pointer
         self.space = space
         self.db_root = db_root
@@ -555,13 +549,10 @@ class DatabaseRoot(_Immutable, Atom):
 
     def __init__(self, *, objects: Dictionary, mutables: Dictionary, previous: Optional["DatabaseRoot"],
                  version: int, committed_at: datetime.datetime, origin: bytes | None = None,
-                 context: PersistenceContext | None = None, oid: uuid.UUID | None = None):
-        """Create a database version; ``oid``: an identity drawn beforehand (a commit's pre-pass
-        draws it, see :class:`_Candidate`), else one is drawn on first need as for any atom."""
+                 context: PersistenceContext | None = None):
+        """Create a database version."""
         super().__init__(context=context)
         osa = object.__setattr__
-        if oid is not None:
-            osa(self, "oid", oid)
         osa(self, "objects", objects)
         osa(self, "mutables", mutables)
         self._set_link("previous", previous)
@@ -4034,36 +4025,61 @@ class Transaction:
         published root R0, validate every precondition against it (a failure raises
         ``ProtoConflictError`` before the space root is taken), reapply the intentions on it,
         persist the new nodes, and return the candidate maps with the plan of delta validation
-        (R65).  ``None`` when there is no published root, or when the registry merge needs
-        modules imported first (``_import_needed`` is set).  This transaction is the reader, as
-        in a build (ruling R201)."""
+        (R65).  ``None`` when there is no published root, when the registry merge needs
+        modules imported first (``_import_needed`` is set), or when R0 cannot be read here
+        (:meth:`_prepass_unavailable`).  This transaction is the reader, as in a build (ruling
+        R201)."""
         record = self._database.space._published_record()
         if record is None:
             return None
         reader = set_reader(self)
         try:
-            if self._catch_ups:
-                record, space, db_root = self._catch_up(record)
-            else:
-                space, db_root = self._published_database(record)
-            if record.pointer == self._snapshot_pointer:
-                plan = self._write_plan(db_root.objects, True)
-            else:
-                plan = self._write_plan(db_root.objects, False)
-                self._check_roots(db_root.objects)
-                self._check_mutables(db_root.mutables)
-            applied = self._applied_maps(db_root, plan)
-            if applied is None:
-                return None
-            objects, mutables, _ = applied
-            oid = uuid.uuid4()          # before the saves: see _Candidate
-            self.save(objects)
-            self.save(mutables)
-            committed = self._committed_modules if self._registry_pending() else None
-            return _Candidate(record.pointer, space, db_root, objects, mutables, committed,
-                              _DeltaPlan(self._read_log.preconditions(), self._read_log.ranges()), oid)
+            return self._prepass_on(record)
+        except ProtoUnexpectedError as e:
+            if not self._prepass_unavailable(e):
+                raise
+            logger.info("The pre-pass of a commit to database %r could not read R0 (%s); validating under "
+                        "the write permission only", self._database.name, e)
+            return None
         finally:
             reset_reader(reader)
+
+    def _prepass_unavailable(self, error: ProtoUnexpectedError) -> bool:
+        """Whether the pre-pass failure ``error`` means only that R0 is unavailable here (Task 14,
+        ruling 1b).  In cluster mode the pre-pass reads R0 -- the newest committed root this node
+        knows -- outside the write permission, before the records a replication carries may
+        have arrived, so a read can find a segment that is not uploaded yet while some peer is
+        silent (exactly ``ProtoUnexpectedError``, ruling R230).  The commit then runs without a
+        pre-pass: the full validation against the permission's base, under the permission
+        (R65, "R0 unavailable"), where the base's records are awaited and a failed read keeps
+        the rules of :func:`_check_expired_read`.  Never for a subclass (an unknown outcome
+        keeps its meaning), a failed tier (its error is its own, R231) or a standalone space
+        (the storage's read error is the same with or without the root lock)."""
+        coordinator = self._database.space.coordinator
+        return (coordinator is not None and type(error) is ProtoUnexpectedError
+                and getattr(coordinator.tier, "failure", None) is None)
+
+    def _prepass_on(self, record) -> Optional[_Candidate]:
+        """The body of :meth:`_prepass` on the published root ``record`` (R0)."""
+        if self._catch_ups:
+            record, space, db_root = self._catch_up(record)
+        else:
+            space, db_root = self._published_database(record)
+        if record.pointer == self._snapshot_pointer:
+            plan = self._write_plan(db_root.objects, True)
+        else:
+            plan = self._write_plan(db_root.objects, False)
+            self._check_roots(db_root.objects)
+            self._check_mutables(db_root.mutables)
+        applied = self._applied_maps(db_root, plan)
+        if applied is None:
+            return None
+        objects, mutables, _ = applied
+        self.save(objects)
+        self.save(mutables)
+        committed = self._committed_modules if self._registry_pending() else None
+        return _Candidate(record.pointer, space, db_root, objects, mutables, committed,
+                          _DeltaPlan(self._read_log.preconditions(), self._read_log.ranges()))
 
     @staticmethod
     def _holding_root_lock() -> bool:
@@ -4225,7 +4241,6 @@ class Transaction:
             objects, mutables = candidate.objects, candidate.mutables
             if candidate.committed_modules is not None:
                 self._committed_modules = candidate.committed_modules
-            oid = candidate.oid
             validated = clock()
         else:
             # The snapshot is current only if it is the very same root: in cluster mode, after a
@@ -4252,7 +4267,6 @@ class Transaction:
             if applied is None:
                 return None             # modules to import first, outside the lock (_commit)
             objects, mutables, replay = applied
-            oid = None
         self._committed_version = db_root.version + 1
         self._committed_key = (stamp.term if stamp is not None else 0, self._committed_version)
         self._committed_origin = (stamp.term, stamp.epoch) if stamp is not None else None
@@ -4264,7 +4278,7 @@ class Transaction:
         new_root = DatabaseRoot(objects=objects, mutables=mutables, previous=db_root,
                                 version=self._committed_version,
                                 committed_at=max(_utc_now(), db_root.committed_at), origin=db_root.origin,
-                                context=self, oid=oid)
+                                context=self)
         new_space = _new_space_root(space.databases.set_at(self._database.name, new_root), self, stamp, space)
         ptr = self.save(new_space)
         if stamp is not None:

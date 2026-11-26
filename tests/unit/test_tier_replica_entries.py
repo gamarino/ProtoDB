@@ -12,7 +12,7 @@ import uuid
 
 import pytest
 
-from proto_db.cluster.rootlog import REPLICA_KIND
+from proto_db.cluster.rootlog import REPLICA_KIND, _entry_kind
 from proto_db.storage import tiered
 from proto_db.storage.format import WRITE_FORMAT_VERSION, RootRecord
 from proto_db.storage.logfile import read_log
@@ -87,7 +87,7 @@ def test_a_root_accepted_without_its_records_keeps_the_commits_ranges(tmp_path, 
     try:
         assert st.load_roots().accepted == (3, root)
         assert st.commit_ranges(root) == ranges
-        assert not [p for p in read_log(path + "/roots.log", b"ROOT") if p and p[0] == REPLICA_KIND]
+        assert not [p for p in read_log(path + "/roots.log", b"ROOT") if p and _entry_kind(p) == REPLICA_KIND]
     finally:
         st.close()
 

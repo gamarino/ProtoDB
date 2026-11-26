@@ -1,0 +1,3812 @@
+{
+ "about": "Concurrency conformance scenarios of the precondition model (spec R60; section 14 R62: written in proto_db only, protoBaseST runs them after its port). Data only: tests/conformance/test_concurrency_scenarios.py executes them through proto_db in standalone, group-commit and cluster mode.",
+ "notation": {
+  "scenario": "name; row (one of rows); base; a and b, the operations of transactions A and B, both opened on the base and run A then B; order, the commit order; expect: state (the final state) or conflict (the unit the second commit raises ProtoConflictError on; only the fields given are compared). note: a comment.",
+  "state": "{roots: {name: root}, mutables: {name: value}}; a root is {value: v} (an object root holding a plain value), {dictionary: {k: v}}, {hash_dictionary: {k: v}}, {set: [e]}, {counted_set: [[e, n]]}, {rkd: [[k, [record]]]}, {list: [v]}; a collection may add indexes: [kind], kind 'equality' (index 'e') or 'range' (index 'r'), both over the element (KeySpec.element()). Lists in a state are sorted, except a list root's items.",
+  "operations": "[set_root, n, root], [remove_root, n], [get_root, n], [root_names], [new_mutable, n, v], [set_mutable, n, v], [remove_mutable, n], [get_mutable, n], [mutable_names], [write, root, method, args...] (the version the method returns is assigned to the root: set_at, remove_at, add, remove, union, difference, intersection, remove_record, remove_key, append_last, append_first, extend, insert_at, slice, add_index kind, remove_index kind), [read, root, method, args...] (get_at, get, has, count_of, len, count, items, elements, keys, key_at_position, position_of, index_names, get_index kind, lookup v (an equality query), greater_than v (a range query), scan (a query without a term))",
+  "conflict": "{kind, root, key[, index]} (a range has no key): kind is the unit class (root, root_presence, root_names, cell, cell_names, key, element, count, records, position, whole, index_defs, index_group, range); root is null for cells and the name sets; key is the cell name for a cell."
+ },
+ "rows": [
+  "5.roots.set_root_object",
+  "5.roots.remove_root_object",
+  "5.roots.new_mutable",
+  "5.roots.set_mutable",
+  "5.roots.remove_mutable",
+  "5.dictionary.set_at",
+  "5.dictionary.remove_at",
+  "5.set.add",
+  "5.set.remove_present",
+  "5.set.remove_absent",
+  "5.set.union",
+  "5.set.difference",
+  "5.set.intersection",
+  "5.counted.counted_set",
+  "5.counted.repeated_keys_dictionary",
+  "5.list.append_last_extend",
+  "5.list.set_at",
+  "5.list.structural",
+  "5.indexes.add_remove_index",
+  "5.other.any_other_write",
+  "6.transaction.get_root_absent",
+  "6.transaction.get_root_object",
+  "6.transaction.get_root_collection",
+  "6.transaction.root_names",
+  "6.transaction.get_mutable",
+  "6.transaction.mutable_names",
+  "6.linked.dictionary_get_at_get_has",
+  "6.linked.set_has",
+  "6.linked.counted_set_has_count_of",
+  "6.linked.rkd_get_at_has",
+  "6.linked.list_get_at",
+  "6.linked.equality_lookup",
+  "6.linked.count_len_iteration",
+  "6.linked.key_at_position_position_of",
+  "6.linked.queries",
+  "6.linked.index_names_get_index"
+ ],
+ "scenarios": [
+  {
+   "name": "set_root_other_root_composes",
+   "row": "5.roots.set_root_object",
+   "base": {
+    "roots": {
+     "o": {
+      "value": 1
+     },
+     "p": {
+      "value": 1
+     }
+    }
+   },
+   "a": [
+    [
+     "set_root",
+     "o",
+     {
+      "value": 2
+     }
+    ]
+   ],
+   "b": [
+    [
+     "set_root",
+     "p",
+     {
+      "value": 3
+     }
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "state": {
+     "roots": {
+      "o": {
+       "value": 2
+      },
+      "p": {
+       "value": 3
+      }
+     },
+     "mutables": {}
+    }
+   }
+  },
+  {
+   "name": "set_root_same_root_conflicts",
+   "row": "5.roots.set_root_object",
+   "base": {
+    "roots": {
+     "o": {
+      "value": 1
+     }
+    }
+   },
+   "a": [
+    [
+     "set_root",
+     "o",
+     {
+      "value": 2
+     }
+    ]
+   ],
+   "b": [
+    [
+     "set_root",
+     "o",
+     {
+      "value": 3
+     }
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "conflict": {
+     "kind": "root",
+     "root": "o",
+     "key": null
+    }
+   }
+  },
+  {
+   "name": "set_root_absent_both_create_conflicts",
+   "row": "5.roots.set_root_object",
+   "base": {},
+   "a": [
+    [
+     "set_root",
+     "n",
+     {
+      "value": 1
+     }
+    ]
+   ],
+   "b": [
+    [
+     "set_root",
+     "n",
+     {
+      "value": 1
+     }
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "conflict": {
+     "kind": "root",
+     "root": "n",
+     "key": null
+    }
+   },
+   "note": "absent included: two creations of the same root conflict even with the same value"
+  },
+  {
+   "name": "set_root_unlinked_collection_replaces_against_base",
+   "row": "5.roots.set_root_object",
+   "base": {
+    "roots": {
+     "d": {
+      "dictionary": {
+       "a": 0
+      }
+     }
+    }
+   },
+   "a": [
+    [
+     "set_root",
+     "d",
+     {
+      "dictionary": {
+       "x": 1
+      }
+     }
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "d",
+     "set_at",
+     "b",
+     2
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "conflict": {
+     "kind": "root",
+     "root": "d",
+     "key": null
+    }
+   },
+   "note": "a collection assigned that is not linked to the root is an object-root write (R11)"
+  },
+  {
+   "name": "remove_root_conflicts_with_concurrent_set",
+   "row": "5.roots.remove_root_object",
+   "base": {
+    "roots": {
+     "o": {
+      "value": 1
+     }
+    }
+   },
+   "a": [
+    [
+     "remove_root",
+     "o"
+    ]
+   ],
+   "b": [
+    [
+     "set_root",
+     "o",
+     {
+      "value": 2
+     }
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "conflict": {
+     "kind": "root",
+     "root": "o",
+     "key": null
+    }
+   }
+  },
+  {
+   "name": "remove_root_other_root_composes",
+   "row": "5.roots.remove_root_object",
+   "base": {
+    "roots": {
+     "o": {
+      "value": 1
+     },
+     "p": {
+      "value": 1
+     }
+    }
+   },
+   "a": [
+    [
+     "remove_root",
+     "o"
+    ]
+   ],
+   "b": [
+    [
+     "set_root",
+     "p",
+     {
+      "value": 2
+     }
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "state": {
+     "roots": {
+      "p": {
+       "value": 2
+      }
+     },
+     "mutables": {}
+    }
+   }
+  },
+  {
+   "name": "new_mutable_both_create_conflicts",
+   "row": "5.roots.new_mutable",
+   "base": {},
+   "a": [
+    [
+     "new_mutable",
+     "m",
+     1
+    ]
+   ],
+   "b": [
+    [
+     "new_mutable",
+     "m",
+     2
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "conflict": {
+     "kind": "cell",
+     "root": null,
+     "key": "m"
+    }
+   }
+  },
+  {
+   "name": "new_mutable_other_cells_compose",
+   "row": "5.roots.new_mutable",
+   "base": {},
+   "a": [
+    [
+     "new_mutable",
+     "m",
+     1
+    ]
+   ],
+   "b": [
+    [
+     "new_mutable",
+     "n",
+     2
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "state": {
+     "roots": {},
+     "mutables": {
+      "m": 1,
+      "n": 2
+     }
+    }
+   }
+  },
+  {
+   "name": "set_mutable_blind_conflicts",
+   "row": "5.roots.set_mutable",
+   "base": {
+    "mutables": {
+     "m": 0
+    }
+   },
+   "a": [
+    [
+     "set_mutable",
+     "m",
+     1
+    ]
+   ],
+   "b": [
+    [
+     "set_mutable",
+     "m",
+     2
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "conflict": {
+     "kind": "cell",
+     "root": null,
+     "key": "m"
+    }
+   },
+   "note": "a blind set_mutable no longer lets the last writer win"
+  },
+  {
+   "name": "set_mutable_other_cell_composes",
+   "row": "5.roots.set_mutable",
+   "base": {
+    "mutables": {
+     "m": 0,
+     "n": 0
+    }
+   },
+   "a": [
+    [
+     "set_mutable",
+     "m",
+     1
+    ]
+   ],
+   "b": [
+    [
+     "set_mutable",
+     "n",
+     2
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "state": {
+     "roots": {},
+     "mutables": {
+      "m": 1,
+      "n": 2
+     }
+    }
+   }
+  },
+  {
+   "name": "remove_mutable_removed_by_other_conflicts",
+   "row": "5.roots.remove_mutable",
+   "base": {
+    "mutables": {
+     "m": 0
+    }
+   },
+   "a": [
+    [
+     "remove_mutable",
+     "m"
+    ]
+   ],
+   "b": [
+    [
+     "remove_mutable",
+     "m"
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "conflict": {
+     "kind": "cell",
+     "root": null,
+     "key": "m"
+    }
+   }
+  },
+  {
+   "name": "remove_mutable_other_cell_composes",
+   "row": "5.roots.remove_mutable",
+   "base": {
+    "mutables": {
+     "m": 0,
+     "n": 0
+    }
+   },
+   "a": [
+    [
+     "remove_mutable",
+     "m"
+    ]
+   ],
+   "b": [
+    [
+     "set_mutable",
+     "n",
+     5
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "state": {
+     "roots": {},
+     "mutables": {
+      "n": 5
+     }
+    }
+   }
+  },
+  {
+   "name": "dictionary_set_at_other_keys_compose",
+   "row": "5.dictionary.set_at",
+   "base": {
+    "roots": {
+     "d": {
+      "dictionary": {
+       "a": 0
+      }
+     }
+    }
+   },
+   "a": [
+    [
+     "write",
+     "d",
+     "set_at",
+     "k",
+     1
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "d",
+     "set_at",
+     "j",
+     2
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "state": {
+     "roots": {
+      "d": {
+       "dictionary": {
+        "a": 0,
+        "j": 2,
+        "k": 1
+       }
+      }
+     },
+     "mutables": {}
+    }
+   }
+  },
+  {
+   "name": "dictionary_set_at_same_new_key_same_value_conflicts",
+   "row": "5.dictionary.set_at",
+   "base": {
+    "roots": {
+     "d": {
+      "dictionary": {
+       "a": 0
+      }
+     }
+    }
+   },
+   "a": [
+    [
+     "write",
+     "d",
+     "set_at",
+     "k",
+     1
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "d",
+     "set_at",
+     "k",
+     1
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "conflict": {
+     "kind": "key",
+     "root": "d",
+     "key": "k"
+    }
+   }
+  },
+  {
+   "name": "dictionary_remove_at_conflicts_with_concurrent_set",
+   "row": "5.dictionary.remove_at",
+   "base": {
+    "roots": {
+     "d": {
+      "dictionary": {
+       "a": 0,
+       "b": 0
+      }
+     }
+    }
+   },
+   "a": [
+    [
+     "write",
+     "d",
+     "remove_at",
+     "a"
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "d",
+     "set_at",
+     "a",
+     5
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "conflict": {
+     "kind": "key",
+     "root": "d",
+     "key": "a"
+    }
+   }
+  },
+  {
+   "name": "dictionary_remove_at_other_key_composes",
+   "row": "5.dictionary.remove_at",
+   "base": {
+    "roots": {
+     "d": {
+      "dictionary": {
+       "a": 0,
+       "b": 0
+      }
+     }
+    }
+   },
+   "a": [
+    [
+     "write",
+     "d",
+     "remove_at",
+     "a"
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "d",
+     "set_at",
+     "b",
+     5
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "state": {
+     "roots": {
+      "d": {
+       "dictionary": {
+        "b": 5
+       }
+      }
+     },
+     "mutables": {}
+    }
+   }
+  },
+  {
+   "name": "hash_dictionary_set_at_other_keys_compose",
+   "row": "5.dictionary.set_at",
+   "base": {
+    "roots": {
+     "d": {
+      "hash_dictionary": {
+       "a": 0
+      }
+     }
+    }
+   },
+   "a": [
+    [
+     "write",
+     "d",
+     "set_at",
+     "k",
+     1
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "d",
+     "set_at",
+     "j",
+     2
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "state": {
+     "roots": {
+      "d": {
+       "hash_dictionary": {
+        "a": 0,
+        "j": 2,
+        "k": 1
+       }
+      }
+     },
+     "mutables": {}
+    }
+   }
+  },
+  {
+   "name": "hash_dictionary_set_at_same_new_key_same_value_conflicts",
+   "row": "5.dictionary.set_at",
+   "base": {
+    "roots": {
+     "d": {
+      "hash_dictionary": {
+       "a": 0
+      }
+     }
+    }
+   },
+   "a": [
+    [
+     "write",
+     "d",
+     "set_at",
+     "k",
+     1
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "d",
+     "set_at",
+     "k",
+     1
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "conflict": {
+     "kind": "key",
+     "root": "d",
+     "key": "k"
+    }
+   }
+  },
+  {
+   "name": "hash_dictionary_remove_at_conflicts_with_concurrent_set",
+   "row": "5.dictionary.remove_at",
+   "base": {
+    "roots": {
+     "d": {
+      "hash_dictionary": {
+       "a": 0,
+       "b": 0
+      }
+     }
+    }
+   },
+   "a": [
+    [
+     "write",
+     "d",
+     "remove_at",
+     "a"
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "d",
+     "set_at",
+     "a",
+     5
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "conflict": {
+     "kind": "key",
+     "root": "d",
+     "key": "a"
+    }
+   }
+  },
+  {
+   "name": "hash_dictionary_remove_at_other_key_composes",
+   "row": "5.dictionary.remove_at",
+   "base": {
+    "roots": {
+     "d": {
+      "hash_dictionary": {
+       "a": 0,
+       "b": 0
+      }
+     }
+    }
+   },
+   "a": [
+    [
+     "write",
+     "d",
+     "remove_at",
+     "a"
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "d",
+     "set_at",
+     "b",
+     5
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "state": {
+     "roots": {
+      "d": {
+       "hash_dictionary": {
+        "b": 5
+       }
+      }
+     },
+     "mutables": {}
+    }
+   }
+  },
+  {
+   "name": "set_add_survives_concurrent_remove",
+   "row": "5.set.add",
+   "base": {
+    "roots": {
+     "s": {
+      "set": [
+       10,
+       20
+      ]
+     }
+    }
+   },
+   "a": [
+    [
+     "write",
+     "s",
+     "add",
+     10
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "s",
+     "remove",
+     10
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "state": {
+     "roots": {
+      "s": {
+       "set": [
+        10,
+        20
+       ]
+      }
+     },
+     "mutables": {}
+    }
+   },
+   "note": "add(e) when another transaction removed e leaves e present"
+  },
+  {
+   "name": "set_add_both_add_compose",
+   "row": "5.set.add",
+   "base": {
+    "roots": {
+     "s": {
+      "set": [
+       10
+      ]
+     }
+    }
+   },
+   "a": [
+    [
+     "write",
+     "s",
+     "add",
+     30
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "s",
+     "add",
+     30
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "state": {
+     "roots": {
+      "s": {
+       "set": [
+        10,
+        30
+       ]
+      }
+     },
+     "mutables": {}
+    }
+   }
+  },
+  {
+   "name": "set_remove_present_conflicts_with_concurrent_remove",
+   "row": "5.set.remove_present",
+   "base": {
+    "roots": {
+     "s": {
+      "set": [
+       10,
+       20
+      ]
+     }
+    }
+   },
+   "a": [
+    [
+     "write",
+     "s",
+     "remove",
+     10
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "s",
+     "remove",
+     10
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "conflict": {
+     "kind": "element",
+     "root": "s",
+     "key": 10
+    }
+   }
+  },
+  {
+   "name": "set_remove_present_other_element_composes",
+   "row": "5.set.remove_present",
+   "base": {
+    "roots": {
+     "s": {
+      "set": [
+       10,
+       20
+      ]
+     }
+    }
+   },
+   "a": [
+    [
+     "write",
+     "s",
+     "remove",
+     10
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "s",
+     "add",
+     30
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "state": {
+     "roots": {
+      "s": {
+       "set": [
+        20,
+        30
+       ]
+      }
+     },
+     "mutables": {}
+    }
+   }
+  },
+  {
+   "name": "set_remove_absent_conflicts_with_concurrent_add",
+   "row": "5.set.remove_absent",
+   "base": {
+    "roots": {
+     "s": {
+      "set": [
+       10
+      ]
+     }
+    }
+   },
+   "a": [
+    [
+     "write",
+     "s",
+     "remove",
+     30
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "s",
+     "add",
+     30
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "conflict": {
+     "kind": "element",
+     "root": "s",
+     "key": 30
+    }
+   }
+  },
+  {
+   "name": "set_remove_absent_other_element_composes",
+   "row": "5.set.remove_absent",
+   "base": {
+    "roots": {
+     "s": {
+      "set": [
+       10
+      ]
+     }
+    }
+   },
+   "a": [
+    [
+     "write",
+     "s",
+     "remove",
+     30
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "s",
+     "add",
+     40
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "state": {
+     "roots": {
+      "s": {
+       "set": [
+        10,
+        40
+       ]
+      }
+     },
+     "mutables": {}
+    }
+   }
+  },
+  {
+   "name": "set_union_composes_with_concurrent_add",
+   "row": "5.set.union",
+   "base": {
+    "roots": {
+     "s": {
+      "set": [
+       10
+      ]
+     }
+    }
+   },
+   "a": [
+    [
+     "write",
+     "s",
+     "union",
+     [
+      30,
+      40
+     ]
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "s",
+     "add",
+     40
+    ],
+    [
+     "write",
+     "s",
+     "remove",
+     10
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "state": {
+     "roots": {
+      "s": {
+       "set": [
+        30,
+        40
+       ]
+      }
+     },
+     "mutables": {}
+    }
+   }
+  },
+  {
+   "name": "set_difference_conflicts_like_remove",
+   "row": "5.set.difference",
+   "base": {
+    "roots": {
+     "s": {
+      "set": [
+       10,
+       20
+      ]
+     }
+    }
+   },
+   "a": [
+    [
+     "write",
+     "s",
+     "difference",
+     [
+      10
+     ]
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "s",
+     "remove",
+     10
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "conflict": {
+     "kind": "element",
+     "root": "s",
+     "key": 10
+    }
+   }
+  },
+  {
+   "name": "set_difference_other_element_composes",
+   "row": "5.set.difference",
+   "base": {
+    "roots": {
+     "s": {
+      "set": [
+       10,
+       20
+      ]
+     }
+    }
+   },
+   "a": [
+    [
+     "write",
+     "s",
+     "difference",
+     [
+      10
+     ]
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "s",
+     "add",
+     30
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "state": {
+     "roots": {
+      "s": {
+       "set": [
+        20,
+        30
+       ]
+      }
+     },
+     "mutables": {}
+    }
+   }
+  },
+  {
+   "name": "set_intersection_takes_the_whole_set",
+   "row": "5.set.intersection",
+   "base": {
+    "roots": {
+     "s": {
+      "set": [
+       10,
+       20
+      ]
+     }
+    }
+   },
+   "a": [
+    [
+     "write",
+     "s",
+     "intersection",
+     [
+      10
+     ]
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "s",
+     "add",
+     50
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "conflict": {
+     "kind": "whole",
+     "root": "s",
+     "key": null
+    }
+   }
+  },
+  {
+   "name": "counted_set_increments_compose",
+   "row": "5.counted.counted_set",
+   "base": {
+    "roots": {
+     "c": {
+      "counted_set": [
+       [
+        10,
+        1
+       ]
+      ]
+     }
+    }
+   },
+   "a": [
+    [
+     "write",
+     "c",
+     "add",
+     10
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "c",
+     "add",
+     10
+    ],
+    [
+     "write",
+     "c",
+     "add",
+     20
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "state": {
+     "roots": {
+      "c": {
+       "counted_set": [
+        [
+         10,
+         3
+        ],
+        [
+         20,
+         1
+        ]
+       ]
+      }
+     },
+     "mutables": {}
+    }
+   }
+  },
+  {
+   "name": "counted_set_decrements_floor_at_zero",
+   "row": "5.counted.counted_set",
+   "base": {
+    "roots": {
+     "c": {
+      "counted_set": [
+       [
+        10,
+        1
+       ]
+      ]
+     }
+    }
+   },
+   "a": [
+    [
+     "write",
+     "c",
+     "remove",
+     10
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "c",
+     "remove",
+     10
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "state": {
+     "roots": {
+      "c": {
+       "counted_set": []
+      }
+     },
+     "mutables": {}
+    }
+   }
+  },
+  {
+   "name": "rkd_records_compose",
+   "row": "5.counted.repeated_keys_dictionary",
+   "base": {
+    "roots": {
+     "r": {
+      "rkd": [
+       [
+        "k",
+        [
+         1
+        ]
+       ]
+      ]
+     }
+    }
+   },
+   "a": [
+    [
+     "write",
+     "r",
+     "set_at",
+     "k",
+     2
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "r",
+     "set_at",
+     "k",
+     3
+    ],
+    [
+     "write",
+     "r",
+     "remove_record",
+     "k",
+     1
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "state": {
+     "roots": {
+      "r": {
+       "rkd": [
+        [
+         "k",
+         [
+          2,
+          3
+         ]
+        ]
+       ]
+      }
+     },
+     "mutables": {}
+    }
+   }
+  },
+  {
+   "name": "list_append_last_commit_order",
+   "row": "5.list.append_last_extend",
+   "base": {
+    "roots": {
+     "l": {
+      "list": [
+       1,
+       2
+      ]
+     }
+    }
+   },
+   "a": [
+    [
+     "write",
+     "l",
+     "append_last",
+     3
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "l",
+     "extend",
+     [
+      4,
+      5
+     ]
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "state": {
+     "roots": {
+      "l": {
+       "list": [
+        1,
+        2,
+        4,
+        5,
+        3
+       ]
+      }
+     },
+     "mutables": {}
+    }
+   }
+  },
+  {
+   "name": "list_set_at_other_positions_compose",
+   "row": "5.list.set_at",
+   "base": {
+    "roots": {
+     "l": {
+      "list": [
+       1,
+       2
+      ]
+     }
+    }
+   },
+   "a": [
+    [
+     "write",
+     "l",
+     "set_at",
+     0,
+     10
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "l",
+     "set_at",
+     1,
+     20
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "state": {
+     "roots": {
+      "l": {
+       "list": [
+        10,
+        20
+       ]
+      }
+     },
+     "mutables": {}
+    }
+   }
+  },
+  {
+   "name": "list_set_at_same_position_conflicts",
+   "row": "5.list.set_at",
+   "base": {
+    "roots": {
+     "l": {
+      "list": [
+       1,
+       2
+      ]
+     }
+    }
+   },
+   "a": [
+    [
+     "write",
+     "l",
+     "set_at",
+     0,
+     10
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "l",
+     "set_at",
+     0,
+     11
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "conflict": {
+     "kind": "position",
+     "root": "l",
+     "key": 0
+    }
+   }
+  },
+  {
+   "name": "list_insert_at_takes_the_whole_list",
+   "row": "5.list.structural",
+   "base": {
+    "roots": {
+     "l": {
+      "list": [
+       1,
+       2
+      ]
+     }
+    }
+   },
+   "a": [
+    [
+     "write",
+     "l",
+     "insert_at",
+     0,
+     0
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "l",
+     "append_last",
+     3
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "conflict": {
+     "kind": "whole",
+     "root": "l",
+     "key": null
+    }
+   }
+  },
+  {
+   "name": "list_append_first_takes_the_whole_list",
+   "row": "5.list.structural",
+   "base": {
+    "roots": {
+     "l": {
+      "list": [
+       1,
+       2
+      ]
+     }
+    }
+   },
+   "a": [
+    [
+     "write",
+     "l",
+     "append_first",
+     0
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "l",
+     "set_at",
+     1,
+     5
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "conflict": {
+     "kind": "whole",
+     "root": "l",
+     "key": null
+    }
+   }
+  },
+  {
+   "name": "add_index_after_a_read_takes_the_whole_collection",
+   "row": "5.indexes.add_remove_index",
+   "base": {
+    "roots": {
+     "d": {
+      "dictionary": {
+       "a": 1
+      }
+     }
+    }
+   },
+   "a": [
+    [
+     "read",
+     "d",
+     "get_at",
+     "a"
+    ],
+    [
+     "write",
+     "d",
+     "add_index",
+     "equality"
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "d",
+     "set_at",
+     "b",
+     2
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "conflict": {
+     "kind": "whole",
+     "root": "d",
+     "key": null
+    }
+   }
+  },
+  {
+   "name": "add_index_alone_catches_up",
+   "row": "5.indexes.add_remove_index",
+   "base": {
+    "roots": {
+     "d": {
+      "dictionary": {
+       "a": 1
+      }
+     }
+    }
+   },
+   "a": [
+    [
+     "write",
+     "d",
+     "add_index",
+     "equality"
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "d",
+     "set_at",
+     "b",
+     2
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "state": {
+     "roots": {
+      "d": {
+       "dictionary": {
+        "a": 1,
+        "b": 2
+       },
+       "indexes": [
+        "equality"
+       ]
+      }
+     },
+     "mutables": {}
+    }
+   },
+   "note": "an index change that read nothing of the collection catches up with concurrent writes (R69)"
+  },
+  {
+   "name": "write_conflicts_with_concurrent_add_index",
+   "row": "5.indexes.add_remove_index",
+   "base": {
+    "roots": {
+     "d": {
+      "dictionary": {
+       "a": 1
+      }
+     }
+    }
+   },
+   "a": [
+    [
+     "write",
+     "d",
+     "set_at",
+     "a",
+     5
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "d",
+     "add_index",
+     "equality"
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "conflict": {
+     "kind": "index_defs",
+     "root": "d",
+     "key": null
+    }
+   }
+  },
+  {
+   "name": "slice_assigned_takes_the_whole_list",
+   "row": "5.other.any_other_write",
+   "base": {
+    "roots": {
+     "l": {
+      "list": [
+       1,
+       2,
+       3
+      ]
+     }
+    }
+   },
+   "a": [
+    [
+     "write",
+     "l",
+     "slice",
+     0,
+     2
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "l",
+     "append_last",
+     4
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "conflict": {
+     "kind": "whole",
+     "root": "l",
+     "key": null
+    }
+   },
+   "note": "an operation the tables do not list has the whole collection as its unit (P-B)"
+  },
+  {
+   "name": "get_root_absent_conflicts_with_creation",
+   "row": "6.transaction.get_root_absent",
+   "base": {},
+   "a": [
+    [
+     "get_root",
+     "x"
+    ],
+    [
+     "set_root",
+     "w",
+     {
+      "value": 1
+     }
+    ]
+   ],
+   "b": [
+    [
+     "set_root",
+     "x",
+     {
+      "value": 1
+     }
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "conflict": {
+     "kind": "root",
+     "root": "x",
+     "key": null
+    }
+   }
+  },
+  {
+   "name": "get_root_object_conflicts_with_change",
+   "row": "6.transaction.get_root_object",
+   "base": {
+    "roots": {
+     "o": {
+      "value": 1
+     }
+    }
+   },
+   "a": [
+    [
+     "get_root",
+     "o"
+    ],
+    [
+     "set_root",
+     "w",
+     {
+      "value": 1
+     }
+    ]
+   ],
+   "b": [
+    [
+     "set_root",
+     "o",
+     {
+      "value": 2
+     }
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "conflict": {
+     "kind": "root",
+     "root": "o",
+     "key": null
+    }
+   }
+  },
+  {
+   "name": "get_root_object_other_root_composes",
+   "row": "6.transaction.get_root_object",
+   "base": {
+    "roots": {
+     "o": {
+      "value": 1
+     },
+     "p": {
+      "value": 1
+     }
+    }
+   },
+   "a": [
+    [
+     "get_root",
+     "o"
+    ],
+    [
+     "set_root",
+     "w",
+     {
+      "value": 1
+     }
+    ]
+   ],
+   "b": [
+    [
+     "set_root",
+     "p",
+     {
+      "value": 2
+     }
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "state": {
+     "roots": {
+      "o": {
+       "value": 1
+      },
+      "p": {
+       "value": 2
+      },
+      "w": {
+       "value": 1
+      }
+     },
+     "mutables": {}
+    }
+   }
+  },
+  {
+   "name": "get_root_collection_does_not_record_content",
+   "row": "6.transaction.get_root_collection",
+   "base": {
+    "roots": {
+     "d": {
+      "dictionary": {
+       "a": 0
+      }
+     }
+    }
+   },
+   "a": [
+    [
+     "get_root",
+     "d"
+    ],
+    [
+     "set_root",
+     "w",
+     {
+      "value": 1
+     }
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "d",
+     "set_at",
+     "a",
+     1
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "state": {
+     "roots": {
+      "d": {
+       "dictionary": {
+        "a": 1
+       }
+      },
+      "w": {
+       "value": 1
+      }
+     },
+     "mutables": {}
+    }
+   }
+  },
+  {
+   "name": "get_root_collection_conflicts_with_class_change",
+   "row": "6.transaction.get_root_collection",
+   "base": {
+    "roots": {
+     "d": {
+      "dictionary": {
+       "a": 0
+      }
+     }
+    }
+   },
+   "a": [
+    [
+     "get_root",
+     "d"
+    ],
+    [
+     "set_root",
+     "w",
+     {
+      "value": 1
+     }
+    ]
+   ],
+   "b": [
+    [
+     "set_root",
+     "d",
+     {
+      "set": [
+       1
+      ]
+     }
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "conflict": {
+     "kind": "root_presence",
+     "root": "d",
+     "key": null
+    }
+   }
+  },
+  {
+   "name": "root_names_conflicts_with_new_root",
+   "row": "6.transaction.root_names",
+   "base": {
+    "roots": {
+     "o": {
+      "value": 1
+     }
+    }
+   },
+   "a": [
+    [
+     "root_names"
+    ],
+    [
+     "set_root",
+     "w",
+     {
+      "value": 1
+     }
+    ]
+   ],
+   "b": [
+    [
+     "set_root",
+     "z",
+     {
+      "value": 1
+     }
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "conflict": {
+     "kind": "root_names",
+     "root": null,
+     "key": null
+    }
+   }
+  },
+  {
+   "name": "root_names_composes_with_value_change",
+   "row": "6.transaction.root_names",
+   "base": {
+    "roots": {
+     "o": {
+      "value": 1
+     }
+    }
+   },
+   "a": [
+    [
+     "root_names"
+    ],
+    [
+     "set_root",
+     "w",
+     {
+      "value": 1
+     }
+    ]
+   ],
+   "b": [
+    [
+     "set_root",
+     "o",
+     {
+      "value": 2
+     }
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "state": {
+     "roots": {
+      "o": {
+       "value": 2
+      },
+      "w": {
+       "value": 1
+      }
+     },
+     "mutables": {}
+    }
+   }
+  },
+  {
+   "name": "get_mutable_conflicts_with_change",
+   "row": "6.transaction.get_mutable",
+   "base": {
+    "mutables": {
+     "m": 0
+    }
+   },
+   "a": [
+    [
+     "get_mutable",
+     "m"
+    ],
+    [
+     "set_root",
+     "w",
+     {
+      "value": 1
+     }
+    ]
+   ],
+   "b": [
+    [
+     "set_mutable",
+     "m",
+     1
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "conflict": {
+     "kind": "cell",
+     "root": null,
+     "key": "m"
+    }
+   }
+  },
+  {
+   "name": "get_mutable_absent_conflicts_with_creation",
+   "row": "6.transaction.get_mutable",
+   "base": {},
+   "a": [
+    [
+     "get_mutable",
+     "m"
+    ],
+    [
+     "set_root",
+     "w",
+     {
+      "value": 1
+     }
+    ]
+   ],
+   "b": [
+    [
+     "new_mutable",
+     "m",
+     1
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "conflict": {
+     "kind": "cell",
+     "root": null,
+     "key": "m"
+    }
+   }
+  },
+  {
+   "name": "mutable_names_conflicts_with_creation",
+   "row": "6.transaction.mutable_names",
+   "base": {
+    "mutables": {
+     "m": 0
+    }
+   },
+   "a": [
+    [
+     "mutable_names"
+    ],
+    [
+     "set_root",
+     "w",
+     {
+      "value": 1
+     }
+    ]
+   ],
+   "b": [
+    [
+     "new_mutable",
+     "n",
+     1
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "conflict": {
+     "kind": "cell_names",
+     "root": null,
+     "key": null
+    }
+   }
+  },
+  {
+   "name": "mutable_names_composes_with_value_change",
+   "row": "6.transaction.mutable_names",
+   "base": {
+    "mutables": {
+     "m": 0
+    }
+   },
+   "a": [
+    [
+     "mutable_names"
+    ],
+    [
+     "set_root",
+     "w",
+     {
+      "value": 1
+     }
+    ]
+   ],
+   "b": [
+    [
+     "set_mutable",
+     "m",
+     1
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "state": {
+     "roots": {
+      "w": {
+       "value": 1
+      }
+     },
+     "mutables": {
+      "m": 1
+     }
+    }
+   }
+  },
+  {
+   "name": "dictionary_get_at_conflicts_same_key",
+   "row": "6.linked.dictionary_get_at_get_has",
+   "base": {
+    "roots": {
+     "d": {
+      "dictionary": {
+       "a": 0
+      }
+     }
+    }
+   },
+   "a": [
+    [
+     "read",
+     "d",
+     "get_at",
+     "a"
+    ],
+    [
+     "set_root",
+     "w",
+     {
+      "value": 1
+     }
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "d",
+     "set_at",
+     "a",
+     1
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "conflict": {
+     "kind": "key",
+     "root": "d",
+     "key": "a"
+    }
+   }
+  },
+  {
+   "name": "dictionary_has_conflicts_same_key",
+   "row": "6.linked.dictionary_get_at_get_has",
+   "base": {
+    "roots": {
+     "d": {
+      "dictionary": {
+       "a": 0
+      }
+     }
+    }
+   },
+   "a": [
+    [
+     "read",
+     "d",
+     "has",
+     "a"
+    ],
+    [
+     "set_root",
+     "w",
+     {
+      "value": 1
+     }
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "d",
+     "set_at",
+     "a",
+     1
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "conflict": {
+     "kind": "key",
+     "root": "d",
+     "key": "a"
+    }
+   }
+  },
+  {
+   "name": "dictionary_get_at_absent_conflicts_with_insert",
+   "row": "6.linked.dictionary_get_at_get_has",
+   "base": {
+    "roots": {
+     "d": {
+      "dictionary": {
+       "a": 0
+      }
+     }
+    }
+   },
+   "a": [
+    [
+     "read",
+     "d",
+     "get_at",
+     "k"
+    ],
+    [
+     "set_root",
+     "w",
+     {
+      "value": 1
+     }
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "d",
+     "set_at",
+     "k",
+     1
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "conflict": {
+     "kind": "key",
+     "root": "d",
+     "key": "k"
+    }
+   }
+  },
+  {
+   "name": "hash_dictionary_get_at_other_key_composes",
+   "row": "6.linked.dictionary_get_at_get_has",
+   "base": {
+    "roots": {
+     "d": {
+      "hash_dictionary": {
+       "a": 0
+      }
+     }
+    }
+   },
+   "a": [
+    [
+     "read",
+     "d",
+     "get_at",
+     "a"
+    ],
+    [
+     "set_root",
+     "w",
+     {
+      "value": 1
+     }
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "d",
+     "set_at",
+     "b",
+     1
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "state": {
+     "roots": {
+      "d": {
+       "hash_dictionary": {
+        "a": 0,
+        "b": 1
+       }
+      },
+      "w": {
+       "value": 1
+      }
+     },
+     "mutables": {}
+    }
+   }
+  },
+  {
+   "name": "set_has_conflicts_with_removal",
+   "row": "6.linked.set_has",
+   "base": {
+    "roots": {
+     "s": {
+      "set": [
+       10,
+       20
+      ]
+     }
+    }
+   },
+   "a": [
+    [
+     "read",
+     "s",
+     "has",
+     10
+    ],
+    [
+     "set_root",
+     "w",
+     {
+      "value": 1
+     }
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "s",
+     "remove",
+     10
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "conflict": {
+     "kind": "element",
+     "root": "s",
+     "key": 10
+    }
+   }
+  },
+  {
+   "name": "set_has_other_element_composes",
+   "row": "6.linked.set_has",
+   "base": {
+    "roots": {
+     "s": {
+      "set": [
+       10,
+       20
+      ]
+     }
+    }
+   },
+   "a": [
+    [
+     "read",
+     "s",
+     "has",
+     10
+    ],
+    [
+     "set_root",
+     "w",
+     {
+      "value": 1
+     }
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "s",
+     "remove",
+     20
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "state": {
+     "roots": {
+      "s": {
+       "set": [
+        10
+       ]
+      },
+      "w": {
+       "value": 1
+      }
+     },
+     "mutables": {}
+    }
+   }
+  },
+  {
+   "name": "counted_set_count_of_conflicts_with_increment",
+   "row": "6.linked.counted_set_has_count_of",
+   "base": {
+    "roots": {
+     "c": {
+      "counted_set": [
+       [
+        10,
+        1
+       ]
+      ]
+     }
+    }
+   },
+   "a": [
+    [
+     "read",
+     "c",
+     "count_of",
+     10
+    ],
+    [
+     "set_root",
+     "w",
+     {
+      "value": 1
+     }
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "c",
+     "add",
+     10
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "conflict": {
+     "kind": "count",
+     "root": "c",
+     "key": 10
+    }
+   }
+  },
+  {
+   "name": "counted_set_has_other_element_composes",
+   "row": "6.linked.counted_set_has_count_of",
+   "base": {
+    "roots": {
+     "c": {
+      "counted_set": [
+       [
+        10,
+        1
+       ]
+      ]
+     }
+    }
+   },
+   "a": [
+    [
+     "read",
+     "c",
+     "has",
+     10
+    ],
+    [
+     "set_root",
+     "w",
+     {
+      "value": 1
+     }
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "c",
+     "add",
+     20
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "state": {
+     "roots": {
+      "c": {
+       "counted_set": [
+        [
+         10,
+         1
+        ],
+        [
+         20,
+         1
+        ]
+       ]
+      },
+      "w": {
+       "value": 1
+      }
+     },
+     "mutables": {}
+    }
+   }
+  },
+  {
+   "name": "rkd_get_at_conflicts_with_record_change",
+   "row": "6.linked.rkd_get_at_has",
+   "base": {
+    "roots": {
+     "r": {
+      "rkd": [
+       [
+        "k",
+        [
+         1
+        ]
+       ]
+      ]
+     }
+    }
+   },
+   "a": [
+    [
+     "read",
+     "r",
+     "get_at",
+     "k"
+    ],
+    [
+     "set_root",
+     "w",
+     {
+      "value": 1
+     }
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "r",
+     "set_at",
+     "k",
+     2
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "conflict": {
+     "kind": "records",
+     "root": "r",
+     "key": "k"
+    }
+   }
+  },
+  {
+   "name": "rkd_get_conflicts_with_record_removal",
+   "row": "6.linked.rkd_get_at_has",
+   "base": {
+    "roots": {
+     "r": {
+      "rkd": [
+       [
+        "k",
+        [
+         1,
+         2
+        ]
+       ]
+      ]
+     }
+    }
+   },
+   "a": [
+    [
+     "read",
+     "r",
+     "get",
+     "k"
+    ],
+    [
+     "set_root",
+     "w",
+     {
+      "value": 1
+     }
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "r",
+     "remove_record",
+     "k",
+     2
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "conflict": {
+     "kind": "records",
+     "root": "r",
+     "key": "k"
+    }
+   }
+  },
+  {
+   "name": "rkd_has_other_key_composes",
+   "row": "6.linked.rkd_get_at_has",
+   "base": {
+    "roots": {
+     "r": {
+      "rkd": [
+       [
+        "k",
+        [
+         1
+        ]
+       ]
+      ]
+     }
+    }
+   },
+   "a": [
+    [
+     "read",
+     "r",
+     "has",
+     "k"
+    ],
+    [
+     "set_root",
+     "w",
+     {
+      "value": 1
+     }
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "r",
+     "set_at",
+     "j",
+     2
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "state": {
+     "roots": {
+      "r": {
+       "rkd": [
+        [
+         "j",
+         [
+          2
+         ]
+        ],
+        [
+         "k",
+         [
+          1
+         ]
+        ]
+       ]
+      },
+      "w": {
+       "value": 1
+      }
+     },
+     "mutables": {}
+    }
+   }
+  },
+  {
+   "name": "list_get_at_conflicts_with_set_at",
+   "row": "6.linked.list_get_at",
+   "base": {
+    "roots": {
+     "l": {
+      "list": [
+       1,
+       2
+      ]
+     }
+    }
+   },
+   "a": [
+    [
+     "read",
+     "l",
+     "get_at",
+     0
+    ],
+    [
+     "set_root",
+     "w",
+     {
+      "value": 1
+     }
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "l",
+     "set_at",
+     0,
+     5
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "conflict": {
+     "kind": "position",
+     "root": "l",
+     "key": 0
+    }
+   }
+  },
+  {
+   "name": "list_get_at_composes_with_append",
+   "row": "6.linked.list_get_at",
+   "base": {
+    "roots": {
+     "l": {
+      "list": [
+       1,
+       2
+      ]
+     }
+    }
+   },
+   "a": [
+    [
+     "read",
+     "l",
+     "get_at",
+     0
+    ],
+    [
+     "set_root",
+     "w",
+     {
+      "value": 1
+     }
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "l",
+     "append_last",
+     3
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "state": {
+     "roots": {
+      "l": {
+       "list": [
+        1,
+        2,
+        3
+       ]
+      },
+      "w": {
+       "value": 1
+      }
+     },
+     "mutables": {}
+    }
+   }
+  },
+  {
+   "name": "equality_lookup_conflicts_same_group",
+   "row": "6.linked.equality_lookup",
+   "base": {
+    "roots": {
+     "d": {
+      "dictionary": {
+       "a": 5,
+       "b": 6
+      },
+      "indexes": [
+       "equality"
+      ]
+     }
+    }
+   },
+   "a": [
+    [
+     "read",
+     "d",
+     "lookup",
+     5
+    ],
+    [
+     "set_root",
+     "w",
+     {
+      "value": 1
+     }
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "d",
+     "set_at",
+     "z",
+     5
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "conflict": {
+     "kind": "index_group",
+     "root": "d",
+     "key": 5,
+     "index": "e"
+    }
+   }
+  },
+  {
+   "name": "equality_lookup_other_group_composes",
+   "row": "6.linked.equality_lookup",
+   "base": {
+    "roots": {
+     "d": {
+      "dictionary": {
+       "a": 5,
+       "b": 6
+      },
+      "indexes": [
+       "equality"
+      ]
+     }
+    }
+   },
+   "a": [
+    [
+     "read",
+     "d",
+     "lookup",
+     5
+    ],
+    [
+     "set_root",
+     "w",
+     {
+      "value": 1
+     }
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "d",
+     "set_at",
+     "c",
+     7
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "state": {
+     "roots": {
+      "d": {
+       "dictionary": {
+        "a": 5,
+        "b": 6,
+        "c": 7
+       },
+       "indexes": [
+        "equality"
+       ]
+      },
+      "w": {
+       "value": 1
+      }
+     },
+     "mutables": {}
+    }
+   }
+  },
+  {
+   "name": "dictionary_len_takes_the_whole_collection",
+   "row": "6.linked.count_len_iteration",
+   "base": {
+    "roots": {
+     "d": {
+      "dictionary": {
+       "a": 0
+      }
+     }
+    }
+   },
+   "a": [
+    [
+     "read",
+     "d",
+     "len"
+    ],
+    [
+     "set_root",
+     "w",
+     {
+      "value": 1
+     }
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "d",
+     "set_at",
+     "b",
+     1
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "conflict": {
+     "kind": "whole",
+     "root": "d",
+     "key": null
+    }
+   }
+  },
+  {
+   "name": "dictionary_count_takes_the_whole_collection",
+   "row": "6.linked.count_len_iteration",
+   "base": {
+    "roots": {
+     "d": {
+      "dictionary": {
+       "a": 0
+      }
+     }
+    }
+   },
+   "a": [
+    [
+     "read",
+     "d",
+     "count"
+    ],
+    [
+     "set_root",
+     "w",
+     {
+      "value": 1
+     }
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "d",
+     "set_at",
+     "b",
+     1
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "conflict": {
+     "kind": "whole",
+     "root": "d",
+     "key": null
+    }
+   }
+  },
+  {
+   "name": "dictionary_items_takes_the_whole_collection",
+   "row": "6.linked.count_len_iteration",
+   "base": {
+    "roots": {
+     "d": {
+      "dictionary": {
+       "a": 0
+      }
+     }
+    }
+   },
+   "a": [
+    [
+     "read",
+     "d",
+     "items"
+    ],
+    [
+     "set_root",
+     "w",
+     {
+      "value": 1
+     }
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "d",
+     "set_at",
+     "b",
+     1
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "conflict": {
+     "kind": "whole",
+     "root": "d",
+     "key": null
+    }
+   }
+  },
+  {
+   "name": "dictionary_keys_takes_the_whole_collection",
+   "row": "6.linked.count_len_iteration",
+   "base": {
+    "roots": {
+     "d": {
+      "dictionary": {
+       "a": 0
+      }
+     }
+    }
+   },
+   "a": [
+    [
+     "read",
+     "d",
+     "keys"
+    ],
+    [
+     "set_root",
+     "w",
+     {
+      "value": 1
+     }
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "d",
+     "set_at",
+     "b",
+     1
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "conflict": {
+     "kind": "whole",
+     "root": "d",
+     "key": null
+    }
+   }
+  },
+  {
+   "name": "dictionary_elements_takes_the_whole_collection",
+   "row": "6.linked.count_len_iteration",
+   "base": {
+    "roots": {
+     "d": {
+      "dictionary": {
+       "a": 0
+      }
+     }
+    }
+   },
+   "a": [
+    [
+     "read",
+     "d",
+     "elements"
+    ],
+    [
+     "set_root",
+     "w",
+     {
+      "value": 1
+     }
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "d",
+     "set_at",
+     "b",
+     1
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "conflict": {
+     "kind": "whole",
+     "root": "d",
+     "key": null
+    }
+   }
+  },
+  {
+   "name": "key_at_position_takes_the_whole_collection",
+   "row": "6.linked.key_at_position_position_of",
+   "base": {
+    "roots": {
+     "d": {
+      "dictionary": {
+       "a": 0,
+       "b": 1
+      }
+     }
+    }
+   },
+   "a": [
+    [
+     "read",
+     "d",
+     "key_at_position",
+     0
+    ],
+    [
+     "set_root",
+     "w",
+     {
+      "value": 1
+     }
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "d",
+     "set_at",
+     "c",
+     2
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "conflict": {
+     "kind": "whole",
+     "root": "d",
+     "key": null
+    }
+   }
+  },
+  {
+   "name": "position_of_takes_the_whole_collection",
+   "row": "6.linked.key_at_position_position_of",
+   "base": {
+    "roots": {
+     "d": {
+      "dictionary": {
+       "a": 0,
+       "b": 1
+      }
+     }
+    }
+   },
+   "a": [
+    [
+     "read",
+     "d",
+     "position_of",
+     "b"
+    ],
+    [
+     "set_root",
+     "w",
+     {
+      "value": 1
+     }
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "d",
+     "set_at",
+     "c",
+     2
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "conflict": {
+     "kind": "whole",
+     "root": "d",
+     "key": null
+    }
+   }
+  },
+  {
+   "name": "range_scan_conflicts_inside_its_range",
+   "row": "6.linked.queries",
+   "base": {
+    "roots": {
+     "d": {
+      "dictionary": {
+       "a": 5,
+       "b": 6
+      },
+      "indexes": [
+       "range"
+      ]
+     }
+    }
+   },
+   "a": [
+    [
+     "read",
+     "d",
+     "greater_than",
+     5
+    ],
+    [
+     "set_root",
+     "w",
+     {
+      "value": 1
+     }
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "d",
+     "set_at",
+     "z",
+     9
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "conflict": {
+     "kind": "range",
+     "root": "d",
+     "index": "r"
+    }
+   }
+  },
+  {
+   "name": "range_scan_composes_outside_its_range",
+   "row": "6.linked.queries",
+   "base": {
+    "roots": {
+     "d": {
+      "dictionary": {
+       "a": 5,
+       "b": 6
+      },
+      "indexes": [
+       "range"
+      ]
+     }
+    }
+   },
+   "a": [
+    [
+     "read",
+     "d",
+     "greater_than",
+     5
+    ],
+    [
+     "set_root",
+     "w",
+     {
+      "value": 1
+     }
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "d",
+     "set_at",
+     "z",
+     1
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "state": {
+     "roots": {
+      "d": {
+       "dictionary": {
+        "a": 5,
+        "b": 6,
+        "z": 1
+       },
+       "indexes": [
+        "range"
+       ]
+      },
+      "w": {
+       "value": 1
+      }
+     },
+     "mutables": {}
+    }
+   }
+  },
+  {
+   "name": "query_without_an_index_takes_the_whole_collection",
+   "row": "6.linked.queries",
+   "base": {
+    "roots": {
+     "d": {
+      "dictionary": {
+       "a": 5
+      }
+     }
+    }
+   },
+   "a": [
+    [
+     "read",
+     "d",
+     "scan"
+    ],
+    [
+     "set_root",
+     "w",
+     {
+      "value": 1
+     }
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "d",
+     "set_at",
+     "b",
+     1
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "conflict": {
+     "kind": "whole",
+     "root": "d",
+     "key": null
+    }
+   }
+  },
+  {
+   "name": "index_names_conflicts_with_new_index",
+   "row": "6.linked.index_names_get_index",
+   "base": {
+    "roots": {
+     "d": {
+      "dictionary": {
+       "a": 0
+      }
+     }
+    }
+   },
+   "a": [
+    [
+     "read",
+     "d",
+     "index_names"
+    ],
+    [
+     "set_root",
+     "w",
+     {
+      "value": 1
+     }
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "d",
+     "add_index",
+     "equality"
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "conflict": {
+     "kind": "index_defs",
+     "root": "d",
+     "key": null
+    }
+   }
+  },
+  {
+   "name": "get_index_takes_the_whole_collection",
+   "row": "6.linked.index_names_get_index",
+   "base": {
+    "roots": {
+     "d": {
+      "dictionary": {
+       "a": 5,
+       "b": 6
+      },
+      "indexes": [
+       "equality"
+      ]
+     }
+    }
+   },
+   "a": [
+    [
+     "read",
+     "d",
+     "get_index",
+     "equality"
+    ],
+    [
+     "set_root",
+     "w",
+     {
+      "value": 1
+     }
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "d",
+     "set_at",
+     "c",
+     7
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "conflict": {
+     "kind": "whole",
+     "root": "d",
+     "key": null
+    }
+   },
+   "note": "get_index records the index definitions; a raw index read also takes the whole collection (B5)"
+  }
+ ]
+}

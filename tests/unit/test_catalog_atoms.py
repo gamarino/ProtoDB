@@ -147,9 +147,10 @@ def test_a_catalog_record_lands_in_a_v6_segment(tmp_path):
     space = _space(tmp_path / "s")
     db = space.new_database("db")
     db.run(lambda tr: tr.set_root_object("plain", DBObject(n=1)))
-    assert space.storage.read_root().version == 4
+    # Every root is version 7 (R63, Task 14); the segment versions below carry the rule.
+    assert space.storage.read_root().version == 7 and space.storage.written_version == 4
     db.run(lambda tr: _write_catalog(tr, model))
-    assert space.storage.read_root().version == 6
+    assert space.storage.read_root().version == 7 and space.storage.written_version == 6
     space.close()
     assert _segment_versions(tmp_path / "s") == [4, 6]
     space = _space(tmp_path / "s")

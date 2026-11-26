@@ -1,0 +1,3718 @@
+{
+ "about": "A space written by proto_db before the precondition model (package version 2.0.0rc4, master 56ed529, format 6): the catalog vector of commit 99ba9d6, with a version-4 and a version-6 segment and a version-6 root. Frozen: generate.py never rewrites it; tests/unit/test_format_v7.py checks these digests and opens the space (R52).",
+ "files": {
+  "5eed0000000040008000000000007004.seg": "9f201b092b79bad25755144869e8b97cfc432f5946bed5b4d8fb7d21b78f8b0f",
+  "5eed000000004000800000000000701c.seg": "a361f2075f7027f3df29990285d318ba150fca52653812b4f15e495bb906786a",
+  "space.root": "48d53abaf108850d3b7ef53d535fb78099507ff09efc13b8db7112ef30d3a93e"
+ },
+ "root_version": 6,
+ "contents": {
+  "roots": [
+   [
+    "__intentLog",
+    {
+     "collection": "proto_db.collections.List",
+     "elements": [
+      {
+       "catalog": "proto_db.catalog.IntentRecord",
+       "attrs": [
+        [
+         "arguments",
+         {
+          "map": [
+           [
+            {
+             "str": "product"
+            },
+            {
+             "str": "conformance.sales.Product#fedcba9876543210fedcba9876543210"
+            }
+           ],
+           [
+            {
+             "str": "quantity"
+            },
+            {
+             "decimal": "2"
+            }
+           ],
+           [
+            {
+             "str": "price"
+            },
+            {
+             "decimal": "10.50"
+            }
+           ]
+          ]
+         }
+        ],
+        [
+         "intent",
+         {
+          "tuple": [
+           {
+            "str": "conformance.sales.Order"
+           },
+           {
+            "str": "add_line"
+           }
+          ]
+         }
+        ],
+        [
+         "target",
+         {
+          "str": "conformance.sales.Order#0123456789abcdef0123456789abcdef"
+         }
+        ],
+        [
+         "transaction",
+         {
+          "int": "3"
+         }
+        ]
+       ]
+      },
+      {
+       "catalog": "proto_db.catalog.IntentRecord",
+       "attrs": [
+        [
+         "arguments",
+         {
+          "map": []
+         }
+        ],
+        [
+         "intent",
+         {
+          "tuple": [
+           {
+            "str": "conformance.sales.Order"
+           },
+           {
+            "str": "confirm"
+           }
+          ]
+         }
+        ],
+        [
+         "target",
+         {
+          "str": "conformance.sales.Order#0123456789abcdef0123456789abcdef"
+         }
+        ],
+        [
+         "transaction",
+         {
+          "int": "3"
+         }
+        ]
+       ]
+      }
+     ]
+    }
+   ],
+   [
+    "__semanticCatalog",
+    {
+     "catalog": "proto_db.catalog.SemanticCatalog",
+     "attrs": [
+      [
+       "entities",
+       {
+        "collection": "proto_db.collections.Dictionary",
+        "items": [
+         [
+          {
+           "str": "conformance.sales.Customer"
+          },
+          {
+           "catalog": "proto_db.catalog.Entity",
+           "attrs": [
+            [
+             "attributes",
+             {
+              "tuple": [
+               {
+                "catalog": "proto_db.catalog.Attribute",
+                "attrs": [
+                 [
+                  "ext",
+                  {
+                   "map": [
+                    [
+                     {
+                      "str": "ui.width"
+                     },
+                     {
+                      "int": "40"
+                     }
+                    ]
+                   ]
+                  }
+                 ],
+                 [
+                  "kind",
+                  {
+                   "str": "field"
+                  }
+                 ],
+                 [
+                  "label",
+                  {
+                   "map": [
+                    [
+                     {
+                      "str": "und"
+                     },
+                     {
+                      "str": "Name"
+                     }
+                    ]
+                   ]
+                  }
+                 ],
+                 [
+                  "name",
+                  {
+                   "str": "name"
+                  }
+                 ],
+                 [
+                  "provenance",
+                  {
+                   "tuple": [
+                    {
+                     "str": "conformance.catalog_base"
+                    }
+                   ]
+                  }
+                 ],
+                 [
+                  "required",
+                  {
+                   "bool": true
+                  }
+                 ],
+                 [
+                  "sensitivity",
+                  {
+                   "str": "personal"
+                  }
+                 ],
+                 [
+                  "value_type",
+                  {
+                   "str": "str"
+                  }
+                 ]
+                ]
+               },
+               {
+                "catalog": "proto_db.catalog.Attribute",
+                "attrs": [
+                 [
+                  "kind",
+                  {
+                   "str": "field"
+                  }
+                 ],
+                 [
+                  "label",
+                  {
+                   "map": [
+                    [
+                     {
+                      "str": "und"
+                     },
+                     {
+                      "str": "Credit limit"
+                     }
+                    ]
+                   ]
+                  }
+                 ],
+                 [
+                  "meaning",
+                  {
+                   "str": "The credit limit in force"
+                  }
+                 ],
+                 [
+                  "name",
+                  {
+                   "str": "credit_limit"
+                  }
+                 ],
+                 [
+                  "provenance",
+                  {
+                   "tuple": [
+                    {
+                     "str": "conformance.catalog_base"
+                    },
+                    {
+                     "str": "conformance.catalog_sales"
+                    }
+                   ]
+                  }
+                 ],
+                 [
+                  "unit",
+                  {
+                   "str": "currency:company"
+                  }
+                 ],
+                 [
+                  "value_type",
+                  {
+                   "str": "decimal"
+                  }
+                 ]
+                ]
+               },
+               {
+                "catalog": "proto_db.catalog.Role",
+                "attrs": [
+                 [
+                  "cardinality",
+                  {
+                   "str": "many"
+                  }
+                 ],
+                 [
+                  "inverse",
+                  {
+                   "str": "customer"
+                  }
+                 ],
+                 [
+                  "inverse_cardinality",
+                  {
+                   "str": "one"
+                  }
+                 ],
+                 [
+                  "name",
+                  {
+                   "str": "orders"
+                  }
+                 ],
+                 [
+                  "provenance",
+                  {
+                   "tuple": [
+                    {
+                     "str": "conformance.catalog_sales"
+                    }
+                   ]
+                  }
+                 ],
+                 [
+                  "target",
+                  {
+                   "str": "conformance.sales.Order"
+                  }
+                 ]
+                ]
+               },
+               {
+                "catalog": "proto_db.catalog.Attribute",
+                "attrs": [
+                 [
+                  "expression",
+                  {
+                   "catalog": "proto_db.catalog.Expression",
+                   "attrs": [
+                    [
+                     "ast",
+                     {
+                      "list": [
+                       {
+                        "str": "sum"
+                       },
+                       {
+                        "str": "orders"
+                       },
+                       {
+                        "list": [
+                         {
+                          "str": "attr"
+                         },
+                         {
+                          "str": "total"
+                         }
+                        ]
+                       },
+                       {
+                        "list": [
+                         {
+                          "str": "!="
+                         },
+                         {
+                          "list": [
+                           {
+                            "str": "attr"
+                           },
+                           {
+                            "str": "state"
+                           }
+                          ]
+                         },
+                         {
+                          "list": [
+                           {
+                            "str": "const"
+                           },
+                           {
+                            "str": "cancelled"
+                           }
+                          ]
+                         }
+                        ]
+                       }
+                      ]
+                     }
+                    ]
+                   ]
+                  }
+                 ],
+                 [
+                  "kind",
+                  {
+                   "str": "computed_stored"
+                  }
+                 ],
+                 [
+                  "name",
+                  {
+                   "str": "committed"
+                  }
+                 ],
+                 [
+                  "provenance",
+                  {
+                   "tuple": [
+                    {
+                     "str": "conformance.catalog_sales"
+                    }
+                   ]
+                  }
+                 ],
+                 [
+                  "unit",
+                  {
+                   "str": "currency:company"
+                  }
+                 ]
+                ]
+               }
+              ]
+             }
+            ],
+            [
+             "constraints",
+             {
+              "tuple": [
+               {
+                "catalog": "proto_db.catalog.Constraint",
+                "attrs": [
+                 [
+                  "expression",
+                  {
+                   "catalog": "proto_db.catalog.Expression",
+                   "attrs": [
+                    [
+                     "ast",
+                     {
+                      "list": [
+                       {
+                        "str": "<="
+                       },
+                       {
+                        "list": [
+                         {
+                          "str": "attr"
+                         },
+                         {
+                          "str": "committed"
+                         }
+                        ]
+                       },
+                       {
+                        "list": [
+                         {
+                          "str": "attr"
+                         },
+                         {
+                          "str": "credit_limit"
+                         }
+                        ]
+                       }
+                      ]
+                     }
+                    ]
+                   ]
+                  }
+                 ],
+                 [
+                  "meaning",
+                  {
+                   "str": "A customer cannot have orders above its credit limit"
+                  }
+                 ],
+                 [
+                  "message",
+                  {
+                   "str": "The order exceeds the credit limit of {entity} by {excess}"
+                  }
+                 ],
+                 [
+                  "name",
+                  {
+                   "str": "credit_limit_respected"
+                  }
+                 ],
+                 [
+                  "provenance",
+                  {
+                   "tuple": [
+                    {
+                     "str": "conformance.catalog_sales"
+                    }
+                   ]
+                  }
+                 ],
+                 [
+                  "scope",
+                  {
+                   "str": "aggregate"
+                  }
+                 ]
+                ]
+               }
+              ]
+             }
+            ],
+            [
+             "key",
+             {
+              "tuple": [
+               {
+                "str": "name"
+               }
+              ]
+             }
+            ],
+            [
+             "label",
+             {
+              "map": [
+               [
+                {
+                 "str": "und"
+                },
+                {
+                 "str": "Customer"
+                }
+               ]
+              ]
+             }
+            ],
+            [
+             "meaning",
+             {
+              "str": "A customer of the company"
+             }
+            ],
+            [
+             "provenance",
+             {
+              "tuple": [
+               {
+                "str": "conformance.catalog_base"
+               },
+               {
+                "str": "conformance.catalog_sales"
+               }
+              ]
+             }
+            ],
+            [
+             "type_name",
+             {
+              "str": "conformance.sales.Customer"
+             }
+            ]
+           ]
+          }
+         ],
+         [
+          {
+           "str": "conformance.sales.Order"
+          },
+          {
+           "catalog": "proto_db.catalog.Entity",
+           "attrs": [
+            [
+             "attributes",
+             {
+              "tuple": [
+               {
+                "catalog": "proto_db.catalog.Attribute",
+                "attrs": [
+                 [
+                  "examples",
+                  {
+                   "tuple": [
+                    {
+                     "int": "1001"
+                    }
+                   ]
+                  }
+                 ],
+                 [
+                  "kind",
+                  {
+                   "str": "field"
+                  }
+                 ],
+                 [
+                  "label",
+                  {
+                   "map": [
+                    [
+                     {
+                      "str": "und"
+                     },
+                     {
+                      "str": "Number"
+                     }
+                    ]
+                   ]
+                  }
+                 ],
+                 [
+                  "meaning",
+                  {
+                   "str": "Sequential per customer, assigned at creation"
+                  }
+                 ],
+                 [
+                  "name",
+                  {
+                   "str": "number"
+                  }
+                 ],
+                 [
+                  "provenance",
+                  {
+                   "tuple": [
+                    {
+                     "str": "conformance.catalog_sales"
+                    }
+                   ]
+                  }
+                 ],
+                 [
+                  "required",
+                  {
+                   "bool": true
+                  }
+                 ],
+                 [
+                  "value_type",
+                  {
+                   "str": "int"
+                  }
+                 ]
+                ]
+               },
+               {
+                "catalog": "proto_db.catalog.Attribute",
+                "attrs": [
+                 [
+                  "default",
+                  {
+                   "str": "open"
+                  }
+                 ],
+                 [
+                  "kind",
+                  {
+                   "str": "field"
+                  }
+                 ],
+                 [
+                  "name",
+                  {
+                   "str": "state"
+                  }
+                 ],
+                 [
+                  "provenance",
+                  {
+                   "tuple": [
+                    {
+                     "str": "conformance.catalog_sales"
+                    }
+                   ]
+                  }
+                 ],
+                 [
+                  "value_type",
+                  {
+                   "str": "str"
+                  }
+                 ],
+                 [
+                  "values",
+                  {
+                   "tuple": [
+                    {
+                     "str": "open"
+                    },
+                    {
+                     "str": "confirmed"
+                    },
+                    {
+                     "str": "cancelled"
+                    }
+                   ]
+                  }
+                 ]
+                ]
+               },
+               {
+                "catalog": "proto_db.catalog.Attribute",
+                "attrs": [
+                 [
+                  "indexed",
+                  {
+                   "bool": true
+                  }
+                 ],
+                 [
+                  "kind",
+                  {
+                   "str": "field"
+                  }
+                 ],
+                 [
+                  "name",
+                  {
+                   "str": "date"
+                  }
+                 ],
+                 [
+                  "provenance",
+                  {
+                   "tuple": [
+                    {
+                     "str": "conformance.catalog_sales"
+                    }
+                   ]
+                  }
+                 ],
+                 [
+                  "value_type",
+                  {
+                   "str": "date"
+                  }
+                 ]
+                ]
+               },
+               {
+                "catalog": "proto_db.catalog.Role",
+                "attrs": [
+                 [
+                  "cardinality",
+                  {
+                   "str": "one"
+                  }
+                 ],
+                 [
+                  "inverse",
+                  {
+                   "str": "orders"
+                  }
+                 ],
+                 [
+                  "inverse_cardinality",
+                  {
+                   "str": "many"
+                  }
+                 ],
+                 [
+                  "name",
+                  {
+                   "str": "customer"
+                  }
+                 ],
+                 [
+                  "provenance",
+                  {
+                   "tuple": [
+                    {
+                     "str": "conformance.catalog_sales"
+                    }
+                   ]
+                  }
+                 ],
+                 [
+                  "target",
+                  {
+                   "str": "conformance.sales.Customer"
+                  }
+                 ]
+                ]
+               },
+               {
+                "catalog": "proto_db.catalog.Role",
+                "attrs": [
+                 [
+                  "cardinality",
+                  {
+                   "str": "many"
+                  }
+                 ],
+                 [
+                  "inverse",
+                  {
+                   "str": "order"
+                  }
+                 ],
+                 [
+                  "inverse_cardinality",
+                  {
+                   "str": "one"
+                  }
+                 ],
+                 [
+                  "name",
+                  {
+                   "str": "lines"
+                  }
+                 ],
+                 [
+                  "ordered",
+                  {
+                   "bool": true
+                  }
+                 ],
+                 [
+                  "provenance",
+                  {
+                   "tuple": [
+                    {
+                     "str": "conformance.catalog_sales"
+                    }
+                   ]
+                  }
+                 ],
+                 [
+                  "target",
+                  {
+                   "str": "conformance.sales.OrderLine"
+                  }
+                 ]
+                ]
+               },
+               {
+                "catalog": "proto_db.catalog.Attribute",
+                "attrs": [
+                 [
+                  "expression",
+                  {
+                   "catalog": "proto_db.catalog.Expression",
+                   "attrs": [
+                    [
+                     "ast",
+                     {
+                      "list": [
+                       {
+                        "str": "sum"
+                       },
+                       {
+                        "str": "lines"
+                       },
+                       {
+                        "list": [
+                         {
+                          "str": "attr"
+                         },
+                         {
+                          "str": "amount"
+                         }
+                        ]
+                       }
+                      ]
+                     }
+                    ]
+                   ]
+                  }
+                 ],
+                 [
+                  "kind",
+                  {
+                   "str": "computed_stored"
+                  }
+                 ],
+                 [
+                  "name",
+                  {
+                   "str": "total"
+                  }
+                 ],
+                 [
+                  "provenance",
+                  {
+                   "tuple": [
+                    {
+                     "str": "conformance.catalog_sales"
+                    }
+                   ]
+                  }
+                 ],
+                 [
+                  "unit",
+                  {
+                   "str": "currency:order"
+                  }
+                 ]
+                ]
+               }
+              ]
+             }
+            ],
+            [
+             "intents",
+             {
+              "tuple": [
+               {
+                "catalog": "proto_db.catalog.Intent",
+                "attrs": [
+                 [
+                  "commutes_with",
+                  {
+                   "tuple": [
+                    {
+                     "str": "add_line"
+                    }
+                   ]
+                  }
+                 ],
+                 [
+                  "meaning",
+                  {
+                   "str": "Add a product to the order with an agreed quantity and price"
+                  }
+                 ],
+                 [
+                  "name",
+                  {
+                   "str": "add_line"
+                  }
+                 ],
+                 [
+                  "parameters",
+                  {
+                   "tuple": [
+                    {
+                     "tuple": [
+                      {
+                       "str": "product"
+                      },
+                      {
+                       "str": "conformance.sales.Product"
+                      }
+                     ]
+                    },
+                    {
+                     "tuple": [
+                      {
+                       "str": "quantity"
+                      },
+                      {
+                       "str": "decimal"
+                      }
+                     ]
+                    },
+                    {
+                     "tuple": [
+                      {
+                       "str": "price"
+                      },
+                      {
+                       "str": "decimal"
+                      }
+                     ]
+                    }
+                   ]
+                  }
+                 ],
+                 [
+                  "provenance",
+                  {
+                   "tuple": [
+                    {
+                     "str": "conformance.catalog_sales"
+                    }
+                   ]
+                  }
+                 ]
+                ]
+               },
+               {
+                "catalog": "proto_db.catalog.Intent",
+                "attrs": [
+                 [
+                  "meaning",
+                  {
+                   "str": "Confirm the order; it accepts no new lines afterwards"
+                  }
+                 ],
+                 [
+                  "name",
+                  {
+                   "str": "confirm"
+                  }
+                 ],
+                 [
+                  "provenance",
+                  {
+                   "tuple": [
+                    {
+                     "str": "conformance.catalog_sales"
+                    }
+                   ]
+                  }
+                 ],
+                 [
+                  "requires",
+                  {
+                   "catalog": "proto_db.catalog.Expression",
+                   "attrs": [
+                    [
+                     "ast",
+                     {
+                      "list": [
+                       {
+                        "str": "=="
+                       },
+                       {
+                        "list": [
+                         {
+                          "str": "attr"
+                         },
+                         {
+                          "str": "state"
+                         }
+                        ]
+                       },
+                       {
+                        "list": [
+                         {
+                          "str": "const"
+                         },
+                         {
+                          "str": "open"
+                         }
+                        ]
+                       }
+                      ]
+                     }
+                    ]
+                   ]
+                  }
+                 ]
+                ]
+               }
+              ]
+             }
+            ],
+            [
+             "key",
+             {
+              "tuple": [
+               {
+                "str": "customer"
+               },
+               {
+                "str": "number"
+               }
+              ]
+             }
+            ],
+            [
+             "label",
+             {
+              "map": [
+               [
+                {
+                 "str": "und"
+                },
+                {
+                 "str": "Order"
+                }
+               ]
+              ]
+             }
+            ],
+            [
+             "meaning",
+             {
+              "str": "A customer's order; open, confirmed or cancelled"
+             }
+            ],
+            [
+             "provenance",
+             {
+              "tuple": [
+               {
+                "str": "conformance.catalog_sales"
+               }
+              ]
+             }
+            ],
+            [
+             "synonyms",
+             {
+              "tuple": [
+               {
+                "str": "purchase order"
+               }
+              ]
+             }
+            ],
+            [
+             "type_name",
+             {
+              "str": "conformance.sales.Order"
+             }
+            ]
+           ]
+          }
+         ],
+         [
+          {
+           "str": "conformance.sales.OrderLine"
+          },
+          {
+           "catalog": "proto_db.catalog.Relationship",
+           "attrs": [
+            [
+             "attributes",
+             {
+              "tuple": [
+               {
+                "catalog": "proto_db.catalog.Attribute",
+                "attrs": [
+                 [
+                  "kind",
+                  {
+                   "str": "field"
+                  }
+                 ],
+                 [
+                  "name",
+                  {
+                   "str": "quantity"
+                  }
+                 ],
+                 [
+                  "provenance",
+                  {
+                   "tuple": [
+                    {
+                     "str": "conformance.catalog_sales"
+                    }
+                   ]
+                  }
+                 ],
+                 [
+                  "required",
+                  {
+                   "bool": true
+                  }
+                 ],
+                 [
+                  "unit",
+                  {
+                   "str": "unit:product"
+                  }
+                 ],
+                 [
+                  "value_type",
+                  {
+                   "str": "decimal"
+                  }
+                 ]
+                ]
+               },
+               {
+                "catalog": "proto_db.catalog.Attribute",
+                "attrs": [
+                 [
+                  "caveats",
+                  {
+                   "str": "Taxes are not included"
+                  }
+                 ],
+                 [
+                  "kind",
+                  {
+                   "str": "field"
+                  }
+                 ],
+                 [
+                  "meaning",
+                  {
+                   "str": "The unit price agreed at the sale; not the product's current price"
+                  }
+                 ],
+                 [
+                  "name",
+                  {
+                   "str": "price"
+                  }
+                 ],
+                 [
+                  "provenance",
+                  {
+                   "tuple": [
+                    {
+                     "str": "conformance.catalog_sales"
+                    }
+                   ]
+                  }
+                 ],
+                 [
+                  "required",
+                  {
+                   "bool": true
+                  }
+                 ],
+                 [
+                  "unit",
+                  {
+                   "str": "currency:order"
+                  }
+                 ],
+                 [
+                  "value_type",
+                  {
+                   "str": "decimal"
+                  }
+                 ]
+                ]
+               },
+               {
+                "catalog": "proto_db.catalog.Attribute",
+                "attrs": [
+                 [
+                  "expression",
+                  {
+                   "catalog": "proto_db.catalog.Expression",
+                   "attrs": [
+                    [
+                     "ast",
+                     {
+                      "list": [
+                       {
+                        "str": "*"
+                       },
+                       {
+                        "list": [
+                         {
+                          "str": "attr"
+                         },
+                         {
+                          "str": "quantity"
+                         }
+                        ]
+                       },
+                       {
+                        "list": [
+                         {
+                          "str": "attr"
+                         },
+                         {
+                          "str": "price"
+                         }
+                        ]
+                       }
+                      ]
+                     }
+                    ]
+                   ]
+                  }
+                 ],
+                 [
+                  "kind",
+                  {
+                   "str": "computed"
+                  }
+                 ],
+                 [
+                  "name",
+                  {
+                   "str": "amount"
+                  }
+                 ],
+                 [
+                  "provenance",
+                  {
+                   "tuple": [
+                    {
+                     "str": "conformance.catalog_sales"
+                    }
+                   ]
+                  }
+                 ]
+                ]
+               }
+              ]
+             }
+            ],
+            [
+             "meaning",
+             {
+              "str": "A product included in an order, with the agreed terms"
+             }
+            ],
+            [
+             "provenance",
+             {
+              "tuple": [
+               {
+                "str": "conformance.catalog_sales"
+               }
+              ]
+             }
+            ],
+            [
+             "roles",
+             {
+              "tuple": [
+               {
+                "catalog": "proto_db.catalog.Role",
+                "attrs": [
+                 [
+                  "cardinality",
+                  {
+                   "str": "one"
+                  }
+                 ],
+                 [
+                  "inverse",
+                  {
+                   "str": "lines"
+                  }
+                 ],
+                 [
+                  "inverse_cardinality",
+                  {
+                   "str": "many"
+                  }
+                 ],
+                 [
+                  "name",
+                  {
+                   "str": "order"
+                  }
+                 ],
+                 [
+                  "ordered",
+                  {
+                   "bool": true
+                  }
+                 ],
+                 [
+                  "participant",
+                  {
+                   "bool": true
+                  }
+                 ],
+                 [
+                  "provenance",
+                  {
+                   "tuple": [
+                    {
+                     "str": "conformance.catalog_sales"
+                    }
+                   ]
+                  }
+                 ],
+                 [
+                  "target",
+                  {
+                   "str": "conformance.sales.Order"
+                  }
+                 ]
+                ]
+               },
+               {
+                "catalog": "proto_db.catalog.Role",
+                "attrs": [
+                 [
+                  "binding",
+                  {
+                   "str": "version"
+                  }
+                 ],
+                 [
+                  "cardinality",
+                  {
+                   "str": "one"
+                  }
+                 ],
+                 [
+                  "index_by",
+                  {
+                   "tuple": [
+                    {
+                     "str": "order.date"
+                    }
+                   ]
+                  }
+                 ],
+                 [
+                  "name",
+                  {
+                   "str": "product"
+                  }
+                 ],
+                 [
+                  "participant",
+                  {
+                   "bool": true
+                  }
+                 ],
+                 [
+                  "provenance",
+                  {
+                   "tuple": [
+                    {
+                     "str": "conformance.catalog_sales"
+                    }
+                   ]
+                  }
+                 ],
+                 [
+                  "target",
+                  {
+                   "str": "conformance.sales.Product"
+                  }
+                 ]
+                ]
+               }
+              ]
+             }
+            ],
+            [
+             "type_name",
+             {
+              "str": "conformance.sales.OrderLine"
+             }
+            ]
+           ]
+          }
+         ],
+         [
+          {
+           "str": "conformance.sales.Product"
+          },
+          {
+           "catalog": "proto_db.catalog.Entity",
+           "attrs": [
+            [
+             "attributes",
+             {
+              "tuple": [
+               {
+                "catalog": "proto_db.catalog.Attribute",
+                "attrs": [
+                 [
+                  "kind",
+                  {
+                   "str": "field"
+                  }
+                 ],
+                 [
+                  "name",
+                  {
+                   "str": "name"
+                  }
+                 ],
+                 [
+                  "provenance",
+                  {
+                   "tuple": [
+                    {
+                     "str": "conformance.catalog_sales"
+                    }
+                   ]
+                  }
+                 ],
+                 [
+                  "required",
+                  {
+                   "bool": true
+                  }
+                 ],
+                 [
+                  "value_type",
+                  {
+                   "str": "str"
+                  }
+                 ]
+                ]
+               },
+               {
+                "catalog": "proto_db.catalog.Attribute",
+                "attrs": [
+                 [
+                  "kind",
+                  {
+                   "str": "field"
+                  }
+                 ],
+                 [
+                  "meaning",
+                  {
+                   "str": "The current price of the product"
+                  }
+                 ],
+                 [
+                  "name",
+                  {
+                   "str": "list_price"
+                  }
+                 ],
+                 [
+                  "provenance",
+                  {
+                   "tuple": [
+                    {
+                     "str": "conformance.catalog_sales"
+                    }
+                   ]
+                  }
+                 ],
+                 [
+                  "unit",
+                  {
+                   "str": "currency:company"
+                  }
+                 ],
+                 [
+                  "value_type",
+                  {
+                   "str": "decimal"
+                  }
+                 ]
+                ]
+               }
+              ]
+             }
+            ],
+            [
+             "key",
+             {
+              "tuple": [
+               {
+                "str": "name"
+               }
+              ]
+             }
+            ],
+            [
+             "label",
+             {
+              "map": [
+               [
+                {
+                 "str": "und"
+                },
+                {
+                 "str": "Product"
+                }
+               ]
+              ]
+             }
+            ],
+            [
+             "meaning",
+             {
+              "str": "A product the company sells"
+             }
+            ],
+            [
+             "provenance",
+             {
+              "tuple": [
+               {
+                "str": "conformance.catalog_sales"
+               }
+              ]
+             }
+            ],
+            [
+             "type_name",
+             {
+              "str": "conformance.sales.Product"
+             }
+            ]
+           ]
+          }
+         ],
+         [
+          {
+           "str": "conformance.sales.RushOrder"
+          },
+          {
+           "catalog": "proto_db.catalog.Entity",
+           "attrs": [
+            [
+             "attributes",
+             {
+              "tuple": [
+               {
+                "catalog": "proto_db.catalog.Attribute",
+                "attrs": [
+                 [
+                  "examples",
+                  {
+                   "tuple": [
+                    {
+                     "int": "1001"
+                    }
+                   ]
+                  }
+                 ],
+                 [
+                  "inherited_from",
+                  {
+                   "str": "conformance.sales.Order"
+                  }
+                 ],
+                 [
+                  "kind",
+                  {
+                   "str": "field"
+                  }
+                 ],
+                 [
+                  "label",
+                  {
+                   "map": [
+                    [
+                     {
+                      "str": "und"
+                     },
+                     {
+                      "str": "Number"
+                     }
+                    ]
+                   ]
+                  }
+                 ],
+                 [
+                  "meaning",
+                  {
+                   "str": "Sequential per customer, assigned at creation"
+                  }
+                 ],
+                 [
+                  "name",
+                  {
+                   "str": "number"
+                  }
+                 ],
+                 [
+                  "provenance",
+                  {
+                   "tuple": [
+                    {
+                     "str": "conformance.catalog_sales"
+                    }
+                   ]
+                  }
+                 ],
+                 [
+                  "required",
+                  {
+                   "bool": true
+                  }
+                 ],
+                 [
+                  "value_type",
+                  {
+                   "str": "int"
+                  }
+                 ]
+                ]
+               },
+               {
+                "catalog": "proto_db.catalog.Attribute",
+                "attrs": [
+                 [
+                  "default",
+                  {
+                   "str": "open"
+                  }
+                 ],
+                 [
+                  "inherited_from",
+                  {
+                   "str": "conformance.sales.Order"
+                  }
+                 ],
+                 [
+                  "kind",
+                  {
+                   "str": "field"
+                  }
+                 ],
+                 [
+                  "name",
+                  {
+                   "str": "state"
+                  }
+                 ],
+                 [
+                  "provenance",
+                  {
+                   "tuple": [
+                    {
+                     "str": "conformance.catalog_sales"
+                    }
+                   ]
+                  }
+                 ],
+                 [
+                  "value_type",
+                  {
+                   "str": "str"
+                  }
+                 ],
+                 [
+                  "values",
+                  {
+                   "tuple": [
+                    {
+                     "str": "open"
+                    },
+                    {
+                     "str": "confirmed"
+                    },
+                    {
+                     "str": "cancelled"
+                    }
+                   ]
+                  }
+                 ]
+                ]
+               },
+               {
+                "catalog": "proto_db.catalog.Attribute",
+                "attrs": [
+                 [
+                  "indexed",
+                  {
+                   "bool": true
+                  }
+                 ],
+                 [
+                  "inherited_from",
+                  {
+                   "str": "conformance.sales.Order"
+                  }
+                 ],
+                 [
+                  "kind",
+                  {
+                   "str": "field"
+                  }
+                 ],
+                 [
+                  "name",
+                  {
+                   "str": "date"
+                  }
+                 ],
+                 [
+                  "provenance",
+                  {
+                   "tuple": [
+                    {
+                     "str": "conformance.catalog_sales"
+                    }
+                   ]
+                  }
+                 ],
+                 [
+                  "value_type",
+                  {
+                   "str": "date"
+                  }
+                 ]
+                ]
+               },
+               {
+                "catalog": "proto_db.catalog.Role",
+                "attrs": [
+                 [
+                  "cardinality",
+                  {
+                   "str": "one"
+                  }
+                 ],
+                 [
+                  "inherited_from",
+                  {
+                   "str": "conformance.sales.Order"
+                  }
+                 ],
+                 [
+                  "inverse",
+                  {
+                   "str": "orders"
+                  }
+                 ],
+                 [
+                  "inverse_cardinality",
+                  {
+                   "str": "many"
+                  }
+                 ],
+                 [
+                  "name",
+                  {
+                   "str": "customer"
+                  }
+                 ],
+                 [
+                  "provenance",
+                  {
+                   "tuple": [
+                    {
+                     "str": "conformance.catalog_sales"
+                    }
+                   ]
+                  }
+                 ],
+                 [
+                  "target",
+                  {
+                   "str": "conformance.sales.Customer"
+                  }
+                 ]
+                ]
+               },
+               {
+                "catalog": "proto_db.catalog.Role",
+                "attrs": [
+                 [
+                  "cardinality",
+                  {
+                   "str": "many"
+                  }
+                 ],
+                 [
+                  "inherited_from",
+                  {
+                   "str": "conformance.sales.Order"
+                  }
+                 ],
+                 [
+                  "inverse",
+                  {
+                   "str": "order"
+                  }
+                 ],
+                 [
+                  "inverse_cardinality",
+                  {
+                   "str": "one"
+                  }
+                 ],
+                 [
+                  "name",
+                  {
+                   "str": "lines"
+                  }
+                 ],
+                 [
+                  "ordered",
+                  {
+                   "bool": true
+                  }
+                 ],
+                 [
+                  "provenance",
+                  {
+                   "tuple": [
+                    {
+                     "str": "conformance.catalog_sales"
+                    }
+                   ]
+                  }
+                 ],
+                 [
+                  "target",
+                  {
+                   "str": "conformance.sales.OrderLine"
+                  }
+                 ]
+                ]
+               },
+               {
+                "catalog": "proto_db.catalog.Attribute",
+                "attrs": [
+                 [
+                  "expression",
+                  {
+                   "catalog": "proto_db.catalog.Expression",
+                   "attrs": [
+                    [
+                     "ast",
+                     {
+                      "list": [
+                       {
+                        "str": "sum"
+                       },
+                       {
+                        "str": "lines"
+                       },
+                       {
+                        "list": [
+                         {
+                          "str": "attr"
+                         },
+                         {
+                          "str": "amount"
+                         }
+                        ]
+                       }
+                      ]
+                     }
+                    ]
+                   ]
+                  }
+                 ],
+                 [
+                  "inherited_from",
+                  {
+                   "str": "conformance.sales.Order"
+                  }
+                 ],
+                 [
+                  "kind",
+                  {
+                   "str": "computed_stored"
+                  }
+                 ],
+                 [
+                  "name",
+                  {
+                   "str": "total"
+                  }
+                 ],
+                 [
+                  "provenance",
+                  {
+                   "tuple": [
+                    {
+                     "str": "conformance.catalog_sales"
+                    }
+                   ]
+                  }
+                 ],
+                 [
+                  "unit",
+                  {
+                   "str": "currency:order"
+                  }
+                 ]
+                ]
+               },
+               {
+                "catalog": "proto_db.catalog.Attribute",
+                "attrs": [
+                 [
+                  "kind",
+                  {
+                   "str": "field"
+                  }
+                 ],
+                 [
+                  "name",
+                  {
+                   "str": "priority"
+                  }
+                 ],
+                 [
+                  "provenance",
+                  {
+                   "tuple": [
+                    {
+                     "str": "conformance.catalog_sales"
+                    }
+                   ]
+                  }
+                 ],
+                 [
+                  "value_type",
+                  {
+                   "str": "int"
+                  }
+                 ]
+                ]
+               }
+              ]
+             }
+            ],
+            [
+             "intents",
+             {
+              "tuple": [
+               {
+                "catalog": "proto_db.catalog.Intent",
+                "attrs": [
+                 [
+                  "commutes_with",
+                  {
+                   "tuple": [
+                    {
+                     "str": "add_line"
+                    }
+                   ]
+                  }
+                 ],
+                 [
+                  "inherited_from",
+                  {
+                   "str": "conformance.sales.Order"
+                  }
+                 ],
+                 [
+                  "meaning",
+                  {
+                   "str": "Add a product to the order with an agreed quantity and price"
+                  }
+                 ],
+                 [
+                  "name",
+                  {
+                   "str": "add_line"
+                  }
+                 ],
+                 [
+                  "parameters",
+                  {
+                   "tuple": [
+                    {
+                     "tuple": [
+                      {
+                       "str": "product"
+                      },
+                      {
+                       "str": "conformance.sales.Product"
+                      }
+                     ]
+                    },
+                    {
+                     "tuple": [
+                      {
+                       "str": "quantity"
+                      },
+                      {
+                       "str": "decimal"
+                      }
+                     ]
+                    },
+                    {
+                     "tuple": [
+                      {
+                       "str": "price"
+                      },
+                      {
+                       "str": "decimal"
+                      }
+                     ]
+                    }
+                   ]
+                  }
+                 ],
+                 [
+                  "provenance",
+                  {
+                   "tuple": [
+                    {
+                     "str": "conformance.catalog_sales"
+                    }
+                   ]
+                  }
+                 ]
+                ]
+               },
+               {
+                "catalog": "proto_db.catalog.Intent",
+                "attrs": [
+                 [
+                  "inherited_from",
+                  {
+                   "str": "conformance.sales.Order"
+                  }
+                 ],
+                 [
+                  "meaning",
+                  {
+                   "str": "Confirm the order; it accepts no new lines afterwards"
+                  }
+                 ],
+                 [
+                  "name",
+                  {
+                   "str": "confirm"
+                  }
+                 ],
+                 [
+                  "provenance",
+                  {
+                   "tuple": [
+                    {
+                     "str": "conformance.catalog_sales"
+                    }
+                   ]
+                  }
+                 ],
+                 [
+                  "requires",
+                  {
+                   "catalog": "proto_db.catalog.Expression",
+                   "attrs": [
+                    [
+                     "ast",
+                     {
+                      "list": [
+                       {
+                        "str": "=="
+                       },
+                       {
+                        "list": [
+                         {
+                          "str": "attr"
+                         },
+                         {
+                          "str": "state"
+                         }
+                        ]
+                       },
+                       {
+                        "list": [
+                         {
+                          "str": "const"
+                         },
+                         {
+                          "str": "open"
+                         }
+                        ]
+                       }
+                      ]
+                     }
+                    ]
+                   ]
+                  }
+                 ]
+                ]
+               }
+              ]
+             }
+            ],
+            [
+             "key",
+             {
+              "tuple": [
+               {
+                "str": "customer"
+               },
+               {
+                "str": "number"
+               }
+              ]
+             }
+            ],
+            [
+             "label",
+             {
+              "map": [
+               [
+                {
+                 "str": "und"
+                },
+                {
+                 "str": "Rush order"
+                }
+               ]
+              ]
+             }
+            ],
+            [
+             "meaning",
+             {
+              "str": "An order delivered before the others"
+             }
+            ],
+            [
+             "provenance",
+             {
+              "tuple": [
+               {
+                "str": "conformance.catalog_sales"
+               }
+              ]
+             }
+            ],
+            [
+             "supertypes",
+             {
+              "tuple": [
+               {
+                "str": "conformance.sales.Order"
+               }
+              ]
+             }
+            ],
+            [
+             "type_name",
+             {
+              "str": "conformance.sales.RushOrder"
+             }
+            ]
+           ]
+          }
+         ]
+        ]
+       }
+      ],
+      [
+       "module_set",
+       {
+        "tuple": [
+         {
+          "str": "base"
+         },
+         {
+          "str": "conformance.catalog_base"
+         },
+         {
+          "str": "conformance.catalog_sales"
+         }
+        ]
+       }
+      ],
+      [
+       "modules",
+       {
+        "collection": "proto_db.collections.Dictionary",
+        "items": [
+         [
+          {
+           "str": "base"
+          },
+          {
+           "catalog": "proto_db.catalog.Module",
+           "attrs": [
+            [
+             "name",
+             {
+              "str": "base"
+             }
+            ],
+            [
+             "version",
+             {
+              "str": "1"
+             }
+            ]
+           ]
+          }
+         ],
+         [
+          {
+           "str": "conformance.catalog_base"
+          },
+          {
+           "catalog": "proto_db.catalog.Module",
+           "attrs": [
+            [
+             "extensions",
+             {
+              "tuple": [
+               {
+                "catalog": "proto_db.catalog.Extension",
+                "attrs": [
+                 [
+                  "elements",
+                  {
+                   "tuple": [
+                    {
+                     "catalog": "proto_db.catalog.Attribute",
+                     "attrs": [
+                      [
+                       "ext",
+                       {
+                        "map": [
+                         [
+                          {
+                           "str": "ui.width"
+                          },
+                          {
+                           "int": "40"
+                          }
+                         ]
+                        ]
+                       }
+                      ],
+                      [
+                       "kind",
+                       {
+                        "str": "field"
+                       }
+                      ],
+                      [
+                       "label",
+                       {
+                        "map": [
+                         [
+                          {
+                           "str": "und"
+                          },
+                          {
+                           "str": "Name"
+                          }
+                         ]
+                        ]
+                       }
+                      ],
+                      [
+                       "name",
+                       {
+                        "str": "name"
+                       }
+                      ],
+                      [
+                       "required",
+                       {
+                        "bool": true
+                       }
+                      ],
+                      [
+                       "sensitivity",
+                       {
+                        "str": "personal"
+                       }
+                      ],
+                      [
+                       "value_type",
+                       {
+                        "str": "str"
+                       }
+                      ]
+                     ]
+                    },
+                    {
+                     "catalog": "proto_db.catalog.Attribute",
+                     "attrs": [
+                      [
+                       "kind",
+                       {
+                        "str": "field"
+                       }
+                      ],
+                      [
+                       "meaning",
+                       {
+                        "str": "The credit limit in force"
+                       }
+                      ],
+                      [
+                       "name",
+                       {
+                        "str": "credit_limit"
+                       }
+                      ],
+                      [
+                       "unit",
+                       {
+                        "str": "currency:company"
+                       }
+                      ],
+                      [
+                       "value_type",
+                       {
+                        "str": "decimal"
+                       }
+                      ]
+                     ]
+                    }
+                   ]
+                  }
+                 ],
+                 [
+                  "entity",
+                  {
+                   "map": [
+                    [
+                     {
+                      "str": "meaning"
+                     },
+                     {
+                      "str": "A customer of the company"
+                     }
+                    ],
+                    [
+                     {
+                      "str": "label"
+                     },
+                     {
+                      "map": [
+                       [
+                        {
+                         "str": "und"
+                        },
+                        {
+                         "str": "Customer"
+                        }
+                       ]
+                      ]
+                     }
+                    ],
+                    [
+                     {
+                      "str": "key"
+                     },
+                     {
+                      "tuple": [
+                       {
+                        "str": "name"
+                       }
+                      ]
+                     }
+                    ]
+                   ]
+                  }
+                 ],
+                 [
+                  "extends",
+                  {
+                   "str": "conformance.sales.Customer"
+                  }
+                 ],
+                 [
+                  "module",
+                  {
+                   "str": "conformance.catalog_base"
+                  }
+                 ]
+                ]
+               }
+              ]
+             }
+            ],
+            [
+             "name",
+             {
+              "str": "conformance.catalog_base"
+             }
+            ],
+            [
+             "version",
+             {
+              "str": "1"
+             }
+            ]
+           ]
+          }
+         ],
+         [
+          {
+           "str": "conformance.catalog_sales"
+          },
+          {
+           "catalog": "proto_db.catalog.Module",
+           "attrs": [
+            [
+             "depends",
+             {
+              "tuple": [
+               {
+                "str": "conformance.catalog_base"
+               }
+              ]
+             }
+            ],
+            [
+             "extensions",
+             {
+              "tuple": [
+               {
+                "catalog": "proto_db.catalog.Extension",
+                "attrs": [
+                 [
+                  "elements",
+                  {
+                   "tuple": [
+                    {
+                     "catalog": "proto_db.catalog.Attribute",
+                     "attrs": [
+                      [
+                       "kind",
+                       {
+                        "str": "field"
+                       }
+                      ],
+                      [
+                       "name",
+                       {
+                        "str": "name"
+                       }
+                      ],
+                      [
+                       "required",
+                       {
+                        "bool": true
+                       }
+                      ],
+                      [
+                       "value_type",
+                       {
+                        "str": "str"
+                       }
+                      ]
+                     ]
+                    },
+                    {
+                     "catalog": "proto_db.catalog.Attribute",
+                     "attrs": [
+                      [
+                       "kind",
+                       {
+                        "str": "field"
+                       }
+                      ],
+                      [
+                       "meaning",
+                       {
+                        "str": "The current price of the product"
+                       }
+                      ],
+                      [
+                       "name",
+                       {
+                        "str": "list_price"
+                       }
+                      ],
+                      [
+                       "unit",
+                       {
+                        "str": "currency:company"
+                       }
+                      ],
+                      [
+                       "value_type",
+                       {
+                        "str": "decimal"
+                       }
+                      ]
+                     ]
+                    }
+                   ]
+                  }
+                 ],
+                 [
+                  "entity",
+                  {
+                   "map": [
+                    [
+                     {
+                      "str": "meaning"
+                     },
+                     {
+                      "str": "A product the company sells"
+                     }
+                    ],
+                    [
+                     {
+                      "str": "label"
+                     },
+                     {
+                      "map": [
+                       [
+                        {
+                         "str": "und"
+                        },
+                        {
+                         "str": "Product"
+                        }
+                       ]
+                      ]
+                     }
+                    ],
+                    [
+                     {
+                      "str": "key"
+                     },
+                     {
+                      "tuple": [
+                       {
+                        "str": "name"
+                       }
+                      ]
+                     }
+                    ]
+                   ]
+                  }
+                 ],
+                 [
+                  "extends",
+                  {
+                   "str": "conformance.sales.Product"
+                  }
+                 ],
+                 [
+                  "module",
+                  {
+                   "str": "conformance.catalog_sales"
+                  }
+                 ]
+                ]
+               },
+               {
+                "catalog": "proto_db.catalog.Extension",
+                "attrs": [
+                 [
+                  "elements",
+                  {
+                   "tuple": [
+                    {
+                     "catalog": "proto_db.catalog.Role",
+                     "attrs": [
+                      [
+                       "cardinality",
+                       {
+                        "str": "one"
+                       }
+                      ],
+                      [
+                       "inverse",
+                       {
+                        "str": "lines"
+                       }
+                      ],
+                      [
+                       "inverse_cardinality",
+                       {
+                        "str": "many"
+                       }
+                      ],
+                      [
+                       "name",
+                       {
+                        "str": "order"
+                       }
+                      ],
+                      [
+                       "ordered",
+                       {
+                        "bool": true
+                       }
+                      ],
+                      [
+                       "participant",
+                       {
+                        "bool": true
+                       }
+                      ],
+                      [
+                       "target",
+                       {
+                        "str": "conformance.sales.Order"
+                       }
+                      ]
+                     ]
+                    },
+                    {
+                     "catalog": "proto_db.catalog.Role",
+                     "attrs": [
+                      [
+                       "binding",
+                       {
+                        "str": "version"
+                       }
+                      ],
+                      [
+                       "cardinality",
+                       {
+                        "str": "one"
+                       }
+                      ],
+                      [
+                       "index_by",
+                       {
+                        "tuple": [
+                         {
+                          "str": "order.date"
+                         }
+                        ]
+                       }
+                      ],
+                      [
+                       "name",
+                       {
+                        "str": "product"
+                       }
+                      ],
+                      [
+                       "participant",
+                       {
+                        "bool": true
+                       }
+                      ],
+                      [
+                       "target",
+                       {
+                        "str": "conformance.sales.Product"
+                       }
+                      ]
+                     ]
+                    },
+                    {
+                     "catalog": "proto_db.catalog.Attribute",
+                     "attrs": [
+                      [
+                       "kind",
+                       {
+                        "str": "field"
+                       }
+                      ],
+                      [
+                       "name",
+                       {
+                        "str": "quantity"
+                       }
+                      ],
+                      [
+                       "required",
+                       {
+                        "bool": true
+                       }
+                      ],
+                      [
+                       "unit",
+                       {
+                        "str": "unit:product"
+                       }
+                      ],
+                      [
+                       "value_type",
+                       {
+                        "str": "decimal"
+                       }
+                      ]
+                     ]
+                    },
+                    {
+                     "catalog": "proto_db.catalog.Attribute",
+                     "attrs": [
+                      [
+                       "caveats",
+                       {
+                        "str": "Taxes are not included"
+                       }
+                      ],
+                      [
+                       "kind",
+                       {
+                        "str": "field"
+                       }
+                      ],
+                      [
+                       "meaning",
+                       {
+                        "str": "The unit price agreed at the sale; not the product's current price"
+                       }
+                      ],
+                      [
+                       "name",
+                       {
+                        "str": "price"
+                       }
+                      ],
+                      [
+                       "required",
+                       {
+                        "bool": true
+                       }
+                      ],
+                      [
+                       "unit",
+                       {
+                        "str": "currency:order"
+                       }
+                      ],
+                      [
+                       "value_type",
+                       {
+                        "str": "decimal"
+                       }
+                      ]
+                     ]
+                    },
+                    {
+                     "catalog": "proto_db.catalog.Attribute",
+                     "attrs": [
+                      [
+                       "expression",
+                       {
+                        "catalog": "proto_db.catalog.Expression",
+                        "attrs": [
+                         [
+                          "ast",
+                          {
+                           "list": [
+                            {
+                             "str": "*"
+                            },
+                            {
+                             "list": [
+                              {
+                               "str": "attr"
+                              },
+                              {
+                               "str": "quantity"
+                              }
+                             ]
+                            },
+                            {
+                             "list": [
+                              {
+                               "str": "attr"
+                              },
+                              {
+                               "str": "price"
+                              }
+                             ]
+                            }
+                           ]
+                          }
+                         ]
+                        ]
+                       }
+                      ],
+                      [
+                       "kind",
+                       {
+                        "str": "computed"
+                       }
+                      ],
+                      [
+                       "name",
+                       {
+                        "str": "amount"
+                       }
+                      ]
+                     ]
+                    }
+                   ]
+                  }
+                 ],
+                 [
+                  "entity",
+                  {
+                   "map": [
+                    [
+                     {
+                      "str": "kind"
+                     },
+                     {
+                      "str": "relationship"
+                     }
+                    ],
+                    [
+                     {
+                      "str": "meaning"
+                     },
+                     {
+                      "str": "A product included in an order, with the agreed terms"
+                     }
+                    ]
+                   ]
+                  }
+                 ],
+                 [
+                  "extends",
+                  {
+                   "str": "conformance.sales.OrderLine"
+                  }
+                 ],
+                 [
+                  "module",
+                  {
+                   "str": "conformance.catalog_sales"
+                  }
+                 ]
+                ]
+               },
+               {
+                "catalog": "proto_db.catalog.Extension",
+                "attrs": [
+                 [
+                  "elements",
+                  {
+                   "tuple": [
+                    {
+                     "catalog": "proto_db.catalog.Attribute",
+                     "attrs": [
+                      [
+                       "examples",
+                       {
+                        "tuple": [
+                         {
+                          "int": "1001"
+                         }
+                        ]
+                       }
+                      ],
+                      [
+                       "kind",
+                       {
+                        "str": "field"
+                       }
+                      ],
+                      [
+                       "label",
+                       {
+                        "map": [
+                         [
+                          {
+                           "str": "und"
+                          },
+                          {
+                           "str": "Number"
+                          }
+                         ]
+                        ]
+                       }
+                      ],
+                      [
+                       "meaning",
+                       {
+                        "str": "Sequential per customer, assigned at creation"
+                       }
+                      ],
+                      [
+                       "name",
+                       {
+                        "str": "number"
+                       }
+                      ],
+                      [
+                       "required",
+                       {
+                        "bool": true
+                       }
+                      ],
+                      [
+                       "value_type",
+                       {
+                        "str": "int"
+                       }
+                      ]
+                     ]
+                    },
+                    {
+                     "catalog": "proto_db.catalog.Attribute",
+                     "attrs": [
+                      [
+                       "default",
+                       {
+                        "str": "open"
+                       }
+                      ],
+                      [
+                       "kind",
+                       {
+                        "str": "field"
+                       }
+                      ],
+                      [
+                       "name",
+                       {
+                        "str": "state"
+                       }
+                      ],
+                      [
+                       "value_type",
+                       {
+                        "str": "str"
+                       }
+                      ],
+                      [
+                       "values",
+                       {
+                        "tuple": [
+                         {
+                          "str": "open"
+                         },
+                         {
+                          "str": "confirmed"
+                         },
+                         {
+                          "str": "cancelled"
+                         }
+                        ]
+                       }
+                      ]
+                     ]
+                    },
+                    {
+                     "catalog": "proto_db.catalog.Attribute",
+                     "attrs": [
+                      [
+                       "indexed",
+                       {
+                        "bool": true
+                       }
+                      ],
+                      [
+                       "kind",
+                       {
+                        "str": "field"
+                       }
+                      ],
+                      [
+                       "name",
+                       {
+                        "str": "date"
+                       }
+                      ],
+                      [
+                       "value_type",
+                       {
+                        "str": "date"
+                       }
+                      ]
+                     ]
+                    },
+                    {
+                     "catalog": "proto_db.catalog.Role",
+                     "attrs": [
+                      [
+                       "cardinality",
+                       {
+                        "str": "one"
+                       }
+                      ],
+                      [
+                       "inverse",
+                       {
+                        "str": "orders"
+                       }
+                      ],
+                      [
+                       "inverse_cardinality",
+                       {
+                        "str": "many"
+                       }
+                      ],
+                      [
+                       "name",
+                       {
+                        "str": "customer"
+                       }
+                      ],
+                      [
+                       "target",
+                       {
+                        "str": "conformance.sales.Customer"
+                       }
+                      ]
+                     ]
+                    },
+                    {
+                     "catalog": "proto_db.catalog.Role",
+                     "attrs": [
+                      [
+                       "cardinality",
+                       {
+                        "str": "many"
+                       }
+                      ],
+                      [
+                       "inverse",
+                       {
+                        "str": "order"
+                       }
+                      ],
+                      [
+                       "inverse_cardinality",
+                       {
+                        "str": "one"
+                       }
+                      ],
+                      [
+                       "name",
+                       {
+                        "str": "lines"
+                       }
+                      ],
+                      [
+                       "ordered",
+                       {
+                        "bool": true
+                       }
+                      ],
+                      [
+                       "target",
+                       {
+                        "str": "conformance.sales.OrderLine"
+                       }
+                      ]
+                     ]
+                    },
+                    {
+                     "catalog": "proto_db.catalog.Attribute",
+                     "attrs": [
+                      [
+                       "expression",
+                       {
+                        "catalog": "proto_db.catalog.Expression",
+                        "attrs": [
+                         [
+                          "ast",
+                          {
+                           "list": [
+                            {
+                             "str": "sum"
+                            },
+                            {
+                             "str": "lines"
+                            },
+                            {
+                             "list": [
+                              {
+                               "str": "attr"
+                              },
+                              {
+                               "str": "amount"
+                              }
+                             ]
+                            }
+                           ]
+                          }
+                         ]
+                        ]
+                       }
+                      ],
+                      [
+                       "kind",
+                       {
+                        "str": "computed_stored"
+                       }
+                      ],
+                      [
+                       "name",
+                       {
+                        "str": "total"
+                       }
+                      ],
+                      [
+                       "unit",
+                       {
+                        "str": "currency:order"
+                       }
+                      ]
+                     ]
+                    },
+                    {
+                     "catalog": "proto_db.catalog.Intent",
+                     "attrs": [
+                      [
+                       "commutes_with",
+                       {
+                        "tuple": [
+                         {
+                          "str": "add_line"
+                         }
+                        ]
+                       }
+                      ],
+                      [
+                       "meaning",
+                       {
+                        "str": "Add a product to the order with an agreed quantity and price"
+                       }
+                      ],
+                      [
+                       "name",
+                       {
+                        "str": "add_line"
+                       }
+                      ],
+                      [
+                       "parameters",
+                       {
+                        "tuple": [
+                         {
+                          "tuple": [
+                           {
+                            "str": "product"
+                           },
+                           {
+                            "str": "conformance.sales.Product"
+                           }
+                          ]
+                         },
+                         {
+                          "tuple": [
+                           {
+                            "str": "quantity"
+                           },
+                           {
+                            "str": "decimal"
+                           }
+                          ]
+                         },
+                         {
+                          "tuple": [
+                           {
+                            "str": "price"
+                           },
+                           {
+                            "str": "decimal"
+                           }
+                          ]
+                         }
+                        ]
+                       }
+                      ]
+                     ]
+                    },
+                    {
+                     "catalog": "proto_db.catalog.Intent",
+                     "attrs": [
+                      [
+                       "meaning",
+                       {
+                        "str": "Confirm the order; it accepts no new lines afterwards"
+                       }
+                      ],
+                      [
+                       "name",
+                       {
+                        "str": "confirm"
+                       }
+                      ],
+                      [
+                       "requires",
+                       {
+                        "catalog": "proto_db.catalog.Expression",
+                        "attrs": [
+                         [
+                          "ast",
+                          {
+                           "list": [
+                            {
+                             "str": "=="
+                            },
+                            {
+                             "list": [
+                              {
+                               "str": "attr"
+                              },
+                              {
+                               "str": "state"
+                              }
+                             ]
+                            },
+                            {
+                             "list": [
+                              {
+                               "str": "const"
+                              },
+                              {
+                               "str": "open"
+                              }
+                             ]
+                            }
+                           ]
+                          }
+                         ]
+                        ]
+                       }
+                      ]
+                     ]
+                    }
+                   ]
+                  }
+                 ],
+                 [
+                  "entity",
+                  {
+                   "map": [
+                    [
+                     {
+                      "str": "meaning"
+                     },
+                     {
+                      "str": "A customer's order; open, confirmed or cancelled"
+                     }
+                    ],
+                    [
+                     {
+                      "str": "label"
+                     },
+                     {
+                      "map": [
+                       [
+                        {
+                         "str": "und"
+                        },
+                        {
+                         "str": "Order"
+                        }
+                       ]
+                      ]
+                     }
+                    ],
+                    [
+                     {
+                      "str": "synonyms"
+                     },
+                     {
+                      "tuple": [
+                       {
+                        "str": "purchase order"
+                       }
+                      ]
+                     }
+                    ],
+                    [
+                     {
+                      "str": "key"
+                     },
+                     {
+                      "tuple": [
+                       {
+                        "str": "customer"
+                       },
+                       {
+                        "str": "number"
+                       }
+                      ]
+                     }
+                    ]
+                   ]
+                  }
+                 ],
+                 [
+                  "extends",
+                  {
+                   "str": "conformance.sales.Order"
+                  }
+                 ],
+                 [
+                  "module",
+                  {
+                   "str": "conformance.catalog_sales"
+                  }
+                 ]
+                ]
+               },
+               {
+                "catalog": "proto_db.catalog.Extension",
+                "attrs": [
+                 [
+                  "elements",
+                  {
+                   "tuple": [
+                    {
+                     "catalog": "proto_db.catalog.Attribute",
+                     "attrs": [
+                      [
+                       "kind",
+                       {
+                        "str": "field"
+                       }
+                      ],
+                      [
+                       "name",
+                       {
+                        "str": "priority"
+                       }
+                      ],
+                      [
+                       "value_type",
+                       {
+                        "str": "int"
+                       }
+                      ]
+                     ]
+                    }
+                   ]
+                  }
+                 ],
+                 [
+                  "entity",
+                  {
+                   "map": [
+                    [
+                     {
+                      "str": "meaning"
+                     },
+                     {
+                      "str": "An order delivered before the others"
+                     }
+                    ],
+                    [
+                     {
+                      "str": "label"
+                     },
+                     {
+                      "map": [
+                       [
+                        {
+                         "str": "und"
+                        },
+                        {
+                         "str": "Rush order"
+                        }
+                       ]
+                      ]
+                     }
+                    ],
+                    [
+                     {
+                      "str": "supertypes"
+                     },
+                     {
+                      "tuple": [
+                       {
+                        "str": "conformance.sales.Order"
+                       }
+                      ]
+                     }
+                    ]
+                   ]
+                  }
+                 ],
+                 [
+                  "extends",
+                  {
+                   "str": "conformance.sales.RushOrder"
+                  }
+                 ],
+                 [
+                  "module",
+                  {
+                   "str": "conformance.catalog_sales"
+                  }
+                 ]
+                ]
+               },
+               {
+                "catalog": "proto_db.catalog.Extension",
+                "attrs": [
+                 [
+                  "elements",
+                  {
+                   "tuple": [
+                    {
+                     "catalog": "proto_db.catalog.Attribute",
+                     "attrs": [
+                      [
+                       "kind",
+                       {
+                        "str": "field"
+                       }
+                      ],
+                      [
+                       "label",
+                       {
+                        "map": [
+                         [
+                          {
+                           "str": "und"
+                          },
+                          {
+                           "str": "Credit limit"
+                          }
+                         ]
+                        ]
+                       }
+                      ],
+                      [
+                       "name",
+                       {
+                        "str": "credit_limit"
+                       }
+                      ],
+                      [
+                       "value_type",
+                       {
+                        "str": "decimal"
+                       }
+                      ]
+                     ]
+                    },
+                    {
+                     "catalog": "proto_db.catalog.Role",
+                     "attrs": [
+                      [
+                       "cardinality",
+                       {
+                        "str": "many"
+                       }
+                      ],
+                      [
+                       "inverse",
+                       {
+                        "str": "customer"
+                       }
+                      ],
+                      [
+                       "inverse_cardinality",
+                       {
+                        "str": "one"
+                       }
+                      ],
+                      [
+                       "name",
+                       {
+                        "str": "orders"
+                       }
+                      ],
+                      [
+                       "target",
+                       {
+                        "str": "conformance.sales.Order"
+                       }
+                      ]
+                     ]
+                    },
+                    {
+                     "catalog": "proto_db.catalog.Attribute",
+                     "attrs": [
+                      [
+                       "expression",
+                       {
+                        "catalog": "proto_db.catalog.Expression",
+                        "attrs": [
+                         [
+                          "ast",
+                          {
+                           "list": [
+                            {
+                             "str": "sum"
+                            },
+                            {
+                             "str": "orders"
+                            },
+                            {
+                             "list": [
+                              {
+                               "str": "attr"
+                              },
+                              {
+                               "str": "total"
+                              }
+                             ]
+                            },
+                            {
+                             "list": [
+                              {
+                               "str": "!="
+                              },
+                              {
+                               "list": [
+                                {
+                                 "str": "attr"
+                                },
+                                {
+                                 "str": "state"
+                                }
+                               ]
+                              },
+                              {
+                               "list": [
+                                {
+                                 "str": "const"
+                                },
+                                {
+                                 "str": "cancelled"
+                                }
+                               ]
+                              }
+                             ]
+                            }
+                           ]
+                          }
+                         ]
+                        ]
+                       }
+                      ],
+                      [
+                       "kind",
+                       {
+                        "str": "computed_stored"
+                       }
+                      ],
+                      [
+                       "name",
+                       {
+                        "str": "committed"
+                       }
+                      ],
+                      [
+                       "unit",
+                       {
+                        "str": "currency:company"
+                       }
+                      ]
+                     ]
+                    },
+                    {
+                     "catalog": "proto_db.catalog.Constraint",
+                     "attrs": [
+                      [
+                       "expression",
+                       {
+                        "catalog": "proto_db.catalog.Expression",
+                        "attrs": [
+                         [
+                          "ast",
+                          {
+                           "list": [
+                            {
+                             "str": "<="
+                            },
+                            {
+                             "list": [
+                              {
+                               "str": "attr"
+                              },
+                              {
+                               "str": "committed"
+                              }
+                             ]
+                            },
+                            {
+                             "list": [
+                              {
+                               "str": "attr"
+                              },
+                              {
+                               "str": "credit_limit"
+                              }
+                             ]
+                            }
+                           ]
+                          }
+                         ]
+                        ]
+                       }
+                      ],
+                      [
+                       "meaning",
+                       {
+                        "str": "A customer cannot have orders above its credit limit"
+                       }
+                      ],
+                      [
+                       "message",
+                       {
+                        "str": "The order exceeds the credit limit of {entity} by {excess}"
+                       }
+                      ],
+                      [
+                       "name",
+                       {
+                        "str": "credit_limit_respected"
+                       }
+                      ],
+                      [
+                       "scope",
+                       {
+                        "str": "aggregate"
+                       }
+                      ]
+                     ]
+                    }
+                   ]
+                  }
+                 ],
+                 [
+                  "extends",
+                  {
+                   "str": "conformance.sales.Customer"
+                  }
+                 ],
+                 [
+                  "module",
+                  {
+                   "str": "conformance.catalog_sales"
+                  }
+                 ]
+                ]
+               }
+              ]
+             }
+            ],
+            [
+             "name",
+             {
+              "str": "conformance.catalog_sales"
+             }
+            ],
+            [
+             "version",
+             {
+              "str": "1"
+             }
+            ]
+           ]
+          }
+         ]
+        ]
+       }
+      ]
+     ]
+    }
+   ],
+   [
+    "plain",
+    {
+     "object": "proto_db.core.dbobject.DBObject",
+     "attrs": [
+      [
+       "n",
+       {
+        "int": "1"
+       }
+      ]
+     ]
+    }
+   ]
+  ],
+  "mutables": [],
+  "indexes": {},
+  "origin": {
+   "bytes": "5eed0000000040008000000000007001"
+  }
+ }
+}

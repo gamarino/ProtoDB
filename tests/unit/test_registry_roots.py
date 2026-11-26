@@ -383,9 +383,10 @@ def test_a_space_with_an_install_writes_format_5_and_reopens(tmp_path):
     space = _space(FileStorage(str(tmp_path / "s")))
     db = space.new_database("db")
     db.run(lambda tr: tr.set_root_object("x", 1))
-    assert space.storage.read_root().version == 4
+    # Every root is version 7 (R63, Task 14); the install's records need format 5 segments.
+    assert space.storage.read_root().version == 7 and space.storage.written_version == 4
     db.run(lambda tr: tr.install_module("reg7_crm"))
-    assert space.storage.read_root().version == 5
+    assert space.storage.read_root().version == 7 and space.storage.written_version == 5
     space.close()
     space = _space(FileStorage(str(tmp_path / "s")))
     try:

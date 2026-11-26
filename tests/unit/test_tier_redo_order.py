@@ -21,7 +21,7 @@ import uuid
 
 import pytest
 
-from proto_db.cluster.rootlog import RECORDS_KIND
+from proto_db.cluster.rootlog import RECORDS_KIND, _entry_kind
 from proto_db.storage import tiered
 from proto_db.storage.format import WRITE_FORMAT_VERSION, SEGMENT_HEADER_SIZE, RootRecord, encode_record
 from proto_db.storage.logfile import read_log
@@ -159,7 +159,7 @@ def test_a_checkpoint_mark_survives_an_automatic_compaction(tmp_path, monkeypatc
     monkeypatch.setattr(st, "_checkpoint_data", during_the_syncs)
     st.checkpoint()
     try:
-        kind5 = sum(1 for p in read_log(path, b"ROOT") if p and p[0] == RECORDS_KIND)
+        kind5 = sum(1 for p in read_log(path, b"ROOT") if p and _entry_kind(p) == RECORDS_KIND)
         assert kind5 == 1
     finally:
         st.close()
@@ -195,7 +195,7 @@ def test_concurrent_checkpoints_never_drop_records_before_their_copies_are_synce
 
     def compact_records(mark):
         real_compact(mark)
-        kind5 = sum(1 for p in read_log(path, b"ROOT") if p and p[0] == RECORDS_KIND)
+        kind5 = sum(1 for p in read_log(path, b"ROOT") if p and _entry_kind(p) == RECORDS_KIND)
         if kind5 == 0 and copy_name not in synced:
             violations.append("E's records dropped before its copy was synced")
     monkeypatch.setattr(st._roots, "compact_records", compact_records)
