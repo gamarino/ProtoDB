@@ -388,8 +388,10 @@ class Computed(_Descriptor):
         return out
 
     def value(self, receiver):
-        check_not_holding_root(f"The computed attribute {self.name!r}")
         if self.function is not None:
+            # User code: never with the space root held (P-C, final review I4).  A neutral tree is
+            # evaluated by the engine, and the Python computed attributes it reaches guard themselves.
+            check_not_holding_root(f"The computed attribute {self.name!r}")
             return self.function(receiver)
         return _evaluate_guarded(self.tree, receiver, self.name)
 
@@ -504,10 +506,10 @@ def _type_name(where: str, target) -> str:
         if getattr(target, "_implicit_parent", None) is None or not isinstance(name, str):
             raise _invalid(where, f"the class {target.__qualname__} is not a semantic class with a declared "
                                   f"__type_name__")
-        return name
+        return _exact_str(name)
     if not isinstance(target, str) or not TYPE_NAME_PATTERN.match(target):
         raise _invalid(where, f"a type name such as 'acme.sales.Order' or a semantic class, not {target!r}")
-    return target
+    return _exact_str(target)       # a str subclass (a StrEnum member) is stored as the str it holds
 
 
 class Relation(_End):

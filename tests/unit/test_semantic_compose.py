@@ -398,3 +398,35 @@ def test_str_subclass_declarations_are_stored_as_exact_str():
     for field in ("cardinality", "binding", "on_delete"):
         assert type(item[field]) is str, field
     assert (item["cardinality"], item["binding"], item["on_delete"]) == ("0..1", "version", "cascade")
+
+
+def _strs(value):
+    """Every str held in a composed element, at any depth."""
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for k, v in value.items():
+            yield from _strs(k)
+            yield from _strs(v)
+    elif isinstance(value, (list, tuple)):
+        for v in value:
+            yield from _strs(v)
+
+
+def test_str_subclass_targets_are_stored_as_exact_str():
+    """The target of a Relation, a Role and a RelationTo given as a str subclass (a StrEnum
+    member) composes as the exact str it holds (final re-review, I1 residual)."""
+    import enum
+    from proto_db.semantic import compose as composition
+    from proto_db.semantic.descriptors import Relation, RelationTo, Role
+
+    class Target(enum.StrEnum):
+        CUSTOMER = "acme.sales.Customer"
+
+    for name, descriptor in (("customer", Relation(Target.CUSTOMER, cardinality="0..1")),
+                             ("buyer", Role(Target.CUSTOMER)),
+                             ("orders", RelationTo(Target.CUSTOMER, role="buyer"))):
+        item = composition._descriptor_element(descriptor, name)
+        held = list(_strs(item))
+        assert "acme.sales.Customer" in held, (name, item)
+        assert all(type(s) is str for s in held), (name, item)

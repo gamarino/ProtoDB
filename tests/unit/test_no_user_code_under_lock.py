@@ -153,6 +153,10 @@ def test_user_code_entry_points_refuse_to_run_with_the_space_root_held():
         with pytest.raises(ProtoUnexpectedError, match="space root held"):
             _invoke(type("Version", (), {"__type_name__": "tests.Version"})(), "an_intent", {}, None)
     assert _GUARD_CALLS == []
+    neutral = Computed("1")             # a neutral tree is engine code: the guard is on user code only
+    neutral.name = "n"
+    with HOLDING_ROOT:
+        assert neutral.value("receiver") == 1
     assert not Transaction._holding_root_lock()
     assert spec.extract(1) == 1 and _GUARD_CALLS == [1]
 
