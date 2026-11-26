@@ -16,7 +16,15 @@ commit and cluster; Task 14).
   sleep).
 * ``"cluster"``: a 3-node in-process cluster over tiered storages (:mod:`tests.support.
   tiered_cluster`, :mod:`tests.support.cluster`); the space is node ``n0``'s, so every commit
-  is built under ``n0``'s write permission (R38).
+  is built under ``n0``'s write permission (R38).  Every coordinator decides leases on one
+  frozen :class:`~tests.support.manual_cluster.FakeClock` (the coordinator's ``clock`` seam):
+  no lease, grant or permission ever ends, so a commit never ends unknown or refused because
+  a lease ran out under load (the 2.0.0rc5 CI failure: "fewer than 1 other members stored the
+  commit's records before the lease ended"), and its replication waits for the
+  acknowledgements themselves.  The precondition model is what these modes test; lease expiry
+  has its own clock-driven tests.  What still runs on the real clock are the coordinator's
+  request waits (``request_timeout``): a lost race there ends in a retry, or in a conflict
+  that applied nothing.
 
 The fixtures ``mode`` (parametrized over :data:`MODES`), ``space_any_mode`` and
 ``db_any_mode`` (the database ``db`` of that space) are imported by the test modules that run in
@@ -86,8 +94,9 @@ def space_in_mode(mode: str, tmp_path, **space_kw):
     if mode not in MODES:
         raise ValueError(f"Unknown mode {mode!r}; expected one of {MODES}")
     if mode == "cluster":
+        from tests.support.manual_cluster import FakeClock
         from tests.support.tiered_cluster import TieredCluster
-        with TieredCluster(tmp_path, 3, space_kw=space_kw) as tc:
+        with TieredCluster(tmp_path, 3, space_kw=space_kw, clock=FakeClock()) as tc:
             yield tc.spaces["n0"]
         return
     space = ObjectSpace(MemoryStorage(), **space_kw)
