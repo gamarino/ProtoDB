@@ -159,33 +159,15 @@ def blind_snapshot_of'''),),
          "            if renew and self._active and self._holder == holder and self._term == term and self._inc == inc:",
          "            if renew and term >= self._highest and self._active and self._holder == holder and self._term == term \\\n"
          "                    and self._inc == inc:     # PLANT: a refused higher request blocks every renewal"),),
-        ("tests/unit/test_cluster_renewal.py::test_a_refused_higher_request_does_not_end_the_owners_term",
+        ("tests/unit/test_cluster_renewal.py::test_the_ownership_thread_keeps_its_term_after_a_refused_higher_request",
          "tests/unit/test_cluster_renewal.py::test_renewals_after_a_refused_higher_request_keep_the_term_deterministically"),
-        ("a renewal of the owner's term was refused under an active grant", 'renewal_failures"] == 0'),
+        ('renewal_failures"] == before', 'renewal_failures"] == 0'),
         "product: the renewal is decided after the stale-term rule (the 4c8c949 failure)"),
-    "renewal_lost": Plant((
-        ("tests/unit/test_cluster_renewal.py",
-         "                db.run(lambda tr: (incr(tr), write_token(tr, token)), **RUN_KW)",
-         "                db.run(lambda tr: (incr(tr) if not token.endswith('-5') else None,  # PLANT: lost\n"
-         "                                   write_token(tr, token)), **RUN_KW)"),
-        ("tests/unit/test_cluster_renewal.py",
-         "                raise\n            tokens.acked(token)\n",
-         "                raise\n            (tokens.unknown if token.endswith('-6') else tokens.acked)(token)  # PLANT\n")),
-        ("tests/unit/test_cluster_renewal.py::test_a_refused_higher_request_does_not_end_the_owners_term",),
-        "the counter disagrees with the tokens",
-        "renewal test (N1): an acknowledged increment lost while an unknown one took effect"),
-    "renewal_split": Plant((
-        ("tests/unit/test_cluster_renewal.py",
-         "                raise\n            tokens.acked(token)\n",
-         "                raise\n            (tokens.unknown if token.endswith('-6') else tokens.acked)(token)  # PLANT\n"),
-        ("tests/unit/test_cluster_renewal.py",
-         """            {n: (lambda n=n: snapshot_of(tc.db(n), lambda tr: tr.get_root_object("n"))) for n in ("n0", "n1")},""",
-         """            {n: (lambda n=n: (lambda s: s._replace(tokens=s.tokens - {t for t in s.tokens if t.endswith("-6")})
-                               if n == "n1" else s)(snapshot_of(tc.db(n), lambda tr: tr.get_root_object("n"))))
-             for n in ("n0", "n1")},  # PLANT: n1 resolves the unknown commit differently""")),
-        ("tests/unit/test_cluster_renewal.py::test_a_refused_higher_request_does_not_end_the_owners_term",),
-        "unknown outcomes not resolved alike on every member",
-        "renewal test (N1): an unknown outcome resolved present on n0 and absent on n1"),
+    # "renewal_lost" and "renewal_split" planted the workload of the real-time renewal test (an
+    # acknowledged increment lost; an unknown outcome resolved differently on n1).  That test moved
+    # to the probe benchmarks/cluster_renewal.py (final re-review: real time, D50's idle end on the
+    # monotonic clock), which keeps its token checks; the plants are retired with it (a plant copy
+    # holds no benchmarks).  The token checks keep their plants on the persistence tests above.
     "hint_forgotten": Plant((
         ("proto_db/cluster/coordinator.py",
          "                    if self._owner_hint[1] == sender and self._owner_hint[0] == wait.term:",
@@ -344,8 +326,8 @@ def blind_snapshot_of'''),),
          "                        and own.lease.remaining() < self._belief / 2:\n"
          "                    _PLANT_FIRED = True   # PLANT: the term ends once, at a renewal, while in use\n"
          "                    end = \"planted\"\n")),
-        ("tests/unit/test_cluster_renewal.py::test_a_refused_higher_request_does_not_end_the_owners_term",),
-        "the owner's term ended while in use",
+        ("tests/unit/test_cluster_renewal.py::test_the_ownership_thread_keeps_its_term_after_a_refused_higher_request",),
+        "the term ended while in use",
         "product: a refused higher request ends the owner's term once while in use (fix round 1 of "
         "Task CI-FLAKES, review I2: the plant passed the test that read own.last_demand)"),
     # Task P1-READ: the P1 schedules retry a read that gave up (a peer fetch timed out, the store

@@ -39,6 +39,15 @@ it exits 1 when a member starves or a median trial misses a bound (`python -m be
 --json OUT`). The test suite proves the same property on a logical clock
 (`tests/unit/test_cluster_fairness.py`, round-robin service counted in grants).
 
+`benchmarks/cluster_renewal.py` (Task 8.3f; moved from the test suite in the final re-review because it
+runs on real time: an owner's idle end is measured on the monotonic clock, D50) commits continuously on
+the owner of a two-member TieredCluster after a contender's higher request was refused, and prints each
+run's renewals, the widest gap from a permission request to the end of the next commit, the trials
+repeated for want of steady demand and the commits resolved by token on both members; it exits 1 when a
+renewal is refused under an active grant, the term ends with steady demand or an outcome stays
+unresolved (`python -m benchmarks.cluster_renewal --runs N --json OUT`). The test suite proves the
+property on a fake clock (`tests/unit/test_cluster_renewal.py`).
+
 The periodic cluster stress task (ruling R125) runs cluster tests beside CPU-bound busy processes
 and asserts safety only: `python -m benchmarks.cluster_stress --hogs 12 --runs 3 --json OUT`, from
 a clean export. Unknown outcomes and timeouts are counted, not failed; a safety message or an
