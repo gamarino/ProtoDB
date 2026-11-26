@@ -149,8 +149,9 @@ Entities keep their time travel. A snapshot of an earlier version reads the cell
    ACME Ltd
    ACME Corp
 
-A ``MutableObject`` is also where the usual concurrency rules apply: reading it enters the read set, so two
-transactions that read and change the same cell conflict (:doc:`concurrency`). Its handle compares and
+A ``MutableObject`` is also where the usual concurrency rules apply: reading or writing it declares its
+value in the transaction's snapshot, so two transactions that change the same cell conflict, read or not
+(:doc:`concurrency`). Its handle compares and
 indexes by name, so an index on a handle-valued attribute groups by entity: "the orders of this customer" is
 an index lookup on the customer's identity, however often the customer's own record changes.
 

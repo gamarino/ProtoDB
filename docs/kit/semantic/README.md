@@ -48,7 +48,8 @@ semantic session (`semantic(tr)`, `query`) in `proto_db/semantic/session.py`.
 
 Seven threads create orders for one company, each in `Database.run`, which retries a conflict on a shared cell.
 The independent orders all commit; of Fabrikam's two orders, which fit its limit each but not
-together, the one that runs second fails with `ProtoConstraintError`, whose message names the rule. A walk of the
+together, whichever commits second is retried on the first one's result and fails with `ProtoConstraintError`,
+whose message names the rule; which of the two that is depends on the thread schedule. A walk of the
 whole history recomputes every customer's committed amount and finds no version over a limit. The agent then
 describes the customer: the rule, its meaning and the aggregate are its material to explain the refusal.
 

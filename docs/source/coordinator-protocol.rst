@@ -21,7 +21,7 @@ Some conventions apply throughout:
   the history of the main choices: :doc:`design-guide/coordinator`, :doc:`design-guide/pipelined-permits`
   and :doc:`design-guide/unknown-outcomes`.
 * **What this page does not repeat.** The byte layouts of messages, the acceptor log and the root records are
-  in :doc:`format-spec` ("Cluster wire protocol", "The acceptor log"). Snapshot isolation, read sets and merges
+  in :doc:`format-spec` ("Cluster wire protocol", "The acceptor log"). Snapshot isolation, preconditions and their units
   are in :doc:`concurrency-model`. Local durability, durability modes and recovery on open are in
   :doc:`durability`. A runnable three-node example is :doc:`tutorials/cluster`.
 
@@ -34,8 +34,8 @@ The problem in one paragraph
 ----------------------------
 
 Several processes, each with ``proto_db`` embedded, write one database. A commit builds a new root (an immutable
-tree that shares structure with the previous root, P1) on top of the root it read, after validating the read set
-(D34) and merging the intents (D33). Two processes must never both publish a root built on the same predecessor,
+tree that shares structure with the previous root, P1) on top of the root it read, after validating the transaction's
+preconditions and reapplying its intentions (D34, D73). Two processes must never both publish a root built on the same predecessor,
 and a commit acknowledged to its caller must never disappear from the history. The first design (D5) made the
 object store's conditional write the arbiter; the maintainer reverted it (D44): contention is resolved among the
 processes (P4), with established techniques (P6): Paxos ballots and promises for the lease, a majority of voters
@@ -457,8 +457,8 @@ The commit path
    dropped unanswered; a duplicate ``(term, seq)`` is ignored; a permit nobody waits for is handed back at once
    with ``done("none")``.
 5. **Base and build.** The base follows `Choosing the base of a term's first root`_. Each queued transaction is
-   built in turn on the root the previous one produced: read-set validation (D34), intent merge (D33), path
-   copy; a conflicting transaction fails alone. Records of the base come from the cache (R89) or are fetched
+   built in turn on the root the previous one produced: precondition validation and reapplication of the
+   intentions (D73), path copy; a conflicting transaction fails alone. Records of the base come from the cache (R89) or are fetched
    from the members the locator names, then from every member, then from the object store (D54).
    Under the precondition model (protocol 16) the validation and the reapplication run on the building node,
    under its permission, with the standalone rules: the pre-pass validated against the newest root the node

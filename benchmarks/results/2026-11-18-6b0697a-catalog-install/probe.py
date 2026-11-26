@@ -4,7 +4,12 @@ Arm "catalog": a database with the demo catalog (acme_sales + acme_delivery) ins
 (no semantic declarations): each install commit recomposes the stored catalog under the root lock
 although the catalog does not change.  Arm "plain": a database without a catalog installs the same
 plain modules (no recomposition).  Also: trivial root writes, the demo modules' first installs and an
-idempotent reinstall (planned as nothing to add: a commit with no registry change)."""
+idempotent reinstall (planned as nothing to add: a commit with no registry change).
+
+Historical: this probe ran at commit 6b0697a, before the precondition concurrency model (D73).  It uses
+``set_root_object(..., replace=True)``, which was removed with that model, so it no longer runs on the
+current code as it is; it is kept unchanged as the record of the measurement it produced.  On the current
+code, drop ``replace=True`` (an object root is always replaced, compared against its base value)."""
 import os, sys, time, json, statistics
 REPO, WORK, N = sys.argv[1], sys.argv[2], int(sys.argv[3])
 sys.path.insert(0, REPO); sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

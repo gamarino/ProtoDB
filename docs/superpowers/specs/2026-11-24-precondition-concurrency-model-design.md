@@ -850,3 +850,44 @@ given to `Database.run` may run several times, so external effects go after
 the commit; lock cells (section 13) carrying an owner and an expiry, since a
 crashed owner never deletes its cell; and that any future storage compaction
 must keep the base of every open transaction readable.
+
+## 15. Amendments recorded during implementation (2026-11-25)
+
+The implementation (plan `docs/superpowers/plans/2026-11-24-precondition-concurrency-model.md`) met six
+points where a rule's text was silent or, applied literally, contradicted a principle. Each was decided by
+a controller ruling on the principle that prevails (section 3: principles prevail over any particular rule)
+and is recorded in decision D73 of `docs/decisions.md`. They are reported to the author as amendments; where
+one differs from an earlier rule, it prevails.
+
+**A-1. List positions appended by the transaction (amends R9 and R16 for List).** A `get_at(i)` or
+`set_at(i, v)` with `i` at or past the base length (a position the transaction appended), like a negative
+`i`, records the whole list: the position names "my append" only if the length is what the transaction
+assumes, which is a read of the length. The fold of R9 is not serializable: base `[1, 2, 3]`; A appends 7
+and sets position 3 to 8; B appends 9 and commits first; the fold publishes `[1, 2, 3, 9, 8]`, while the
+serial orders give `[1, 2, 3, 8, 7]` and `[1, 2, 3, 8, 9]`. The randomized checker found it. P-A.
+
+**A-2. Offset windows (amends R68).** A planner window by offset (`take`/`skip` over a Dictionary) records
+the range from the collection's first key to the window's last key: the positions depend on every earlier
+key.
+
+**A-3. Indexed D26 types (amends section 5, CountedSet and RepeatedKeysDictionary, for indexed
+collections).** On a collection that carries an index, a removal whose reapplication would take out a
+member the preparation could not key records a declared fine unit at the write: RECORDS of the key for a
+RepeatedKeysDictionary `remove_at`/`remove_key`/`remove_record`, COUNT of the element (token: the exact
+member and its count) for a CountedSet `remove`, and ELEMENT from the base for an indexed `Set.remove`, also
+after the transaction's own write of that element. A concurrent commit may have replaced the stored member
+by an equal one of another exact form (`10` by `10.0`) whose key was never computed, and P-C forbids
+computing it under the lock. Consequence: indexed counters conflict on the same element or key;
+unindexed ones keep D26 composition.
+
+**A-4. `position_of` of an absent key (completes R17).** `Dictionary.position_of(k)` raises
+`ProtoValidationError` when `k` is absent, as `List.index` does for a missing value.
+
+**A-5. Unique index under catch-up (completes R29 for R69).** A concurrent duplicate that the `add_index`
+catch-up finds on a unique index is `ProtoConflictError` on the whole collection; `Database.run` retries,
+and the retry fails with `ProtoValidationError`, as R29 prescribes for a concurrent duplicate. The
+catch-up applies every removal before any addition, so a key swap is not a spurious duplicate.
+
+**A-6. Group-commit candidate (refines R32).** The pre-pass candidate is used whenever the current root is
+still R0 by pointer, including a later entry of a round after a first entry that published nothing:
+pointer identity of R1 and R0 is the exact condition R32 protects.

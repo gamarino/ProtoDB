@@ -282,8 +282,8 @@ class Set(_HashBuckets):
     def from_iterable(cls, items: Iterable, context: PersistenceContext | None = None) -> "Set":
         """Return a set of ``items`` built as a balanced tree in O(n log n).
 
-        Equal items are one member; the first item object is kept.  The result
-        has an empty op log.
+        Equal items are one member; the first item object is kept.  The result is not
+        linked and has no intentions: assigned to a root, it replaces it (R11).
         """
         unique: dict = {}
         empty = cls(context=context)
@@ -464,7 +464,8 @@ class CountedSet(_HashBuckets):
     def from_iterable(cls, items: Iterable, context: PersistenceContext | None = None) -> "CountedSet":
         """Return a counted set holding each item as many times as it occurs, in O(n log n).
 
-        The first object of equal items is kept.  The result has an empty op log.
+        The first object of equal items is kept.  The result is not linked and has no
+        intentions: assigned to a root, it replaces it (R11).
         """
         counts: dict = {}
         total = 0

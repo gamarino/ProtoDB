@@ -1,6 +1,6 @@
-"""ObjectSpace, Database and Transaction: the transactional layer of ProtoDB 2.0
-(spec section 7, decisions D9, D11, D32, D33, D34, D35; the precondition model of the
-2026-11-24 spec for roots and mutable cells).
+"""ObjectSpace, Database and Transaction: the transactional layer of proto_db 2.0
+(spec section 7, decisions D9, D11, D32, D34, D35, amended by D73: the precondition
+concurrency model of the 2026-11-24 spec; D33 is superseded).
 
 Layout of a space (D32)
     The storage root points to a :class:`SpaceRoot` atom whose ``databases`` field is a
@@ -71,7 +71,7 @@ The registry roots (runtime registry)
     ``install_module`` never writes a root directly: at commit, under the root lock, its
     modules and catalog objects are merged add-if-absent into ``__currentModules`` and
     ``__catalog`` as they are in the root current then (:mod:`proto_db.registry`), whatever
-    the snapshot held and without entering the read set, so the merge never makes concurrent
+    the snapshot held and without recording a precondition, so the merge never makes concurrent
     installs conflict with each other.  (A raw ``commit()`` on a storage whose root lock is not
     global, ``CloudStorage`` across processes, can still lose the root's compare-and-swap like
     any commit, ``ProtoConflictError``; ``Database.run`` retries it.)  No module is imported
@@ -123,18 +123,24 @@ Mutable cells (D11, D35)
     table (R35).  A :class:`~proto_db.values.MutableObject` handle names a cell and
     resolves it through a transaction.
 
-Commit protocol (D34)
-    1. No writes: nothing is saved nor published.
-    2. Written values are saved (children first) before taking the root lock; the
-       storage is append-only, so unpublished records are harmless.
-    3. The root lock is taken with the space's ``lock_timeout``; a timeout raises and
+Commit protocol (D34 as amended by D73; spec section 8, R64, R65)
+    1. No writes: nothing is saved nor published (R23).
+    2. Preparation, outside the root lock: one record per unit (R9), the index keys of the
+       affected elements and the new indexes (R24, R26), the catch-up of index definitions
+       (R69); written values are saved (children first); the storage is append-only, so
+       unpublished records are harmless.
+    3. Pre-pass, outside the root lock: the last published root R0 is read, every
+       precondition is checked against it (a conflict raises without taking the lock), and
+       the intentions are reapplied on it; the resulting maps are kept as the candidate.
+    4. The root lock is taken with the space's ``lock_timeout``; a timeout raises and
        the commit never proceeds unlocked.
-    4. The current root is read and every precondition is checked against it (R33: all
-       of them before any intention).  Whether each written root is reapplied or
-       replaced is decided once, before the checks.
-    5. The written roots and cells are applied on the current maps (linked collections'
-       intentions reapplied on their current values, the reserved roots merged); new
-       DatabaseRoot and SpaceRoot atoms are built and saved.
+    5. The current root R1 is read.  If it is R0 by pointer, the candidate is used.
+       Otherwise the changes R0 -> R1 are validated against the preconditions (delta
+       validation, R65; all of them before any intention, R33), or, without a pre-pass,
+       every precondition against R1; whether each written root is reapplied or replaced
+       is decided once, before the checks.  The written roots and cells are applied on the
+       current maps (linked collections' intentions reapplied on their current values, the
+       reserved roots merged); new DatabaseRoot and SpaceRoot atoms are built and saved.
     6. ``storage.flush()`` makes the data durable according to the storage's
        durability mode, then ``publish_root(ptr, expected_epoch)`` publishes the root
        by compare-and-swap.  If publishing fails, the outcome may be unknown.  A
@@ -144,7 +150,7 @@ Commit protocol (D34)
        file storage failing after the rename) the root is then read again: if it is
        ours the commit succeeded, if another epoch is visible the commit raises
        ``ProtoConflictError``, otherwise the original error is raised (wrapped in
-       ``ProtoUnexpectedError`` if it was not a ProtoDB error); if the root cannot even
+       ``ProtoUnexpectedError`` if it was not a ``ProtoDBError``); if the root cannot even
        be read back, ``ProtoOutcomeUnknownError`` reports an unknown outcome.  For a
        storage with an in-process root lock (``CloudStorage``), and for every commit under
        a cluster lease, an epoch mismatch proves nothing, so an unresolved outcome raises
@@ -273,7 +279,7 @@ class _HoldingRoot:
 
 _HOLDING_ROOT = _HoldingRoot()
 
-#: Test switch (Task 12, equivalence of R65): when true, every delta validation under the space
+#: Test switch (the equivalence of delta and full validation, R65): when true, every delta validation under the space
 #: root also runs the full validation against the same current root and raises AssertionError
 #: unless both give the same outcome (no conflict, or a conflict on the same unit with the same
 #: message).  Never set by the library; ``tests/conftest.py`` sets it from ``PROTO_DB_VERIFY_DELTA``.
@@ -4045,8 +4051,8 @@ class Transaction:
             reset_reader(reader)
 
     def _prepass_unavailable(self, error: ProtoUnexpectedError) -> bool:
-        """Whether the pre-pass failure ``error`` means only that R0 is unavailable here (Task 14,
-        ruling 1b).  In cluster mode the pre-pass reads R0 -- the newest committed root this node
+        """Whether the pre-pass failure ``error`` means only that R0 is unavailable here (a cluster
+        ruling of the precondition plan, D73).  In cluster mode the pre-pass reads R0 -- the newest committed root this node
         knows -- outside the write permission, before the records a replication carries may
         have arrived, so a read can find a segment that is not uploaded yet while some peer is
         silent (exactly ``ProtoUnexpectedError``, ruling R230).  The commit then runs without a
@@ -4254,8 +4260,8 @@ class Transaction:
                 db_root = space.databases.get_at(self._database.name) if space is not None else None
                 if db_root is None:
                     raise ProtoConflictError(f"Database {self._database.name!r} no longer exists")
-                # How each written root is applied, decided once (review of Task 3: the check and the
-                # application must agree); then every precondition before any intention (R33, P-F).
+                # How each written root is applied, decided once (the check and the application
+                # must agree); then every precondition before any intention (R33, P-F).
                 plan = self._write_plan(db_root.objects, False)
                 if candidate is not None:
                     self._delta_check(candidate, db_root)
@@ -4592,7 +4598,7 @@ class Transaction:
 
     def _verify_delta(self, delta: Optional[ProtoConflictError], db_root: "DatabaseRoot") -> None:
         """Test switch :data:`_VERIFY_DELTA`: run the full validation against ``db_root`` and raise
-        ``AssertionError`` unless it gives the outcome delta validation gave (ruling 2 of Task 12)."""
+        ``AssertionError`` unless it gives the outcome delta validation gave (R65)."""
         try:
             self._check_roots(db_root.objects)
             self._check_mutables(db_root.mutables)

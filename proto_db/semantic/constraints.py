@@ -4,13 +4,12 @@
 What is checked, and when
     - **Cardinality** is checked at commit for every entity the commit touched (F28): a role of cardinality
       ``one`` holds exactly one target (an end absent, or nil after an unlink, violates it), and a ``1..*``
-      end holds at least one member.  ``0..1`` and ``many`` hold by construction.  In direct mode the
-      transaction's commit checks the cells its semantic operations wrote, before it leaves the active state
-      and outside the root lock, reading them through the transaction (``Transaction.commit``); in intent
-      mode the replay checks the cells it wrote, on the combined result at the serialized point.
-    - **Enforced invariants** are checked on every entity whose operands changed: in direct mode when the
-      operation (a primitive or an intent, the outermost one) is applied, on the transaction's view, every
-      value the check reads entering the read set; in intent mode after the replay, on the combined result.
+      end holds at least one member.  ``0..1`` and ``many`` hold by construction.  The transaction's
+      commit checks the cells its semantic operations wrote, before it leaves the active state and outside
+      the root lock, reading them through the transaction (``Transaction.commit``).
+    - **Enforced invariants** are checked on every entity whose operands changed, when the operation (a
+      primitive or an intent, the outermost one) is applied, on the transaction's view, every value the
+      check reads recording its precondition (D73; the intents mode and its replay were removed, R53).
       An invariant declared ``enforced=False`` is published for agents only and never checked.
     - An intent's ``requires`` is checked on its target where the intent is applied (spec section 9).
 
@@ -99,9 +98,9 @@ def check_constraints(model: Mapping, touched: Mapping, reader, *, before: Mappi
 
 
 def check_commit(tr) -> None:
-    """Direct mode, called by ``Transaction.commit`` under the transaction's lock while it is still active:
+    """Called by ``Transaction.commit`` under the transaction's lock while it is still active:
     the cardinality of every entity the transaction's semantic operations wrote, read through the
-    transaction (the reads enter the read set).  Invariants were checked by each operation."""
+    transaction (the reads record their preconditions).  Invariants were checked by each operation."""
     from .session import SemanticSession
     names = tr.semantic_touched()
     touched = {}

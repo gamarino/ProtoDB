@@ -77,7 +77,8 @@ class HashDictionary(ConcurrentOptimized, IndexedCollection):
     def from_items(cls, pairs: Iterable[tuple], context: PersistenceContext | None = None) -> "HashDictionary":
         """Return a hash dictionary of ``(key, value)`` pairs built as a balanced tree in O(n log n).
 
-        A later pair for an equal key wins; the result has an empty op log.
+        A later pair for an equal key wins.
+        The result is not linked and has no intentions: assigned to a root, it replaces it (R11).
         """
         empty = cls(context=context)
         items = sorted_unique_pairs(pairs, cls.__name__, cls.ENTRY_WRAPPING, cls._WRAPPER)

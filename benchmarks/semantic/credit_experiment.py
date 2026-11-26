@@ -116,7 +116,9 @@ class FinalState:
 class CommitTiming:
     """One commit attempt, in seconds: its ``latency`` (around ``Transaction.commit()``), its time
     ``under_lock`` (in ``Transaction._build_root``), the ``validate`` part of that (the reads' validation) and
-    the ``replay`` part (always 0: there is no replay)."""
+    the ``replay`` part (always 0: there is no replay).  ``replay`` is kept, and reported as
+    ``replay_ms``, only so that new result files share the schema of the historical ones that measured
+    the removed intents mode (``docs/source/performance.rst``)."""
 
     latency: float
     under_lock: float = 0.0

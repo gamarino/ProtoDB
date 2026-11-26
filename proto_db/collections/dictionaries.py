@@ -112,7 +112,8 @@ class Dictionary(ConcurrentOptimized, IndexedCollection):
     def from_items(cls, pairs: Iterable[tuple], context: PersistenceContext | None = None) -> "Dictionary":
         """Return a dictionary of ``(key, value)`` pairs built as a balanced tree in O(n log n).
 
-        A later pair for an equal key wins; the result has an empty op log.
+        A later pair for an equal key wins.
+        The result is not linked and has no intentions: assigned to a root, it replaces it (R11).
         """
         items = sorted_unique_pairs(pairs, cls.__name__)
         empty = cls(context=context)
@@ -407,7 +408,8 @@ class RepeatedKeysDictionary(ConcurrentOptimized, IndexedCollection):
                    context: PersistenceContext | None = None) -> "RepeatedKeysDictionary":
         """Return a multimap holding every ``(key, record)`` pair, built as balanced trees in O(n log n).
 
-        The first object of equal keys is kept.  The result has an empty op log.
+        The first object of equal keys is kept.
+        The result is not linked and has no intentions: assigned to a root, it replaces it (R11).
         """
         groups: dict = {}
         empty = cls(context=context)

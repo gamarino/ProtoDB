@@ -22,6 +22,13 @@ How to read these numbers
   Task 8.3m (the decoded-atom cache bounds loaded atoms), its fix rounds, the cluster fixes of
   Task 8.3n, the language-neutral atom type names (D57) and storage format 4 (D58). Figures from
   earlier commits appear only as labelled history, with their commit.
+- **No figure on this page measures the precondition concurrency model** (2.0.0rc5, D73). Every one predates
+  it. The model changed the commit path (a preparation phase and a pre-pass before the root lock, delta
+  validation under it), the conflicts themselves (per key, element, cell and range instead of per root, and
+  blind writes now compared), and some workloads: the ones labelled "blind merge" or "blind adds" relied on the
+  retired merge of unread collections and now write through the collection the transaction read, so their
+  later figures are not comparable with the ones here. Whether the model makes any figure better or worse has
+  not been measured; it is to be re-measured before 2.0.0.
 - **Every figure is verified, in every repetition.** Each workload checks its work against an
   independent computation: a brute-force scan, a model computed from pure functions, a read-back
   of the persisted state by a new instance, or a strongly consistent query on rqlite. One wrong
@@ -934,6 +941,14 @@ Semantic model: intents against direct mode
 
 The concurrency experiment of the semantic model (``benchmarks/semantic/credit_experiment.py``, spec section 15,
 ruling R275). It is not part of the suite, and the figures elsewhere on this page do not apply to it.
+
+**Historical record: the intents mode measured here no longer exists.** It was removed before release
+(2.0.0rc5, decision D73, spec R53): its replay ran computed attributes with the root held, and it validated per
+record attribute, which the precondition model forbids (P-C, R2). The experiment now runs only ``--mode
+direct``, and its JSON keeps a ``replay`` timing (always 0) so that new result files share the schema of the
+ones below. "Direct mode" in these runs is the commit that preceded the precondition model (read sets per root and per
+cell, blind writes not compared), not the precondition model, which has not been measured on this workload. The section is kept because it records what the
+removed design cost and gained on one workload.
 
 **Measured at commit** ``9a8ce75``, from a clean ``python -m benchmarks.export`` tree (every results file records
 ``"commit": "9a8ce75"`` and ``"clean": true``), on 2026-11-16, on the machine of `Environment`_ (AMD Ryzen 5 5500U,

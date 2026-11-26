@@ -7,13 +7,79 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+**The precondition concurrency model** (decision D73; specification
+`docs/superpowers/specs/2026-11-24-precondition-concurrency-model-design.md`; reference page
+`docs/source/concurrency-model.rst`; tutorial `docs/source/tutorials/concurrency.rst`). **Behaviour-incompatible**:
+it goes in before 2.0.0 final, in 2.0.0rc5. Conflict detection per named root, the op-log merge of unread
+collections and the intents mode are replaced by one model: every operation records what it saw of its base (a
+precondition over a fine unit: a key, an element, a count, a position, a cell, a root, a whole collection, an index
+group or a key range) and what it changes (an intention); at commit every precondition must hold against the
+current state, then the intentions are reapplied on it. Committed transactions are serializable in commit order.
+
+- **API-visible changes** (spec section 10):
+
+  | Change | Effect for the user |
+  | --- | --- |
+  | `replace=True` is removed from `set_root_object` | Assigning an unlinked collection always replaces, comparing against the base (`TypeError` for the keyword) |
+  | A new collection assigned to an existing root is no longer merged | Code that relied on merging blind writes must get the root and modify it |
+  | A blind `set_mutable` compares against the base | Conflicts appear where the last writer used to win |
+  | `remove_mutable` of a cell deleted by someone else | A conflict instead of a no-op |
+  | `root_names()` and `mutable_names()` record a read | Conflicts appear on concurrent creation or deletion of roots or cells |
+  | Reading a collection root and modifying one key | No longer collides with changes to other keys |
+  | `Dictionary.key_at_position(i)`, `Dictionary.position_of(k)` | New: positional access in O(log n); both record the whole collection; `position_of` of an absent key raises `ProtoValidationError` |
+  | `EqualityIndex(name, key, unique=True)` | New: at most one element per key; own-view duplicate `ProtoValidationError`, concurrent duplicate `ProtoConflictError` (the retry then fails with `ProtoValidationError`) |
+  | Index extractors that read the transaction | `ProtoUserError` |
+
+- **Every conflict names its unit**: `ProtoConflictError.unit` (a `proto_db.preconditions.Unit`: kind, root, key,
+  index) and `ProtoConflictError.database`. `Database.run` retries as before.
+- **Blind writes of roots are compared too**: `set_root_object` of a value (an integer, a record, an unlinked
+  collection) and `remove_root_object` compare the root with its base value, absent included; two creators of
+  one absent root conflict; `remove_root_object` of a root absent in the base conflicts with a concurrent
+  creator.
+- **Linked collections**: `get_root_object` on a collection root returns the transaction's own linked copy;
+  its versions record their reads and intentions, and only a version assigned back to the same root of the same
+  transaction publishes them. Reading a List root through a transaction now loads its root atom, as it already
+  did for the other collections.
+- **Collections**: Dictionary and HashDictionary keys, Set elements (`add` has no precondition), CountedSet and
+  RepeatedKeysDictionary counts (composed, D26), List appends in commit order and `set_at` of base positions.
+  Structural List operations, and reads or writes of positions the transaction appended or negative positions,
+  take the whole list. On an indexed collection, removals of CountedSet elements and RepeatedKeysDictionary keys
+  record their element or key, so indexed counters conflict on the same element or key.
+- **Ranges** (R67, R68): a query answered by a `RangeIndex` range scan and `Dictionary.keys(after=k)` record a
+  key range instead of the whole collection; a planner window records the range from the first key; unbounded and
+  unordered reads still record the whole collection. Equality-index lookups record the group of their key.
+- **Indexes under the model**: index keys are computed before the commit takes the space root and carried as
+  data; no extractor runs with the root held. IVF-Flat vector indexes, custom indexes that do not opt in
+  (`_keyed_reapplication`) and indexes stored in format 3 make every write take the whole collection.
+- **Index creation catches up** (R69): a transaction that only adds or removes an index, and read nothing else
+  of the collection, is no longer refused because the collection changed meanwhile: the pre-pass applies the
+  changes to the new index, at most 3 rounds (`INDEX_CATCH_UP_ROUNDS`), then a conflict that `run` retries.
+- **Commit protocol**: a preparation phase and a pre-pass against the last published root run before the space
+  root is taken; under it, an unchanged root (by pointer) publishes the pre-pass candidate, otherwise only the
+  changes since the pre-pass are validated (delta validation, R65) and the intentions reapplied once.
+- **Escalation** (R66): more than 1024 fine preconditions or ranges on one collection root
+  (`PRECONDITION_ESCALATION_LIMIT`) become a whole-collection precondition.
+- **Format 7, one-way** (feature `preconditions`): every root this code publishes is version 7; segments keep the
+  lowest sufficient version (no record byte changes). Software without this model can neither read nor write a
+  space that holds a version-7 root; spaces of root versions 2-6 open without migration and are marked by their
+  next commit. protoBaseST cannot open a version-7 space until it ports the model.
+- **Cluster protocol 16**: every node validates the same way; validation and reapplication run on the building
+  node under its write permission.
+- **The intents mode is removed** (R53-R55): `new_transaction(intents=...)` and `run(fn, intents=...)` raise
+  `TypeError`. The catalog types `Intent` and `IntentRecord` are kept; a leftover `__intentLog` root still opens
+  and is dropped by the next commit to that base.
+- **Known limits** (documented in the concurrency model): hot units, traversals, no fairness among retries,
+  single-threaded publication per space, escalation, catch-up rounds, coarser indexed collections, the one-way
+  format upgrade. No performance figure of `docs/source/performance.rst` was re-measured under this model.
+
 **The semantic model (MVP)**: a database that describes itself (decisions D63-D72; design
 `docs/superpowers/specs/2026-11-15-semantic-model-mvp-design.md`; demo `docs/kit/semantic/README.md`). Additive:
 code that uses no semantic layer keeps today's API, bytes and behaviour.
 
 - **Format 6, feature `catalog`** (format spec, "Semantic catalog (format 6)"): eleven built-in types, aliases 24
   to 34, for the roots `__semanticCatalog` (the composed catalog, written when a module is installed and verified
-  on use) and `__intentLog`. A record of one of them is version 6; data that uses none of them keeps version 4 or
+  on use) and `__intentLog` (readable; no longer written, since the intents mode is removed, above). A record
+  of one of them is version 6; data that uses none of them keeps version 4 or
   5, byte for byte. A reader of format 5 refuses a format-6 segment or root (`ProtoNotSupportedError`), never
   misreads it. Catalog and expression vectors join the conformance vectors.
 - **Cluster protocol 15**, raised with format 6: a node of protocol 14 does not know the catalog's aliases and
@@ -31,7 +97,7 @@ code that uses no semantic layer keeps today's API, bytes and behaviour.
   `__help__`, `__synonyms__`, `__key__`, `__certification__`, `__constraints__` or `__validity__` is a semantic
   class and needs a registry module; rc4 accepted such a class as a plain one, and now its creation is refused
   ("declares no registry module"). Python reserves `__*__` names; no other name changes meaning.
-- **Direct-mode semantic writes read the catalog**: a transaction's first semantic write enters
+- **Semantic writes read the catalog**: a transaction's first semantic write enters
   `__currentModules`, `__catalog` and `__semanticCatalog` in its read set, so a concurrent install makes its
   commit conflict and `Database.run` retries it against the new catalog (its writes were checked against the
   catalog of its snapshot). A transaction that only reads through the session is unaffected.
@@ -41,10 +107,6 @@ code that uses no semantic layer keeps today's API, bytes and behaviour.
   checked against the entities that exist at install: it binds the operations after the install as everywhere
   (a `required` field at creation, an invariant when an operation changes its operands). Migrations are
   designed, not built.
-- **Intent transactions behind a flag**: `new_transaction(intents=True)` and `run(fn, intents=True)` log the
-  semantic operations and replay them at commit on the cells current then, so independent concurrent operations
-  do not conflict. One node only: a space with a cluster coordinator refuses the flag (`ProtoNotSupportedError`).
-  The intent names `create`, `update`, `link`, `unlink` and `relate` are reserved.
 - **Constraints**: role cardinality and enforced invariants are checked on the combined result; a violation
   raises the new `ProtoConstraintError` (a `ProtoValidationError`, never retried), which carries the rule's name,
   meaning and rendered message (`describe()`). An enforced invariant may read only its own entity.

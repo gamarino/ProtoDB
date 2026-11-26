@@ -1643,8 +1643,9 @@ To commit a new version a writer appends the new atoms (children before the atom
 to them), then a new DatabaseRoot (``version`` + 1, ``previous`` the version it was built on,
 ``origin`` carried, ``committed_at`` now in UTC), a new ``databases`` Dictionary and a new
 SpaceRoot, and publishes the SpaceRoot's pointer as the new root (`Storage layouts`_). Conflict
-detection between concurrent writers (read sets, merges of concurrently written collections)
-is the library's job and leaves no trace in the format, except the epoch check of the publish.
+detection between concurrent writers (preconditions and the reapplication of intentions) is the
+library's job and leaves no trace in the format, except the epoch check of the publish and the
+version-7 root mark (`Format stability`_).
 
 
 Semantic catalog (format 6)
@@ -2016,8 +2017,8 @@ read it as specified.
 * **Relationships.** A relationship atom is created with every one of its roles and its required
   fields; an atom never changes, so a role it lacks could never be added later.
 * **Version-bound roles** (``binding="version"``). The ``version`` of a bound reference is the
-  target's **field version**, current when the operation is applied (in direct mode in the
-  transaction's view, validated by its read set at commit; in intent mode at replay). The rule
+  target's **field version**, current when the operation is applied in the transaction's view,
+  and validated at commit by the precondition on the target's cell. The rule
   compares the target's fields only (attributes of kind ``field``, by value), never how they were
   written. The transaction keeps at most one record per target, the **kept record**, which no
   binding has before the first one that needs it. A binding binds:
@@ -2052,9 +2053,8 @@ published. Raw cell writes are not checked: these rules bind the semantic operat
   **MUST** hold at least one member. A relationship atom holds every role by construction. ``0..1`` and
   ``many`` always hold. The rule is named ``<type name>.<role>.cardinality``.
 * **Enforced invariants** (a Constraint whose ``enforced`` is true) are evaluated on every entity whose
-  operands changed (an entity created counts as changed), on the state the commit publishes: after the
-  replay in intent mode, and in direct mode when each operation is applied, on the transaction's view,
-  the reads entering its read set. The tree is evaluated on the entity's record (`The expression
+  operands changed (an entity created counts as changed), when each operation is applied, on the transaction's
+  view, the reads it makes recorded as preconditions validated at commit. The tree is evaluated on the entity's record (`The expression
   language`_); true holds, false and MISSING violate the invariant, and any other result is
   ``ProtoValidationError``. A Constraint whose ``enforced`` is false is never checked.
 * **Enforceable invariants.** An enforced invariant **MUST** read only its entity's own attributes:
@@ -2111,7 +2111,9 @@ ran, and nothing older (history is the chain of versions, `Space and database ro
 that is not a ``List``, or an element that is not an IntentRecord, is ``ProtoCorruptionError``
 when read. ``IntentRecord.transaction`` is the ``version`` of the DatabaseRoot the commit
 produced. A database that never used intents has no ``__intentLog``; a commit that records no
-operation writes none, and so removes the one the version before held.
+operation writes none, and so removes the one the version before held. ``proto_db`` 2.0.0rc5 removed the
+intents mode (D73): it reads an ``__intentLog`` as described here, never writes one, and its next commit to
+that base drops it.
 
 Each record is one top-level operation of an intent transaction: an intent invocation or one of the
 five primitives ``create``, ``update``, ``link``, ``unlink`` and ``relate``. An ``Intent`` record
@@ -2394,8 +2396,12 @@ protocol 15. The vectors hold one frame of every type.
 A minimal external writer (file storage)
 ----------------------------------------
 
-A writer that implements neither the merge of concurrent writers nor the cluster protocol can
-still share a file-storage directory with ``proto_db`` processes. It commits by optimistic
+A writer that implements neither the commit validation of concurrent writers nor the cluster
+protocol could share a file-storage directory with ``proto_db`` processes up to format 6. Since the
+version-7 root mark (`Format stability`_) it can no longer: every root ``proto_db`` publishes is
+version 7, which step 4 below refuses, and the version-4 root of step 7 would lower the root's version.
+The procedure is kept as the specification of root publication, and for spaces whose root is still
+version 6 or lower. Such a writer commits by optimistic
 retry: when the published root moved since it read it, it **re-reads the root and redoes its
 commit**; it never publishes over a root it did not build on.
 
@@ -2468,8 +2474,8 @@ fingerprint).
 Implementation-specific (nothing on disk depends on them, and an implementation MAY do
 otherwise): lazy loading and stubs (portable as a technique, R83a); the decoded-atom cache, the
 record and page caches, residency and unloading; the query result cache and query plans; the
-per-version operation logs of collections (never persisted) and the merge of concurrent
-writers; group commit; durability modes (``fsync``, ``flush``, ``none``) other than the acceptor
+per-version records of intentions of collections (never persisted) and how concurrent writers
+are validated and their intentions reapplied; group commit; durability modes (``fsync``, ``flush``, ``none``) other than the acceptor
 log's unconditional sync; segment size, sealing, shipping and checkpoint timing; the
 ``ValueBox`` threshold, tree shapes, bucket order and IVF training (they change bytes, not
 meaning); pager tokens (a client-side msgpack

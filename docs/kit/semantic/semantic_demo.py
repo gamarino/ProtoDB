@@ -16,8 +16,9 @@ products are reached; from a product, its sales by date through its own index, w
 an invoice shows each product as it was when sold.
 Step 4: coexist or collide by meaning.  Several threads create orders for the same company concurrently, each in
 ``Database.run``.  A conflict on a shared cell is retried, so the independent ones all commit; of two orders of
-Fabrikam that fit its credit limit each but not together, the one that runs second fails with
-``ProtoConstraintError``, whose message names the rule.  A walk of the database's history recomputes every
+Fabrikam that fit its credit limit each but not together, whichever commits second (either, depending on
+the thread schedule) is retried on the first one's result and fails with ``ProtoConstraintError``, whose
+message names the rule.  A walk of the database's history recomputes every
 customer's committed amount from the lines and finds no version above a limit.  The agent then describes the
 customer through the interface: the rule, its meaning and the aggregate's terms are its material to explain
 the refusal and propose alternatives.

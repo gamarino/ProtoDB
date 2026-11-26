@@ -277,6 +277,93 @@ skip one, whatever is committed meanwhile. The :doc:`ERP tutorial <erp>` shows i
 
    500 3 200 100
 
+What a query declares to the commit
+-----------------------------------
+
+Inside a transaction a query is a read, and a read is a declaration: at commit, what the query saw must
+still be what it was (:doc:`../concurrency-model`). How much a query declares depends on the plan that runs:
+an equality lookup declares the group of its key, a range scan declares the range of keys it scanned, and a
+scan declares the whole collection. The helper below runs a query in one transaction, commits a change of
+one person in another, and then commits the first (which also writes an unrelated root, since a
+transaction that writes nothing never conflicts):
+
+.. code-block:: python
+
+   from proto_db import ProtoConflictError
+
+   def conflict_after(query, person, **change):
+       reader = db.new_transaction()
+       query(reader.get_root_object("people")).count()
+       reader.set_root_object("audit", "checked")
+       with db.new_transaction() as writer:
+           people = writer.get_root_object("people")
+           writer.set_root_object("people", people.set_at(person, people.get_at(person).with_(**change)))
+       try:
+           reader.commit()
+           return "committed"
+       except ProtoConflictError as error:
+           return f"conflict on {error.unit.kind.name}" + (f" of index {error.unit.index!r}" if error.unit.index else "")
+
+   oslo = lambda people: from_collection(people).where(F.city == "Oslo")
+   thirties = lambda people: from_collection(people).where(F.age.between(30, 35))
+   by_name = lambda people: from_collection(people).where(F.name == "person0003")
+   with db.new_transaction() as tr:
+       print(plan_of(oslo(tr.get_root_object("people"))), "|", plan_of(thirties(tr.get_root_object("people"))),
+             "|", plan_of(by_name(tr.get_root_object("people"))))
+   print("Oslo lookup, a Rome person changes age:  ", conflict_after(oslo, 3, age=70))
+   print("Oslo lookup, a Rome person moves to Oslo:", conflict_after(oslo, 7, city="Oslo"))
+   print("ages 30-35, an age 70 becomes 71:        ", conflict_after(thirties, 3, age=71))
+   print("ages 30-35, an age 71 becomes 33:        ", conflict_after(thirties, 3, age=33))
+   print("by name (a scan), any change:            ", conflict_after(by_name, 11, age=40))
+
+.. code-block:: text
+   :caption: Output
+
+   IndexLookup | IndexRange | Filter <- CollectionScan
+   Oslo lookup, a Rome person changes age:   committed
+   Oslo lookup, a Rome person moves to Oslo: conflict on INDEX_GROUP of index 'by_city'
+   ages 30-35, an age 70 becomes 71:         committed
+   ages 30-35, an age 71 becomes 33:         conflict on RANGE of index 'by_age'
+   by name (a scan), any change:             conflict on WHOLE
+
+A query that an index answers conflicts only with changes inside what it read; a scan conflicts with any
+change. Indexes therefore narrow conflicts as well as reads, and ``explain()`` tells you which a query will
+declare.
+
+An index can also enforce a rule that no reader has to check: ``EqualityIndex(..., unique=True)`` holds at
+most one element per key. A duplicate in the transaction's own view is refused at once
+(``ProtoValidationError``); two transactions that add the same key concurrently conflict, and the retry sees
+the duplicate:
+
+.. code-block:: python
+
+   from proto_db import EqualityIndex, ProtoValidationError
+
+   with db.new_transaction() as tr:
+       tr.set_root_object("badges", tr.new_dictionary().add_index(EqualityIndex("by_holder", "holder",
+                                                                                unique=True)))
+   first, second = db.new_transaction(), db.new_transaction()
+   for tr, badge in ((first, "b1"), (second, "b2")):
+       badges = tr.get_root_object("badges")
+       tr.set_root_object("badges", badges.set_at(badge, tr.new_object(holder="person0005")))
+   first.commit()
+   try:
+       second.commit()
+   except ProtoConflictError as error:
+       print("concurrent duplicate:", error.unit.kind.name, error.unit.key)
+   tr = db.new_transaction()
+   try:
+       tr.get_root_object("badges").set_at("b3", tr.new_object(holder="person0005"))
+   except ProtoValidationError:
+       print("duplicate in the own view: ProtoValidationError")
+   tr.abort()
+
+.. code-block:: text
+   :caption: Output
+
+   concurrent duplicate: INDEX_GROUP person0005
+   duplicate in the own view: ProtoValidationError
+
 .. code-block:: python
 
    space.close()

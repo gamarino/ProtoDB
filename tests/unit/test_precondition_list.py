@@ -219,8 +219,9 @@ def test_set_at_twice_records_once_and_last_value_wins(db):
     assert content(db) == [1, "y", 3, 4]
 
 
-def test_set_at_on_own_append_follows_it(db):
-    """Brief test inverted by controller ruling (P-A): serializability prevails over folding by R9.
+def test_set_at_on_own_append_conflicts_when_list_grew(db):
+    """Controller ruling (P-A; D73 amendment 1, formerly ``test_set_at_on_own_append_follows_it``):
+    serializability prevails over folding by R9.
     An index past the base length names "my append" only for that length: after a concurrent
     append, set_at(len_base) would give [..., z, y], which neither serial order gives
     ([..., y, x] or [..., y, z]).  The set_at records the whole list (it depends on the length):

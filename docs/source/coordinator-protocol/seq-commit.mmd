@@ -11,7 +11,7 @@ sequenceDiagram
     Note over O: rule O1: queue not empty, term serving, at least belief/4 left (D50, D55)
     O-->>B: permit(T, rid, seq, inc, root, certain, valid, after=None)
     Note over B: valid counted from the request's send (D45)<br/>base = permit root if certain, else recovery with the phase-1 floor (R127)
-    Note over B: build every queued transaction in turn on the base:<br/>read-set validation (D34), intent merge (D33), path copy
+    Note over B: build every queued transaction in turn on the base:<br/>precondition validation, intention reapplication (D73), path copy
     Note over B: send_reserve check (R121): too little left, retryable conflict, nothing sent (H7)
     B->>R: replicate(T, rid, root, seq, pred, records, copies=[B]) (D54)
     Note over B: own synced acceptance (one kind-5 entry with the records),<br/>overlapped with the replica's sync (D50 phase B, R90)

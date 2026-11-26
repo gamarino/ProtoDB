@@ -507,7 +507,7 @@ class IndexedCollection(_Immutable, Atom):
         """True iff ``other`` is a collection of the same type holding the same content (ruling R12).
 
         ``==`` stays identity by oid (D10); this compares content.  Indexes and
-        op logs are not content.  Values are compared with :func:`same_value`.
+        records of intentions (``_changes``) are not content.  Values are compared with :func:`same_value`.
         """
         if type(other) is not type(self):
             return False
@@ -1036,8 +1036,8 @@ class ConcurrentOptimized:
     operations applied since the version was loaded or created (never persisted: a loaded
     version starts with none).  Mutators extend it immutably with
     ``_with(..., _changes=self._logged(op))``; an op is a tuple whose first item
-    is a ``str`` kind not starting with ``"@"`` (reserved for index-definition
-    changes, which :class:`IndexedCollection` logs itself).
+    is a ``str`` kind not starting with ``"@"`` (reserved for the engine's own entries, such as
+    the precomputed index keys of a prepared record, ``_INDEX_KEYS``).
 
     The log records INTENT, not observed change: every mutator call logs its op
     (add means "present", remove means "absent", set means "mapped to this
