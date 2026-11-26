@@ -14,6 +14,7 @@ from proto_db.indexing import RangeIndex
 from proto_db.query.terms import Term
 from proto_db.storage.memory import MemoryStorage
 from proto_db.transactions import ObjectSpace
+from tests.support.forced_overlap import overlap_commits
 from tests.support.index_weights import assert_exact_weights
 
 RUN_KW = dict(retries=1000, backoff=(0.0002, 0.003))
@@ -48,6 +49,10 @@ def test_weights_are_exact_after_concurrent_merges_and_retries(monkeypatch):
         tx.set_root_object("d", d)
         tx.set_root_object("l", tx.new_list().add_index(RangeIndex("k", "k")))
     db.run(seed)
+    # Every worker commit overlaps another one (forced_overlap): each pre-pass meets a root
+    # published after its snapshot, so the reapplication path runs on every run whatever the
+    # scheduler does (on a GIL build a run could end with none: the 2.0.0rc5 CI failure).
+    overlap = overlap_commits(monkeypatch, 6)
     errors = []
     snapshots = []
 
@@ -87,7 +92,7 @@ def test_weights_are_exact_after_concurrent_merges_and_retries(monkeypatch):
         except Exception as e:  # re-raised by the main thread
             errors.append(e)
 
-    threads = [threading.Thread(target=worker, args=(s,)) for s in range(6)]
+    threads = [threading.Thread(target=overlap.member(worker), args=(s,)) for s in range(6)]
     for t in threads:
         t.start()
     for t in threads:
@@ -101,4 +106,4 @@ def test_weights_are_exact_after_concurrent_merges_and_retries(monkeypatch):
         _check(d)
         _check(lst)
     assert final[0].count > 0 and final[1].count > 0
-    assert replayed[0] > 0, "no commit went through the reapplication path"
+    assert replayed[0] > 0, ("no commit went through the reapplication path", overlap)
