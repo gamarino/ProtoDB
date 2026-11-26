@@ -43,10 +43,12 @@ def build(tr, desc: dict):
     """The value a root notation ``desc`` describes, built in transaction ``tr``."""
     if "value" in desc:
         return desc["value"]
-    if "dictionary" in desc or "hash_dictionary" in desc:
-        kind = "dictionary" if "dictionary" in desc else "hash_dictionary"
-        value = tr.new_dictionary() if kind == "dictionary" else tr.new_hash_dictionary()
-        for k, v in desc[kind].items():
+    kinds = [k for k in ("dictionary", "hash_dictionary", "dictionary_items", "hash_dictionary_items") if k in desc]
+    if kinds:
+        kind = kinds[0]
+        value = tr.new_hash_dictionary() if kind.startswith("hash") else tr.new_dictionary()
+        pairs = desc[kind].items() if not kind.endswith("_items") else desc[kind]
+        for k, v in pairs:
             value = value.set_at(k, v)
     elif "set" in desc:
         value = tr.new_set()
@@ -74,13 +76,27 @@ def build(tr, desc: dict):
 _INDEX_KINDS = {"e": "equality", "r": "range"}
 
 
+def _pairs(value, name: str) -> dict:
+    """A dictionary's notation: a JSON object when every key is a string, else the pairs sorted
+    by the exact JSON text of the key (``10`` and ``10.0`` are one key of two forms)."""
+    items = list(value.items())
+    if all(type(k) is str for k, _ in items):
+        return {name: dict(items)}
+    return {f"{name}_items": sorted(([k, v] for k, v in items), key=lambda p: _text(p[0]))}
+
+
+def _text(value) -> str:
+    """The exact JSON text of ``value``: it tells ``10`` from ``10.0`` where ``==`` does not."""
+    return json.dumps(value, sort_keys=True)
+
+
 def describe(value) -> dict:
     """The root notation of a committed value (inverse of :func:`build`)."""
     kind = type(value)
     if kind is Dictionary:
-        desc = {"dictionary": dict(value.items())}
+        desc = _pairs(value, "dictionary")
     elif kind is HashDictionary:
-        desc = {"hash_dictionary": dict(value.items())}
+        desc = _pairs(value, "hash_dictionary")
     elif kind is Set:
         desc = {"set": sorted(value.elements())}
     elif kind is CountedSet:
@@ -228,13 +244,17 @@ def test_concurrency_scenarios(scenario, mode, tmp_path):
         txs[first].commit()
         expect = scenario["expect"]
         if "conflict" in expect:
+            after_first = _text(state(db))
             with pytest.raises(ProtoConflictError) as e:
                 txs[second].commit()
             got = _normal(_unit(e.value.unit))
             wanted = expect["conflict"]
             assert {k: got.get(k) for k in wanted} == wanted, (got, wanted)
             assert e.value.database == "db"
+            # The failed commit published nothing: the state is the first commit's.
+            assert _text(state(db)) == after_first
         else:
             txs[second].commit()
         if "state" in expect:
-            assert _normal(state(db)) == expect["state"]
+            # Compared as exact JSON text: a published 10 where the serial order leaves 10.0 fails.
+            assert _text(state(db)) == _text(expect["state"])

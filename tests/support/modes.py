@@ -44,10 +44,13 @@ def _grouped_round(real_round, space, counter):
     runs it first in the round, before the commits the round took."""
     filler_db = space.open_database(FILLER_DATABASE)
 
-    def fill():
+    def fill(outcome):
         _filler_thread.active = True
         try:
             filler_db.run(lambda tr: tr.set_root_object("n", next(counter)))
+            outcome.append("landed")
+        except BaseException as e:     # reported by the round below, never swallowed
+            outcome.append(e)
         finally:
             _filler_thread.active = False
 
@@ -55,17 +58,22 @@ def _grouped_round(real_round, space, counter):
         if getattr(_filler_thread, "active", False) or storage is not space.storage:
             return real_round(storage, lock_timeout, batch)
         group = batch[0].group
-        filler = threading.Thread(target=fill, name="group-mode-filler")
+        outcome = []
+        filler = threading.Thread(target=fill, args=(outcome,), name="group-mode-filler")
         filler.start()
         with group.cond:
             # The filler queues behind this running round (group.running is set): wait for it,
             # then take it into this round, first.
             group.cond.wait_for(lambda: group.queue or not filler.is_alive())
             queued, group.queue = group.queue, []
+        # Group mode must never degrade silently to a one-commit round (Task 14 fix round 1):
+        # the filler is queued here, and its commit lands in this round.
+        assert queued, f"group mode: the filler commit was not queued ({outcome!r})"
         try:
             return real_round(storage, lock_timeout, queued + batch)
         finally:
             filler.join()
+            assert outcome == ["landed"], f"group mode: the filler commit did not land ({outcome!r})"
     return grouped
 
 

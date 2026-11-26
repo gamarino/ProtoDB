@@ -48,7 +48,7 @@ from ..values import MISSING, canonical, is_atom, order_key, values_equal
 from . import avl
 from .linking import engine_reading, engine_reads, link_of, lookup_key, record_read, record_whole
 
-__all__ = ["IndexSet", "IndexedCollection", "ConcurrentOptimized", "net_effect", "same_value",
+__all__ = ["IndexSet", "IndexedCollection", "ConcurrentOptimized", "net_effect", "keyed_net_ops", "same_value",
            "whole_unless_logged", "IntentionConflict", "prepared_parts", "CATCH_UP_OPERATIONS"]
 
 #: The kind of the ``_changes`` entry holding the precomputed index keys of a prepared record of
@@ -989,6 +989,43 @@ def net_effect(ops: Iterable[tuple], key: Callable | None = None) -> list[tuple]
 
 def _default_op_key(op: tuple):
     return order_key(op[1])
+
+
+def keyed_net_ops(ops: Iterable[tuple], set_kind: str, remove_kind: str) -> list[tuple]:
+    """The net ops of a log of ``(set_kind, key, value)`` and ``(remove_kind, key)`` ops (a
+    Dictionary, a HashDictionary), per key in order of last occurrence, that leave the key as
+    the whole sequence does on any version, exact key form included (R34, D34):
+
+    * ``(remove_kind, key)`` when the last op removes the key;
+    * else that remove, then ``(set_kind, k, v)`` when the log removed the key: ``k`` is the form
+      of the first set after the last remove (the one that re-created the key; a later set of an
+      equal key keeps the stored form) and ``v`` the value of the last set;
+    * else ``(set_kind, k, v)`` with ``k`` the form of the first set (on a version holding an
+      equal key the set keeps the stored form, as the sequence did) and ``v`` the last value.
+
+    Keeping only the last op would file ``10.0`` after ``remove_at(10).set_at(10.0, v)`` as the
+    stored ``10``, or create the key in the last set's form instead of the first's.
+    """
+    per: dict = {}
+    for op in ops:
+        k = order_key(op[1])
+        removed, first, last = per.pop(k, (None, None, None))
+        if op[0] == remove_kind:
+            removed, first, last = op, None, None
+        elif op[0] == set_kind:
+            if first is None:
+                first = op
+            last = op
+        else:
+            raise ProtoValidationError(f"Unknown keyed op {op!r}")
+        per[k] = (removed, first, last)   # re-inserting moves the key to the end
+    net = []
+    for removed, first, last in per.values():
+        if removed is not None:
+            net.append(removed)
+        if first is not None:
+            net.append(first if first is last else (set_kind, first[1]) + last[2:])
+    return net
 
 
 class ConcurrentOptimized:

@@ -32,8 +32,8 @@ from ..errors import ProtoValidationError
 from ..preconditions import ABSENT, Unit, UnitKind, token
 from ..values import canonical, canonical_for, check_wrapped, hash_key, order_key
 from . import avl, diff
-from .base import (CATCH_UP_OPERATIONS, ConcurrentOptimized, IndexedCollection, prepared_parts, repair_pairs,
-                   same_value)
+from .base import (CATCH_UP_OPERATIONS, ConcurrentOptimized, IndexedCollection, keyed_net_ops, prepared_parts,
+                   repair_pairs, same_value)
 from .dictionaries import sorted_unique_pairs
 from .linking import NOT_A_UNIT, engine_reads, record_key, register_fine_grained, unit_key
 
@@ -261,6 +261,11 @@ class HashDictionary(ConcurrentOptimized, IndexedCollection):
             _, bucket, position = base._find(op[1])
             if position >= 0:
                 yield bucket[position][1]
+
+    def _net_ops(self, element_ops: list) -> list:
+        """Per key, the ops that leave it as the log does, exact key form included
+        (:func:`~proto_db.collections.base.keyed_net_ops`)."""
+        return keyed_net_ops(element_ops, _SET, _REMOVE)
 
     def _replay_op(self, target: "HashDictionary", op: tuple) -> "HashDictionary":
         if op[0] == _SET:

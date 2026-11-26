@@ -604,3 +604,39 @@ def test_reapplied_rkd_keeps_the_exact_form(db):
     a.commit()
     r = db.run(lambda tr: [(k, _typed(cs.items())) for k, cs in tr.get_root_object("r").items()])
     assert r == [("j", _typed([(1, 1)])), ("k", _typed([(10.0, 1)]))]
+
+
+@pytest.mark.parametrize("case", [
+    ("remove_key_then_set", lambda r: r.remove_at(10).set_at(10.0, "x"), [("float", 10.0, ["x"])]),
+    ("through_zero", lambda r: r.remove_record(10, "a").set_at(10.0, "x"), [("float", 10.0, ["x"])]),
+    ("stays_above_zero", lambda r: r.set_at(10.0, "x"), [("int", 10, ["a", "x"])]),
+    ("created_by_first_add", lambda r: r.remove_at(10).remove_record(10, "z").set_at(10.0, "x").set_at(10, "y"),
+     [("float", 10.0, ["x", "y"])]),
+], ids=lambda c: c[0] if isinstance(c, tuple) else c)
+def test_reapplied_rkd_keeps_the_exact_key_form(db, case):
+    """Fix round 1 of Task 14: a RepeatedKeysDictionary key re-created by the transaction (after
+    ``remove_key``, or when its records go through zero) is filed in the form that re-created
+    it; a key that keeps a record keeps its stored form."""
+    _, fn, expected = case
+    db.run(lambda tr: tr.set_root_object("r", tr.new_repeated_keys_dictionary().set_at(10, "a").set_at("j", 1)))
+    a = db.new_transaction()
+    write(a, fn, root="r")
+    _moved(db)
+    a.commit()
+    r = db.run(lambda tr: [(type(k).__name__, k, sorted(rec for rec, n in cs.items() for _ in range(n)))
+                           for k, cs in tr.get_root_object("r").items() if k != "j"])
+    assert r == expected
+
+
+def test_reapplied_rkd_key_kept_above_zero_by_a_concurrent_record(db):
+    """A concurrent record under the key keeps it present in the serial order (B, then A): the
+    key keeps its stored form although A's own sequence took its records through zero."""
+    db.run(lambda tr: tr.set_root_object("r", tr.new_repeated_keys_dictionary().set_at(10, "a")))
+    a, b = db.new_transaction(), db.new_transaction()
+    write(a, lambda r: r.remove_record(10, "a").set_at(10.0, "x"), root="r")
+    write(b, lambda r: r.set_at(10, "b"), root="r")
+    b.commit()
+    a.commit()
+    r = db.run(lambda tr: [(type(k).__name__, k, sorted(rec for rec, n in cs.items() for _ in range(n)))
+                           for k, cs in tr.get_root_object("r").items()])
+    assert r == [("int", 10, ["b", "x"])]

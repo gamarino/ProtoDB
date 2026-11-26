@@ -31,7 +31,7 @@ import time
 import warnings
 
 import pytest
-from hypothesis import HealthCheck, given, settings
+from hypothesis import HealthCheck, example, given, settings
 from hypothesis import strategies as st
 
 from proto_db.errors import ProtoConflictError, ProtoOutcomeUnknownError, ProtoTimeoutError, ProtoValidationError
@@ -176,6 +176,12 @@ events_strategy = st.lists(
               st.integers(0, 4), st.integers(0, 2 ** 16)),
     max_size=5)
 
+#: The shrunk failing example of the flake seen in Task 14: five members, n0 and n1 crashed.
+_NO_VOTER_QUORUM = {"size": 5, "drop": 0.0, "duplicate": 0.0, "delay": 0.0,
+                    "rates": [1.5, 0.5, 1.0649352767206737, 1.2684283562225351, 0.5],
+                    "events": [(0.24651692094199867, "crash", 0, 0), (0.43205518817340294, "crash", 1, 0)],
+                    "seed": 0}
+
 schedule_strategy = st.fixed_dictionaries({
     "size": st.sampled_from([3, 5]),
     "drop": st.sampled_from([0.0, 0.05, 0.2]),
@@ -276,7 +282,16 @@ def _run_schedule(schedule):
         cl.net.set_faults(drop=0.0, duplicate=0.0, delay=(0.0, 0.0))
         cl.net.heal()
         alive = [n for n in cl.ids if n not in crashed]
-        if len(alive) * 2 > size:
+        # A commit needs a majority of the voters (D54: by default the first three member ids,
+        # the coordinator's ``voters``), not of the members: crashing n0 and n1 of five leaves a
+        # member majority but no voter quorum, and the final commit could never succeed (Task 14
+        # fix round 1).  The voter set is read from a live coordinator, never hard-coded.
+        voters = cl[alive[0]].voters if alive else ()
+        live_voters = [v for v in voters if v not in crashed]
+        outcome = "skipped: no voter quorum" if len(live_voters) * 2 <= len(voters) else None
+        if len(alive) * 2 <= size:
+            outcome = "skipped: no member majority"
+        if outcome is None:
             # Every live process has its space open again: a node restarted after the workers
             # stopped has none yet, and without a space it grants nothing (Y2: the final commit
             # then found 2 live members of 5 and timed out).  Restarted nodes grant only after
@@ -308,12 +323,14 @@ def _run_schedule(schedule):
                         stress.record(f"final commit not acknowledged in {attempt + 1} attempts: "
                                       f"{type(e).__name__}")
                         final_done = False
+                        outcome = "not acknowledged"
                         break
             # Review I7 (Task 8.3n fix round 1): every live member, not one.  Members do not
             # read the shared storage: each starts its transactions from the committed root its
             # coordinator knows, so an unknown id one member serves and another does not (a
             # split resolution, a forked lineage) is visible only by reading each of them.
             if final_done:
+                outcome = "done"
                 tokens = CommitTokens()
                 for uid in committed:
                     tokens.acked(uid)
@@ -348,14 +365,24 @@ def _run_schedule(schedule):
     assert not storage.violations, storage.violations
     for moved, refused in freezer.results:
         assert refused or not moved
-    return len(committed), len(leases), sum(1 for _, refused in freezer.results if refused)
+    return len(committed), len(leases), sum(1 for _, refused in freezer.results if refused), outcome
 
 
 @settings(max_examples=14, deadline=None, derandomize=True,
           suppress_health_check=[HealthCheck.too_slow, HealthCheck.data_too_large])
 @given(schedule=schedule_strategy)
+@example(schedule=_NO_VOTER_QUORUM)
 def test_random_fault_schedules_keep_the_lease_and_the_data_safe(schedule):
     _run_schedule(schedule)
+
+
+def test_a_schedule_without_a_voter_quorum_skips_the_final_commit():
+    """Task 14 fix round 1: five members, n0 and n1 (two of the three voters) crashed.  Three
+    members live, but one voter of three cannot form the quorum, so no commit can succeed;
+    the run checks the invariants that need no final state instead of failing on the
+    documented unavailability."""
+    *_, outcome = _run_schedule(_NO_VOTER_QUORUM)
+    assert outcome == "skipped: no voter quorum"
 
 
 @pytest.fixture(autouse=True, scope="module")
@@ -377,7 +404,7 @@ def _report_final_commit_retries():
 
 
 def test_a_frozen_holder_overtaken_by_another_commit_is_fenced():
-    commits, leases, refused = _run_schedule({
+    commits, leases, refused, _ = _run_schedule({
         "size": 3, "drop": 0.0, "duplicate": 0.0, "delay": 0.0, "rates": [1.0] * 5, "seed": 7,
         "events": [(0.2, "freeze", 0, 0)],
     })

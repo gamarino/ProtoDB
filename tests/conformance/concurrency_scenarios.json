@@ -1,8 +1,8 @@
 {
  "about": "Concurrency conformance scenarios of the precondition model (spec R60; section 14 R62: written in proto_db only, protoBaseST runs them after its port). Data only: tests/conformance/test_concurrency_scenarios.py executes them through proto_db in standalone, group-commit and cluster mode.",
  "notation": {
-  "scenario": "name; row (one of rows); base; a and b, the operations of transactions A and B, both opened on the base and run A then B; order, the commit order; expect: state (the final state) or conflict (the unit the second commit raises ProtoConflictError on; only the fields given are compared). note: a comment.",
-  "state": "{roots: {name: root}, mutables: {name: value}}; a root is {value: v} (an object root holding a plain value), {dictionary: {k: v}}, {hash_dictionary: {k: v}}, {set: [e]}, {counted_set: [[e, n]]}, {rkd: [[k, [record]]]}, {list: [v]}; a collection may add indexes: [kind], kind 'equality' (index 'e') or 'range' (index 'r'), both over the element (KeySpec.element()). Lists in a state are sorted, except a list root's items.",
+  "scenario": "name; row (one of rows); base; a and b, the operations of transactions A and B, both opened on the base and run A then B; order, the commit order; expect: state (the final state) or conflict (the unit the second commit raises ProtoConflictError on; only the fields given are compared; the state after it is the first commit's). note: a comment.",
+  "state": "{roots: {name: root}, mutables: {name: value}}; a root is {value: v} (an object root holding a plain value), {dictionary: {k: v}}, {hash_dictionary: {k: v}} (string keys; with other keys {dictionary_items: [[k, v]]} or {hash_dictionary_items: [[k, v]]}, sorted by the JSON text of k), {set: [e]}, {counted_set: [[e, n]]}, {rkd: [[k, [record]]]}, {list: [v]}; a collection may add indexes: [kind], kind 'equality' (index 'e') or 'range' (index 'r'), both over the element (KeySpec.element()). Lists in a state are sorted, except a list root's items. States are compared as exact JSON text: 10 and 10.0 are one key or element of two forms, and a state differs when a form does.",
   "operations": "[set_root, n, root], [remove_root, n], [get_root, n], [root_names], [new_mutable, n, v], [set_mutable, n, v], [remove_mutable, n], [get_mutable, n], [mutable_names], [write, root, method, args...] (the version the method returns is assigned to the root: set_at, remove_at, add, remove, union, difference, intersection, remove_record, remove_key, append_last, append_first, extend, insert_at, slice, add_index kind, remove_index kind), [read, root, method, args...] (get_at, get, has, count_of, len, count, items, elements, keys, key_at_position, position_of, index_names, get_index kind, lookup v (an equality query), greater_than v (a range query), scan (a query without a term))",
   "conflict": "{kind, root, key[, index]} (a range has no key): kind is the unit class (root, root_presence, root_names, cell, cell_names, key, element, count, records, position, whole, index_defs, index_group, range); root is null for cells and the name sets; key is the cell name for a cell."
  },
@@ -849,6 +849,394 @@
        "hash_dictionary": {
         "b": 5
        }
+      }
+     },
+     "mutables": {}
+    }
+   }
+  },
+  {
+   "name": "dictionary_remove_then_set_keeps_the_exact_key_form",
+   "row": "5.dictionary.set_at",
+   "base": {
+    "roots": {
+     "d": {
+      "dictionary_items": [
+       [
+        "o",
+        0
+       ],
+       [
+        10,
+        "a"
+       ]
+      ]
+     }
+    }
+   },
+   "a": [
+    [
+     "write",
+     "d",
+     "remove_at",
+     10
+    ],
+    [
+     "write",
+     "d",
+     "set_at",
+     10.0,
+     "b"
+    ]
+   ],
+   "b": [
+    [
+     "set_root",
+     "p",
+     {
+      "value": 1
+     }
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "state": {
+     "roots": {
+      "d": {
+       "dictionary_items": [
+        [
+         "o",
+         0
+        ],
+        [
+         10.0,
+         "b"
+        ]
+       ]
+      },
+      "p": {
+       "value": 1
+      }
+     },
+     "mutables": {}
+    }
+   }
+  },
+  {
+   "name": "dictionary_set_on_a_present_key_keeps_the_stored_form",
+   "row": "5.dictionary.set_at",
+   "base": {
+    "roots": {
+     "d": {
+      "dictionary_items": [
+       [
+        "o",
+        0
+       ],
+       [
+        10,
+        "a"
+       ]
+      ]
+     }
+    }
+   },
+   "a": [
+    [
+     "write",
+     "d",
+     "set_at",
+     10.0,
+     "b"
+    ]
+   ],
+   "b": [
+    [
+     "set_root",
+     "p",
+     {
+      "value": 1
+     }
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "state": {
+     "roots": {
+      "d": {
+       "dictionary_items": [
+        [
+         "o",
+         0
+        ],
+        [
+         10,
+         "b"
+        ]
+       ]
+      },
+      "p": {
+       "value": 1
+      }
+     },
+     "mutables": {}
+    }
+   }
+  },
+  {
+   "name": "hash_dictionary_remove_then_set_keeps_the_exact_key_form",
+   "row": "5.dictionary.set_at",
+   "base": {
+    "roots": {
+     "d": {
+      "hash_dictionary_items": [
+       [
+        "o",
+        0
+       ],
+       [
+        10,
+        "a"
+       ]
+      ]
+     }
+    }
+   },
+   "a": [
+    [
+     "write",
+     "d",
+     "remove_at",
+     10
+    ],
+    [
+     "write",
+     "d",
+     "set_at",
+     10.0,
+     "b"
+    ]
+   ],
+   "b": [
+    [
+     "set_root",
+     "p",
+     {
+      "value": 1
+     }
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "state": {
+     "roots": {
+      "d": {
+       "hash_dictionary_items": [
+        [
+         "o",
+         0
+        ],
+        [
+         10.0,
+         "b"
+        ]
+       ]
+      },
+      "p": {
+       "value": 1
+      }
+     },
+     "mutables": {}
+    }
+   }
+  },
+  {
+   "name": "hash_dictionary_set_on_a_present_key_keeps_the_stored_form",
+   "row": "5.dictionary.set_at",
+   "base": {
+    "roots": {
+     "d": {
+      "hash_dictionary_items": [
+       [
+        "o",
+        0
+       ],
+       [
+        10,
+        "a"
+       ]
+      ]
+     }
+    }
+   },
+   "a": [
+    [
+     "write",
+     "d",
+     "set_at",
+     10.0,
+     "b"
+    ]
+   ],
+   "b": [
+    [
+     "set_root",
+     "p",
+     {
+      "value": 1
+     }
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "state": {
+     "roots": {
+      "d": {
+       "hash_dictionary_items": [
+        [
+         "o",
+         0
+        ],
+        [
+         10,
+         "b"
+        ]
+       ]
+      },
+      "p": {
+       "value": 1
+      }
+     },
+     "mutables": {}
+    }
+   }
+  },
+  {
+   "name": "set_remove_then_add_keeps_the_exact_form",
+   "row": "5.set.add",
+   "base": {
+    "roots": {
+     "s": {
+      "set": [
+       10,
+       20
+      ]
+     }
+    }
+   },
+   "a": [
+    [
+     "write",
+     "s",
+     "remove",
+     10
+    ],
+    [
+     "write",
+     "s",
+     "add",
+     10.0
+    ]
+   ],
+   "b": [
+    [
+     "write",
+     "s",
+     "add",
+     30
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "state": {
+     "roots": {
+      "s": {
+       "set": [
+        10.0,
+        20,
+        30
+       ]
+      }
+     },
+     "mutables": {}
+    }
+   }
+  },
+  {
+   "name": "rkd_key_recreated_keeps_the_exact_form",
+   "row": "5.counted.repeated_keys_dictionary",
+   "base": {
+    "roots": {
+     "r": {
+      "rkd": [
+       [
+        10,
+        [
+         "a"
+        ]
+       ]
+      ]
+     }
+    }
+   },
+   "a": [
+    [
+     "write",
+     "r",
+     "remove_at",
+     10
+    ],
+    [
+     "write",
+     "r",
+     "set_at",
+     10.0,
+     "x"
+    ]
+   ],
+   "b": [
+    [
+     "set_root",
+     "p",
+     {
+      "value": 1
+     }
+    ]
+   ],
+   "order": [
+    "b",
+    "a"
+   ],
+   "expect": {
+    "state": {
+     "roots": {
+      "r": {
+       "rkd": [
+        [
+         10.0,
+         [
+          "x"
+         ]
+        ]
+       ]
+      },
+      "p": {
+       "value": 1
       }
      },
      "mutables": {}

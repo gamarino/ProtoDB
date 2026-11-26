@@ -227,3 +227,31 @@ def test_cluster_prepass_conflict_takes_the_normal_backoff(tmp_path, monkeypatch
         assert not getattr(e.value, "permit_held", False)
         assert lock_steps == []
         assert _content(tc, "n0") == {"a": 2}
+
+
+def test_cluster_persisted_root_and_acceptor_log_carry_version_7(tmp_path):
+    """R63 in a cluster (Task 14 fix round 1): the committed root, the root the persister writes
+    to the object store, and every acceptor-log entry carrying a root are version 7 on every
+    node, so no node's restart or the store can bring a version below the mark back."""
+    import os
+
+    from proto_db.cluster import rootlog
+    from proto_db.storage.logfile import read_log
+    with TieredCluster(tmp_path) as tc:
+        _seed(tc, a=0)
+        tc.commit("n1", lambda tr: _set(tr, "b", 1))
+        committed = tc["n1"].current_root()[1]
+        assert committed.version == 7
+        tc.db("n1").sync(timeout=10)
+        persisted = tc.storages["n1"].read_root()
+        assert persisted is not None and persisted.version == 7
+        for node in tc.ids:
+            entries = [rootlog._unwrap(p, node) for p in read_log(os.path.join(str(tmp_path), node, "roots.log"),
+                                                                  b"ROOT") if p]
+            # An entry carrying a root: an accepted or committed root other than the empty
+            # space (epoch 0, no root: it keeps the plain form), and every records entry.
+            carrying = [(version, inner) for version, inner in entries
+                        if inner[0] in (rootlog.RECORDS_KIND, rootlog.REPLICA_KIND)
+                        or inner[0] in (1, 2) and int.from_bytes(inner[9:17], "little") > 0]
+            assert carrying, node
+            assert {version for version, _ in carrying} == {7}, node

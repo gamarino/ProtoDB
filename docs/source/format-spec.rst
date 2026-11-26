@@ -163,7 +163,7 @@ in code point order, ``/`` as the separator), then the digest of ``manifest.json
 digests of the conformance data written by hand and never generated, by path relative to
 ``vectors/``: the concurrency scenarios (``../concurrency_scenarios.json``, below) and every file
 of the frozen spaces (``../frozen/``, sorted by path). The SHA-256
-of that list file is ``910848a2a356220a0390c88d90568717df59df470a4f6bb87ca6151591cf8bdf``. ``test_conformance.py`` checks that the committed files
+of that list file is ``c4592e2030bb3f715bca1473978d16da369b6e1f2b13b2bec14a5b194cd660c5``. ``test_conformance.py`` checks that the committed files
 match the list and that this page states the list's digest. Each vector file is governed by
 the number that covers what it holds: ``vectors/cluster/*.log`` by ``LOG_FORMAT_VERSION``,
 ``vectors/cluster/messages/`` by ``PROTOCOL_VERSION``, every other file by ``FORMAT_VERSION``.
@@ -174,7 +174,9 @@ and changes the manifest's line, and raises nothing by itself.
 only, the conformance scenarios of the precondition model: a base state, the operations of two
 transactions opened on it, the commit order, and the expected final state or the conflict unit
 of the second commit, with at least one scenario per row of the model's tables of writes and
-reads. Its ``notation`` entry defines the operations and the state. ``proto_db`` runs every
+reads. Its ``notation`` entry defines the operations and the state. A state is compared as exact
+JSON text, so a published ``10`` where the serial order leaves ``10.0`` is a different state, and
+after a conflict the state is the first commit's. ``proto_db`` runs every
 scenario in standalone, group-commit and cluster mode
 (``tests/conformance/test_concurrency_scenarios.py``); another implementation runs the same file
 with its own runner. The file is governed by ``FORMAT_VERSION`` like the vectors: a changed

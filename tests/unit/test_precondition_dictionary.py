@@ -266,3 +266,44 @@ def test_boxed_value_compared_by_box_pointer(standalone_db, storage, cls):
     if cls is Dictionary:
         assert stored.atom_pointer not in storage.pointers_read()
     assert content(db) == {"big": large, "j": 2, "x": 2}
+
+
+# -- Reapplication keeps the exact key form the transaction's own sequence leaves (R34) -------------
+# Fix round 1 of Task 14 (the defect class of 07a8ccd): ``10`` and ``10.0`` are one key of two
+# forms.  A concurrent commit of another root forces the reapplication; the expected state is the
+# serial one (the concurrent commit, then the transaction's operations).
+
+def _moved(db):
+    db.run(lambda tr: tr.set_root_object("other", (tr.get_root_object("other") or 0) + 1))
+
+
+def _typed_items(db):
+    return sorted((type(k).__name__, k, v) for k, v in content(db).items())
+
+
+@CLASSES
+@pytest.mark.parametrize("case", [
+    ("remove_then_set", {10: "a", "o": 0}, lambda d: d.remove_at(10).set_at(10.0, "b"),
+     [("float", 10.0, "b"), ("str", "o", 0)]),
+    ("first_set_creates", {"o": 0}, lambda d: d.set_at(10.0, "a").set_at(10, "b"),
+     [("float", 10.0, "b"), ("str", "o", 0)]),
+    ("set_remove_set", {"o": 0}, lambda d: d.set_at(10, "a").remove_at(10).set_at(10.0, "b").set_at(10, "c"),
+     [("float", 10.0, "c"), ("str", "o", 0)]),
+    ("present_set_keeps", {10: "a", "o": 0}, lambda d: d.set_at(10.0, "b"),
+     [("int", 10, "b"), ("str", "o", 0)]),
+    ("remove_last", {10: "a", "o": 0}, lambda d: d.set_at(10.0, "b").remove_at(10), [("str", "o", 0)]),
+], ids=lambda c: c[0] if isinstance(c, tuple) else c)
+def test_reapplied_dictionary_keeps_the_exact_key_form(db, cls, case):
+    _, base, fn, expected = case
+
+    def build(tr):
+        d = cls(context=tr)
+        for k, v in base.items():
+            d = d.set_at(k, v)
+        tr.set_root_object("d", d)
+    db.run(build)
+    a = db.new_transaction()
+    write(a, fn)
+    _moved(db)
+    a.commit()
+    assert _typed_items(db) == expected

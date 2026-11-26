@@ -57,8 +57,8 @@ from ..errors import ProtoCorruptionError, ProtoValidationError
 from ..preconditions import ABSENT, Unit, UnitKind, token
 from ..values import canonical, canonical_for, check_wrapped, order_key
 from . import avl, diff
-from .base import (CATCH_UP_OPERATIONS, ConcurrentOptimized, IndexedCollection, check_sorted_keys, prepared_parts,
-                   repair_pairs, same_value)
+from .base import (CATCH_UP_OPERATIONS, ConcurrentOptimized, IndexedCollection, check_sorted_keys, keyed_net_ops,
+                   prepared_parts, repair_pairs, same_value)
 from .linking import (NOT_A_UNIT, engine_reads, record_key, record_range, record_whole, register_fine_grained, wrote,
                       unit_key, written_with)
 from .sets import CountedSet, counter_net_effect, counter_transform, same_exact
@@ -344,6 +344,11 @@ class Dictionary(ConcurrentOptimized, IndexedCollection):
             held = avl.key_get(base.root, op[1], ABSENT)
             if held is not ABSENT:
                 yield held
+
+    def _net_ops(self, element_ops: list) -> list:
+        """Per key, the ops that leave it as the log does, exact key form included
+        (:func:`~proto_db.collections.base.keyed_net_ops`)."""
+        return keyed_net_ops(element_ops, _SET, _REMOVE)
 
     def _replay_op(self, target: "Dictionary", op: tuple) -> "Dictionary":
         if op[0] == _SET:
@@ -631,33 +636,79 @@ class RepeatedKeysDictionary(ConcurrentOptimized, IndexedCollection):
     # -- reapplication (R34, D26) ---------------------------------------------------------
 
     def _net_ops(self, element_ops: list) -> list:
-        """Per key, in order of last occurrence: ``("net", key, cleared, transforms)`` (D26).
+        """Per key, in order of last occurrence: ``("net", key, cleared, transforms, steps)`` (D26).
 
         ``cleared`` is True when the log removed the key; ``transforms`` are the
         composed counter transforms (:func:`~proto_db.collections.sets.counter_net_effect`)
-        of the record ops after the last ``remove_key``.
+        of the record ops after the last ``remove_key``; ``key`` is the key of the first op
+        after that ``remove_key`` (else of the first op).  ``steps`` are those record ops one
+        by one, ``(key, record, removes, adds)``: the replay follows them to file the key in the
+        exact form the sequence leaves (:meth:`_key_form_after`).
         """
         per_key: dict = {}
         for op in element_ops:
             okey = order_key(op[1])
-            entry = per_key.pop(okey, None) or [op[1], False, []]
+            entry = per_key.pop(okey, None) or [op[1], False, [], []]
             if op[0] == _REMOVE_KEY:
-                entry[1], entry[2] = True, []
-            elif op[0] == _ADD:
+                entry[1], entry[2], entry[3] = True, [], []
+                entry[0] = op[1]
+                per_key[okey] = entry
+                continue
+            if not entry[2] and entry[1]:
+                entry[0] = op[1]            # the first op after the last remove_key
+            if op[0] == _ADD:
                 entry[2].append(("add", op[2]))
+                entry[3].append((op[1], op[2], 0, 1))
             elif op[0] == _REMOVE_RECORD:
                 entry[2].append(("remove", op[2]))
+                entry[3].append((op[1], op[2], 1, 0))
             elif op[0] == _TRANSFORM_RECORD:
                 entry[2].append(("transform", op[2], op[3], op[4]))
+                entry[3].append((op[1], op[2], op[3], op[4]))
             else:
                 raise ProtoValidationError(f"Unknown RepeatedKeysDictionary op {op!r}")
             per_key[okey] = entry
         net = []
-        for key, cleared, record_ops in per_key.values():
+        for key, cleared, record_ops, steps in per_key.values():
             transforms = counter_net_effect(record_ops)
             if cleared or transforms:
-                net.append((_NET, key, cleared, tuple(transforms)))
+                net.append((_NET, key, cleared, tuple(transforms), tuple(steps)))
         return net
+
+    @staticmethod
+    def _key_form_after(target: "RepeatedKeysDictionary", key, steps: tuple):
+        """The exact form of ``key`` after ``steps`` (``(key, record, removes, adds)``, one counter
+        transform each) applied one by one on ``target``: the stored key while some record
+        stays under it, else the key of the step that re-created it last; ``None`` when the
+        key ends absent.  The counts follow ``max(n - removes, 0) + adds`` per record (D26), so
+        the composed transforms leave the same counts; only the form needs the steps."""
+        okey = order_key(key)
+        stored = next(iter(avl.key_iter_okey_range(target.root, okey, okey)), None)
+        form, records = (stored[0], stored[1]) if stored is not None else (None, None)
+        with engine_reads():
+            total = records.total_count if records is not None else 0
+        counts: dict = {}
+        for step_key, record, removes, adds in steps:
+            rkey = order_key(record)
+            if rkey in counts:
+                n = counts[rkey]
+            else:
+                with engine_reads():
+                    n = records.count_of(record) if records is not None else 0
+            m = counter_transform(n, removes, adds)
+            counts[rkey] = m
+            if total == 0 and m > 0:
+                form = step_key             # the key is re-created by this step
+            total += m - n
+            if total == 0:
+                form = None
+        return form
+
+    def _rekeyed(self, key, form) -> "RepeatedKeysDictionary":
+        """This multimap with the stored key equal to ``key`` filed as ``form`` (same records)."""
+        root, _, records = avl.key_remove(self.root, key)
+        root = avl.key_put(root, form, records)[0]
+        return self._with(root=root, _changes=self._changes, _whole=self._whole)
 
     def _intention_elements(self, base):
         """See :meth:`IndexedCollection._intention_elements`: each record named, the stored
@@ -679,11 +730,16 @@ class RepeatedKeysDictionary(ConcurrentOptimized, IndexedCollection):
     def _replay_op(self, target: "RepeatedKeysDictionary", op: tuple) -> "RepeatedKeysDictionary":
         if op[0] != _NET:
             raise ProtoValidationError(f"Unknown RepeatedKeysDictionary net op {op!r}")
-        _, key, cleared, transforms = op
+        _, key, cleared, transforms, steps = op
         if cleared:
             target = target.remove_at(key)
+        form = self._key_form_after(target, key, steps)
         for record, removes, adds in transforms:
             target = target._transform_record(key, record, removes, adds)
+        if form is not None:
+            stored = next(iter(avl.key_iter_okey_range(target.root, order_key(key), order_key(key))), None)
+            if stored is not None and not same_exact(stored[0], form):
+                target = target._rekeyed(stored[0], form)
         return target
 
     def __repr__(self):
