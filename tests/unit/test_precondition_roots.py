@@ -11,24 +11,22 @@ import pytest
 from proto_db.errors import ProtoConflictError
 from proto_db.preconditions import ABSENT, Unit, UnitKind
 from proto_db.registry import BASE
-from proto_db.storage.memory import MemoryStorage
-from proto_db.transactions import ObjectSpace
 from proto_db.values import exact_token
+from tests.support.modes import db_any_mode, mode, space_any_mode  # noqa: F401 -- fixtures
 
 _PACKAGE = "tests.unit.registry_modules"
 MAPPING = {name: f"{_PACKAGE}.{name}" for name in ("reg7_a", "reg7_b")}
 
 
-@pytest.fixture
-def space():
-    s = ObjectSpace(MemoryStorage(), modules_mapping=MAPPING)
-    yield s
-    s.close()
+#: The space arguments of every mode (:func:`tests.support.modes.space_any_mode`).
+SPACE_KW = {"modules_mapping": MAPPING}
 
 
 @pytest.fixture
-def db(space):
-    return space.new_database("db")
+def db(db_any_mode):
+    """The database ``db`` in each commit mode: standalone, group commit, cluster (spec section 12,
+    Task 14; :mod:`tests.support.modes`)."""
+    return db_any_mode
 
 
 def root(name):

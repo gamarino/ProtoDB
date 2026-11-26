@@ -26,21 +26,15 @@ from proto_db.preconditions import (PRECONDITION_ESCALATION_LIMIT, KeyRange, Rea
                                     range_violated)
 from proto_db.query.planner import plan_query
 from proto_db.query.terms import BETWEEN, GE, GT, LE, LT, NE, NOT_NONE, Term
-from proto_db.storage.memory import MemoryStorage
-from proto_db.transactions import ObjectSpace
 from proto_db.values import order_key, rank_bounds
+from tests.support.modes import db_any_mode, mode, space_any_mode  # noqa: F401 -- fixtures
 
 
 @pytest.fixture
-def space():
-    s = ObjectSpace(MemoryStorage())
-    yield s
-    s.close()
-
-
-@pytest.fixture
-def db(space):
-    return space.new_database("db")
+def db(db_any_mode):
+    """The database ``db`` in each commit mode: standalone, group commit, cluster (spec section 12,
+    Task 14; :mod:`tests.support.modes`)."""
+    return db_any_mode
 
 
 def whole(root):

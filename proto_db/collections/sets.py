@@ -62,7 +62,7 @@ from collections.abc import Iterable, Iterator
 from ..core.atom import PersistenceContext
 from ..errors import ProtoValidationError
 from ..preconditions import Unit, UnitKind, token
-from ..values import canonical, canonical_for, check_wrapped, hash_key, order_key
+from ..values import canonical, canonical_for, check_wrapped, exact_token, hash_key, order_key
 from . import avl, diff
 from .base import CATCH_UP_OPERATIONS, ConcurrentOptimized, IndexedCollection, prepared_parts
 from .linking import NOT_A_UNIT, engine_reads, record_key, register_fine_grained, unit_key, wrote, written_with
@@ -73,6 +73,11 @@ _ADD = "add"
 _REMOVE = "remove"
 _TRANSFORM = "transform"
 _NET = "net"
+
+
+def same_exact(a, b) -> bool:
+    """Whether ``a`` and ``b`` (equal members) are the same exact form (``10`` is not ``10.0``)."""
+    return a is b or exact_token(a) == exact_token(b)
 
 
 def counter_transform(count: int, removes: int, adds: int) -> int:
@@ -91,6 +96,13 @@ def counter_net_effect(ops: Iterable[tuple]) -> list[tuple]:
     ``(r1 + r2 - a1, a2)``.  Applying the result to any count therefore equals
     applying the ops one by one (D26).  Elements whose transform is the
     identity are omitted.
+
+    The element returned is the exact form the ops leave when they take the count through zero
+    (a count of at most ``removes``): the element of the first add after the last point where
+    the running sum of the ops reaches its minimum -- the last time the count is zero, whatever
+    the starting count -- or the first op's element when no add follows it (then ``adds`` is
+    0).  A starting count above ``removes`` never reaches zero, and the stored member keeps its
+    form (:meth:`CountedSet._step`).  A transform op counts as its removes, then its adds.
     """
     net: dict = {}
     for op in ops:
@@ -104,14 +116,23 @@ def counter_net_effect(ops: Iterable[tuple]) -> list[tuple]:
         else:
             raise ProtoValidationError(f"Unknown counter op kind {kind!r}")
         okey = order_key(element)
-        entry = net.pop(okey, None) or [element, 0, 0]
-        if entry[2] >= r:
-            entry[2] += a - r
-        else:
-            entry[1] += r - entry[2]
-            entry[2] = a
+        # [first element, running sum, its minimum (<= 0), the re-creating form or None]
+        entry = net.pop(okey, None) or [element, 0, 0, None]
+        if r:
+            entry[1] -= r
+            if entry[1] <= entry[2]:
+                entry[2], entry[3] = entry[1], None     # the count is zero here, on any start
+        if a:
+            if entry[3] is None:
+                entry[3] = element
+            entry[1] += a
         net[okey] = entry  # re-inserting moves the element to the end: order of last occurrence
-    return [tuple(entry) for entry in net.values() if entry[1] or entry[2]]
+    out = []
+    for first, total, low, form in net.values():
+        removes, adds = -low, total - low
+        if removes or adds:
+            out.append((form if adds else first, removes, adds))
+    return out
 
 
 class _HashBuckets(ConcurrentOptimized, IndexedCollection):
@@ -386,6 +407,29 @@ class Set(_HashBuckets):
             result = result.remove(element)
         return result
 
+    def _net_ops(self, element_ops: list) -> list:
+        """Per element, in order of last occurrence, the ops that leave it as the whole sequence
+        does on any set, exact form included (R34): ``remove`` when the last op removes it; else
+        ``remove`` then the first ``add`` after the last remove, when the log removed it; else
+        its first ``add`` (on a set holding an equal member that add keeps the stored one, as the
+        sequence did; the last op alone would file another form)."""
+        per: dict = {}
+        for op in element_ops:
+            okey = order_key(op[1])
+            removed, added = per.pop(okey, (None, None))
+            if op[0] == _REMOVE:
+                removed, added = op, None
+            elif added is None:
+                added = op
+            per[okey] = (removed, added)   # re-inserting: order of last occurrence
+        net = []
+        for removed, added in per.values():
+            if removed is not None:
+                net.append(removed)
+            if added is not None:
+                net.append(added)
+        return net
+
     def _replay_op(self, target: "Set", op: tuple) -> "Set":
         if op[0] == _ADD:
             return target.add(op[1])
@@ -486,15 +530,22 @@ class CountedSet(_HashBuckets):
         return (self.total_count == other.total_count
                 and all(other.count_of(e) == n for e, n in self.items()))
 
-    def _retarget_at(self, found: tuple, element, final: int, log: tuple) -> "CountedSet":
+    def _retarget_at(self, found: tuple, element, final: int, log: tuple, recreated: bool = False) -> "CountedSet":
         """Return the version where ``element`` (canonical) occurs ``final`` times, carrying ``log``.
 
         ``found`` is ``self._find(element)``.  Fires ``on_add`` when the element
         appears and ``on_remove`` when it disappears; changing a count that
         stays positive fires nothing, and an unchanged count reuses the content.
+        ``recreated``: the transform took the count through zero and ``element`` is the form
+        that re-created it (:func:`counter_net_effect`): a stored member of another exact form
+        is replaced by it (an index sees the stored one go and ``element`` come).
         """
         h, bucket, position = found
         stored, n = bucket[position] if position >= 0 else (element, 0)
+        if n and final and recreated and not same_exact(stored, element):
+            bucket = bucket[:position] + ((element, final),) + bucket[position + 1:]
+            return self._with(root=avl.key_put(self.root, h, bucket)[0], total_count=self.total_count + final - n,
+                              indexes=self._after_replace(stored, element), _changes=log)
         if final == n:
             return self._with(_changes=log)
         total = self.total_count + final - n
@@ -513,7 +564,8 @@ class CountedSet(_HashBuckets):
         """Apply the counter transform ``(removes, adds)`` to ``element`` (canonical) and log ``op``."""
         found = self._find(element)
         n = found[1][found[2]][1] if found[2] >= 0 else 0
-        return self._retarget_at(found, element, counter_transform(n, removes, adds), self._logged(op))
+        return self._retarget_at(found, element, counter_transform(n, removes, adds), self._logged(op),
+                                 recreated=0 < n <= removes and adds > 0)
 
     def add(self, element) -> "CountedSet":
         """Return a counted set with one more occurrence of ``element`` (add event if it is new).

@@ -15,20 +15,14 @@ from proto_db.collections.linking import fine_grained, link_of
 from proto_db.collections.sets import CountedSet, Set
 from proto_db.errors import ProtoConflictError, ProtoValidationError
 from proto_db.preconditions import Unit, UnitKind, token
-from proto_db.storage.memory import MemoryStorage
-from proto_db.transactions import ObjectSpace
+from tests.support.modes import db_any_mode, mode, space_any_mode  # noqa: F401 -- fixtures
 
 
 @pytest.fixture
-def space():
-    s = ObjectSpace(MemoryStorage())
-    yield s
-    s.close()
-
-
-@pytest.fixture
-def db(space):
-    return space.new_database("db")
+def db(db_any_mode):
+    """The database ``db`` in each commit mode: standalone, group commit, cluster (spec section 12,
+    Task 14; :mod:`tests.support.modes`)."""
+    return db_any_mode
 
 
 def element(e, root="s"):
@@ -524,3 +518,89 @@ def test_counted_set_linked_adds_from_many_transactions_compose(db):
     for tr in reversed(trs):
         tr.commit()
     assert Counter(counts(db)) == Counter({"seed": 1, "hit": 5, **{f"t{i}": 1 for i in range(5)}})
+
+
+# -- Reapplication keeps the exact form the transaction's own sequence leaves (R34) -------------------
+# Found by the group mode (Task 14): an intention reapplied on a root another commit moved must give
+# what the transaction's operations give when run after that commit, the exact form of a member
+# included (``10`` and ``10.0`` are one element of two forms).  Each case forces the reapplication
+# with a concurrent commit of another root.
+
+def _moved(db):
+    db.run(lambda tr: tr.set_root_object("other", (tr.get_root_object("other") or 0) + 1))
+
+
+def _typed(pairs):
+    return sorted((type(e).__name__, e, n) for e, n in pairs)
+
+
+@pytest.mark.parametrize("indexed", [False, True], ids=["plain", "indexed"])
+@pytest.mark.parametrize("case", [
+    ("remove_then_add", (10, 20), lambda s: s.remove(10).add(10.0), [("float", 10.0), ("int", 20)]),
+    ("first_add_wins", (20,), lambda s: s.add(10.0).add(10), [("float", 10.0), ("int", 20)]),
+    ("add_remove_add", (20,), lambda s: s.add(10).remove(10).add(10.0), [("float", 10.0), ("int", 20)]),
+    ("present_add_keeps", (10, 20), lambda s: s.add(10.0), [("int", 10), ("int", 20)]),
+], ids=lambda c: c[0] if isinstance(c, tuple) else c)
+def test_reapplied_set_keeps_the_exact_form(db, case, indexed):
+    from proto_db.indexing.equality import EqualityIndex
+    from proto_db.indexing.keyspec import KeySpec
+    _, base, fn, expected = case
+
+    def build(tr):
+        s = tr.new_set()
+        for e in base:
+            s = s.add(e)
+        tr.set_root_object("s", s.add_index(EqualityIndex("e", KeySpec.element())) if indexed else s)
+    db.run(build)
+    a = db.new_transaction()
+    write(a, fn)
+    _moved(db)
+    a.commit()
+    with db.new_transaction() as tr:
+        s = tr.get_root_object("s")
+        assert sorted((type(e).__name__, e) for e in s.elements()) == expected
+        if indexed:
+            s.get_index("e").validate(list(s.elements()))
+
+
+@pytest.mark.parametrize("indexed", [False, True], ids=["plain", "indexed"])
+def test_reapplied_counted_set_keeps_the_exact_form(db, indexed):
+    """Through zero, the re-adding member's form; above zero, the stored one."""
+    from proto_db.indexing.equality import EqualityIndex
+    from proto_db.indexing.keyspec import KeySpec
+
+    def build(tr):
+        c = tr.new_counted_set().add(10).add(20).add(30).add(30)
+        tr.set_root_object("s", c.add_index(EqualityIndex("e", KeySpec.element())) if indexed else c)
+    db.run(build)
+    a = db.new_transaction()
+    write(a, lambda c: c.remove(10).add(10.0).add(20.0).remove(30).add(30.0))
+    _moved(db)
+    a.commit()
+    with db.new_transaction() as tr:
+        c = tr.get_root_object("s")
+        assert _typed(c.items()) == _typed([(10.0, 1), (20, 2), (30, 2)])
+        if indexed:
+            c.get_index("e").validate(list(c.elements()))
+
+
+def test_reapplied_counted_set_above_zero_keeps_the_current_form(db):
+    """A concurrent increment keeps the count above zero: the serial order (B, then A) never
+    re-creates the member, so its stored form stays (D26 composition, unindexed)."""
+    seed_set(db, 10, cls=CountedSet)
+    a, b = db.new_transaction(), db.new_transaction()
+    write(a, lambda c: c.remove(10).add(10.0))
+    write(b, lambda c: c.add(10))
+    b.commit()
+    a.commit()
+    assert _typed(counts(db).items()) == _typed([(10, 2)])
+
+
+def test_reapplied_rkd_keeps_the_exact_form(db):
+    seed_rkd(db, ("k", 10), ("j", 1))
+    a = db.new_transaction()
+    write(a, lambda r: r.remove_record("k", 10).set_at("k", 10.0), root="r")
+    _moved(db)
+    a.commit()
+    r = db.run(lambda tr: [(k, _typed(cs.items())) for k, cs in tr.get_root_object("r").items()])
+    assert r == [("j", _typed([(1, 1)])), ("k", _typed([(10.0, 1)]))]

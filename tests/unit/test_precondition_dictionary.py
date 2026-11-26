@@ -14,6 +14,7 @@ from proto_db.preconditions import Unit, UnitKind
 from proto_db.storage.memory import MemoryStorage
 from proto_db.transactions import ObjectSpace
 from tests.support.counting_storage import CountingStorage
+from tests.support.modes import db_any_mode, mode, space_any_mode  # noqa: F401 -- fixtures
 
 CLASSES = pytest.mark.parametrize("cls", [Dictionary, HashDictionary], ids=["Dictionary", "HashDictionary"])
 
@@ -24,15 +25,18 @@ def storage():
 
 
 @pytest.fixture
-def space(storage):
+def standalone_db(storage):
+    """A standalone database over a counting storage, for the test that counts storage reads."""
     s = ObjectSpace(storage)
-    yield s
+    yield s.new_database("db")
     s.close()
 
 
 @pytest.fixture
-def db(space):
-    return space.new_database("db")
+def db(db_any_mode):
+    """The database ``db`` in each commit mode: standalone, group commit, cluster (spec section 12,
+    Task 14; :mod:`tests.support.modes`)."""
+    return db_any_mode
 
 
 def key(k, root="d"):
@@ -236,10 +240,11 @@ def test_key_at_position_conflicts_with_any_change(db, read):
 
 
 @CLASSES
-def test_boxed_value_compared_by_box_pointer(db, storage, cls):
+def test_boxed_value_compared_by_box_pointer(standalone_db, storage, cls):
     """D51: a key holding a large value is compared by its stored form (a Dictionary keeps it in a
     ValueBox, compared by pointer; a HashDictionary keeps it inline in its bucket), so validating
-    the precondition never reads the value."""
+    the precondition never reads the value.  Standalone only: it counts the storage's reads."""
+    db = standalone_db
     large = "x" * (avl.VALUE_BOX_MIN * 8)
     seed(db, cls, big=large, j=0)
     probe = db.new_transaction()

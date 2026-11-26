@@ -8,15 +8,14 @@ import pytest
 
 from proto_db.errors import ProtoConflictError
 from proto_db.preconditions import ABSENT, Unit, UnitKind
-from proto_db.storage.memory import MemoryStorage
-from proto_db.transactions import ObjectSpace
+from tests.support.modes import db_any_mode, mode, space_any_mode  # noqa: F401 -- fixtures
 
 
 @pytest.fixture
-def db():
-    space = ObjectSpace(MemoryStorage())
-    yield space.new_database("db")
-    space.close()
+def db(db_any_mode):
+    """The database ``db`` in each commit mode: standalone, group commit, cluster (spec section 12,
+    Task 14; :mod:`tests.support.modes`)."""
+    return db_any_mode
 
 
 def cell(name):

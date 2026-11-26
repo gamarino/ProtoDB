@@ -61,7 +61,7 @@ from .base import (CATCH_UP_OPERATIONS, ConcurrentOptimized, IndexedCollection, 
                    repair_pairs, same_value)
 from .linking import (NOT_A_UNIT, engine_reads, record_key, record_range, record_whole, register_fine_grained, wrote,
                       unit_key, written_with)
-from .sets import CountedSet, counter_net_effect, counter_transform
+from .sets import CountedSet, counter_net_effect, counter_transform, same_exact
 
 __all__ = ["Dictionary", "RepeatedKeysDictionary"]
 
@@ -541,9 +541,17 @@ class RepeatedKeysDictionary(ConcurrentOptimized, IndexedCollection):
         found = records._find(record)
         n = found[1][found[2]][1] if found[2] >= 0 else 0
         final = counter_transform(n, removes, adds)
-        if final == n:
+        # Through zero, the record that re-created it is filed in its own exact form
+        # (:func:`~proto_db.collections.sets.counter_net_effect`).
+        stored = found[1][found[2]][0] if found[2] >= 0 else record
+        reformed = 0 < n <= removes and adds > 0 and not same_exact(stored, record)
+        if final == n and not reformed:
             return self._with(_changes=log)
-        updated = records._retarget_at(found, record, final, ())
+        updated = records._retarget_at(found, record, final, (), recreated=reformed)
+        if reformed and n and final:
+            root = avl.key_put(self.root, key, updated)[0]
+            return self._with(root=root, total_count=self.total_count + final - n,
+                              indexes=self._after_replace(stored, record), _changes=log)
         if updated.count:
             root = avl.key_put(self.root, key, updated)[0]
         else:

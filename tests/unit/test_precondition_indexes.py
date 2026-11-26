@@ -22,21 +22,15 @@ from proto_db.indexing.vector import VectorIndex
 from proto_db.preconditions import Unit, UnitKind
 from proto_db.query.planner import plan_query
 from proto_db.query.terms import EQ, GT, IN, Term
-from proto_db.storage.memory import MemoryStorage
-from proto_db.transactions import ObjectSpace
 from tests.support.recording_index import RootRecordingExtractor
+from tests.support.modes import db_any_mode, mode, space_any_mode  # noqa: F401 -- fixtures
 
 
 @pytest.fixture
-def space():
-    s = ObjectSpace(MemoryStorage())
-    yield s
-    s.close()
-
-
-@pytest.fixture
-def db(space):
-    return space.new_database("db")
+def db(db_any_mode):
+    """The database ``db`` in each commit mode: standalone, group commit, cluster (spec section 12,
+    Task 14; :mod:`tests.support.modes`)."""
+    return db_any_mode
 
 
 def whole(root):

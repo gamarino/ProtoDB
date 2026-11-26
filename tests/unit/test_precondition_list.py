@@ -11,20 +11,14 @@ from proto_db.collections.linking import fine_grained, link_of
 from proto_db.collections.lists import List
 from proto_db.errors import ProtoConflictError, ProtoValidationError
 from proto_db.preconditions import Unit, UnitKind, token
-from proto_db.storage.memory import MemoryStorage
-from proto_db.transactions import ObjectSpace
+from tests.support.modes import db_any_mode, mode, space_any_mode  # noqa: F401 -- fixtures
 
 
 @pytest.fixture
-def space():
-    s = ObjectSpace(MemoryStorage())
-    yield s
-    s.close()
-
-
-@pytest.fixture
-def db(space):
-    return space.new_database("db")
+def db(db_any_mode):
+    """The database ``db`` in each commit mode: standalone, group commit, cluster (spec section 12,
+    Task 14; :mod:`tests.support.modes`)."""
+    return db_any_mode
 
 
 def position(i, root="l"):
@@ -75,7 +69,7 @@ def test_list_is_fine_grained_and_linked(db):
     tr.abort()
 
 
-def test_subclass_overriding_a_listed_operation_is_an_object_root(db):
+def test_subclass_overriding_a_listed_operation_is_an_object_root():
     class Stamped(List):
         __type_name__ = "tests.unit.precondition_list.Stamped"
 
@@ -90,15 +84,18 @@ def test_subclass_overriding_a_listed_operation_is_an_object_root(db):
     assert fine_grained(Plain)
 
 
+class Rotating(List):
+    """A List subclass whose method changes content through ``_with`` without a record of
+    intentions (module level: a type name is registered once, whatever the modes)."""
+    __type_name__ = "tests.unit.precondition_list.Rotating"
+
+    def emptied(self):
+        return self._with(root=None, count=0)
+
+
 def test_unlogged_content_change_marks_the_version_whole(db):
     """A subclass method that changes content through ``_with`` without a record of intentions
     cannot be reapplied: the version is whole (P-B), published under a WHOLE precondition."""
-    class Rotating(List):
-        __type_name__ = "tests.unit.precondition_list.Rotating"
-
-        def emptied(self):
-            return self._with(root=None, count=0)
-
     db.run(lambda tr: tr.set_root_object("l", Rotating(context=tr).extend([1, 2])))
     a, b = db.new_transaction(), db.new_transaction()
     emptied = a.get_root_object("l").emptied()
