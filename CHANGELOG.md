@@ -29,6 +29,7 @@ current state, then the intentions are reapplied on it. Committed transactions a
   | `Dictionary.key_at_position(i)`, `Dictionary.position_of(k)` | New: positional access in O(log n); both record the whole collection; `position_of` of an absent key raises `ProtoValidationError` |
   | `EqualityIndex(name, key, unique=True)` | New: at most one element per key; own-view duplicate `ProtoValidationError`, concurrent duplicate `ProtoConflictError` (the retry then fails with `ProtoValidationError`) |
   | Index extractors that read the transaction | `ProtoUserError` |
+  | `Dictionary.get(k)`, `HashDictionary.get(k)` | New: an alias of `get_at(k)` (same value, default and key unit) |
 
 - **Every conflict names its unit**: `ProtoConflictError.unit` (a `proto_db.preconditions.Unit`: kind, root, key,
   index) and `ProtoConflictError.database`. `Database.run` retries as before.
@@ -70,6 +71,17 @@ current state, then the intentions are reapplied on it. Committed transactions a
 - **The intents mode is removed** (R53-R55): `new_transaction(intents=...)` and `run(fn, intents=...)` raise
   `TypeError`. The catalog types `Intent` and `IntentRecord` are kept; a leftover `__intentLog` root still opens
   and is dropped by the next commit to that base.
+- **No user code with the space root held** (P-C): an index extractor, a Python computed attribute or an intent
+  reached while the commit holds the space root raises `ProtoUnexpectedError` (an engine defect) instead of
+  running.
+- **Declarations are composed as plain data**: the merge of the semantic catalog under the space root never
+  dispatches to module code; a Python `Computed` still takes any callable (a function, a `functools.partial`,
+  a builtin, a bound method, a callable instance: carried, never called there), and a `str` subclass value
+  given to a declaration (a `StrEnum` member as `sensitivity`, `cardinality`, `binding`, `on_delete` or an intent
+  parameter type) is stored as the plain `str` it holds.
+- **A `with tr:` block left by two threads**: the block's end decides and ends the transaction in one step, so
+  the second thread to leave finds it ended and its exit is a no-op (it used to raise `ProtoUserError`
+  "The transaction is committed" now and then).
 - **Known limits** (documented in the concurrency model): hot units, traversals, no fairness among retries,
   single-threaded publication per space, escalation, catch-up rounds, coarser indexed collections, the one-way
   format upgrade. No performance figure of `docs/source/performance.rst` was re-measured under this model.
@@ -99,8 +111,8 @@ code that uses no semantic layer keeps today's API, bytes and behaviour.
   `__help__`, `__synonyms__`, `__key__`, `__certification__`, `__constraints__` or `__validity__` is a semantic
   class and needs a registry module; rc4 accepted such a class as a plain one, and now its creation is refused
   ("declares no registry module"). Python reserves `__*__` names; no other name changes meaning.
-- **Semantic writes read the catalog**: a transaction's first semantic write enters
-  `__currentModules`, `__catalog` and `__semanticCatalog` in its read set, so a concurrent install makes its
+- **Semantic writes read the catalog**: a transaction's first semantic write records `__currentModules`,
+  `__catalog` and `__semanticCatalog` as preconditions (their base values), so a concurrent install makes its
   commit conflict and `Database.run` retries it against the new catalog (its writes were checked against the
   catalog of its snapshot). A transaction that only reads through the session is unaffected.
 - **Catalog evolution over existing entities**: a maintained aggregate a later module adds to a type with

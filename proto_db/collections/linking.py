@@ -321,18 +321,38 @@ def register_fine_grained(cls: type, operations: tuple) -> None:
         _CLASSIFIED.clear()
 
 
+#: C-level accessors of a type's MRO and namespace: reading a class through them runs no code of
+#: the class or of its metaclass (a ``__getattribute__`` or ``__getattr__`` of a metaclass would run
+#: for ``getattr(cls, name)``); classification may first meet a class under the space root (P-C).
+_MRO = type.__dict__["__mro__"]
+_NAMESPACE = type.__dict__["__dict__"]
+_NOT_DEFINED = object()
+
+
+def _class_lookup(mro: tuple, name: str):
+    """What the class whose MRO is ``mro`` defines as ``name``: the first namespace entry along the
+    MRO (the raw entry: a function, a ``staticmethod``, ...), or a marker when none defines it."""
+    for klass in mro:
+        namespace = _NAMESPACE.__get__(klass)
+        if name in namespace:
+            return namespace[name]
+    return _NOT_DEFINED
+
+
 def fine_grained(cls: type) -> bool:
     """Whether a root holding an instance of ``cls`` gets fine-grained treatment (R1, N5): ``cls``
     is a registered class, or derives from one and overrides none of its listed operations
-    (compared by method identity)."""
+    (compared by identity of the namespace entries along the MRO, read without running any code
+    of the class or its metaclass)."""
     known = _CLASSIFIED.get(cls)
     if known is not None:
         return known
     result = False
-    for base in cls.__mro__:
+    mro = _MRO.__get__(cls)
+    for i, base in enumerate(mro):
         operations = _FINE.get(base)
         if operations is not None:
-            result = all(getattr(cls, name, None) is getattr(base, name, None) for name in operations)
+            result = all(_class_lookup(mro, name) is _class_lookup(mro[i:], name) for name in operations)
             break
     with _LOCK:
         _CLASSIFIED[cls] = result

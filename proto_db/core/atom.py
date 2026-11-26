@@ -56,7 +56,8 @@ Saving
     ``context._atom_saved(atom, ptr, state)`` (private, so it never meets a user context's own
     attribute; no stripe held): a context that caches decoded atoms
     keeps the atom a load of ``ptr`` would produce (:meth:`Atom._decoded_twin`, Task 8.3i),
-    never the live object, whose runtime state (an op log, for example) a loaded atom has not.
+    never the live object, whose runtime state (a linked collection's link and record of intentions,
+    for example) a loaded atom has not.
 
 History links (Task 8.3l, ruling R92)
     A class lists in ``_history_links`` the persisted attributes that link an older version
@@ -1159,7 +1160,7 @@ class Atom:
         A new object of this atom's class, loaded, with this atom's ``oid``: every persisted
         attribute is :func:`~proto_db.core.codec.redecode_value` of the saved value -- what
         decoding its wire form gives, nested atoms obtained from ``context.load`` by pointer --
-        and no runtime state (no op log, for example).  This atom itself is left untouched.
+        and no runtime state (no link or record of intentions, for example).  This atom itself is left untouched.
         ``inline``, a one-item list, accumulates the bytes of its ``str``/``bytes`` values."""
         from . import codec
         load = _engine_load(context)

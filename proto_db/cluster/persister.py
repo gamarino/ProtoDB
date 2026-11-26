@@ -434,6 +434,7 @@ class Persister:
                 break               # written outside cluster mode: persisted before the cluster
             ptr = previous.atom_pointer
             label = previous.cluster_term or 0
+            # A key only (compare_roots, root_key): the version is never read here.
             current = RootRecord(WRITE_FORMAT_VERSION, ptr.segment, ptr.offset, epoch)
             # The persisted root is on this root's chain (every committed root builds on the
             # newest committed one, and a refound starts from the persisted root), so any

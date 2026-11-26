@@ -70,10 +70,13 @@ def _grouped_round(real_round, space, counter):
         # the filler is queued here, and its commit lands in this round.
         assert queued, f"group mode: the filler commit was not queued ({outcome!r})"
         try:
-            return real_round(storage, lock_timeout, queued + batch)
-        finally:
-            filler.join()
-            assert outcome == ["landed"], f"group mode: the filler commit did not land ({outcome!r})"
+            result = real_round(storage, lock_timeout, queued + batch)
+        except BaseException:
+            filler.join()       # the round's own error propagates; the filler's outcome is moot then
+            raise
+        filler.join()
+        assert outcome == ["landed"], f"group mode: the filler commit did not land ({outcome!r})"
+        return result
     return grouped
 
 

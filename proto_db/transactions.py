@@ -918,8 +918,8 @@ class _AtomCache:
         """``atom`` was just pushed at ``ptr`` with ``state`` (the :meth:`Atom._save` hook,
         Task 8.3i): cache what a load of ``ptr`` would produce, decoded already
         (:meth:`Atom._decoded_twin`), so the next build on the root that references it neither
-        reads nor decodes it.  The live ``atom`` is never cached (its runtime state, an op log
-        for example, is not what a load produces)."""
+        reads nor decodes it.  The live ``atom`` is never cached (its runtime state, a linked
+        collection's link and record of intentions for example, is not what a load produces)."""
         cls = type(atom)
         if not cls._cache_on_save or self._closed:
             return
@@ -3403,9 +3403,9 @@ class Transaction:
 
     def _check_semantic_commit(self) -> None:
         """Under the lock, before the commit leaves the active state and outside the root lock (preflight
-        F28): the cardinality of every entity the transaction's semantic operations wrote (direct mode;
-        :func:`proto_db.semantic.constraints.check_commit`).  What it reads enters the read set, so the
-        commit's validation keeps the check valid.  A violation aborts the transaction and raises
+        F28): the cardinality of every entity the transaction's semantic operations wrote
+        (:func:`proto_db.semantic.constraints.check_commit`).  What it reads is recorded as
+        preconditions, so the commit's validation keeps the check valid.  A violation aborts the transaction and raises
         ``ProtoConstraintError``; a refusal to commit (inside an operation, not active) keeps today's
         behaviour."""
         self._check_can_end("commit")

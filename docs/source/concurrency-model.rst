@@ -155,7 +155,8 @@ Operation                                       Precondition                    
 ==============================================  ==========================================  ===========================
 ``set_root_object(n, v)``, ``v`` not linked     root ``n`` holds its base value, absent      root ``n`` holds ``v``
                                                 included
-``remove_root_object(n)``                       root ``n`` holds its base value              root ``n`` becomes absent
+``remove_root_object(n)``                       root ``n`` holds its base value, absent      root ``n`` becomes absent
+                                                included
 ``new_mutable(n, v)``                           cell ``n`` is absent                         cell ``n`` holds ``v``
 ``set_mutable(n, v)``                           cell ``n`` holds its base value              cell ``n`` holds ``v``
 ``remove_mutable(n)``                           cell ``n`` holds its base value              cell ``n`` becomes absent
@@ -252,8 +253,8 @@ A linked collection
 =====================================================================  ==============================================
 Read                                                                   Precondition recorded
 =====================================================================  ==============================================
-Dictionary, HashDictionary ``get_at(k)``, ``has(k)``, ``k in d``       key ``k`` holds its base value, absent
-                                                                       included
+Dictionary, HashDictionary ``get_at(k)`` (alias ``get``), ``has(k)``,  key ``k`` holds its base value, absent
+``k in d``                                                             included
 Set ``has(e)``, ``e in s``                                             presence or absence of ``e`` unchanged
 CountedSet ``has(e)``, ``count_of(e)``                                 count of ``e`` unchanged
 RepeatedKeysDictionary ``get_at(k)`` (alias ``get``), ``has(k)``       the records of ``k`` unchanged
@@ -434,7 +435,10 @@ reported as such) with a different validation, a preparation phase and a pre-pas
    **delta**: a structural diff of the persistent trees from R0 to R1, which skips every pair of subtrees with
    the same pointer, fails if any changed unit is covered by a recorded precondition or range (R65); then it
    reapplies the intentions on R1. All preconditions are checked before any intention is applied (R33, P-F).
-   The cost under the lock is O(changes since R0 × log n), independent of the size of the read set.
+   Delta validation costs O(changes since R0 × log n) for the diff, plus a scan of each recorded range over
+   the changed keys of its root, and the reapplication costs O(intentions × log n); neither depends on the
+   size of the read set. Comparing an atom key (its order key or token) may load a stub under the lock: I/O
+   bounded by the diff, never user code.
 5. **Publish** the root by compare-and-swap of the epoch, after ``flush``; the outcome rules are below.
 
 Details:

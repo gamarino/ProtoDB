@@ -349,3 +349,31 @@ def test_reapplied_dictionary_keeps_the_exact_key_form(db, cls, case):
     a.commit()
     assert _typed_items(db) == expected
 
+
+# -- R66 escalation, end to end (final review M4) ------------------------------------------------
+
+@CLASSES
+@pytest.mark.parametrize("reads", ["at the limit", "past the limit"])
+def test_escalation_past_the_limit_makes_the_reads_one_whole_collection_unit(db, cls, reads):
+    """R66: up to ``PRECONDITION_ESCALATION_LIMIT`` (1024) fine reads of one linked Dictionary stay
+    key units, and a concurrent write of a key not read composes; one more read replaces them by
+    ``Unit(WHOLE)``, and the same concurrent write then conflicts on the whole collection."""
+    from proto_db.preconditions import PRECONDITION_ESCALATION_LIMIT as LIMIT
+    n = LIMIT if reads == "at the limit" else LIMIT + 1
+    seed(db, cls, **{f"k{i:04d}": i for i in range(n)}, other=0)
+    a, b = db.new_transaction(), db.new_transaction()
+    d = a.get_root_object("d")
+    for i in range(n):
+        assert d.get_at(f"k{i:04d}") == i
+    fine = [u for u in a._read_log.preconditions() if u.root == "d" and u.kind is UnitKind.KEY]
+    a.set_root_object("w", 1)
+    write(b, lambda d: d.set_at("other", 1))
+    b.commit()
+    if reads == "at the limit":
+        assert len(fine) == LIMIT and not a._read_log.whole("d")
+        a.commit()
+        assert db.run(lambda t: t.get_root_object("w")) == 1
+    else:
+        assert fine == [] and a._read_log.whole("d")
+        assert conflict(a) == whole()
+        assert db.run(lambda t: t.get_root_object("w")) is None

@@ -929,7 +929,13 @@ def _with_all_added(index, elements: list):
 
 def _unique_conflict(index, step: Callable):
     """``step(index)``; for a unique index, a ``ProtoValidationError`` it raises (a key held twice
-    in the newer state) becomes ``IntentionConflict(WHOLE)`` (R29, R69)."""
+    in the newer state) becomes ``IntentionConflict(WHOLE)`` (R29, R69).
+
+    Any ``ProtoValidationError`` of the step is converted, also one an extractor raises for an
+    element of the newer state: the step cannot tell the two apart without running the
+    extractor again.  The outcome stays correct: the conflict makes ``Database.run`` retry, and
+    the retry's ``add_index`` builds over that state in the transaction's own view, where the
+    extractor's error (or the duplicate) is raised as such -- one extra attempt (final review, T13)."""
     try:
         return step(index)
     except ProtoValidationError as e:

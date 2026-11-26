@@ -1,6 +1,6 @@
-"""ProtoDB 2.0 exception hierarchy (decision D12).
+"""The proto_db 2.0 exception hierarchy (decision D12).
 
-All ProtoDB errors derive from :class:`ProtoDBError`. Every class carries a numeric
+All proto_db errors derive from :class:`ProtoDBError` (the class keeps its name: it is API). Every class carries a numeric
 ``code``; an explicitly given code always wins, including ``0``.
 
 :func:`secondary_errors` returns the exceptions that were raised concurrently with
@@ -25,7 +25,7 @@ BASE_ERROR = 1
 
 
 class ProtoDBError(Exception):
-    """Base class of every error raised by ProtoDB."""
+    """Base class of every error raised by proto_db."""
 
     default_code = BASE_ERROR
 

@@ -391,3 +391,36 @@ def test_linked_collection_of_another_transaction_records_nothing_in_the_writer(
     b.commit()
     assert not b._read_log.whole("a")
     a.abort()
+
+
+# -- classification reads no class code (final review M1) ---------------------------------------
+
+_META_LOOKUPS = []
+
+
+class _CountingMeta(type(Dictionary)):
+    """A metaclass whose attribute lookups on its classes would show (a getattr of the class)."""
+
+    def __getattribute__(cls, name):
+        _META_LOOKUPS.append(name)
+        return super().__getattribute__(name)
+
+
+class _MetaPlain(Dictionary, metaclass=_CountingMeta):
+    __type_name__ = "tests.linked.MetaPlain"
+
+
+class _MetaOverriding(Dictionary, metaclass=_CountingMeta):
+    __type_name__ = "tests.linked.MetaOverriding"
+
+    def get_at(self, key, default=None):
+        return default
+
+
+def test_classification_runs_no_code_of_the_class_or_its_metaclass():
+    """``fine_grained`` may first meet a class under the space root (P-C): it reads the namespaces
+    along the MRO, never ``getattr`` on the class (which runs a metaclass ``__getattribute__``)."""
+    _META_LOOKUPS.clear()
+    assert fine_grained(_MetaPlain) is True
+    assert fine_grained(_MetaOverriding) is False
+    assert _META_LOOKUPS == []

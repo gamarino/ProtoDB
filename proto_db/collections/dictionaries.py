@@ -712,7 +712,12 @@ class RepeatedKeysDictionary(ConcurrentOptimized, IndexedCollection):
         return form
 
     def _rekeyed(self, key, form) -> "RepeatedKeysDictionary":
-        """This multimap with the stored key equal to ``key`` filed as ``form`` (same records)."""
+        """This multimap with the stored key equal to ``key`` filed as ``form`` (same records).
+
+        The indexes are left as they are, and stay exact: a multimap's elements are its records
+        (:meth:`elements`), so an index -- whatever its ``KeySpec`` -- is computed from records
+        only and never from the key a record is filed under; refiling the same records under
+        another form of an equal key changes no index key (final review, T14)."""
         root, _, records = avl.key_remove(self.root, key)
         root = avl.key_put(root, form, records)[0]
         return self._with(root=root, _changes=self._changes, _whole=self._whole)
