@@ -133,6 +133,12 @@ base collection's content and storage pointer and, as runtime state, a link to t
   transaction, one built separately (``tr.new_dictionary()``, ``from_items``, ``from_iterable``), one taken
   from another root, another transaction or a ``Snapshot``, is **not linked**: assigning it replaces the
   root, compared against the root's base value like an object root (R11).
+* **A linked collection stored elsewhere depends on its whole source root.** Persisting a linked version
+  other than by assigning it to its own root -- writing it (or a version derived from it) to another root
+  or a mutable cell, holding it in an object attribute, or as a value or element of another collection, at
+  any depth -- publishes its whole content, so the transaction records the whole source root, exactly as
+  reading all of it does: any concurrent change of that root is a conflict. This also holds when the same
+  version is assigned to its own root as well: that root is then published as is, without reapplying.
 
 Writes
 ------

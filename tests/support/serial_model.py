@@ -114,8 +114,16 @@ LOOKUP_OPS = ("x_eq", "x_in")
 #: The operations of Task 10: range reads (``x_range`` through :data:`VALUE_INDEX`, ``key`` the
 #: pair ``(low, high)``; the Dictionary windows ``w_after`` and ``w_window``).
 RANGE_OPS = ("x_range", "w_after", "w_window")
+#: The operations of the final review (C1): a root's value persisted elsewhere.  ``p_copy`` writes
+#: root ``target``'s value into root ``key`` (a Dictionary or HashDictionary with the item
+#: ``value`` set first, when ``value`` is a pair: a version derived from the linked copy);
+#: ``p_nest`` writes into root ``key`` a new object whose attribute ``value`` holds root
+#: ``target``'s collection (a nested linked copy).  Either one makes the transaction depend on the
+#: whole source root, and composes with nothing.
+PERSIST_OPS = ("p_copy", "p_nest")
 #: Every operation kind the model knows (each must have a real and a model implementation).
-ALL_OPS = DICTIONARY_AND_CELL_OPS + SET_OPS + COUNTED_SET_OPS + MULTIMAP_OPS + LIST_OPS + LOOKUP_OPS + RANGE_OPS
+ALL_OPS = (DICTIONARY_AND_CELL_OPS + SET_OPS + COUNTED_SET_OPS + MULTIMAP_OPS + LIST_OPS + LOOKUP_OPS + RANGE_OPS
+           + PERSIST_OPS)
 #: The kinds each family's operations act on, by operation prefix.
 _FAMILIES = {"d_": DICTIONARIES, "s_": SETS, "cs_": COUNTED_SETS, "r_": MULTIMAPS, "l_": LISTS, "x_": DICTIONARIES,
              "w_": POSITIONAL}
@@ -317,6 +325,10 @@ def _draw(rng, names: StateNames, kind: str) -> Op:
         return Op(kind, target, key, rng.choice(W_AFTER_COUNTS))
     if kind == "w_window":
         return Op(kind, target, rng.choice(W_WINDOW_OFFSETS), 1)
+    if kind == "p_copy":
+        return Op(kind, target, rng.choice(roots), (key, value) if rng.random() < 0.5 else None)
+    if kind == "p_nest":
+        return Op(kind, target, rng.choice(roots), key)
     return Op(kind, target, key, value if kind in ("obj_set", "d_set") else None)
 
 
@@ -341,8 +353,29 @@ def kind_of(value):
 
 
 def _attributes(obj, keys) -> tuple:
-    """The attributes of an object root as a sorted tuple of pairs (values are never None)."""
-    return tuple((k, obj[k]) for k in sorted(keys) if obj[k] is not None)
+    """The attributes of an object root as a sorted tuple of pairs (values are never None; a
+    collection ``p_nest`` stored is read as :func:`nested_value`)."""
+    return tuple((k, read_value(obj[k])) for k in sorted(keys) if obj[k] is not None)
+
+
+def _frozen(content):
+    """A model content as a comparable value: a dict as its sorted items, a list as a tuple."""
+    if isinstance(content, dict):
+        return tuple(sorted((k, _frozen(v)) for k, v in content.items()))
+    if isinstance(content, list):
+        return tuple(content)
+    return content
+
+
+def nested_value(kind: str, content) -> tuple:
+    """What reading a collection of ``kind`` holding model ``content`` from an attribute gives."""
+    return ("nested", kind, _frozen(content))
+
+
+def read_value(value):
+    """An attribute value as the checker reads it: a collection by its kind and content."""
+    kind = type(value).__name__
+    return nested_value(kind, content_of(value)) if kind in COLLECTIONS else value
 
 
 def fresh_content(kind: str, items: dict) -> dict:
@@ -428,7 +461,7 @@ def _real_obj_get(tr, op, names):
     kind = kind_of(obj)
     if kind is None:
         return None
-    return obj[op.key] if kind == OBJECT else ("kind", kind)
+    return read_value(obj[op.key]) if kind == OBJECT else ("kind", kind)
 
 
 @_real
@@ -742,6 +775,23 @@ def _real_l_remove(tr, op, names):
 @_real
 def _real_l_len(tr, op, names):
     return _list_read(tr, op, len)
+
+
+@_real
+def _real_p_copy(tr, op, names):
+    value = tr.get_root_object(op.target)
+    if value is None:
+        return
+    if op.value is not None and kind_of(value) in DICTIONARIES:
+        value = value.set_at(*op.value)
+    tr.set_root_object(op.key, value)
+
+
+@_real
+def _real_p_nest(tr, op, names):
+    value = tr.get_root_object(op.target)
+    if kind_of(value) in COLLECTIONS:
+        tr.set_root_object(op.key, tr.new_object(**{op.value: value}))
 
 
 @_real
@@ -1059,6 +1109,20 @@ class Model:
     def _l_len(self, op):
         content, marker = self._content(op, LISTS)
         return marker if content is None else len(content)
+
+    def _p_copy(self, op):
+        held = self.roots.get(op.target)
+        if held is None:
+            return
+        kind, content = copy.deepcopy(held)
+        if op.value is not None and kind in DICTIONARIES:
+            content[op.value[0]] = op.value[1]
+        self.roots[op.key] = (kind, content)
+
+    def _p_nest(self, op):
+        kind, content = self.roots.get(op.target, (None, None))
+        if kind in COLLECTIONS:
+            self.roots[op.key] = (OBJECT, {op.value: nested_value(kind, content)})
 
     def _c_get(self, op):
         return self.cells.get(op.target)

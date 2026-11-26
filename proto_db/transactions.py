@@ -197,7 +197,7 @@ from .catalog.atoms import INTENT_LOG_ROOT, SEMANTIC_CATALOG_ROOT
 from .collections import diff as _diff
 from .collections.base import IntentionConflict, _Immutable
 from .collections.linking import (NOT_A_UNIT, Link, engine_reads, fine_grained, link_of, linked_copy, lookup_key,
-                                  record_whole, unit_key)
+                                  record_persisted, record_whole, unit_key)
 from .collections.dictionaries import Dictionary, RepeatedKeysDictionary
 from .collections.hash_dictionaries import HashDictionary
 from .collections.lists import List
@@ -781,6 +781,16 @@ class Snapshot:
 
 
 # -- persistence helpers ----------------------------------------------------------------------
+
+def _own_link(value, transaction) -> Optional[Link]:
+    """The link of ``value`` when it is a linked collection of ``transaction`` (whatever the
+    transaction's state), else ``None``."""
+    try:
+        link = value.__dict__.get("_link")
+    except AttributeError:
+        return None
+    return link if link is not None and link.transaction is transaction else None
+
 
 def _save_atom(context, atom: Atom) -> AtomPointer:
     """Save ``atom`` through ``context`` (adopting it if it has no context); refuse foreign storages."""
@@ -2916,6 +2926,9 @@ class Transaction:
         # decided when it is written, while the transaction is active.
         self._linked: dict = {}
         self._linked_writes: set = set()
+        #: Whether the commit preparation is persisting this transaction's written values: a
+        #: linked collection met nested in one records its whole root then (final review C1).
+        self._persisting_links = False
         # Root name -> the prepared record of intentions of its linked write (prepare_changes: the
         # changes with their index keys, R24), computed at commit before the space root is taken.
         self._prepared: dict = {}
@@ -4015,16 +4028,49 @@ class Transaction:
         """The preparation phase (spec section 8 phase 2), without the space root: the index keys
         of the intentions (:meth:`_prepare_writes`), every written atom persisted, and the
         registries resolution may need built (outside every lock)."""
+        # A linked collection persisted other than as its own root's linked write depends on its
+        # whole source root (final review C1): recorded first, so the preparation of the linked
+        # writes, the pre-pass and delta validation all see the unit.
+        self._persisting_links = True
+        try:
+            self._record_linked_values()
+            self._save_written()
+        finally:
+            self._persisting_links = False
         self._prepare_writes()
+        self._save_written()            # versions the preparation rebuilt; the rest are saved
+        # In cluster mode the round's replication makes every record of the round durable with
+        # one local sync (D50); no flush per transaction.
+        with _released(self._lock):
+            self._prebuild_registries()
+
+    def _records_persisted_links(self) -> bool:
+        """Whether a linked collection of this transaction persisted inside another value records
+        its whole root now (:func:`~proto_db.collections.linking.record_persisted`): while the
+        transaction is active and during its commit preparation, never in the pre-pass or the
+        build."""
+        return self._state == _ACTIVE or self._persisting_links
+
+    def _record_linked_values(self) -> None:
+        """Preparation (C1): every written root or cell whose value is itself a linked collection
+        of this transaction, other than the linked write of the root it was read from, records
+        ``Unit(WHOLE)`` of that source root (its nested ones record when they are saved)."""
+        for name, value in self._writes.items():
+            link = _own_link(value, self)
+            if link is not None and not (name in self._linked_writes and link.root == name):
+                record_persisted(link)
+        for value in self._mwrites.values():
+            link = _own_link(value, self)
+            if link is not None:
+                record_persisted(link)
+
+    def _save_written(self) -> None:
+        """Persist every written value (roots, cells, catalog objects): what the build publishes."""
         written = (list(self._writes.values()) + list(self._mwrites.values()) + list(self._catalog_new.values())
                    + [obj for _, obj in self._catalog_updates.values()])
         for value in written:
             if isinstance(value, Atom):
                 self.save(value)
-        # In cluster mode the round's replication makes every record of the round durable with
-        # one local sync (D50); no flush per transaction.
-        with _released(self._lock):
-            self._prebuild_registries()
 
     def _prepass(self) -> Optional[_Candidate]:
         """The pre-pass (spec section 8 phase 3, R31, R64), without the space root: read the last

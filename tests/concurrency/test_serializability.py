@@ -53,7 +53,8 @@ from proto_db.transactions import ObjectSpace
 from tests.concurrency.harness import report, run_threads
 from tests.support.stale_prepass import stale_prepass
 from tests.support.serial_model import (COLLECTIONS, COUNTED_SET_OPS, DICTIONARY_AND_CELL_OPS, LIST_OPS,
-                                        LOOKUP_OPS, MULTIMAP_OPS, OBJECT, RANGE_OPS, RECORDS, SET_OPS, Op, Record,
+                                        LOOKUP_OPS, MULTIMAP_OPS, OBJECT, PERSIST_OPS, RANGE_OPS, RECORDS, SET_OPS, Op,
+                                        Record,
                                         StateNames, capture, check_history, execute, extractor_calls_under_root,
                                         family_of, group_of, kinds_by_version, random_program, range_reads,
                                         reset_range_reads, roots_by_version, with_indexes)
@@ -83,6 +84,15 @@ MIX = (DICTIONARY_AND_CELL_OPS + ("root_names", "c_names") * 2 + ("d_get", "d_ha
        + LIST_OPS + ("l_get", "l_set", "l_append", "l_extend") * 3
        + LOOKUP_OPS * 4
        + RANGE_OPS * 3 + ("w_after", "w_window") * 8 + ("d_set",) * 8)
+
+#: The final review's mix (C1): a root's value persisted elsewhere (``p_copy``, ``p_nest``) among the
+#: reads and writes of the roots it is copied from and to, so a copy meets concurrent changes of
+#: its source and reads of its destination.  Kept apart from :data:`MIX`, whose seeded programs the
+#: exposure floors below are measured on.
+PERSIST_MIX = (DICTIONARY_AND_CELL_OPS + ("d_get", "d_set", "d_remove", "d_items", "obj_get") * 3
+               + SET_OPS + LIST_OPS + PERSIST_OPS * 6)
+#: Deterministic floor of persisting operations in the seeded PERSIST_MIX programs.
+PERSIST_OPS_MIN = 1000
 
 #: Deterministic floors of :func:`range_exposure` for the seeded programs, counting only the reads
 #: that record a range in the serial replay (seed values 350, 419, 27938, 26510; Task 10 report).
@@ -389,22 +399,40 @@ def test_serializability_with_delta_verification(db, monkeypatch, r0):
         assert stats.forced > 0 and stats.delta_checks > 0, (stats.forced, stats.delta_checks)
 
 
-def _check_serializable(db, label):
+@pytest.mark.parametrize("r0", ["published", "stale"])
+def test_serializability_of_collections_persisted_elsewhere(db, monkeypatch, r0):
+    """Final review C1: a root's linked collection (or a version derived from it) written into
+    another root or nested in a new object publishes its whole content, so the transaction must
+    depend on the whole source root.  Run with ``transactions._VERIFY_DELTA`` on, with the
+    published R0 and with a stale one (every concurrent change decided by delta validation)."""
+    monkeypatch.setattr(transactions, "_VERIFY_DELTA", True)
+    stats = stale_prepass(monkeypatch) if r0 == "stale" else None
+    _check_serializable(db, f"serializability, collections persisted elsewhere ({r0} R0)", PERSIST_MIX)
+    if stats is not None:
+        assert stats.forced > 0 and stats.delta_checks > 0, (stats.forced, stats.delta_checks)
+
+
+def _check_serializable(db, label, mix=MIX):
     rng = random.Random(SEED)
     _seed_state(db, rng)
     initial = _capture(db)
-    programs = [[random_program(rng, NAMES, MIX) for _ in range(PER_THREAD)]
+    programs = [[random_program(rng, NAMES, mix) for _ in range(PER_THREAD)]
                 for _ in range(THREADS)]
     per_thread = [[] for _ in range(THREADS)]
     stats = Stats()
-    # Deterministic: the seeded programs give lookups and same-group writes of other threads
-    # enough chances to meet (B4); how many actually meet depends on the interleaving (reported).
-    exposure = group_exposure(programs)
-    assert exposure["lookup_programs"] >= 100 and exposure["group_writers"] >= 50 \
-        and exposure["pairs"] >= 1000, exposure
-    ranges = range_exposure(programs, initial)
-    assert ranges["range_programs"] >= RANGE_PROGRAMS_MIN and ranges["range_writers"] >= RANGE_WRITERS_MIN \
-        and ranges["pairs"] >= RANGE_PAIRS_MIN and ranges["window_pairs"] >= RANGE_WINDOW_PAIRS_MIN, ranges
+    if mix is MIX:
+        # Deterministic: the seeded programs give lookups and same-group writes of other threads
+        # enough chances to meet (B4); how many actually meet depends on the interleaving (reported).
+        exposure = group_exposure(programs)
+        assert exposure["lookup_programs"] >= 100 and exposure["group_writers"] >= 50 \
+            and exposure["pairs"] >= 1000, exposure
+        ranges = range_exposure(programs, initial)
+        assert ranges["range_programs"] >= RANGE_PROGRAMS_MIN and ranges["range_writers"] >= RANGE_WRITERS_MIN \
+            and ranges["pairs"] >= RANGE_PAIRS_MIN and ranges["window_pairs"] >= RANGE_WINDOW_PAIRS_MIN, ranges
+    else:
+        exposure = ranges = None
+        persisting = sum(op.kind in PERSIST_OPS for thread in programs for program in thread for op in program)
+        assert persisting >= PERSIST_OPS_MIN, persisting
     reset_range_reads()
 
     calls_before = extractor_calls_under_root()
@@ -416,7 +444,7 @@ def _check_serializable(db, label):
     check_history(records, initial, final=_capture(db))
     by_unit = Counter(unit.kind.name if unit is not None else "none" for unit, _, _ in stats.conflicts)
     calls, held = (after - before for after, before in zip(extractor_calls_under_root(), calls_before))
-    assert calls > 0 and held == 0, f"the index extractor ran {held} of {calls} times with the space root held"
+    assert (calls > 0 or mix is not MIX) and held == 0, f"the index extractor ran {held} of {calls} times with the space root held"
     lookups = Counter(op.kind for r in records for op in r.program if op.kind in LOOKUP_OPS)
     report(label, elapsed,
            f"{stats.commits} commits, {stats.attempts} attempts, {len(stats.conflicts)} conflicts",

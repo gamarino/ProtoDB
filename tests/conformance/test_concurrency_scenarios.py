@@ -197,6 +197,15 @@ def run_op(tr, op: list) -> None:
     elif kind == "write":
         root, method = args[0], args[1]
         tr.set_root_object(root, WRITES[method](tr.get_root_object(root), *args[2:]))
+    elif kind == "copy":
+        value = tr.get_root_object(args[0])
+        if len(args) > 2:
+            value = WRITES[args[2]](value, *args[3:])
+        tr.set_root_object(args[1], value)
+    elif kind == "nest":
+        tr.set_root_object(args[1], tr.new_object(**{args[2]: tr.get_root_object(args[0])}))
+    elif kind == "copy_to_mutable":
+        tr.new_mutable(args[1], tr.get_root_object(args[0]))
     elif kind == "read":
         root, method = args[0], args[1]
         READS[method](tr.get_root_object(root), *args[2:])

@@ -49,7 +49,8 @@ from . import avl
 if TYPE_CHECKING:
     from ..transactions import Transaction
 
-__all__ = ["Link", "ExactKey", "linked_copy", "link_of", "record_read", "record_whole", "record_key", "record_range",
+__all__ = ["Link", "ExactKey", "linked_copy", "link_of", "record_read", "record_whole", "record_persisted",
+           "record_key", "record_range",
            "engine_reads", "engine_reading", "fine_grained", "register_fine_grained", "unit_key", "lookup_key",
            "NOT_A_UNIT", "wrote", "written_with"]
 
@@ -62,6 +63,12 @@ class Link:
     transaction: "Transaction"
     root: str
     base_pointer: AtomPointer | None
+
+    def persisted(self) -> None:
+        """A linked collection of this link is being persisted as part of another value (the
+        encoder meets it as a nested atom, :func:`proto_db.core.codec.encode_value`): record
+        :func:`record_persisted`.  Engine code only (P-C)."""
+        record_persisted(self)
 
 
 # -- engine reads (B3) ----------------------------------------------------------------------
@@ -169,6 +176,27 @@ def record_whole(collection) -> None:
         log = link.transaction._read_log
         if not log.whole(link.root):
             log.record(Unit(UnitKind.WHOLE, link.root), _whole_expected(link))
+
+
+def record_persisted(link: Link) -> None:
+    """Record ``Unit(WHOLE, root)`` for the linked collection of ``link`` being persisted other
+    than as the top-level linked write of its own root (final review C1): stored in another
+    root, an object attribute, a value or element of another collection, a mutable cell, or
+    nested at any depth in any of those.  Such a value publishes the collection's whole content,
+    so the transaction depends on the whole source root, exactly as a read of all of it does
+    (P-B; spec section 6: no read path left unrecorded).
+
+    Recorded while the link's transaction is active (an explicit ``save``) and during its
+    commit preparation (:meth:`Transaction._prepare_commit`), before the pre-pass, so every
+    validation path sees the unit; never later (the pre-pass and the build persist the root
+    maps, which hold the top-level linked writes themselves).  Engine reads do not exempt it:
+    what is persisted is published whoever reads it.  No user code runs (P-C)."""
+    transaction = link.transaction
+    if not transaction._records_persisted_links():
+        return
+    log = transaction._read_log
+    if not log.whole(link.root):
+        log.record(Unit(UnitKind.WHOLE, link.root), _whole_expected(link))
 
 
 def record_key(collection, key, kind: UnitKind = UnitKind.KEY, *, from_base: bool = False) -> None:

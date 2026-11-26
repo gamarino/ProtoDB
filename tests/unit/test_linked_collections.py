@@ -281,3 +281,113 @@ def test_unlogged_content_change_takes_whole_collection(db, concurrent):
     else:
         a.commit()
         assert content(db, "d") == {}
+
+
+# -- a linked collection persisted anywhere but as its own root's linked write (final review C1) --
+#
+# Storing the linked copy of root "a" (or a version derived from it) anywhere else -- another
+# root, an object attribute, a value or element of another collection, a mutable cell -- publishes
+# its whole content: the transaction depends on root "a"'s whole content, as a read of it all does.
+
+def _persist(variant, tr, a):
+    """Persist the linked copy ``a`` of root "a" (or a version of it) as ``variant`` says."""
+    if variant == "other root":
+        tr.set_root_object("b", a)
+    elif variant == "derived version in other root":
+        tr.set_root_object("b", a.set_at("z", 3))
+    elif variant == "object attribute":
+        tr.set_root_object("b", tr.new_object(copy=a))
+    elif variant == "dictionary value":
+        tr.set_root_object("b", tr.new_dictionary().set_at("k", a))
+    elif variant == "list element":
+        tr.set_root_object("b", tr.new_list().append_last(a.set_at("z", 3)))
+    elif variant == "deep inside an unlinked value":
+        tr.set_root_object("b", tr.new_object(holder=tr.new_dictionary().set_at("k", tr.new_object(x=a))))
+    elif variant == "new mutable cell":
+        tr.new_mutable("m", a)
+    elif variant == "set mutable cell":
+        tr.set_mutable("cell", a.set_at("z", 3))
+    elif variant == "own root and elsewhere":
+        tr.set_root_object("a", a.set_at("y", 2))
+        tr.set_root_object("b", tr.new_object(copy=a))
+    elif variant == "same version in own root and elsewhere":
+        v = a.set_at("y", 2)
+        tr.set_root_object("a", v)
+        tr.set_root_object("b", v)
+    elif variant == "saved early":
+        obj = tr.new_object(copy=a)
+        tr.save(obj)
+        tr.set_root_object("b", obj)
+    elif variant == "value of its own root's write":
+        tr.set_root_object("a", a.set_at("self", tr.new_object(copy=a)))
+    else:
+        raise AssertionError(variant)
+
+
+_PERSIST_VARIANTS = ["other root", "derived version in other root", "object attribute", "dictionary value",
+                     "list element", "deep inside an unlinked value", "new mutable cell", "set mutable cell",
+                     "own root and elsewhere", "same version in own root and elsewhere", "saved early",
+                     "value of its own root's write"]
+
+
+def _seed_a(db):
+    db.run(lambda tr: (tr.set_root_object("a", tr.new_dictionary().set_at("x", 1)), tr.new_mutable("cell", 0)))
+
+
+@pytest.mark.parametrize("variant", _PERSIST_VARIANTS)
+def test_linked_collection_persisted_elsewhere_depends_on_its_whole_root(db, variant):
+    _seed_a(db)
+    t = db.new_transaction()
+    _persist(variant, t, t.get_root_object("a"))
+    db.run(lambda tr: tr.set_root_object("a", tr.get_root_object("a").set_at("x", 100)))
+    with pytest.raises(ProtoConflictError) as e:
+        t.commit()
+    assert e.value.unit == whole("a")
+    assert content(db, "a") == {"x": 100}
+
+
+@pytest.mark.parametrize("variant", _PERSIST_VARIANTS)
+def test_linked_collection_persisted_elsewhere_commits_without_a_concurrent_change(db, variant):
+    _seed_a(db)
+    t = db.new_transaction()
+    _persist(variant, t, t.get_root_object("a"))
+    db.run(lambda tr: tr.set_root_object("other", 1))
+    t.commit()
+    assert t._read_log.whole("a")
+
+
+def test_linked_collection_persisted_elsewhere_has_a_serial_order(db):
+    """The reviewer's probe: T stores a version of root "a" in root "b"; T2 changes "a" and writes
+    whether "b" exists.  Both committing would have no serial order, so T conflicts."""
+    db.run(lambda tr: tr.set_root_object("a", tr.new_dictionary().set_at("x", 1).set_at("y", 2)))
+    t, t2 = db.new_transaction(), db.new_transaction()
+    t.set_root_object("b", t.get_root_object("a").set_at("z", 3))
+    t2.set_root_object("a", t2.get_root_object("a").set_at("x", 100))
+    t2.set_root_object("c", t2.get_root_object("b") is None)
+    t2.commit()
+    with pytest.raises(ProtoConflictError) as e:
+        t.commit()
+    assert e.value.unit == whole("a")
+    assert db.run(lambda tr: tr.get_root_object("b")) is None
+
+
+def test_own_root_linked_write_alone_stays_fine_grained(db):
+    """The top-level linked write of its own root records its units only, never the whole root."""
+    _seed_a(db)
+    t = db.new_transaction()
+    t.set_root_object("a", t.get_root_object("a").set_at("y", 2))
+    db.run(lambda tr: tr.set_root_object("a", tr.get_root_object("a").set_at("x", 100)))
+    t.commit()
+    assert not t._read_log.whole("a")
+    assert content(db, "a") == {"x": 100, "y": 2}
+
+
+def test_linked_collection_of_another_transaction_records_nothing_in_the_writer(db):
+    """A linked copy belongs to its own transaction (R46): another transaction storing it records
+    its usual ROOT unit, not the whole source root."""
+    _seed_a(db)
+    a, b = db.new_transaction(), db.new_transaction()
+    b.set_root_object("b", b.new_object(copy=a.get_root_object("a")))
+    b.commit()
+    assert not b._read_log.whole("a")
+    a.abort()
