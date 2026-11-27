@@ -259,10 +259,11 @@ Set ``has(e)``, ``e in s``                                             presence 
 CountedSet ``has(e)``, ``count_of(e)``                                 count of ``e`` unchanged
 RepeatedKeysDictionary ``get_at(k)`` (alias ``get``), ``has(k)``       the records of ``k`` unchanged
 List ``get_at(i)``, ``i`` a base position                              position ``i`` exists and holds its base value
-query answered by an equality-index lookup of key ``x`` (``==``,       the group of ``x`` in that index unchanged
-``in``), alone or under filter, sort, limit, union, intersection
-query answered by a ``RangeIndex`` range scan (``<``, ``<=``, ``>``,   no index key inside the scanned range changed
-``>=``, the ``between`` family)                                        (a range invariant)
+query answered by an equality-index lookup of key ``x`` (``==``,       the group of ``x`` in that index unchanged: no
+``in``), alone or under filter, sort, limit, union, intersection       member added, removed or replaced
+query answered by a ``RangeIndex`` range scan (``<``, ``<=``, ``>``,   no element with an index key inside the scanned
+``>=``, the ``between`` family)                                        range added, removed or changed (a range
+                                                                       invariant)
 Dictionary ``keys(after=k)``                                           no key from ``k`` to the last key returned
                                                                        changed (to the end when exhausted)
 planner window over a Dictionary (``take`` / ``skip``)                 no key from the **first** key to the window's

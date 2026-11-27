@@ -144,7 +144,8 @@ assert fine == 100                                     # deals no other thread t
 print(f"100 commits: {whole} attempts with a version per root, {fine} with the precondition model")
 ```
 
-Sample output (the first count varies from run to run, the second is always 100):
+Sample output (one run on the machine that built this page, an AMD Ryzen 5 5500U, CPython 3.14.6
+free-threaded; the first count varies from run to run, about 110 to 150 there; the second is always 100):
 
 ```text
 100 commits: 128 attempts with a version per root, 100 with the precondition model
@@ -153,13 +154,17 @@ Sample output (the first count varies from run to run, the second is always 100)
 Every attempt beyond 100 is work redone because of a change to a deal it never looked at. The second figure
 is the model this chapter builds up to: the same 100 moves, each committed at its first attempt.
 
-The other two failures of the whole-root approach showed up in practice, and are why 2.0.0rc5 replaced it:
+That is the one real failure of the obvious approach: it is correct, and it is coarse. rc4 tried to soften the
+coarse unit, and the softening brought two defects of its own, which are not properties of version-per-root
+locking (the hand-written version above reads the version cell on every write, so it never loses an update):
 
-* **A merge was bolted on.** To let writers of different keys coexist, rc4 merged a collection written
+* **A conditional merge.** To let writers of different keys coexist, rc4 merged a collection written
   *without being read* by replaying its operations, but only under a condition the caller could not see. The
   same call merged or replaced depending on how the value had been built.
-* **Blind writes lost updates.** A root or a cell written without being read first was compared with nothing:
-  the last writer won, silently.
+* **Blind writes compared with nothing.** rc4's read set ignored a root or a cell written without being read
+  first, so the last writer won, silently.
+
+2.0.0rc5 replaces both the coarse unit and the softening with one model.
 
 ## The model: preconditions and intentions
 
@@ -199,6 +204,26 @@ serial execution of all of them, in that order, would have shown it. The test su
 of randomly generated transactions, re-run serially and compared
 (`tests/concurrency/test_serializability.py`).
 
+### Why reapplying is safe
+
+Publishing intentions on a state the transaction never saw looks like guessing. It is not, because of one
+invariant: **at commit, every unit the transaction depended on holds, in the current state, the value it had
+in the transaction's base.** Had the transaction started at its commit point instead, it would have read the
+same values, taken the same decisions and produced the same intentions. Applying those intentions to the current
+state is therefore exactly its effect in a serial execution placed at its commit.
+
+Three rules keep the invariant exact:
+
+* **The base is fixed.** A precondition compares against the snapshot the transaction started on, never
+  against a value it happened to see later.
+* **Comparison is by value.** A unit is compared through a token of its exact content (by pointer for stored
+  atoms). If deal 5 changed and changed back before the commit, its precondition holds, and that is correct:
+  nothing the transaction read differs (the "ABA" case needs no special handling).
+* **All or nothing.** If any precondition fails, no intention is applied and nothing is published.
+
+What makes the invariant cover the transaction's logic is the next section's first rule: what a transaction
+read is what it depended on.
+
 ## The conflict units
 
 A precondition protects a **unit**: the smallest part of the state the operation depends on. Which unit an
@@ -214,9 +239,10 @@ operation takes depends on the operation and on the value of the root:
 | `add` to a counted set | none | never: counts compose |
 | `append_last` to a list | none | never: appends land in commit order |
 | `set_at(i)` of an existing list position | the position (`POSITION`) | both change position `i` |
-| `insert_at`, `remove_at`, `append_first` on a list | the whole list (`WHOLE`) | anything changed the list |
-| a query answered by an equality index | the group of the key (`INDEX_GROUP`) | an element entered or left that group |
-| a query answered by a range index | the key range (`RANGE`) | a key inside the range changed |
+| `insert_at`, `remove_at`, `append_first` on a list | the whole list (`WHOLE`) | anything changed the list (for the transaction that inserted) |
+| a query answered by an equality index | the group of the key (`INDEX_GROUP`) | an element entered or left the group, or a member changed |
+| a query answered by a range index | the key range (`RANGE`) | an element with a key inside the range was added, removed or changed |
+| a write to a collection with a `unique=True` index | the group of the written key (`INDEX_GROUP`) | another transaction wrote an element with the same key, read or not |
 | `len`, iteration, `keys()`, `values()`, a scan | the whole collection (`WHOLE`) | anything in it changed |
 
 Two rules shape the table. **Reading is declaring**: whatever a transaction read is taken as necessary for
@@ -244,6 +270,13 @@ def on_company(**changes):
 def rename_user(login, name):
     return lambda tr: tr.set_mutable(f"user:{login}", tr.get_mutable(f"user:{login}").with_(name=name))
 
+def rewrite(number, **changes):
+    """A transaction function: a new version of deal ``number`` with ``changes`` (its stage kept)."""
+    def work(tr):
+        deals = tr.get_root_object("opportunities")
+        tr.set_root_object("opportunities", deals.set_at(number, deals.get_at(number).with_(**changes)))
+    return work
+
 def after_query(query, number, stage):
     """Read with ``query``, then write deal ``number``: the commit depends on what the query read."""
     def work(tr):
@@ -265,6 +298,7 @@ cases = [
     ("list, append and insert", on_root("activity", lambda l: l.append_last("c")), on_root("activity", lambda l: l.insert_at(0, "x"))),
     ("lead lookup; a proposal is lost", move(11, "lost"), after_query(leads, 20, "qualified")),
     ("lead lookup; a lead is qualified", move(12, "qualified"), after_query(leads, 21, "qualified")),
+    ("lead lookup; a lead's amount changes", rewrite(15, amount=4321), after_query(leads, 25, "qualified")),
     ("amount >= 9900; a small deal changes", move(13, "won"), after_query(largest, 22, "won")),
     ("amount >= 9900; a large deal changes", move(242, "won"), after_query(largest, 23, "won")),
     ("title scan; any deal changes", move(14, "won"), after_query(by_title, 24, "won")),
@@ -285,6 +319,7 @@ list, two appends                      both committed
 list, append and insert                conflict on WHOLE
 lead lookup; a proposal is lost        both committed
 lead lookup; a lead is qualified       conflict on INDEX_GROUP 'lead' of index 'by_stage'
+lead lookup; a lead's amount changes   conflict on INDEX_GROUP 'lead' of index 'by_stage'
 amount >= 9900; a small deal changes   both committed
 amount >= 9900; a large deal changes   conflict on RANGE of index 'by_amount'
 title scan; any deal changes           conflict on WHOLE
@@ -297,10 +332,13 @@ Reading the results:
 * A **set** and a **counted set** let concurrent adders all commit, because every serial order gives the same
   result. Two removes of the same member conflict: each declared "bob is still here".
 * A **list** appends in commit order; an insertion shifts every later position, so it takes the whole list.
-* A **query** declares what its plan read. The equality lookup of `"lead"` conflicts only when a deal enters
-  or leaves the `lead` group (deal 12 left it); the range query only when a key inside its range changes (deal
-  242 is one of the largest); a scan conflicts with anything. Indexes narrow conflicts as well as reads,
-  and `explain()` tells you which plan, and so which unit, a query will use.
+* A **query** declares what its plan read. The lookup returned the leads themselves, so their content is what
+  it read: it conflicts when a deal enters or leaves the `lead` group (deal 12 left it) and when a lead changes
+  while staying one (deal 15's amount), but not when a deal outside the group changes (deal 11). The range query
+  conflicts with any change of an element whose amount is in its range, also one that keeps its amount (deal
+  242 only changed its stage), and not with a small deal (deal 13). A scan conflicts with anything. Indexes
+  narrow conflicts as well as reads, and `explain()` tells you which plan, and so which unit, a query will
+  use.
 
 ### One level only
 
@@ -330,11 +368,30 @@ set root, two adds:   both committed
 
 When concurrent writers are expected inside one part of the model, give that part a root of its own.
 
+The same holds the other way round: storing a collection obtained from `get_root_object` (or a version
+derived from it) inside a record, another root or a cell records the **whole** collection, because the stored
+value depends on all of it. A report record that keeps "the deals as they were" conflicts with any change of
+any deal:
+
+```python
+keep = lambda tr: tr.set_root_object("report", tr.new_object(deals=tr.get_root_object("opportunities")))
+print("a record holding the deals:", race(move(16, "won"), keep))
+```
+
+Output:
+
+```text
+a record holding the deals: conflict on WHOLE
+```
+
+To keep a picture of a collection without depending on it, keep the snapshot reference instead
+(`tr.snapshot_ref`, the version the transaction started on, which `Database.snapshot_at` reopens read-only;
+chapter 6).
+
 ## Writes you did not read are checked too
 
 A write is a precondition as well. Writing a root or a cell without reading it first still compares it with
-the value it had in the transaction's base. The third failure of the whole-root approach, the silent last
-writer, does not exist:
+the value it had in the transaction's base. rc4's silent last writer does not exist:
 
 ```python
 first, second = db.new_transaction(), db.new_transaction()
@@ -394,6 +451,87 @@ checked:   conflict on CELL 'user:cy'
 The unchecked assignment committed, and deal 30 now names a user that no longer exists. The checked one
 conflicted on Cy's cell, and its retry would find no user and refuse.
 
+## Check and add
+
+The most common concurrency question is "create it if it does not exist yet": a user with a new login, a
+contact with a new e-mail. Two transactions that both check, find nothing and add must not both commit. What
+they conflict on depends on **how the existence was checked**:
+
+```python
+from proto_db import EqualityIndex
+
+with db.new_transaction() as tr:
+    tr.set_root_object("logins", tr.new_dictionary())                                   # keyed by login
+    tr.set_root_object("staff", tr.new_dictionary().add_index(EqualityIndex("by_login", "login")))
+    tr.set_root_object("accounts", tr.new_dictionary().add_index(EqualityIndex("by_login", "login", unique=True)))
+    tr.set_root_object("people", tr.new_dictionary())                                   # no index
+    for root in ("staff", "people"):                  # 50 existing members: enough for the planner to use an index
+        members = tr.get_root_object(root)
+        for seat in range(100, 150):
+            members = members.set_at(seat, tr.new_object(login=f"user{seat}"))
+        tr.set_root_object(root, members)
+
+def by_key(n):
+    def work(tr):
+        logins = tr.get_root_object("logins")
+        if logins.has("dee"):
+            raise ProtoValidationError("dee exists")
+        tr.set_root_object("logins", logins.set_at("dee", tr.new_object(login="dee", seat=n)))
+    return work
+
+def by_lookup(n):
+    def work(tr):
+        staff = tr.get_root_object("staff")
+        if from_collection(staff).where(F.login == "dee").count():
+            raise ProtoValidationError("dee exists")
+        tr.set_root_object("staff", staff.set_at(n, tr.new_object(login="dee")))
+    return work
+
+def unique_no_read(n):
+    def work(tr):
+        accounts = tr.get_root_object("accounts")
+        tr.set_root_object("accounts", accounts.set_at(n, tr.new_object(login="dee")))
+    return work
+
+def by_scan(n):
+    def work(tr):
+        people = tr.get_root_object("people")
+        if any(person.login == "dee" for person in people.values()):
+            raise ProtoValidationError("dee exists")
+        tr.set_root_object("people", people.set_at(n, tr.new_object(login="dee")))
+    return work
+
+for label, make in (("by key, has(k)", by_key), ("by an equality lookup", by_lookup),
+                    ("unique index, no read", unique_no_read), ("by a scan", by_scan)):
+    print(f"{label:24} {race(make(1), make(2))}")
+try:
+    db.run(unique_no_read(3))
+except ProtoValidationError:
+    print("the retry of a duplicate: ProtoValidationError")
+```
+
+Output:
+
+```text
+by key, has(k)           conflict on KEY 'dee'
+by an equality lookup    conflict on INDEX_GROUP 'dee' of index 'by_login'
+unique index, no read    conflict on INDEX_GROUP 'dee' of index 'by_login'
+by a scan                conflict on WHOLE
+the retry of a duplicate: ProtoValidationError
+```
+
+| How existence is checked | The conflict unit |
+|---|---|
+| by key or element (`get_at(k)`, `has(k)`, `has(e)`) | that key or that element |
+| by an equality index on the field | the group of that index key |
+| with a declared unique index | the group, imposed by the engine even when the application does not read first |
+| by a traversal, or a query no equality index answers | the whole collection |
+
+All four are correct; they differ in what else they conflict with. Keying the collection by the identifier, or
+declaring a unique index on it, keeps the conflict to the one identifier. A unique index also refuses a
+duplicate within the transaction (`ProtoValidationError` at once) and, after a concurrent duplicate, the
+retry through `run` sees it and fails the same way.
+
 ## `Database.run` retries
 
 A conflict is not an error in your program. It says "someone else changed what you relied on; redo the work
@@ -439,7 +577,7 @@ holds both. Three rules for the function given to `run`:
   returns, from what it returned.
 * It does its reading **inside**, through the `tr` it receives. A value read before `run` belongs to an
   older snapshot, and nothing checks it at commit.
-* `run` re-raises the conflict after `retries` attempts. A unit that many writers hit needs a design where
+* `run` re-raises the conflict after `retries` retries (`retries + 1` attempts). A unit that many writers hit needs a design where
   they touch different units (a key each, a set, a counted set), not more retries.
 
 `ProtoOutcomeUnknownError` (a commit that may or may not have been applied, on cloud and cluster storage) is
@@ -471,8 +609,8 @@ These follow from the model; none of them can produce a result that no serial or
 * **One ordering point per space.** Validation and publication of one space run one at a time; the commit
   rate does not grow with cores. Building and saving the work does run in parallel.
 
-Depth: [the concurrency tutorial](../source/tutorials/concurrency.rst) ("check and add", unique indexes,
-identifiers without a shared counter, lock cells), [the concurrency model](../source/concurrency-model.rst)
+Depth: [the concurrency tutorial](../source/tutorials/concurrency.rst) (identifiers without a shared counter,
+lock cells), [the concurrency model](../source/concurrency-model.rst)
 (every rule, the commit protocol, the known limits), and
 [queries under concurrency](queries/06-queries-under-concurrency.md).
 

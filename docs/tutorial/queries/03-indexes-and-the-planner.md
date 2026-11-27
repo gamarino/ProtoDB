@@ -224,8 +224,9 @@ Output:
 a second 'ann' is refused: ProtoValidationError
 ```
 
-Two transactions that add the same key concurrently conflict on that key's group, and the retry sees the
-duplicate (chapter 6).
+Two transactions that add the same key concurrently conflict on that key's group, even if neither read it,
+and the retry through `Database.run` sees the duplicate and fails with `ProtoValidationError`: the race is in
+"Check and add", in [chapter 5 of the complete tutorial](../05-concurrency.md).
 
 ## The invariant
 

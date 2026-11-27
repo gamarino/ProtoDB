@@ -108,7 +108,7 @@ a lead is qualified:         conflict on INDEX_GROUP 'lead' of index 'by_stage'
 a deal becomes a lead:       conflict on INDEX_GROUP 'lead' of index 'by_stage'
 """)
 
-# -- 06-queries-under-concurrency.md, line 94 ----------------------------------------
+# -- 06-queries-under-concurrency.md, line 95 ----------------------------------------
 large = lambda deals: from_collection(deals).where(F.amount >= 9900).count()
 print("a small deal changes:         ", after(large, stage_of(7, "won")))
 print("a small deal grows into range:", after(large, amount_of(7, 9950)))
@@ -121,7 +121,7 @@ a large deal is won:           conflict on RANGE of index 'by_amount'
 a new small deal:              committed
 """)
 
-# -- 06-queries-under-concurrency.md, line 116 ----------------------------------------
+# -- 06-queries-under-concurrency.md, line 120 ----------------------------------------
 by_title = lambda deals: from_collection(deals).where(F.title == "opportunity 9").count()
 by_lambda = lambda deals: from_collection(deals).where(lambda d: d.amount % 1000 == 0).count()
 print(plan_of(from_collection(db.new_transaction().get_root_object("opportunities")).where(F.title == "x")))
@@ -135,7 +135,7 @@ a lambda, another deal changes:    conflict on WHOLE
 len(), another deal changes:       conflict on WHOLE
 """)
 
-# -- 06-queries-under-concurrency.md, line 139 ----------------------------------------
+# -- 06-queries-under-concurrency.md, line 143 ----------------------------------------
 from proto_db import EqualityIndex
 
 with db.new_transaction() as tr:
@@ -167,7 +167,7 @@ _expect("""
 != on 1000:    IndexComplement | conflict on WHOLE
 """)
 
-# -- 06-queries-under-concurrency.md, line 188 ----------------------------------------
+# -- 06-queries-under-concurrency.md, line 190 ----------------------------------------
 walk = lambda deals: list(deals.keys(after=990))
 window = lambda deals: from_collection(deals).skip(10).take(5).to_list()
 counted = lambda deals: from_collection(deals).skip(10).take(5).count()
@@ -175,16 +175,16 @@ print("keys(after=990), key 10 changes:     ", after(walk, stage_of(10, "won")))
 print("keys(after=990), key 995 changes:    ", after(walk, stage_of(995, "won")))
 print("skip(10).take(5), key 3 changes:     ", after(window, stage_of(3, "won")))
 print("skip(10).take(5), key 500 changes:   ", after(window, stage_of(500, "won")))
-print("the same window counted, key 500:    ", after(counted, stage_of(501, "won")))
+print("the same window counted, key 501:    ", after(counted, stage_of(501, "won")))
 _expect("""
 keys(after=990), key 10 changes:      committed
 keys(after=990), key 995 changes:     conflict on RANGE
 skip(10).take(5), key 3 changes:      conflict on RANGE
 skip(10).take(5), key 500 changes:    committed
-the same window counted, key 500:     conflict on WHOLE
+the same window counted, key 501:     conflict on WHOLE
 """)
 
-# -- 06-queries-under-concurrency.md, line 217 ----------------------------------------
+# -- 06-queries-under-concurrency.md, line 219 ----------------------------------------
 def explain_only(deals):
     from_collection(deals).where(F.title == "opportunity 9").explain()   # a scan's explain shows its row count
 
@@ -196,7 +196,7 @@ print("explain() of a scan:      ", after(explain_only, stage_of(12, "won")))
 print("1100 get_at, key 1099 too:", after(many_keys, add_deal(5001)))
 print("from a Snapshot:          ", end=" ")
 reader = db.new_transaction()
-snapshot = db.snapshot_at(reader.snapshot_ref)
+snapshot = db.snapshot_at(reader.snapshot_ref)        # snapshot_ref: the version the transaction started on
 from_collection(snapshot.get_root_object("opportunities")).where(F.title == "opportunity 9").count()
 reader.set_root_object("report", "from a snapshot")
 with db.new_transaction() as writer:

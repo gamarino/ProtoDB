@@ -145,7 +145,7 @@ assert fine == 100                                     # deals no other thread t
 print(f"100 commits: {whole} attempts with a version per root, {fine} with the precondition model")
 _sample()
 
-# -- 05-concurrency.md, line 179 ----------------------------------------
+# -- 05-concurrency.md, line 184 ----------------------------------------
 print("different deals:", race(move(8, "won"), move(9, "lost")))
 deals = db.new_transaction().get_root_object("opportunities")
 print("deal 8:", deals.get_at(8).stage, "| deal 9:", deals.get_at(9).stage)
@@ -154,7 +154,7 @@ different deals: both committed
 deal 8: won | deal 9: lost
 """)
 
-# -- 05-concurrency.md, line 229 ----------------------------------------
+# -- 05-concurrency.md, line 255 ----------------------------------------
 from proto_db import F, from_collection
 
 with db.new_transaction() as tr:
@@ -171,6 +171,13 @@ def on_company(**changes):
 
 def rename_user(login, name):
     return lambda tr: tr.set_mutable(f"user:{login}", tr.get_mutable(f"user:{login}").with_(name=name))
+
+def rewrite(number, **changes):
+    """A transaction function: a new version of deal ``number`` with ``changes`` (its stage kept)."""
+    def work(tr):
+        deals = tr.get_root_object("opportunities")
+        tr.set_root_object("opportunities", deals.set_at(number, deals.get_at(number).with_(**changes)))
+    return work
 
 def after_query(query, number, stage):
     """Read with ``query``, then write deal ``number``: the commit depends on what the query read."""
@@ -193,6 +200,7 @@ cases = [
     ("list, append and insert", on_root("activity", lambda l: l.append_last("c")), on_root("activity", lambda l: l.insert_at(0, "x"))),
     ("lead lookup; a proposal is lost", move(11, "lost"), after_query(leads, 20, "qualified")),
     ("lead lookup; a lead is qualified", move(12, "qualified"), after_query(leads, 21, "qualified")),
+    ("lead lookup; a lead's amount changes", rewrite(15, amount=4321), after_query(leads, 25, "qualified")),
     ("amount >= 9900; a small deal changes", move(13, "won"), after_query(largest, 22, "won")),
     ("amount >= 9900; a large deal changes", move(242, "won"), after_query(largest, 23, "won")),
     ("title scan; any deal changes", move(14, "won"), after_query(by_title, 24, "won")),
@@ -209,12 +217,13 @@ list, two appends                      both committed
 list, append and insert                conflict on WHOLE
 lead lookup; a proposal is lost        both committed
 lead lookup; a lead is qualified       conflict on INDEX_GROUP 'lead' of index 'by_stage'
+lead lookup; a lead's amount changes   conflict on INDEX_GROUP 'lead' of index 'by_stage'
 amount >= 9900; a small deal changes   both committed
 amount >= 9900; a large deal changes   conflict on RANGE of index 'by_amount'
 title scan; any deal changes           conflict on WHOLE
 """)
 
-# -- 05-concurrency.md, line 312 ----------------------------------------
+# -- 05-concurrency.md, line 350 ----------------------------------------
 def add_member(login):
     def work(tr):
         groups = tr.get_root_object("groups")
@@ -229,7 +238,14 @@ nested set, two adds: conflict on KEY 'sales'
 set root, two adds:   both committed
 """)
 
-# -- 05-concurrency.md, line 339 ----------------------------------------
+# -- 05-concurrency.md, line 376 ----------------------------------------
+keep = lambda tr: tr.set_root_object("report", tr.new_object(deals=tr.get_root_object("opportunities")))
+print("a record holding the deals:", race(move(16, "won"), keep))
+_expect("""
+a record holding the deals: conflict on WHOLE
+""")
+
+# -- 05-concurrency.md, line 396 ----------------------------------------
 first, second = db.new_transaction(), db.new_transaction()
 first.set_root_object("company", first.new_object(name="ACME", currency="USD"))    # neither read the root
 second.set_root_object("company", second.new_object(name="ACME", currency="EUR"))
@@ -244,7 +260,7 @@ blind write refused: Root 'company' of database 'erp' was changed by a concurren
 currency: USD
 """)
 
-# -- 05-concurrency.md, line 369 ----------------------------------------
+# -- 05-concurrency.md, line 426 ----------------------------------------
 def retire(login):
     return lambda tr: tr.remove_mutable(f"user:{login}")
 
@@ -265,7 +281,66 @@ unchecked: both committed
 checked:   conflict on CELL 'user:cy'
 """)
 
-# -- 05-concurrency.md, line 405 ----------------------------------------
+# -- 05-concurrency.md, line 460 ----------------------------------------
+from proto_db import EqualityIndex
+
+with db.new_transaction() as tr:
+    tr.set_root_object("logins", tr.new_dictionary())                                   # keyed by login
+    tr.set_root_object("staff", tr.new_dictionary().add_index(EqualityIndex("by_login", "login")))
+    tr.set_root_object("accounts", tr.new_dictionary().add_index(EqualityIndex("by_login", "login", unique=True)))
+    tr.set_root_object("people", tr.new_dictionary())                                   # no index
+    for root in ("staff", "people"):                  # 50 existing members: enough for the planner to use an index
+        members = tr.get_root_object(root)
+        for seat in range(100, 150):
+            members = members.set_at(seat, tr.new_object(login=f"user{seat}"))
+        tr.set_root_object(root, members)
+
+def by_key(n):
+    def work(tr):
+        logins = tr.get_root_object("logins")
+        if logins.has("dee"):
+            raise ProtoValidationError("dee exists")
+        tr.set_root_object("logins", logins.set_at("dee", tr.new_object(login="dee", seat=n)))
+    return work
+
+def by_lookup(n):
+    def work(tr):
+        staff = tr.get_root_object("staff")
+        if from_collection(staff).where(F.login == "dee").count():
+            raise ProtoValidationError("dee exists")
+        tr.set_root_object("staff", staff.set_at(n, tr.new_object(login="dee")))
+    return work
+
+def unique_no_read(n):
+    def work(tr):
+        accounts = tr.get_root_object("accounts")
+        tr.set_root_object("accounts", accounts.set_at(n, tr.new_object(login="dee")))
+    return work
+
+def by_scan(n):
+    def work(tr):
+        people = tr.get_root_object("people")
+        if any(person.login == "dee" for person in people.values()):
+            raise ProtoValidationError("dee exists")
+        tr.set_root_object("people", people.set_at(n, tr.new_object(login="dee")))
+    return work
+
+for label, make in (("by key, has(k)", by_key), ("by an equality lookup", by_lookup),
+                    ("unique index, no read", unique_no_read), ("by a scan", by_scan)):
+    print(f"{label:24} {race(make(1), make(2))}")
+try:
+    db.run(unique_no_read(3))
+except ProtoValidationError:
+    print("the retry of a duplicate: ProtoValidationError")
+_expect("""
+by key, has(k)           conflict on KEY 'dee'
+by an equality lookup    conflict on INDEX_GROUP 'dee' of index 'by_login'
+unique index, no read    conflict on INDEX_GROUP 'dee' of index 'by_login'
+by a scan                conflict on WHOLE
+the retry of a duplicate: ProtoValidationError
+""")
+
+# -- 05-concurrency.md, line 543 ----------------------------------------
 attempts, notices = [], []
 
 def bob_closes(tr):
@@ -291,7 +366,7 @@ attempts: [1, 2] | notices: ['deal 40 won after proposal']
 history of deal 40: qualified (import) -> proposal (ann) -> won (bob)
 """)
 
-# -- 05-concurrency.md, line 458 ----------------------------------------
+# -- 05-concurrency.md, line 596 ----------------------------------------
 space.close()
 
 print("05_concurrency: OK")

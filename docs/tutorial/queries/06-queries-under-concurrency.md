@@ -61,8 +61,8 @@ lead qualified proposal | amounts of 242 and 7: 9954 1259
 
 ## Equality lookups declare a group
 
-A query answered by an equality index declares the **group** of its key: the set of elements with that key.
-It conflicts only with a change that adds an element to the group or removes one from it:
+A query answered by an equality index declares the **group** of its key: the elements with that key. It
+conflicts with a change that adds a member to the group, removes one, or replaces one with a new version:
 
 ```python
 leads = lambda deals: from_collection(deals).where(F.stage == "lead").count()
@@ -83,13 +83,14 @@ a lead is qualified:         conflict on INDEX_GROUP 'lead' of index 'by_stage'
 a deal becomes a lead:       conflict on INDEX_GROUP 'lead' of index 'by_stage'
 ```
 
-The second line conflicts although no lead entered or left the group: the group holds the elements
-themselves, and a new version of a lead is a change of a member. A lookup declares its group's content, not
-only its size.
+The second line conflicts although no lead entered or left the group: the lookup returned the leads
+themselves, so their content is what it read, and a new version of a lead is a change of a member. A lookup
+declares its group's content, not only its size.
 
 ## Range scans declare a range
 
-A query answered by a range index declares the range of keys it scanned:
+A query answered by a range index declares the range of keys it scanned, with the elements under each key: it
+conflicts with an element added to the range, removed from it, or changed inside it:
 
 ```python
 large = lambda deals: from_collection(deals).where(F.amount >= 9900).count()
@@ -107,6 +108,9 @@ a small deal grows into range: conflict on RANGE of index 'by_amount'
 a large deal is won:           conflict on RANGE of index 'by_amount'
 a new small deal:              committed
 ```
+
+Deal 242 kept its amount of 9,954 and changed only its stage, yet the read conflicted: the scan returned
+deal 242, so a new version of it is a change of what the query read.
 
 ## Scans declare the whole collection
 
@@ -174,10 +178,8 @@ Output:
 
 On one element the scan declared the whole collection, so adding an opportunity that is not a lead
 conflicted; on a thousand the lookup declared only the group of `"lead"`, and losing a qualified deal did not
-touch it. The third line is
-the rule for reads the model does not list: `!=`, answered by an `IndexComplement`, declares the whole
-collection (a read with no fine unit proven safe takes the coarser one), so even a change of a lead, which the
-query excluded, conflicts.
+touch it. The third line is a rule of the model: it lists `!=` with the scans, as a whole-collection read,
+even when an `IndexComplement` answers it, so even a change of a lead, which the query excluded, conflicts.
 
 ## Windows and key walks on a Dictionary
 
@@ -193,7 +195,7 @@ print("keys(after=990), key 10 changes:     ", after(walk, stage_of(10, "won")))
 print("keys(after=990), key 995 changes:    ", after(walk, stage_of(995, "won")))
 print("skip(10).take(5), key 3 changes:     ", after(window, stage_of(3, "won")))
 print("skip(10).take(5), key 500 changes:   ", after(window, stage_of(500, "won")))
-print("the same window counted, key 500:    ", after(counted, stage_of(501, "won")))
+print("the same window counted, key 501:    ", after(counted, stage_of(501, "won")))
 ```
 
 Output:
@@ -203,7 +205,7 @@ keys(after=990), key 10 changes:      committed
 keys(after=990), key 995 changes:     conflict on RANGE
 skip(10).take(5), key 3 changes:      conflict on RANGE
 skip(10).take(5), key 500 changes:    committed
-the same window counted, key 500:     conflict on WHOLE
+the same window counted, key 501:     conflict on WHOLE
 ```
 
 The offset window (keys 10 to 14) conflicted with a change of key 3, which it never returned: removing key 3
@@ -226,7 +228,7 @@ print("explain() of a scan:      ", after(explain_only, stage_of(12, "won")))
 print("1100 get_at, key 1099 too:", after(many_keys, add_deal(5001)))
 print("from a Snapshot:          ", end=" ")
 reader = db.new_transaction()
-snapshot = db.snapshot_at(reader.snapshot_ref)
+snapshot = db.snapshot_at(reader.snapshot_ref)        # snapshot_ref: the version the transaction started on
 from_collection(snapshot.get_root_object("opportunities")).where(F.title == "opportunity 9").count()
 reader.set_root_object("report", "from a snapshot")
 with db.new_transaction() as writer:
