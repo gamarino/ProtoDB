@@ -12,6 +12,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 
 import pytest
 
@@ -76,12 +77,21 @@ def test_tutorial_script_runs(script, tmp_path):
     if script in TUTORIAL_NEEDS_NUMPY:
         pytest.importorskip("numpy")
     # From an unrelated directory and without PYTHONPATH: a script finds the repository and its helpers itself.
-    env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+    # It runs with the system temporary directory, as a reader runs it, and must leave nothing of its own there.
+    env = {k: v for k, v in os.environ.items() if k not in ("PYTHONPATH", "PROTO_DB_TUTORIAL_KEEP")}
+    before = _tutorial_temp_entries()
     proc = subprocess.run([sys.executable, os.path.join(TUTORIAL, script)], cwd=str(tmp_path), capture_output=True,
                           text=True, timeout=240, env=env)
     assert proc.returncode == 0, proc.stdout + proc.stderr
     name = os.path.basename(script)[:-3]
     assert proc.stdout.splitlines()[-1] == f"{name}: OK", proc.stdout[-2000:]
+    left = _tutorial_temp_entries() - before
+    assert not left, f"{script} left in {tempfile.gettempdir()}: {sorted(left)}"
+
+
+def _tutorial_temp_entries() -> set:
+    """The entries of the system temporary directory named like a tutorial chapter's own directory."""
+    return {name for name in os.listdir(tempfile.gettempdir()) if name.startswith("proto_db-tutorial-")}
 
 
 def test_tutorial_scripts_share_one_directory(tmp_path):
