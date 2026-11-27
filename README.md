@@ -40,6 +40,52 @@ product, now named `proto_db` everywhere so that the name matches the import. Th
 spelling survives in `ProtoBaseException`, a deprecated alias of `ProtoDBError` (the base
 of the exception hierarchy) that is removed in 2.1.
 
+## Tutorial
+
+Start with the [complete tutorial](docs/tutorial/README.md): eleven chapters that build one modelled ERP
+(users, groups, persons and opportunities) from a first database to a cluster. Every code block runs in the test
+suite, every output shown is the one it printed, and each chapter is also a self-checking script in
+`examples/tutorial/`.
+
+1. [Install and first database](docs/tutorial/01-first-database.md): memory and file storage, and the life of a
+   transaction.
+2. [Objects and immutable collections](docs/tutorial/02-values-and-collections.md): records and the collections,
+   with structural sharing measured on disk.
+3. [Modelling](docs/tutorial/03-modelling.md): values against entities, versions, and an introduction to the
+   semantic model.
+4. [Indexes and queries](docs/tutorial/04-indexes-and-queries.md): indexes, the planner, `explain()`, LINQ
+   queries and a stable pager.
+5. [Concurrency: preconditions and intentions](docs/tutorial/05-concurrency.md): whole-root locking and where it
+   fails, what a transaction records, the conflict units, and `Database.run` retries.
+6. [Time](docs/tutorial/06-time.md): as-of reads, an audit without an audit table, stable pages while others
+   write.
+7. [Durability and operations](docs/tutorial/07-durability-and-operations.md): durability modes, a process killed
+   mid-commit, `verify`, backup, and the format 7 upgrade.
+8. [Extensible models](docs/tutorial/08-extensible-models.md): parents, registry modules, `_super`, an explicit
+   reload, and as-of reads with the modules of their time.
+9. [Vector search](docs/tutorial/09-vector-search.md): nearest neighbours, alone and with ordinary conditions.
+10. [Cluster](docs/tutorial/10-cluster.md): the coordinator, local reads that may lag, linearizable reads.
+11. [Where to go next](docs/tutorial/11-where-next.md): the topic tutorials, the reference and the design guide.
+
+Two tutorials go deeper on the same ERP:
+
+- [The queries tutorial](docs/tutorial/queries/README.md):
+  [building queries](docs/tutorial/queries/01-building-queries.md),
+  [aggregates and joins](docs/tutorial/queries/02-aggregates-and-joins.md),
+  [indexes and the planner](docs/tutorial/queries/03-indexes-and-the-planner.md),
+  [pagination](docs/tutorial/queries/04-pagination.md),
+  [range, vector and custom indexes](docs/tutorial/queries/05-range-vector-and-custom-indexes.md),
+  [queries under concurrency](docs/tutorial/queries/06-queries-under-concurrency.md) (what each plan declares to
+  a concurrent commit) and [performance pitfalls](docs/tutorial/queries/07-performance-pitfalls.md), measured.
+- [The semantic model tutorial](docs/tutorial/semantic-model/README.md):
+  [declaring a model](docs/tutorial/semantic-model/01-declaring-a-model.md),
+  [entities and relations](docs/tutorial/semantic-model/02-entities-and-relations.md),
+  [computed attributes and aggregates](docs/tutorial/semantic-model/03-computed-and-aggregates.md),
+  [validation and intents](docs/tutorial/semantic-model/04-validation-and-intents.md),
+  [modules and composition](docs/tutorial/semantic-model/05-modules-and-composition.md),
+  [schema evolution](docs/tutorial/semantic-model/06-schema-evolution.md) and
+  [history](docs/tutorial/semantic-model/07-history.md), with the model of each version.
+
 ## Design principles
 
 `proto_db` is built from a small set of principles. Every design decision cites them, and
@@ -101,6 +147,10 @@ If you read only one thing before the code, read
     read-modify-write transactions, fairness is not yet guaranteed (open defect D-LIVE-2).
   - *Reads*: a local read is a committed snapshot that may lag; a linearizable read is a barrier commit,
     which adds a permanent version per read (see the cluster tutorial).
+- **Semantic model** (an MVP): a registry module declares entities, fields, relations navigable from both
+  sides, relationships with roles, computed attributes, maintained aggregates, invariants and intents;
+  installing it writes a catalog into the database that any program or agent can read (see the semantic model
+  tutorial). Field types and enumerations are catalogued, not yet enforced.
 - **Extensible models**: a `DBObject` may have parents (other records, or registry names); `o.x` and
   `o["x"]` resolve own attributes, then the parents in C3 order, then the extension chains that the
   database's installed modules define. Methods and data defaults extend by the same rule, `_super()`
@@ -251,7 +301,10 @@ tr.abort()
 space.close()
 ```
 
-The [concurrency tutorial](docs/source/tutorials/concurrency.rst) covers the units of every collection,
+[Chapter 5 of the tutorial](docs/tutorial/05-concurrency.md) starts from whole-root optimistic locking, shows
+where it fails, and builds the precondition model on the ERP, unit by unit; the
+[queries under concurrency](docs/tutorial/queries/06-queries-under-concurrency.md) chapter measures what each
+query plan declares. The [concurrency topic tutorial](docs/source/tutorials/concurrency.rst) covers the units of every collection,
 "check and add", identifiers without a counter, lock cells and the one deliberate escape (a `Snapshot`); the
 [concurrency model](docs/source/concurrency-model.rst) states every rule and the known limits.
 
@@ -295,14 +348,17 @@ objects, as-of reads with the modules of their time, and every error the registr
 
 Runnable, self-checking scripts live in `examples/` (see `examples/README.md`): getting started,
 file storage, indexed queries with `explain()`, LINQ queries, transactions under concurrency, and
-vector search. Each one runs in the test suite, as do the Python snippets of this README and every code
-block of the tutorials.
+vector search. `examples/tutorial/` holds one self-checking script per tutorial chapter, generated from the
+chapter. Each one runs in the test suite, as do the Python snippets of this README and every code block of the
+tutorials.
 
 ## Documentation
 
 The Sphinx site is under `docs/source` (build it with `python -m sphinx -W -b html docs/source docs/build/html`):
 
-- **Tutorials**, each executed by the test suite: getting started, modelling data, indexing and querying,
+- **The tutorials** under `docs/tutorial/` (Markdown, linked from the site's tutorials page): the complete
+  tutorial, the queries tutorial and the semantic model tutorial (see [Tutorial](#tutorial) above).
+- **Topic tutorials**, each executed by the test suite: getting started, modelling data, indexing and querying,
   concurrency and retries, vector search, writing a custom index, operations (durability, inspection,
   backup), an ERP example ("as of" queries, an audit with no audit table, stable paginated reports), a CAD
   example (reusing decoded objects across transactions), a cluster tutorial (local against linearizable
