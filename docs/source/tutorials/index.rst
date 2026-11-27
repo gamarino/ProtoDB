@@ -8,6 +8,7 @@ fails the build. Read them in order the first time.
 .. toctree::
    :maxdepth: 1
 
+   complete
    getting-started
    modelling-data
    indexing-querying

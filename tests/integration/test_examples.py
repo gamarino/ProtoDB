@@ -3,11 +3,16 @@
 Catches: an example or a README snippet broken by an API change (each runs in a fresh
 interpreter, as a user would run it, and must print its own success line; the examples
 assert their own results), and an example added to examples/ without a test here.
+
+The tutorial scripts under examples/tutorial/ (``NN_<slug>.py``, generated from the Markdown chapters of
+docs/tutorial/ by tests/docs/test_markdown_tutorials.py) are run the same way: each compares what it prints
+with the output its chapter shows and ends with ``<name>: OK``.
 """
 import os
 import re
 import subprocess
 import sys
+import tempfile
 
 import pytest
 
@@ -44,6 +49,76 @@ def test_example_runs(script, tmp_path):
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert EXPECTED[script] in proc.stdout, proc.stdout
     assert f"{script[:-3]}: OK" in proc.stdout.splitlines()[-1], proc.stdout
+
+
+TUTORIAL = os.path.join(EXAMPLES, "tutorial")
+
+#: The tutorial scripts that build a VectorIndex; its default backend needs numpy.
+TUTORIAL_NEEDS_NUMPY = {"09_vector_search.py", os.path.join("queries", "05_range_vector_and_custom_indexes.py")}
+
+
+def tutorial_scripts():
+    """The generated tutorial scripts, as paths relative to examples/tutorial (the helpers there are not scripts)."""
+    found = []
+    for directory in ("", "queries", "semantic"):
+        names = os.listdir(os.path.join(TUTORIAL, directory))
+        found += [os.path.join(directory, name) for name in names if re.match(r"\d\d_.*\.py$", name)]
+    return sorted(found)
+
+
+def test_every_tutorial_has_scripts():
+    scripts = tutorial_scripts()
+    for directory in ("", "queries", "semantic"):
+        assert sum(1 for s in scripts if os.path.dirname(s) == directory) >= 5, directory
+
+
+@pytest.mark.parametrize("script", tutorial_scripts())
+def test_tutorial_script_runs(script, tmp_path):
+    if script in TUTORIAL_NEEDS_NUMPY:
+        pytest.importorskip("numpy")
+    # From an unrelated directory and without PYTHONPATH: a script finds the repository and its helpers itself.
+    # It runs with the system temporary directory, as a reader runs it, and must leave nothing of its own there.
+    env = {k: v for k, v in os.environ.items() if k not in ("PYTHONPATH", "PROTO_DB_TUTORIAL_KEEP")}
+    before = _tutorial_temp_entries()
+    proc = subprocess.run([sys.executable, os.path.join(TUTORIAL, script)], cwd=str(tmp_path), capture_output=True,
+                          text=True, timeout=240, env=env)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    name = os.path.basename(script)[:-3]
+    assert proc.stdout.splitlines()[-1] == f"{name}: OK", proc.stdout[-2000:]
+    left = _tutorial_temp_entries() - before
+    assert not left, f"{script} left in {tempfile.gettempdir()}: {sorted(left)}"
+
+
+def _tutorial_temp_entries() -> set:
+    """The entries of the system temporary directory named like a tutorial chapter's own directory."""
+    return {name for name in os.listdir(tempfile.gettempdir()) if name.startswith("proto_db-tutorial-")}
+
+
+def test_tutorial_scripts_share_one_directory(tmp_path):
+    """All the scripts, run twice from ONE directory, as a reader runs them from a checkout: none may depend on
+    a fresh directory, collide with another's files, or leave anything behind, neither in the directory it ran
+    from nor in the temporary directory (each removes the temporary directory it created)."""
+    cwd, temp = tmp_path / "cwd", tmp_path / "temp"
+    cwd.mkdir()
+    temp.mkdir()
+    env = {k: v for k, v in os.environ.items() if k not in ("PYTHONPATH", "PROTO_DB_TUTORIAL_KEEP")}
+    env["TMPDIR"] = str(temp)                          # tempfile's directory, for the scripts only
+    scripts = [s for s in tutorial_scripts() if s not in TUTORIAL_NEEDS_NUMPY or _has_numpy()]
+    for round_number in (1, 2):
+        for script in scripts:
+            proc = subprocess.run([sys.executable, os.path.join(TUTORIAL, script)], cwd=str(cwd),
+                                  capture_output=True, text=True, timeout=240, env=env)
+            assert proc.returncode == 0, f"round {round_number}, {script}:\n{proc.stdout[-2000:]}{proc.stderr}"
+            assert os.listdir(temp) == [], f"{script} left in the temporary directory: {sorted(os.listdir(temp))}"
+    assert os.listdir(cwd) == [], f"left behind: {sorted(os.listdir(cwd))}"
+
+
+def _has_numpy() -> bool:
+    try:
+        import numpy  # noqa: F401
+    except ImportError:
+        return False
+    return True
 
 
 def readme_snippets():
