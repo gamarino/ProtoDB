@@ -80,7 +80,8 @@ def script_for(chapter: str) -> str:
 def parse_blocks(text: str) -> list:
     """The fenced blocks of a Markdown text as ``(line_number, language, caption, source)`` tuples.
 
-    ``caption`` is the paragraph line just before the fence (``Output:``, ``Sample output ...``) or ``None``."""
+    ``caption`` is the first line of the paragraph just before the fence (``Output:``, ``Sample output ...``,
+    which may continue on the next lines) or ``None``."""
     lines = text.splitlines()
     blocks, i = [], 0
     while i < len(lines):
@@ -94,6 +95,8 @@ def parse_blocks(text: str) -> list:
         before = i - 1
         while before >= 0 and not lines[before].strip():
             before -= 1
+        while before > 0 and lines[before - 1].strip() and not FENCE_CLOSE.match(lines[before - 1]):
+            before -= 1                                   # back to the first line of that paragraph
         previous = lines[before].strip() if before >= 0 else ""
         caption = previous if previous == "Output:" or previous.startswith("Sample output") else None
         body = []
@@ -324,6 +327,8 @@ def test_the_parser_reads_captions_and_bodies():
     text = "Intro.\n\n```python\nx = 1\nprint(x)\n```\n\nOutput:\n\n```text\n1\n```\n\nSample output (varies):\n\n```text\n2\n```\n"
     assert parse_blocks(text) == [(3, "python", None, "x = 1\nprint(x)"), (10, "text", "Output:", "1"),
                                   (16, "text", "Sample output (varies):", "2")]
+    two_lines = "Sample output (one run,\non this machine):\n\n```text\n3\n```\n"
+    assert parse_blocks(two_lines) == [(4, "text", "Sample output (one run,", "3")]
 
 
 def _main(argv: list) -> None:

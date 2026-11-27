@@ -49,7 +49,7 @@ def _sample():
     _sys.stdout.kept.clear()
 
 
-# -- 01-first-database.md, line 31 ----------------------------------------
+# -- 01-first-database.md, line 32 ----------------------------------------
 from proto_db import MemoryStorage, ObjectSpace
 
 space = ObjectSpace(MemoryStorage())
@@ -67,7 +67,7 @@ _expect("""
 ACME ARS ['ann', 'bob']
 """)
 
-# -- 01-first-database.md, line 71 ----------------------------------------
+# -- 01-first-database.md, line 72 ----------------------------------------
 from proto_db import ProtoUserError
 
 tr = db.new_transaction()
@@ -96,7 +96,7 @@ a finished transaction refuses work: ProtoUserError
 currency: USD
 """)
 
-# -- 01-first-database.md, line 113 ----------------------------------------
+# -- 01-first-database.md, line 114 ----------------------------------------
 def add_login(login):
     def work(tr):
         logins = tr.get_root_object("logins")
@@ -109,7 +109,7 @@ _expect("""
 logins now: 3
 """)
 
-# -- 01-first-database.md, line 135 ----------------------------------------
+# -- 01-first-database.md, line 136 ----------------------------------------
 print([entry.version for entry in db.history()])
 first = db.snapshot_at(db.history()[-2])          # version 1, the first commit
 print(first.get_root_object("company").currency, list(first.get_root_object("logins")))
@@ -118,8 +118,13 @@ _expect("""
 ARS ['ann', 'bob']
 """)
 
-# -- 01-first-database.md, line 155 ----------------------------------------
+# -- 01-first-database.md, line 156 ----------------------------------------
+import os
+import tempfile
+
 from proto_db import FileStorage
+
+os.chdir(tempfile.mkdtemp(prefix="proto_db-tutorial-"))   # a fresh directory: files stay out of yours
 
 space.close()
 

@@ -6,7 +6,8 @@ users, groups, persons and opportunities. It is a model only, with no ERP featur
 
 ## Install
 
-`proto_db` needs Python 3.12 or later. Until 2.0.0 is final the published versions are release candidates,
+`proto_db` needs Python 3.12 or later. The tutorial's scripts are in a clone of the repository
+(`examples/tutorial/`), not in the installed package. Until 2.0.0 is final the published versions are release candidates,
 so `pip` needs `--pre`:
 
 ```text
@@ -153,7 +154,12 @@ Version 0 is the empty database that `new_database` created. Chapter 6 builds on
 you are done: closing flushes and releases the directory's lock.
 
 ```python
+import os
+import tempfile
+
 from proto_db import FileStorage
+
+os.chdir(tempfile.mkdtemp(prefix="proto_db-tutorial-"))   # a fresh directory: files stay out of yours
 
 space.close()
 
@@ -178,7 +184,8 @@ Output:
 ACME
 ```
 
-A commit that returned has reached the disk: by default `FileStorage` calls `fsync` before it publishes the
+The block works in a fresh temporary directory, so nothing is left where you run it; an application passes
+the path where its space lives. A commit that returned has reached the disk: by default `FileStorage` calls `fsync` before it publishes the
 new root. Chapter 7 shows the cheaper modes and what each one risks.
 
 ## What you have

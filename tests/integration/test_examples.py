@@ -84,6 +84,27 @@ def test_tutorial_script_runs(script, tmp_path):
     assert proc.stdout.splitlines()[-1] == f"{name}: OK", proc.stdout[-2000:]
 
 
+def test_tutorial_scripts_share_one_directory(tmp_path):
+    """All the scripts, run twice from ONE directory, as a reader runs them from a checkout: none may depend on
+    a fresh directory, collide with another's files, or leave anything behind in the directory it ran from."""
+    env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+    scripts = [s for s in tutorial_scripts() if s not in TUTORIAL_NEEDS_NUMPY or _has_numpy()]
+    for round_number in (1, 2):
+        for script in scripts:
+            proc = subprocess.run([sys.executable, os.path.join(TUTORIAL, script)], cwd=str(tmp_path),
+                                  capture_output=True, text=True, timeout=240, env=env)
+            assert proc.returncode == 0, f"round {round_number}, {script}:\n{proc.stdout[-2000:]}{proc.stderr}"
+    assert os.listdir(tmp_path) == [], f"left behind: {sorted(os.listdir(tmp_path))}"
+
+
+def _has_numpy() -> bool:
+    try:
+        import numpy  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
 def readme_snippets():
     """The ```python blocks of README.md, in order."""
     with open(os.path.join(REPO, "README.md"), encoding="utf-8") as f:

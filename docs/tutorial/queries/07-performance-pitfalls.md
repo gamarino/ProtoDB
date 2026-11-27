@@ -4,7 +4,15 @@ Every figure in this chapter is measured: either here, by the code beside it, or
 performance suite, cited with its source. Most of the cost of a query is the number of stored objects it has to
 decode, so the chapter counts those first: `ObjectSpace.atom_cache_stats()["loads"]` is the number of atoms
 read from storage and decoded, and a freshly opened space starts with an empty cache, which makes the count
-exact and repeatable. Times follow as samples of one run.
+exact and repeatable. Times follow as samples of one run on the machine that built this page: an AMD Ryzen 5
+5500U, CPython 3.14.6 free-threaded, the spaces in a temporary directory on tmpfs, at 2.0.0rc5 (this tutorial's
+branch). The suite figures cited come from another commit and are labelled with it.
+
+**About the cited suite figures.** The repository's performance suite was last run at commit `57fd351`
+(2.0.0.dev0, on the same model of machine, spaces on ZFS), **before the precondition model**: none of its
+figures measures the 2.0.0rc5 commit path, and they are to be re-measured before 2.0.0
+([performance](../../source/performance.rst), "How to read these numbers"). They are cited here for the
+shape of a cost (an index against a scan, a page by rank), not as the cost in this release.
 
 ## The space
 
@@ -12,12 +20,15 @@ exact and repeatable. Times follow as samples of one run.
 
 ```python
 import os
+import tempfile
 import time
 
 from proto_db import F, FileStorage, ObjectSpace, from_collection
 
 import erp_app
 from erp_app import plan_of
+
+os.chdir(tempfile.mkdtemp(prefix="proto_db-tutorial-"))   # a fresh directory: files stay out of yours
 
 space = ObjectSpace(FileStorage("perf-space"))
 erp_app.seed(space.new_database("erp"), opportunities=5000)
@@ -76,22 +87,21 @@ for label, (_, _, elapsed) in measured.items():
     print(f"{label:36} {elapsed * 1000:8.1f} ms (cold)")
 ```
 
-Sample output (one run on the machine that built this page; the atom counts above are exact):
+Sample output (one run on the machine described above; the atom counts above are exact):
 
 ```text
-amount == 9991 (range index)              1.5 ms (cold)
-title == ... (no index: a scan)         531.6 ms (cold)
-a lambda (a PythonFilter)               501.2 ms (cold)
-title.startswith (a PythonFilter)       504.7 ms (cold)
+amount == 9991 (range index)              2.6 ms (cold)
+title == ... (no index: a scan)         727.4 ms (cold)
+a lambda (a PythonFilter)               714.8 ms (cold)
+title.startswith (a PythonFilter)       707.7 ms (cold)
 ```
 
 A lookup decodes the few tree nodes on the path to its key; a scan decodes every element (two atoms each: the
 tree node and the record, 10,007 for 5,000 elements). A Python predicate, however selective, is a scan: the
-time goes to reading and decoding, and the three scans cost about the same. The performance suite measured the
-same shape at 20,000 records: a point read through a secondary index took 78.1 us per query, and the same read
-with no index 47.1 ms ([performance](../../source/performance.rst), "Point reads", suite run [S0] at commit
-`57fd351`). Index what you query, and write conditions with `F` and a value so that
-an index can answer them.
+time goes to reading and decoding, and the three scans cost about the same. The suite shows the same shape at
+20,000 records: a point read through a secondary index at 78.1 us per query, the same read with no index
+at 47.1 ms ([performance](../../source/performance.rst), "Point reads"; commit `57fd351`, before the precondition
+model). Index what you query, and write conditions with `F` and a value so that an index can answer them.
 
 ## Pitfall 2: sorting what an index already orders
 
@@ -163,17 +173,18 @@ print(f"no index:  {plain[0] * 1e6:6.0f} us and {plain[1]:6.0f} bytes per update
 print(f"3 indexes: {indexed[0] * 1e6:6.0f} us and {indexed[1]:6.0f} bytes per update")
 ```
 
-Sample output (one run; the bytes vary slightly because each version stores its commit time):
+Sample output (one run on the machine described above; the bytes vary slightly because each version stores
+its commit time):
 
 ```text
-no index:    2281 us and   3050 bytes per update
-3 indexes:   9298 us and  19484 bytes per update
+no index:    2922 us and   3050 bytes per update
+3 indexes:  12388 us and  19544 bytes per update
 ```
 
-Three indexes made each update about four times slower and six times larger in this run. The suite measured
-the same effect at 10,000 rows: 52, 261, 453 and 622 us per update with 0, 1, 2 and 3 indexes
-([performance](../../source/performance.rst), "Single-process commits", suite run [S0] at commit `57fd351`). Index what you query,
-not every attribute.
+In this run three indexes made each update about four times slower and six times larger: each index adds the
+path from its root to the changed entry to every commit. The figure is this sample's, at this size and with
+`durability="none"`; the suite measures other workloads and is not comparable. Index what you query, not
+every attribute.
 
 ## Pitfall 5: reads that widen conflicts
 
@@ -186,8 +197,9 @@ tutorial](../05-concurrency.md) measured the attempts.
 ## Pitfall 6: deep offsets without a pager
 
 A deep page by `skip` is cheap over an ordered index (chapter 4 shows the plan), and the pager seeks by rank:
-the suite measured a pager page at 222-251 us from offset 0 to offset 900,000 on 10^6 rows
-([performance](../../source/performance.rst), "Deep pages", suite run [S0] at commit `57fd351`). What costs is an offset over
+the suite shows a pager page at 222-251 us from offset 0 to offset 900,000 on 10^6 rows
+([performance](../../source/performance.rst), "Deep pages"; commit `57fd351`, before the precondition model), so
+a page's cost does not grow with its offset. What costs is an offset over
 a sort the planner has to do itself (an `order_by` on an attribute without a range index), which reads the
 whole result for every page.
 

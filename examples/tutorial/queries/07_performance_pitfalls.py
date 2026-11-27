@@ -49,14 +49,17 @@ def _sample():
     _sys.stdout.kept.clear()
 
 
-# -- 07-performance-pitfalls.md, line 13 ----------------------------------------
+# -- 07-performance-pitfalls.md, line 21 ----------------------------------------
 import os
+import tempfile
 import time
 
 from proto_db import F, FileStorage, ObjectSpace, from_collection
 
 import erp_app
 from erp_app import plan_of
+
+os.chdir(tempfile.mkdtemp(prefix="proto_db-tutorial-"))   # a fresh directory: files stay out of yours
 
 space = ObjectSpace(FileStorage("perf-space"))
 erp_app.seed(space.new_database("erp"), opportunities=5000)
@@ -81,7 +84,7 @@ _expect("""
 5000 opportunities
 """)
 
-# -- 07-performance-pitfalls.md, line 53 ----------------------------------------
+# -- 07-performance-pitfalls.md, line 64 ----------------------------------------
 shapes = {
     "amount == 9991 (range index)":     lambda d: from_collection(d).where(F.amount == 9991).count(),
     "title == ... (no index: a scan)":  lambda d: from_collection(d).where(F.title == "opportunity 4242").count(),
@@ -98,12 +101,12 @@ a lambda (a PythonFilter)              1 rows,  10007 atoms decoded
 title.startswith (a PythonFilter)      1 rows,  10007 atoms decoded
 """)
 
-# -- 07-performance-pitfalls.md, line 74 ----------------------------------------
+# -- 07-performance-pitfalls.md, line 85 ----------------------------------------
 for label, (_, _, elapsed) in measured.items():
     print(f"{label:36} {elapsed * 1000:8.1f} ms (cold)")
 _sample()
 
-# -- 07-performance-pitfalls.md, line 98 ----------------------------------------
+# -- 07-performance-pitfalls.md, line 108 ----------------------------------------
 for label, read in (("order_by(amount).take(10)", lambda d: from_collection(d).order_by(F.amount).take(10).to_list()),
                     ("order_by(title).take(10)", lambda d: from_collection(d).order_by(F.title).take(10).to_list())):
     rows, loads, _ = cold(read)
@@ -113,7 +116,7 @@ order_by(amount).take(10)    10 rows,     35 atoms decoded
 order_by(title).take(10)     10 rows,  10007 atoms decoded
 """)
 
-# -- 07-performance-pitfalls.md, line 118 ----------------------------------------
+# -- 07-performance-pitfalls.md, line 128 ----------------------------------------
 for label, read in (("len(collection)", len), ("query count, no condition", lambda d: from_collection(d).count()),
                     ("count of a lookup", lambda d: from_collection(d).where(F.stage == "lead").count())):
     rows, loads, _ = cold(read)
@@ -124,7 +127,7 @@ query count, no condition     5000,      7 atoms decoded
 count of a lookup             1667,      9 atoms decoded
 """)
 
-# -- 07-performance-pitfalls.md, line 144 ----------------------------------------
+# -- 07-performance-pitfalls.md, line 154 ----------------------------------------
 def update_cost(indexes):
     path = f"writes-{indexes}"
     store = ObjectSpace(FileStorage(path, durability="none"))
@@ -146,7 +149,7 @@ print(f"no index:  {plain[0] * 1e6:6.0f} us and {plain[1]:6.0f} bytes per update
 print(f"3 indexes: {indexed[0] * 1e6:6.0f} us and {indexed[1]:6.0f} bytes per update")
 _sample()
 
-# -- 07-performance-pitfalls.md, line 194 ----------------------------------------
+# -- 07-performance-pitfalls.md, line 206 ----------------------------------------
 _, loads_ordered, _ = cold(lambda d: from_collection(d).order_by(F.amount).skip(4000).take(10).to_list())
 _, loads_sorted, _ = cold(lambda d: from_collection(d).order_by(F.title).skip(4000).take(10).to_list())
 print(f"page at offset 4000: {loads_ordered} atoms over the amount index, {loads_sorted} sorting by title")

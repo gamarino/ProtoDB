@@ -27,12 +27,15 @@ the code changes.
 
 ```python
 import os
+import tempfile
 import time
 
 from proto_db import ClusterCoordinator, ObjectSpace, Peer, ProtoOutcomeUnknownError, TieredStorage
 from proto_db.cluster.transport import InProcessNetwork
 
 from memory_store import MemoryObjectStore
+
+os.chdir(tempfile.mkdtemp(prefix="proto_db-tutorial-"))   # a fresh directory: files stay out of yours
 
 store, network = MemoryObjectStore(), InProcessNetwork(seed=1)
 peers = [Peer(node_id, "127.0.0.1", 0) for node_id in ("n0", "n1", "n2")]
@@ -85,7 +88,8 @@ assert acknowledged == 10
 print(f"local reads on n1 that missed the commit just acknowledged on n0: {stale} of {acknowledged}")
 ```
 
-Sample output (the count varies from run to run, from none to most of them):
+Sample output (one run on the machine that built this page, an AMD Ryzen 5 5500U, CPython 3.14.6 free-threaded;
+the count varies from run to run, from none to most of them):
 
 ```text
 local reads on n1 that missed the commit just acknowledged on n0: 10 of 10

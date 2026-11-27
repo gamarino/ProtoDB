@@ -32,9 +32,12 @@ import os
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 
 from proto_db import FileStorage, ObjectSpace
+
+os.chdir(tempfile.mkdtemp(prefix="proto_db-tutorial-"))   # a fresh directory: files stay out of yours
 
 WRITER = """
 import sys

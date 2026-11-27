@@ -54,9 +54,12 @@ import os
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 
 from proto_db import FileStorage, ObjectSpace
+
+os.chdir(tempfile.mkdtemp(prefix="proto_db-tutorial-"))   # a fresh directory: files stay out of yours
 
 WRITER = """
 import sys
@@ -90,7 +93,7 @@ _expect("""
 killed by SIGKILL | the two roots agree: True | at least 21 commits: True
 """)
 
-# -- 07-durability-and-operations.md, line 87 ----------------------------------------
+# -- 07-durability-and-operations.md, line 90 ----------------------------------------
 from proto_db.tools.verify import verify
 
 import erp_app
@@ -112,7 +115,7 @@ root record version: 7 | collections: 13 | failures: []
 roots: ['groups', 'opportunities', 'persons']
 """)
 
-# -- 07-durability-and-operations.md, line 122 ----------------------------------------
+# -- 07-durability-and-operations.md, line 125 ----------------------------------------
 import shutil
 
 shutil.copytree("erp-space", "erp-backup")
@@ -128,7 +131,7 @@ _expect("""
 verified: True | deal 7: won | versions: 3
 """)
 
-# -- 07-durability-and-operations.md, line 151 ----------------------------------------
+# -- 07-durability-and-operations.md, line 154 ----------------------------------------
 from proto_db import ProtoCorruptionError
 
 shutil.copytree("erp-backup", "erp-damaged")

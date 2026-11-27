@@ -1,7 +1,7 @@
 # 2. Objects and immutable collections
 
 Everything `proto_db` stores is immutable. A change makes a new version that shares what did not change with
-the old one. This chapter shows the records and the four collections the ERP uses, what "a change returns a
+the old one. This chapter shows the records and the collections the ERP uses, what "a change returns a
 new collection" means in practice, what it costs on disk, and why the database is built this way.
 
 ## Records
@@ -138,8 +138,11 @@ a space of 10,000 persons:
 
 ```python
 import os
+import tempfile
 
 from proto_db import FileStorage
+
+os.chdir(tempfile.mkdtemp(prefix="proto_db-tutorial-"))   # a fresh directory: files stay out of yours
 
 def directory_bytes(path):
     return sum(os.path.getsize(os.path.join(path, name)) for name in os.listdir(path))
@@ -162,14 +165,15 @@ assert edit < loaded / 50                             # the edit wrote a path, n
 disk.close()
 ```
 
-Sample output (the byte counts vary slightly from run to run, because each version stores its commit time):
+Sample output (one run on the machine that built this page, an AMD Ryzen 5 5500U, CPython 3.14.6 free-threaded;
+the byte counts vary slightly from run to run, because each version stores its commit time):
 
 ```text
 10,000 persons: 2,257,332 bytes; one edit: 3,249 bytes (0.14 %)
 ```
 
 The edit cost about the height of the tree, not the size of the collection. It is also
-permanent: nothing is ever deleted, so a space grows with every edit it keeps (chapter 7).
+permanent: nothing is ever deleted, so a space grows with every edit it keeps.
 
 ## Why values are immutable
 

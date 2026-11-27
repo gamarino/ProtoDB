@@ -21,7 +21,9 @@ been removed; the API below is the 2.0 API.
 Everything this page lists is implemented and covered by the test suite, which runs on CPython 3.14t
 (free-threaded) and with the GIL. The cluster is new: it is documented, tested and measured in this
 repository and has no production history. Open defects are listed where they apply (see the cluster item
-under Features). The performance suite has run (results by workload in `docs/source/performance.rst`);
+under Features). The performance suite has run (results by workload in `docs/source/performance.rst`), at a commit before
+the precondition model: none of its figures measures 2.0.0rc5's commit path, and they are to be re-measured
+before 2.0.0;
 the API may still change before 2.0.0 is released.
 
 ### A note on names
