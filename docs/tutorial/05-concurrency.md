@@ -144,7 +144,7 @@ assert fine == 100                                     # deals no other thread t
 print(f"100 commits: {whole} attempts with a version per root, {fine} with the precondition model")
 ```
 
-Sample output (one run on the machine that built this page, an AMD Ryzen 5 5500U, CPython 3.14.6
+Sample output (one run on the machine this sample was taken on, an AMD Ryzen 5 5500U, CPython 3.14.6
 free-threaded; the first count varies from run to run, about 110 to 150 there; the second is always 100):
 
 ```text
@@ -216,9 +216,13 @@ Three rules keep the invariant exact:
 
 * **The base is fixed.** A precondition compares against the snapshot the transaction started on, never
   against a value it happened to see later.
-* **Comparison is by value.** A unit is compared through a token of its exact content (by pointer for stored
-  atoms). If deal 5 changed and changed back before the commit, its precondition holds, and that is correct:
-  nothing the transaction read differs (the "ABA" case needs no special handling).
+* **Comparison is exact, not by meaning.** A unit is compared through a token of its exact content, by
+  pointer for a stored record. If a unit is back to exactly its base before the commit (a cell holding the
+  same number again, a key holding the same stored record again), its precondition holds, and that is
+  correct: nothing the transaction read differs. Changing a record and then restoring it with `with_` does
+  not bring it back: it stores a new record with equal content, so the precondition conflicts. That is an
+  extra conflict, a retry the transaction did not strictly need; it is safe, and it never gives a wrong
+  result.
 * **All or nothing.** If any precondition fails, no intention is applied and nothing is published.
 
 What makes the invariant cover the transaction's logic is the next section's first rule: what a transaction
@@ -577,8 +581,8 @@ holds both. Three rules for the function given to `run`:
   returns, from what it returned.
 * It does its reading **inside**, through the `tr` it receives. A value read before `run` belongs to an
   older snapshot, and nothing checks it at commit.
-* `run` re-raises the conflict after `retries` retries (`retries + 1` attempts). A unit that many writers hit needs a design where
-  they touch different units (a key each, a set, a counted set), not more retries.
+* `run` re-raises the conflict after `retries` retries (`retries + 1` attempts). A unit that many writers hit
+  needs a design where they touch different units (a key each, a set, a counted set), not more retries.
 
 `ProtoOutcomeUnknownError` (a commit that may or may not have been applied, on cloud and cluster storage) is
 never retried: a retry could apply the work twice (chapter 10).

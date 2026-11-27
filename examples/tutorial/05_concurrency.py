@@ -154,7 +154,7 @@ different deals: both committed
 deal 8: won | deal 9: lost
 """)
 
-# -- 05-concurrency.md, line 255 ----------------------------------------
+# -- 05-concurrency.md, line 259 ----------------------------------------
 from proto_db import F, from_collection
 
 with db.new_transaction() as tr:
@@ -223,7 +223,7 @@ amount >= 9900; a large deal changes   conflict on RANGE of index 'by_amount'
 title scan; any deal changes           conflict on WHOLE
 """)
 
-# -- 05-concurrency.md, line 350 ----------------------------------------
+# -- 05-concurrency.md, line 354 ----------------------------------------
 def add_member(login):
     def work(tr):
         groups = tr.get_root_object("groups")
@@ -238,14 +238,14 @@ nested set, two adds: conflict on KEY 'sales'
 set root, two adds:   both committed
 """)
 
-# -- 05-concurrency.md, line 376 ----------------------------------------
+# -- 05-concurrency.md, line 380 ----------------------------------------
 keep = lambda tr: tr.set_root_object("report", tr.new_object(deals=tr.get_root_object("opportunities")))
 print("a record holding the deals:", race(move(16, "won"), keep))
 _expect("""
 a record holding the deals: conflict on WHOLE
 """)
 
-# -- 05-concurrency.md, line 396 ----------------------------------------
+# -- 05-concurrency.md, line 400 ----------------------------------------
 first, second = db.new_transaction(), db.new_transaction()
 first.set_root_object("company", first.new_object(name="ACME", currency="USD"))    # neither read the root
 second.set_root_object("company", second.new_object(name="ACME", currency="EUR"))
@@ -260,7 +260,7 @@ blind write refused: Root 'company' of database 'erp' was changed by a concurren
 currency: USD
 """)
 
-# -- 05-concurrency.md, line 426 ----------------------------------------
+# -- 05-concurrency.md, line 430 ----------------------------------------
 def retire(login):
     return lambda tr: tr.remove_mutable(f"user:{login}")
 
@@ -281,7 +281,7 @@ unchecked: both committed
 checked:   conflict on CELL 'user:cy'
 """)
 
-# -- 05-concurrency.md, line 460 ----------------------------------------
+# -- 05-concurrency.md, line 464 ----------------------------------------
 from proto_db import EqualityIndex
 
 with db.new_transaction() as tr:
@@ -340,7 +340,7 @@ by a scan                conflict on WHOLE
 the retry of a duplicate: ProtoValidationError
 """)
 
-# -- 05-concurrency.md, line 543 ----------------------------------------
+# -- 05-concurrency.md, line 547 ----------------------------------------
 attempts, notices = [], []
 
 def bob_closes(tr):
@@ -366,7 +366,7 @@ attempts: [1, 2] | notices: ['deal 40 won after proposal']
 history of deal 40: qualified (import) -> proposal (ann) -> won (bob)
 """)
 
-# -- 05-concurrency.md, line 596 ----------------------------------------
+# -- 05-concurrency.md, line 600 ----------------------------------------
 space.close()
 
 print("05_concurrency: OK")
