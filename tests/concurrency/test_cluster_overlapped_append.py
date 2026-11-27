@@ -34,7 +34,9 @@ import pytest
 
 from proto_db.cluster.protocol import decode_labeled_root
 from proto_db.core.atom import AtomPointer
-from proto_db.errors import ProtoConflictError, ProtoDBError, ProtoOutcomeUnknownError, ProtoTimeoutError
+from proto_db.errors import (ProtoConflictError, ProtoDBError, ProtoOutcomeUnknownError, ProtoTimeoutError,
+                             ProtoUnexpectedError)
+from proto_db.storage.cloud import TransientObjectStoreError
 from proto_db.storage.tiered import TieredStorage
 from proto_db.transactions import ObjectSpace
 from tests.support import stress
@@ -520,6 +522,39 @@ def _read(tc, node):
         tr.abort()
 
 
+def _while_unavailable(fn, what: str):
+    """``fn()``, tried again while it meets a record that is unavailable (never one that is lost).
+
+    With the object store down, a member that holds no copy of a record reads it with a peer
+    page request, which waits ``fetch_timeout`` (75 ms under ``LEASE``) on the real clock.  A
+    holder that answers later, as a loaded CI runner may, leaves the reader with no answer and
+    no store: ``ProtoUnexpectedError`` from the store's outage, or the R230 "unavailable" error.
+    The product reports that as unavailable, never as lost (a lost record is
+    ``ProtoCorruptionError``, raised here at once), and nothing was applied, so the read is tried
+    again.  Each attempt keeps in its cache the records it did fetch, so the attempts progress.
+    A record that no surviving member holds is not hidden by this: the holder's own read
+    (:func:`_read_locally`) checks the copies without any peer or the store."""
+    for _ in range(stress.attempts(10)):
+        try:
+            return fn()
+        except ProtoUnexpectedError as e:
+            if not (isinstance(e.__cause__, TransientObjectStoreError) or "is unavailable" in str(e)):
+                raise
+            last = e
+    raise AssertionError(f"{what}: a record stayed unavailable in every attempt: {last!r}")
+
+
+def _read_locally(tc, node):
+    """:func:`_read` on ``node``, served from its own tiers alone: no peer and no store was asked."""
+    stats = tc.storages[node].stats
+    before = stats()
+    value = _read(tc, node)
+    after = stats()
+    asked = {k: after[k] - before[k] for k in ("reads_peer", "reads_remote") if after[k] != before[k]}
+    assert not asked, f"{node} needed other copies to read the acknowledged state: {asked}"
+    return value
+
+
 def _no_tier_failed(tc) -> None:
     for node in tc.ids:
         assert tc[node]._tier_failure is None, (node, tc[node]._tier_failure)
@@ -570,10 +605,10 @@ def test_after_a_death_in_the_window_f_disk_losses_lose_nothing(tmp_path, monkey
         def resolved(nodes):
             """Every outcome resolved alike on ``nodes``; ``n`` equals the tokens present plus the
             window's commit when adopted, read in one snapshot."""
-            res = assert_outcomes_resolved(
+            res = _while_unavailable(lambda: assert_outcomes_resolved(
                 {n: (lambda n=n: snapshot_of(tc.db(n), lambda tr: (tr.get_root_object("n"),
                                                                   tr.get_root_object("z") is not None)))
-                 for n in nodes}, tokens)
+                 for n in nodes}, tokens), f"the outcomes on {nodes}")
             for node, (n, has_z) in res.values.items():
                 assert n == len(res.present) + has_z, (node, n, sorted(res.present), has_z)
         for node in tc.ids:
@@ -607,8 +642,12 @@ def test_after_a_death_in_the_window_f_disk_losses_lose_nothing(tmp_path, monkey
             tc.wipe(node)
         survivors = [n for n in tc.ids if n not in lost]
         expected = (value, {"k": 42} if adopted else None)
-        for node in survivors:
-            assert _read(tc, node) == expected, node
+        # n0 wrote every record, and each of its commits counted its own durable copy (D54): it
+        # reads the whole acknowledged state from its own disk.  The other survivors hold no
+        # copy of n0's records and read them from n0, a peer read bounded by the real clock.
+        assert _read_locally(tc, "n0") == expected, "n0"
+        for node in survivors[1:]:
+            assert _while_unavailable(lambda: _read(tc, node), node) == expected, node
         resolved(survivors)                         # history kept: every token seen before is here
         for node in lost:
             tc.revive(node)
