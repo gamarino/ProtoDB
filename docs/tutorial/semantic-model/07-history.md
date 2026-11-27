@@ -119,9 +119,14 @@ Output:
 close_date at version 7: None
 ```
 
-`erp_forecast` (chapter 5) added `close_date` at version 8; version 7 does not describe it. One caution, shown
-on the last line: a version reads an attribute its model does not declare as `None`, not as an error, so ask
-`describe` before relying on an attribute in an as-of report.
+`erp_forecast` (chapter 5) added `close_date` at version 8; version 7 does not describe it. The last line
+shows how objects evolve: an attribute with no value reads as `None`, not as an error (decision D10). The
+attribute may come from a newer model or may simply never have been set. Code written for the new model
+therefore runs unchanged over older versions and older records. A `None` tells it there was no previous value,
+so it can react to the new attribute: fill in a default, derive the value from older fields, or leave the
+record for a migration. Writes are still checked against the model (chapter 4), so only reads have this
+latitude. When a report must tell "not part of that model" from "declared but not set", it asks `describe`
+for the model, and `record.has_defined_attr(name)` for an explicitly stored `None`.
 
 ## Reading a version again later
 

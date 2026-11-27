@@ -127,7 +127,7 @@ _expect("""
 close_date at version 7: None
 """)
 
-# -- 07-history.md, line 132 ----------------------------------------
+# -- 07-history.md, line 137 ----------------------------------------
 tr = db.new_transaction()
 read = semantic(tr).version()
 tr.abort()
