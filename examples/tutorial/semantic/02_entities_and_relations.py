@@ -148,7 +148,7 @@ def groups(tr):
 sales = db.run(groups)
 tr = db.new_transaction()
 s = semantic(tr)
-print("sales:", [(m.user.login, m.role) for m in s.get(sales).memberships])
+print("sales:", sorted((m.user.login, m.role) for m in s.get(sales).memberships))   # a many end is a set
 print("ann:", [(m.group.name, m.role) for m in s.get(ann).memberships])
 tr.abort()
 _expect("""
@@ -156,7 +156,7 @@ sales: [('ann', 'manager'), ('bob', 'member')]
 ann: [('sales', 'manager')]
 """)
 
-# -- 02-entities-and-relations.md, line 181 ----------------------------------------
+# -- 02-entities-and-relations.md, line 183 ----------------------------------------
 db.run(lambda tr: semantic(tr).relate("erp.Quote", opportunity=licences, recipient=pat, amount=Decimal("12000")))
 db.run(lambda tr: semantic(tr).update(pat, company="Initech"))       # the contact moves
 db.run(lambda tr: semantic(tr).relate("erp.Quote", opportunity=licences, recipient=pat, amount=Decimal("11500")))
@@ -173,7 +173,7 @@ _expect("""
 the contact now: Initech
 """)
 
-# -- 02-entities-and-relations.md, line 208 ----------------------------------------
+# -- 02-entities-and-relations.md, line 210 ----------------------------------------
 tr = db.new_transaction()
 s = semantic(tr)
 answer = s.query({"from": ["via", ["cell", sales.name], "memberships"],

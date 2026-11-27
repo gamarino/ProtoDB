@@ -157,7 +157,7 @@ def groups(tr):
 sales = db.run(groups)
 tr = db.new_transaction()
 s = semantic(tr)
-print("sales:", [(m.user.login, m.role) for m in s.get(sales).memberships])
+print("sales:", sorted((m.user.login, m.role) for m in s.get(sales).memberships))   # a many end is a set
 print("ann:", [(m.group.name, m.role) for m in s.get(ann).memberships])
 tr.abort()
 ```
@@ -169,7 +169,9 @@ sales: [('ann', 'manager'), ('bob', 'member')]
 ann: [('sales', 'manager')]
 ```
 
-A membership is one stored record, referenced from both ends; it is not an entity with a cell of its own.
+A membership is one stored record, referenced from both ends; it is not an entity with a cell of its own. An
+unordered `many` end is a set, so its iteration order is not defined; declare `ordered=True` on the role (as
+the quotes below do) when the order is part of the meaning.
 
 ## Binding to a version
 
