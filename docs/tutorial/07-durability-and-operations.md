@@ -23,6 +23,10 @@ a damaged database as if it were sound. What `fsync` costs is a property of the 
 
 ## A crash leaves the last published commit
 
+The chapter works in a temporary directory of its own, removed at its end. To look at the files a space is
+made of afterwards, run it with `PROTO_DB_TUTORIAL_KEEP=1` in the environment: the directory is then kept,
+and `workdir.name` is its path.
+
 The block starts a second Python process that commits in a loop, two roots that must always agree, kills it
 with `SIGKILL` in the middle of its work, and opens what it left (POSIX only: `SIGKILL` does not exist on
 Windows):
@@ -37,7 +41,10 @@ import time
 
 from proto_db import FileStorage, ObjectSpace
 
-os.chdir(tempfile.mkdtemp(prefix="proto_db-tutorial-"))   # a fresh directory: files stay out of yours
+keep = bool(os.environ.get("PROTO_DB_TUTORIAL_KEEP"))   # set it to keep the files for inspection
+workdir = tempfile.TemporaryDirectory(prefix="proto_db-tutorial-", delete=not keep)
+home = os.getcwd()
+os.chdir(workdir.name)                                # its files stay out of yours
 
 WRITER = """
 import sys
@@ -164,6 +171,10 @@ try:
     FileStorage("erp-damaged")
 except ProtoCorruptionError as error:
     print("refused:", type(error).__name__)
+
+os.chdir(home)
+if not keep:
+    workdir.cleanup()                                 # removes only the directory this chapter created
 ```
 
 Output:

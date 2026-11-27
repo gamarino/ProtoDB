@@ -86,15 +86,21 @@ def test_tutorial_script_runs(script, tmp_path):
 
 def test_tutorial_scripts_share_one_directory(tmp_path):
     """All the scripts, run twice from ONE directory, as a reader runs them from a checkout: none may depend on
-    a fresh directory, collide with another's files, or leave anything behind in the directory it ran from."""
-    env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+    a fresh directory, collide with another's files, or leave anything behind, neither in the directory it ran
+    from nor in the temporary directory (each removes the temporary directory it created)."""
+    cwd, temp = tmp_path / "cwd", tmp_path / "temp"
+    cwd.mkdir()
+    temp.mkdir()
+    env = {k: v for k, v in os.environ.items() if k not in ("PYTHONPATH", "PROTO_DB_TUTORIAL_KEEP")}
+    env["TMPDIR"] = str(temp)                          # tempfile's directory, for the scripts only
     scripts = [s for s in tutorial_scripts() if s not in TUTORIAL_NEEDS_NUMPY or _has_numpy()]
     for round_number in (1, 2):
         for script in scripts:
-            proc = subprocess.run([sys.executable, os.path.join(TUTORIAL, script)], cwd=str(tmp_path),
+            proc = subprocess.run([sys.executable, os.path.join(TUTORIAL, script)], cwd=str(cwd),
                                   capture_output=True, text=True, timeout=240, env=env)
             assert proc.returncode == 0, f"round {round_number}, {script}:\n{proc.stdout[-2000:]}{proc.stderr}"
-    assert os.listdir(tmp_path) == [], f"left behind: {sorted(os.listdir(tmp_path))}"
+            assert os.listdir(temp) == [], f"{script} left in the temporary directory: {sorted(os.listdir(temp))}"
+    assert os.listdir(cwd) == [], f"left behind: {sorted(os.listdir(cwd))}"
 
 
 def _has_numpy() -> bool:

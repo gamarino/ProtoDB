@@ -28,7 +28,9 @@ from proto_db import F, FileStorage, ObjectSpace, from_collection
 import erp_app
 from erp_app import plan_of
 
-os.chdir(tempfile.mkdtemp(prefix="proto_db-tutorial-"))   # a fresh directory: files stay out of yours
+workdir = tempfile.TemporaryDirectory(prefix="proto_db-tutorial-")   # this chapter's own directory
+home = os.getcwd()
+os.chdir(workdir.name)                                # its files stay out of yours
 
 space = ObjectSpace(FileStorage("perf-space"))
 erp_app.seed(space.new_database("erp"), opportunities=5000)
@@ -207,6 +209,9 @@ whole result for every page.
 _, loads_ordered, _ = cold(lambda d: from_collection(d).order_by(F.amount).skip(4000).take(10).to_list())
 _, loads_sorted, _ = cold(lambda d: from_collection(d).order_by(F.title).skip(4000).take(10).to_list())
 print(f"page at offset 4000: {loads_ordered} atoms over the amount index, {loads_sorted} sorting by title")
+
+os.chdir(home)
+workdir.cleanup()                                     # removes only the directory this chapter created
 ```
 
 Output:

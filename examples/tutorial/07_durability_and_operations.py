@@ -49,7 +49,7 @@ def _sample():
     _sys.stdout.kept.clear()
 
 
-# -- 07-durability-and-operations.md, line 30 ----------------------------------------
+# -- 07-durability-and-operations.md, line 34 ----------------------------------------
 import os
 import signal
 import subprocess
@@ -59,7 +59,10 @@ import time
 
 from proto_db import FileStorage, ObjectSpace
 
-os.chdir(tempfile.mkdtemp(prefix="proto_db-tutorial-"))   # a fresh directory: files stay out of yours
+keep = bool(os.environ.get("PROTO_DB_TUTORIAL_KEEP"))   # set it to keep the files for inspection
+workdir = tempfile.TemporaryDirectory(prefix="proto_db-tutorial-", delete=not keep)
+home = os.getcwd()
+os.chdir(workdir.name)                                # its files stay out of yours
 
 WRITER = """
 import sys
@@ -93,7 +96,7 @@ _expect("""
 killed by SIGKILL | the two roots agree: True | at least 21 commits: True
 """)
 
-# -- 07-durability-and-operations.md, line 90 ----------------------------------------
+# -- 07-durability-and-operations.md, line 97 ----------------------------------------
 from proto_db.tools.verify import verify
 
 import erp_app
@@ -115,7 +118,7 @@ root record version: 7 | collections: 13 | failures: []
 roots: ['groups', 'opportunities', 'persons']
 """)
 
-# -- 07-durability-and-operations.md, line 125 ----------------------------------------
+# -- 07-durability-and-operations.md, line 132 ----------------------------------------
 import shutil
 
 shutil.copytree("erp-space", "erp-backup")
@@ -131,7 +134,7 @@ _expect("""
 verified: True | deal 7: won | versions: 3
 """)
 
-# -- 07-durability-and-operations.md, line 154 ----------------------------------------
+# -- 07-durability-and-operations.md, line 161 ----------------------------------------
 from proto_db import ProtoCorruptionError
 
 shutil.copytree("erp-backup", "erp-damaged")
@@ -144,6 +147,10 @@ try:
     FileStorage("erp-damaged")
 except ProtoCorruptionError as error:
     print("refused:", type(error).__name__)
+
+os.chdir(home)
+if not keep:
+    workdir.cleanup()                                 # removes only the directory this chapter created
 _expect("""
 refused: ProtoCorruptionError
 """)

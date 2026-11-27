@@ -59,7 +59,9 @@ from proto_db import F, FileStorage, ObjectSpace, from_collection
 import erp_app
 from erp_app import plan_of
 
-os.chdir(tempfile.mkdtemp(prefix="proto_db-tutorial-"))   # a fresh directory: files stay out of yours
+workdir = tempfile.TemporaryDirectory(prefix="proto_db-tutorial-")   # this chapter's own directory
+home = os.getcwd()
+os.chdir(workdir.name)                                # its files stay out of yours
 
 space = ObjectSpace(FileStorage("perf-space"))
 erp_app.seed(space.new_database("erp"), opportunities=5000)
@@ -84,7 +86,7 @@ _expect("""
 5000 opportunities
 """)
 
-# -- 07-performance-pitfalls.md, line 64 ----------------------------------------
+# -- 07-performance-pitfalls.md, line 66 ----------------------------------------
 shapes = {
     "amount == 9991 (range index)":     lambda d: from_collection(d).where(F.amount == 9991).count(),
     "title == ... (no index: a scan)":  lambda d: from_collection(d).where(F.title == "opportunity 4242").count(),
@@ -101,12 +103,12 @@ a lambda (a PythonFilter)              1 rows,  10007 atoms decoded
 title.startswith (a PythonFilter)      1 rows,  10007 atoms decoded
 """)
 
-# -- 07-performance-pitfalls.md, line 85 ----------------------------------------
+# -- 07-performance-pitfalls.md, line 87 ----------------------------------------
 for label, (_, _, elapsed) in measured.items():
     print(f"{label:36} {elapsed * 1000:8.1f} ms (cold)")
 _sample()
 
-# -- 07-performance-pitfalls.md, line 108 ----------------------------------------
+# -- 07-performance-pitfalls.md, line 110 ----------------------------------------
 for label, read in (("order_by(amount).take(10)", lambda d: from_collection(d).order_by(F.amount).take(10).to_list()),
                     ("order_by(title).take(10)", lambda d: from_collection(d).order_by(F.title).take(10).to_list())):
     rows, loads, _ = cold(read)
@@ -116,7 +118,7 @@ order_by(amount).take(10)    10 rows,     35 atoms decoded
 order_by(title).take(10)     10 rows,  10007 atoms decoded
 """)
 
-# -- 07-performance-pitfalls.md, line 128 ----------------------------------------
+# -- 07-performance-pitfalls.md, line 130 ----------------------------------------
 for label, read in (("len(collection)", len), ("query count, no condition", lambda d: from_collection(d).count()),
                     ("count of a lookup", lambda d: from_collection(d).where(F.stage == "lead").count())):
     rows, loads, _ = cold(read)
@@ -127,7 +129,7 @@ query count, no condition     5000,      7 atoms decoded
 count of a lookup             1667,      9 atoms decoded
 """)
 
-# -- 07-performance-pitfalls.md, line 154 ----------------------------------------
+# -- 07-performance-pitfalls.md, line 156 ----------------------------------------
 def update_cost(indexes):
     path = f"writes-{indexes}"
     store = ObjectSpace(FileStorage(path, durability="none"))
@@ -149,10 +151,13 @@ print(f"no index:  {plain[0] * 1e6:6.0f} us and {plain[1]:6.0f} bytes per update
 print(f"3 indexes: {indexed[0] * 1e6:6.0f} us and {indexed[1]:6.0f} bytes per update")
 _sample()
 
-# -- 07-performance-pitfalls.md, line 206 ----------------------------------------
+# -- 07-performance-pitfalls.md, line 208 ----------------------------------------
 _, loads_ordered, _ = cold(lambda d: from_collection(d).order_by(F.amount).skip(4000).take(10).to_list())
 _, loads_sorted, _ = cold(lambda d: from_collection(d).order_by(F.title).skip(4000).take(10).to_list())
 print(f"page at offset 4000: {loads_ordered} atoms over the amount index, {loads_sorted} sorting by title")
+
+os.chdir(home)
+workdir.cleanup()                                     # removes only the directory this chapter created
 _expect("""
 page at offset 4000: 40 atoms over the amount index, 10007 sorting by title
 """)

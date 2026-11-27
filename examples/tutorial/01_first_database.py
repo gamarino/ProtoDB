@@ -124,7 +124,9 @@ import tempfile
 
 from proto_db import FileStorage
 
-os.chdir(tempfile.mkdtemp(prefix="proto_db-tutorial-"))   # a fresh directory: files stay out of yours
+workdir = tempfile.TemporaryDirectory(prefix="proto_db-tutorial-")   # this chapter's own directory
+home = os.getcwd()
+os.chdir(workdir.name)                                # its files stay out of yours
 
 space.close()
 
@@ -140,6 +142,9 @@ tr = reopened.open_database("erp").new_transaction()
 print(tr.get_root_object("company").name)
 tr.abort()
 reopened.close()
+
+os.chdir(home)
+workdir.cleanup()                                     # removes only the directory this chapter created
 _expect("""
 ['erp']
 ACME

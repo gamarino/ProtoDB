@@ -59,7 +59,9 @@ from proto_db.cluster.transport import InProcessNetwork
 
 from memory_store import MemoryObjectStore
 
-os.chdir(tempfile.mkdtemp(prefix="proto_db-tutorial-"))   # a fresh directory: files stay out of yours
+workdir = tempfile.TemporaryDirectory(prefix="proto_db-tutorial-")   # this chapter's own directory
+home = os.getcwd()
+os.chdir(workdir.name)                                # its files stay out of yours
 
 store, network = MemoryObjectStore(), InProcessNetwork(seed=1)
 peers = [Peer(node_id, "127.0.0.1", 0) for node_id in ("n0", "n1", "n2")]
@@ -81,7 +83,7 @@ _expect("""
 voters: ['n0', 'n1', 'n2']
 """)
 
-# -- 10-cluster.md, line 70 ----------------------------------------
+# -- 10-cluster.md, line 72 ----------------------------------------
 def close_deal(k):
     """Set the last closed deal to k on n0: True if acknowledged, False if the outcome is unknown."""
     try:
@@ -102,7 +104,7 @@ assert acknowledged == 10
 print(f"local reads on n1 that missed the commit just acknowledged on n0: {stale} of {acknowledged}")
 _sample()
 
-# -- 10-cluster.md, line 109 ----------------------------------------
+# -- 10-cluster.md, line 111 ----------------------------------------
 def linearizable(database, attempts=10):
     """A transaction that sees every commit acknowledged before this call started."""
     for attempt in range(attempts):
@@ -128,11 +130,14 @@ _expect("""
 linearizable reads that missed it: 0 of 10
 """)
 
-# -- 10-cluster.md, line 145 ----------------------------------------
+# -- 10-cluster.md, line 147 ----------------------------------------
 for space in spaces.values():
     space.close()
 for node in nodes.values():
     node.stop()
 network.close()
+
+os.chdir(home)
+workdir.cleanup()                                     # removes only the directory this chapter created
 
 print("10_cluster: OK")

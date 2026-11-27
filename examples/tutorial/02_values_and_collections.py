@@ -139,7 +139,9 @@ import tempfile
 
 from proto_db import FileStorage
 
-os.chdir(tempfile.mkdtemp(prefix="proto_db-tutorial-"))   # a fresh directory: files stay out of yours
+workdir = tempfile.TemporaryDirectory(prefix="proto_db-tutorial-")   # this chapter's own directory
+home = os.getcwd()
+os.chdir(workdir.name)                                # its files stay out of yours
 
 def directory_bytes(path):
     return sum(os.path.getsize(os.path.join(path, name)) for name in os.listdir(path))
@@ -162,7 +164,10 @@ assert edit < loaded / 50                             # the edit wrote a path, n
 disk.close()
 _sample()
 
-# -- 02-values-and-collections.md, line 195 ----------------------------------------
+# -- 02-values-and-collections.md, line 197 ----------------------------------------
 space.close()
+
+os.chdir(home)
+workdir.cleanup()                                     # removes only the directory this chapter created
 
 print("02_values_and_collections: OK")

@@ -35,7 +35,9 @@ from proto_db.cluster.transport import InProcessNetwork
 
 from memory_store import MemoryObjectStore
 
-os.chdir(tempfile.mkdtemp(prefix="proto_db-tutorial-"))   # a fresh directory: files stay out of yours
+workdir = tempfile.TemporaryDirectory(prefix="proto_db-tutorial-")   # this chapter's own directory
+home = os.getcwd()
+os.chdir(workdir.name)                                # its files stay out of yours
 
 store, network = MemoryObjectStore(), InProcessNetwork(seed=1)
 peers = [Peer(node_id, "127.0.0.1", 0) for node_id in ("n0", "n1", "n2")]
@@ -148,6 +150,9 @@ for space in spaces.values():
 for node in nodes.values():
     node.stop()
 network.close()
+
+os.chdir(home)
+workdir.cleanup()                                     # removes only the directory this chapter created
 ```
 
 The cluster is new: it is documented, tested and measured in this repository, and it has no production

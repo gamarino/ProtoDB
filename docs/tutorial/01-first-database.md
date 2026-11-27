@@ -159,7 +159,9 @@ import tempfile
 
 from proto_db import FileStorage
 
-os.chdir(tempfile.mkdtemp(prefix="proto_db-tutorial-"))   # a fresh directory: files stay out of yours
+workdir = tempfile.TemporaryDirectory(prefix="proto_db-tutorial-")   # this chapter's own directory
+home = os.getcwd()
+os.chdir(workdir.name)                                # its files stay out of yours
 
 space.close()
 
@@ -175,6 +177,9 @@ tr = reopened.open_database("erp").new_transaction()
 print(tr.get_root_object("company").name)
 tr.abort()
 reopened.close()
+
+os.chdir(home)
+workdir.cleanup()                                     # removes only the directory this chapter created
 ```
 
 Output:
@@ -184,8 +189,8 @@ Output:
 ACME
 ```
 
-The block works in a fresh temporary directory, so nothing is left where you run it; an application passes
-the path where its space lives. A commit that returned has reached the disk: by default `FileStorage` calls `fsync` before it publishes the
+The block works in a temporary directory of its own and removes it at the end, after closing the space, so
+nothing is left behind; an application passes the path where its space lives. A commit that returned has reached the disk: by default `FileStorage` calls `fsync` before it publishes the
 new root. Chapter 7 shows the cheaper modes and what each one risks.
 
 ## What you have
