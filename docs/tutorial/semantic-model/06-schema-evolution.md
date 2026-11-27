@@ -113,14 +113,16 @@ catalog says "required" for entities older than the module.
 ## Migrating the data
 
 A migration is ordinary code: a transaction that reads the entities and writes the new field. Run it through
-`Database.run`, so that a concurrent change of the same entities makes it retry instead of overwriting:
+`Database.run`: a concurrent change of the same entities makes the commit conflict, as any commit would, and
+`run` redoes the backfill on the new version instead of failing:
 
 ```python
 def backfill(tr):
     s = semantic(tr)
     changed = 0
     for opportunity in s.get(ann).opportunities:
-        if opportunity.region is None:                        # .entity: the handle of the version's cell
+        if opportunity.region is None:
+            # .entity: the handle of the version's cell
             s.update(opportunity.entity, region="south" if opportunity.number % 2 else "north")
             changed += 1
     return changed
@@ -151,8 +153,9 @@ of the complete tutorial).
   change is a new element (a new field, a new relation) and a migration that moves the data.
 * **The code in other processes.** The database stores module names, not code. A process whose code declares
   a listed module differently from the stored catalog is refused with `ProtoValidationError`, naming the module
-  and the element, and a process that started before an installation keeps the registry it built until
-  `ObjectSpace.reload_registry(database)` is called; chapter 8 of the complete tutorial shows both. Deploy the
+  and the element (the refusal is in [extensible models](../../source/tutorials/extensible-models.rst),
+  section 8, "A refused definition"). A process that started before an installation keeps the registry it
+  built until `ObjectSpace.reload_registry(database)` is called; chapter 8 of the complete tutorial shows it. Deploy the
   module's code everywhere before installing it.
 * **The past.** Old versions keep the catalog they were committed with (chapter 7).
 

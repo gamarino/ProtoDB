@@ -134,7 +134,7 @@ _expect("""
 IndexRange by_amount RangeIndex | estimated rows: 11.0
 """)
 
-# -- 04-indexes-and-queries.md, line 154 ----------------------------------------
+# -- 04-indexes-and-queries.md, line 156 ----------------------------------------
 with db.new_transaction() as tr:
     pager = tr.pager("opportunities", where=[["stage", "==", "proposal"]], order_by=[("amount", True), "number"],
                      page_size=100)

@@ -11,7 +11,7 @@ generated from the chapter, that checks every output and prints `<script>: OK` a
 
 ```text
 pip install --pre proto_db                 # chapter 9 also needs: pip install --pre "proto_db[vectors]"
-python examples/tutorial/05_concurrency.py
+python examples/tutorial/05_concurrency.py   # from a clone of the repository
 ```
 
 The chapters share a few modules in `examples/tutorial/` (`erp_app.py`, the plain model; `erp_model.py`, the

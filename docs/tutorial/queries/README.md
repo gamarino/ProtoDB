@@ -4,7 +4,7 @@ An in-depth tutorial on querying `proto_db`: how a query is built, how the plann
 how to read its `explain()`, the indexes it chooses from, pagination, what a query declares to concurrent
 commits, and the pitfalls that cost the most. It uses the ERP of the [complete tutorial](../README.md)
 (users, groups, persons and opportunities, seeded by `examples/tutorial/erp_app.py`) and assumes its first
-four chapters.
+five chapters.
 
 Every chapter is executed by the test suite, and every output shown is the one it printed. Each chapter also
 exists as a self-checking script in `examples/tutorial/queries/`, which asserts what it prints:

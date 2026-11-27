@@ -7,7 +7,8 @@ tool or agent can read it. The tutorial declares the ERP of the [complete tutori
 groups, persons, opportunities, quotes) in `examples/tutorial/erp_model.py`, and extends it with the modules
 `erp_forecast.py`, `erp_regions.py`, `erp_labels.py` and `erp_crm.py` in the same directory.
 
-It assumes chapters 1 and 3 of the complete tutorial. Every chapter is executed by the test suite, and every
+It assumes chapters 1 and 3 of the complete tutorial; chapter 3 here also relies on its chapter 5
+(concurrency), and chapters 5 and 7 on its chapter 8 (the runtime registry). Every chapter is executed by the test suite, and every
 output shown is the one it printed. Each chapter also exists as a self-checking script in
 `examples/tutorial/semantic/`:
 

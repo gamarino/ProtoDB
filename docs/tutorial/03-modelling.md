@@ -71,7 +71,7 @@ history: [('lead', 12000, 'import'), ('qualified', 12000, 'ann'), ('proposal', 1
 The opportunity reads the owner's current name through the handle, and its own past through `previous`. The
 collection holds only the current version of each opportunity, so a query for "proposals" never meets a
 superseded version, and needs no "is current" condition. The relational equivalent, a table of versions with
-a validity column, is shown and measured in [modelling data](../source/tutorials/modelling-data.rst).
+a validity column, is contrasted in [modelling data](../source/tutorials/modelling-data.rst).
 
 The choice is per relationship, not per database. A value is right for a fact at a moment (a quote, an
 invoice line); an entity is right when others must see the current state.

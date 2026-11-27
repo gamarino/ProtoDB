@@ -130,9 +130,11 @@ except ProtoConflictError as error:
 attempts = []
 def raise_second(tr):
     attempts.append(1)
+    if len(attempts) == 1:                            # the first deal changes again meanwhile
+        db.run(lambda other: semantic(other).update(first, amount=Decimal("16500")))
     semantic(tr).update(second, amount=Decimal("3500"))
 db.run(raise_second)
-print("through Database.run:", len(attempts), "attempt")
+print("through Database.run:", len(attempts), "attempts")
 show("both changes in")
 space.close()
 ```
@@ -141,8 +143,8 @@ Output:
 
 ```text
 second commit: CELL on erp.User
-through Database.run: 1 attempt
-both changes in              pipeline  16000 | expected [Decimal('350.0'), Decimal('8000.0')]
+through Database.run: 2 attempts
+both changes in              pipeline  16500 | expected [Decimal('350.0'), Decimal('8250.0')]
 ```
 
 `second` is lost, so its amount does not count in the pipeline, but the update still read and wrote Ann's

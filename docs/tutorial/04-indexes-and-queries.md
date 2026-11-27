@@ -143,13 +143,15 @@ Output:
 IndexRange by_amount RangeIndex | estimated rows: 11.0
 ```
 
-The [queries tutorial](queries/03-indexes-and-the-planner.md) reads every field of it, and shows how the
-plan decides what a query declares to a concurrent commit (chapter 5).
+The [queries tutorial](queries/03-indexes-and-the-planner.md) reads every field of it, and
+[its chapter 6](queries/06-queries-under-concurrency.md) shows how the plan decides what a query declares to a
+concurrent commit.
 
 ## A stable report
 
 A long report read page by page while other people commit is a **pager**: it is bound to one snapshot, so no
-page repeats or skips a row, whatever is committed between pages.
+page repeats or skips a row, whatever is committed between pages. Its conditions are `[path, operator, value]`
+lists, a form a resumable token can describe ([queries chapter 4](queries/04-pagination.md)).
 
 ```python
 with db.new_transaction() as tr:

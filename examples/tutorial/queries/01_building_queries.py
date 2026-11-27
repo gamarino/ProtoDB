@@ -90,7 +90,7 @@ amount < 1010 or amount > 9990        3  first: [0, 243, 973]
 not a lead, amount < 1100            10  first: [1, 2, 244, 245, 487, 488]
 """)
 
-# -- 01-building-queries.md, line 72 ----------------------------------------
+# -- 01-building-queries.md, line 73 ----------------------------------------
 print("previous is None:", from_collection(deals).where(F.previous.is_none()).count(),
       "| fax is None:", from_collection(deals).where(F.fax.is_none()).count(),
       "| fax > 0:", from_collection(deals).where(F.fax > 0).count())
@@ -98,7 +98,7 @@ _expect("""
 previous is None: 1000 | fax is None: 1000 | fax > 0: 0
 """)
 
-# -- 01-building-queries.md, line 90 ----------------------------------------
+# -- 01-building-queries.md, line 91 ----------------------------------------
 try:
     (F.stage == "lead") and (F.amount > 5000)           # Python would silently keep only one side
 except ProtoUserError as error:
@@ -112,22 +112,22 @@ and: ProtoUserError
 in:  ProtoUserError - write F.stage.in_([...])
 """)
 
-# -- 01-building-queries.md, line 114 ----------------------------------------
+# -- 01-building-queries.md, line 115 ----------------------------------------
 for label, query in [
-    ("F expression", from_collection(deals).where(F.amount == 9991)),
+    ("== a value (index)", from_collection(deals).where(F.amount == 9991)),
     ("startswith", from_collection(deals).where(F.title.startswith("opportunity 99"))),
     ("a lambda", from_collection(deals).where(lambda d: d.amount % 1000 == 0)),
     ("amount * 2 > 19900", from_collection(deals).where(F.amount * 2 > 19900)),
 ]:
     print(f"{label:20} {plan_of(query):32} {query.count()} rows")
 _expect("""
-F expression         IndexLookup                      1 rows
+== a value (index)   IndexLookup                      1 rows
 startswith           PythonFilter <- CollectionScan   11 rows
 a lambda             PythonFilter <- CollectionScan   1 rows
 amount * 2 > 19900   PythonFilter <- CollectionScan   5 rows
 """)
 
-# -- 01-building-queries.md, line 141 ----------------------------------------
+# -- 01-building-queries.md, line 142 ----------------------------------------
 top = from_collection(deals).where(F.amount > 9950).order_by(F.number)
 print(top.select(F.number).to_list())
 print(top.select({"n": F.number, "stage": F.stage}).take(2).to_list())
@@ -140,7 +140,7 @@ _expect("""
 [MISSING] True
 """)
 
-# -- 01-building-queries.md, line 167 ----------------------------------------
+# -- 01-building-queries.md, line 168 ----------------------------------------
 ranked = (from_collection(deals).where(F.stage == "proposal")
           .order_by(F.amount, descending=True).then_by(F.number))
 print([(d.number, d.amount) for d in ranked.take(3).to_list()])
@@ -155,7 +155,7 @@ _expect("""
 then_by must directly follow order_by or then_by
 """)
 
-# -- 01-building-queries.md, line 191 ----------------------------------------
+# -- 01-building-queries.md, line 192 ----------------------------------------
 proposals = from_collection(deals).where(F.stage == "proposal").order_by(F.amount)
 print(proposals.count(), proposals.first().number, proposals.first_or_none(lambda d: d.amount > 99_999))
 print(sum(1 for _ in proposals), proposals.count(lambda d: d.amount >= 9000))
@@ -166,7 +166,7 @@ _expect("""
 Queryable(Dictionary, ['where', 'order'])
 """)
 
-# -- 01-building-queries.md, line 211 ----------------------------------------
+# -- 01-building-queries.md, line 212 ----------------------------------------
 rows = [{"login": "ann", "deals": 334}, {"login": "bob", "deals": 333}, {"login": "cy", "deals": 333}]
 print(from_collection(rows).where(F.deals > 333).select(F.login).to_list())
 tr.abort()

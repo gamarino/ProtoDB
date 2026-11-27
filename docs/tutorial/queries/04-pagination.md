@@ -101,9 +101,9 @@ keys from 995: [996, 997, 998, 999]
 key at position 10: 10 | position of key 500: 500
 ```
 
-`keys(after=k)` returns the keys after `k`, in order. Keyset pagination remembers the last key of a page
-and asks for the keys after it: the walk starts at that key in the tree, without counting the rows before it, and a concurrent insertion
-never shifts the next page. Positional access runs in O(log n) from the tree's node counts.
+`keys(after=k)` returns the keys after `k`, in order. Keyset pagination remembers the last key of a page and
+asks for the keys after it: the walk starts at that key in the tree, without counting the rows before it, and
+a concurrent insertion never shifts the next page. Positional access runs in O(log n) from the tree's node counts.
 
 ## Which to use
 

@@ -66,8 +66,9 @@ not a lead, amount < 1100            10  first: [1, 2, 244, 245, 487, 488]
 
 The other operators: `!=`, `<=`, `>=`, the `between` family (`between_open`, `between_left_open`,
 `between_right_open`, or `range(low, high, "[)")`), `contains` (a substring of a string, or an item of a
-list), `is_none` / `not_none` and `is_true` / `not_true`. An attribute that a record does not have is
-`MISSING`, not `None`; the presence tests and the comparisons treat it differently:
+list), `is_none` / `not_none` and `is_true` / `not_true`. In a query, an attribute that a record does not
+have is `MISSING`, not `None` (reading it as `record.fax` still gives `None`, as chapter 2 of the complete
+tutorial shows); the presence tests and the comparisons treat it differently:
 
 ```python
 print("previous is None:", from_collection(deals).where(F.previous.is_none()).count(),
@@ -113,7 +114,7 @@ and the plan says so with a `PythonFilter` node:
 
 ```python
 for label, query in [
-    ("F expression", from_collection(deals).where(F.amount == 9991)),
+    ("== a value (index)", from_collection(deals).where(F.amount == 9991)),
     ("startswith", from_collection(deals).where(F.title.startswith("opportunity 99"))),
     ("a lambda", from_collection(deals).where(lambda d: d.amount % 1000 == 0)),
     ("amount * 2 > 19900", from_collection(deals).where(F.amount * 2 > 19900)),
@@ -124,7 +125,7 @@ for label, query in [
 Output:
 
 ```text
-F expression         IndexLookup                      1 rows
+== a value (index)   IndexLookup                      1 rows
 startswith           PythonFilter <- CollectionScan   11 rows
 a lambda             PythonFilter <- CollectionScan   1 rows
 amount * 2 > 19900   PythonFilter <- CollectionScan   5 rows

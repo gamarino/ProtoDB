@@ -118,7 +118,7 @@ with other_db.new_transaction() as tr:
     print("other process:", semantic(tr).get(deal).label())
 
 with db.new_transaction() as tr:
-    before_crm = tr.snapshot_ref                      # remembered for the as-of read below
+    before_crm = tr.snapshot_ref     # the version this transaction started on, for the as-of read below
 
 db.run(lambda tr: tr.install_module("erp_crm"))
 with db.new_transaction() as tr:

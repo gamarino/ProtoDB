@@ -165,7 +165,7 @@ Output:
   (`tests/unit/test_semantic_compose.py` checks it).
 * Every process that opens the database must be able to import the modules it lists, and their code must
   match the stored catalog: a process whose code declares an element differently is refused with
-  `ProtoValidationError`, naming the module and the element (chapter 6 shows it).
+  `ProtoValidationError`, naming the module and the element (chapter 6 explains what follows for a deployment).
 * The parents of a registry name, their C3 linearization, `_super()` and the errors the registry raises are
   the subject of [extensible models](../../source/tutorials/extensible-models.rst), sections 5 to 8; the
   design and its trade-offs are in [the registry chapter of the design guide](../../source/design-guide/registry.rst).

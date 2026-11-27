@@ -108,12 +108,13 @@ a new one without a region: 'erp.Opportunity' has the required fields ['region']
 an old one changed without a region: committed
 """)
 
-# -- 06-schema-evolution.md, line 118 ----------------------------------------
+# -- 06-schema-evolution.md, line 119 ----------------------------------------
 def backfill(tr):
     s = semantic(tr)
     changed = 0
     for opportunity in s.get(ann).opportunities:
-        if opportunity.region is None:                        # .entity: the handle of the version's cell
+        if opportunity.region is None:
+            # .entity: the handle of the version's cell
             s.update(opportunity.entity, region="south" if opportunity.number % 2 else "north")
             changed += 1
     return changed
@@ -128,7 +129,7 @@ backfilled: 3
 [(1, 'south'), (2, 'north'), (3, 'south')]
 """)
 
-# -- 06-schema-evolution.md, line 159 ----------------------------------------
+# -- 06-schema-evolution.md, line 162 ----------------------------------------
 space.close()
 
 print("06_schema_evolution: OK")
