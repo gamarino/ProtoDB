@@ -90,7 +90,7 @@ assert acknowledged == 10
 print(f"local reads on n1 that missed the commit just acknowledged on n0: {stale} of {acknowledged}")
 ```
 
-Sample output (one run on the machine that built this page, an AMD Ryzen 5 5500U, CPython 3.14.6 free-threaded;
+Sample output (one run on the machine this sample was taken on, an AMD Ryzen 5 5500U, CPython 3.14.6 free-threaded;
 the count varies from run to run, from none to most of them):
 
 ```text

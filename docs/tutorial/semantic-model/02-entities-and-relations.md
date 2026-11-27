@@ -231,12 +231,13 @@ Output:
 [{'sum': Decimal('12000')}] ['memberships', 'user', 'opportunities', 'amount']
 ```
 
-Values come back as Python values (the agent interface serialises them to JSON), and `terms` lists the
-catalog elements the query used, so an answer can be checked against the catalog. Starting from a cell is the
-point: a query walks relations from an entity, and the collection at a `many` end is where it filters (its
-plan above is a scan of the group's two memberships). The tree's grammar is section 11 of the
-[semantic model design](../../superpowers/specs/2026-11-15-semantic-model-mvp-design.md); the [semantic-model kit](../../kit/semantic/README.md) names every query an agent asks of its
-model in `docs/kit/semantic/queries.py`. Inside Python code, the LINQ front end of the
-[queries tutorial](../queries/README.md) works on the same records.
+Values come back as Python values (the agent interface serialises them to JSON), and `terms` lists the catalog
+elements the query used, so an answer can be checked against the catalog. Starting from a cell is the point: a
+query walks relations from an entity, and the collection at a `many` end is where it filters (its plan above
+is a scan of the group's two memberships). The tree's grammar is section 11 of the [semantic model
+design](../../superpowers/specs/2026-11-15-semantic-model-mvp-design.md); the [semantic-model
+kit](../../kit/semantic/README.md) names every query an agent asks of its model in
+`docs/kit/semantic/queries.py`. Inside Python code, the LINQ front end of the [queries
+tutorial](../queries/README.md) works on the same records.
 
 Next: [3. Computed attributes and aggregates](03-computed-and-aggregates.md)

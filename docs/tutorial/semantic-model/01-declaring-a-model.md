@@ -132,9 +132,10 @@ A possible sale to a customer, owned by a user, moving through stages | also cal
 intents: ['move_to'] | constraints: ['probability_range']
 ```
 
-The catalog is data in the database, under the root `__semanticCatalog`, and its format is specified
-([format spec](../../source/format-spec.rst), "Semantic catalog (format 6)"). A tool, an agent or a runtime in another language can read it without the
-Python module; the [semantic-model kit](../../kit/semantic/README.md) shows an agent doing so over MCP.
+The catalog is data in the database, under the root `__semanticCatalog`, and its format is specified ([format
+spec](../../source/format-spec.rst), "Semantic catalog (format 6)"). A tool, an agent or a runtime in another
+language can read it without the Python module; the [semantic-model kit](../../kit/semantic/README.md) shows
+an agent doing so over MCP.
 
 ## What a declaration does not enforce
 

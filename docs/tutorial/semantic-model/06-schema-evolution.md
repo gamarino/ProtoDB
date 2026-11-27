@@ -104,11 +104,11 @@ a new one without a region: 'erp.Opportunity' has the required fields ['region']
 an old one changed without a region: committed
 ```
 
-The [format spec](../../source/format-spec.rst) states the rule ("Constraints"). Checking a new requirement against every existing entity would
-make installing a module a full scan and a write of the whole database, and would refuse the installation of
-any requirement the old data cannot meet yet. The same holds for an invariant that a later module adds. The
-consequence is the one to plan for: until the data is migrated, a reader must expect `None` where the
-catalog says "required" for entities older than the module.
+The [format spec](../../source/format-spec.rst) states the rule ("Constraints"). Checking a new requirement
+against every existing entity would make installing a module a full scan and a write of the whole database,
+and would refuse the installation of any requirement the old data cannot meet yet. The same holds for an
+invariant that a later module adds. The consequence is the one to plan for: until the data is migrated, a
+reader must expect `None` where the catalog says "required" for entities older than the module.
 
 ## Migrating the data
 
@@ -151,12 +151,12 @@ of the complete tutorial).
   not change an element's kind, value type, a relation's target or cardinality, or a role's binding: that is
   refused at installation ("a structural field is refused without a declared migration", chapter 5). Such a
   change is a new element (a new field, a new relation) and a migration that moves the data.
-* **The code in other processes.** The database stores module names, not code. A process whose code declares
-  a listed module differently from the stored catalog is refused with `ProtoValidationError`, naming the module
+* **The code in other processes.** The database stores module names, not code. A process whose code declares a
+  listed module differently from the stored catalog is refused with `ProtoValidationError`, naming the module
   and the element (the refusal is in [extensible models](../../source/tutorials/extensible-models.rst),
   section 8, "A refused definition"). A process that started before an installation keeps the registry it
-  built until `ObjectSpace.reload_registry(database)` is called; chapter 8 of the complete tutorial shows it. Deploy the
-  module's code everywhere before installing it.
+  built until `ObjectSpace.reload_registry(database)` is called; chapter 8 of the complete tutorial shows it.
+  Deploy the module's code everywhere before installing it.
 * **The past.** Old versions keep the catalog they were committed with (chapter 7).
 
 ```python

@@ -16,15 +16,14 @@ cell, all in-process, without a separate server.
 `docs/superpowers/specs/2026-11-01-protodb-v2-design.md`, decisions: `docs/decisions.md`). This tree is the
 next one, `2.0.0rc5` (unreleased): it replaces conflict detection per root by the **precondition concurrency
 model** (decision D73, `docs/source/concurrency-model.rst`), a behaviour-incompatible change listed in the
-CHANGELOG, and the spaces it writes cannot be opened by earlier releases (format 7). The 0.1 implementation has
-been removed; the API below is the 2.0 API.
-Everything this page lists is implemented and covered by the test suite, which runs on CPython 3.14t
-(free-threaded) and with the GIL. The cluster is new: it is documented, tested and measured in this
-repository and has no production history. Open defects are listed where they apply (see the cluster item
-under Features). The performance suite has run (results by workload in `docs/source/performance.rst`), at a commit before
-the precondition model: none of its figures measures 2.0.0rc5's commit path, and they are to be re-measured
-before 2.0.0;
-the API may still change before 2.0.0 is released.
+CHANGELOG, and the spaces it writes cannot be opened by earlier releases (format 7). The 0.1 implementation
+has been removed; the API below is the 2.0 API. Everything this page lists is implemented and covered by the
+test suite, which runs on CPython 3.14t (free-threaded) and with the GIL. The cluster is new: it is
+documented, tested and measured in this repository and has no production history. Open defects are listed
+where they apply (see the cluster item under Features). The performance suite has run (results by workload in
+`docs/source/performance.rst`), at a commit before the precondition model: none of its figures measures
+2.0.0rc5's commit path, and they are to be re-measured before 2.0.0; the API may still change before 2.0.0 is
+released.
 
 ### A note on names
 
@@ -304,11 +303,12 @@ space.close()
 ```
 
 [Chapter 5 of the tutorial](docs/tutorial/05-concurrency.md) starts from whole-root optimistic locking, shows
-where it fails, and builds the precondition model on the ERP, unit by unit; the
-[queries under concurrency](docs/tutorial/queries/06-queries-under-concurrency.md) chapter measures what each
-query plan declares. The [concurrency topic tutorial](docs/source/tutorials/concurrency.rst) covers the units of every collection,
-"check and add", identifiers without a counter, lock cells and the one deliberate escape (a `Snapshot`); the
-[concurrency model](docs/source/concurrency-model.rst) states every rule and the known limits.
+where it fails, and builds the precondition model on the ERP, unit by unit; the [queries under
+concurrency](docs/tutorial/queries/06-queries-under-concurrency.md) chapter measures what each query plan
+declares. The [concurrency topic tutorial](docs/source/tutorials/concurrency.rst) covers the units of every
+collection, "check and add", identifiers without a counter, lock cells and the one deliberate escape (a
+`Snapshot`); the [concurrency model](docs/source/concurrency-model.rst) states every rule and the known
+limits.
 
 ## Extensible models
 

@@ -4,7 +4,7 @@ Every figure in this chapter is measured: either here, by the code beside it, or
 performance suite, cited with its source. Most of the cost of a query is the number of stored objects it has to
 decode, so the chapter counts those first: `ObjectSpace.atom_cache_stats()["loads"]` is the number of atoms
 read from storage and decoded, and a freshly opened space starts with an empty cache, which makes the count
-exact and repeatable. Times follow as samples of one run on the machine that built this page: an AMD Ryzen 5
+exact and repeatable. Times follow as samples of one run, all taken on one machine: an AMD Ryzen 5
 5500U, CPython 3.14.6 free-threaded, the spaces in a temporary directory on tmpfs, at 2.0.0rc5 (this tutorial's
 branch). The suite figures cited come from another commit and are labelled with it.
 

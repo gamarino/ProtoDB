@@ -159,15 +159,16 @@ print("1 element:    ", plan_of(lead(db.new_transaction().get_root_object("tiny"
       "|", on_tiny(lambda t: lead(t).count(), lambda tr, t: t.set_at(2, tr.new_object(stage="lost"))))
 print("1000 elements:", plan_of(lead(db.new_transaction().get_root_object("opportunities"))),
       "|", after(lambda d: lead(d).count(), stage_of(4, "lost")))
-print("!= on 1000:   ", plan_of(from_collection(db.new_transaction().get_root_object("opportunities")).where(F.stage != "lead")),
-      "|", after(lambda d: from_collection(d).where(F.stage != "lead").count(), amount_of(3, 2500)))
+not_lead = lambda source: from_collection(source).where(F.stage != "lead")
+print("!= on 1000:   ", plan_of(not_lead(db.new_transaction().get_root_object("opportunities"))),
+      "|", after(lambda d: not_lead(d).count(), amount_of(3, 2500)))
 _expect("""
 1 element:     Filter <- CollectionScan | conflict on WHOLE
 1000 elements: IndexLookup | committed
 != on 1000:    IndexComplement | conflict on WHOLE
 """)
 
-# -- 06-queries-under-concurrency.md, line 190 ----------------------------------------
+# -- 06-queries-under-concurrency.md, line 191 ----------------------------------------
 walk = lambda deals: list(deals.keys(after=990))
 window = lambda deals: from_collection(deals).skip(10).take(5).to_list()
 counted = lambda deals: from_collection(deals).skip(10).take(5).count()
@@ -184,7 +185,7 @@ skip(10).take(5), key 500 changes:    committed
 the same window counted, key 501:     conflict on WHOLE
 """)
 
-# -- 06-queries-under-concurrency.md, line 219 ----------------------------------------
+# -- 06-queries-under-concurrency.md, line 220 ----------------------------------------
 def explain_only(deals):
     from_collection(deals).where(F.title == "opportunity 9").explain()   # a scan's explain shows its row count
 

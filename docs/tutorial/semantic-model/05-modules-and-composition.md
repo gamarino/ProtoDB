@@ -168,6 +168,7 @@ Output:
   `ProtoValidationError`, naming the module and the element (chapter 6 explains what follows for a deployment).
 * The parents of a registry name, their C3 linearization, `_super()` and the errors the registry raises are
   the subject of [extensible models](../../source/tutorials/extensible-models.rst), sections 5 to 8; the
-  design and its trade-offs are in [the registry chapter of the design guide](../../source/design-guide/registry.rst).
+  design and its trade-offs are in [the registry chapter of the design
+  guide](../../source/design-guide/registry.rst).
 
 Next: [6. Schema evolution](06-schema-evolution.md)

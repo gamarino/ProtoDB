@@ -167,7 +167,7 @@ assert edit < loaded / 50                             # the edit wrote a path, n
 disk.close()
 ```
 
-Sample output (one run on the machine that built this page, an AMD Ryzen 5 5500U, CPython 3.14.6 free-threaded;
+Sample output (one run on the machine this sample was taken on, an AMD Ryzen 5 5500U, CPython 3.14.6 free-threaded;
 the byte counts vary slightly from run to run, because each version stores its commit time):
 
 ```text

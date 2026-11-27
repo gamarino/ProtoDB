@@ -100,7 +100,7 @@ A possible sale to a customer, owned by a user, moving through stages | also cal
 intents: ['move_to'] | constraints: ['probability_range']
 """)
 
-# -- 01-declaring-a-model.md, line 143 ----------------------------------------
+# -- 01-declaring-a-model.md, line 144 ----------------------------------------
 from decimal import Decimal
 
 def load(tr):

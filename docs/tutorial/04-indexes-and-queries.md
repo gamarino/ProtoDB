@@ -169,7 +169,7 @@ Output:
 
 Chapter 6 shows the pager while another user keeps writing.
 
-Depth: [the queries tutorial](queries/README.md), [indexing and querying](../source/tutorials/indexing-querying.rst),
-[the query planner](../source/query-planner.rst).
+Depth: [the queries tutorial](queries/README.md), [indexing and
+querying](../source/tutorials/indexing-querying.rst), [the query planner](../source/query-planner.rst).
 
 Next: [5. Concurrency](05-concurrency.md)

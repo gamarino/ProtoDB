@@ -32,7 +32,8 @@ python examples/tutorial/queries/01_building_queries.py
 ## Reference
 
 * [Indexing and querying](../../source/tutorials/indexing-querying.rst), the topic tutorial
-* [The query planner](../../source/query-planner.rst) and [the index framework](../../source/indexing-framework.rst)
+* [The query planner](../../source/query-planner.rst) and [the index
+  framework](../../source/indexing-framework.rst)
 * [Writing a custom index](../../source/tutorials/custom-index.rst)
 * [The concurrency model](../../source/concurrency-model.rst)
 * [Performance](../../source/performance.rst)

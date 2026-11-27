@@ -173,8 +173,8 @@ candidate with the term's own rule. And the class must be importable in every pr
 database, under a stable `__type_name__`.
 
 Under the [precondition model](../05-concurrency.md), a custom index keeps the fine units of its collection
-only if it opts in (`_keyed_reapplication = True` and the `with_added_key`, `with_removed_key` and `with_replaced_keys` hooks);
-otherwise every write to its collection takes the whole collection.
+only if it opts in (`_keyed_reapplication = True` and the `with_added_key`, `with_removed_key` and
+`with_replaced_keys` hooks); otherwise every write to its collection takes the whole collection.
 
 [Writing a custom index](../../source/tutorials/custom-index.rst) builds a trigram index for substring search
 step by step, and proves it with the repository's index contract (`tests/contracts/index_contract.py`), which

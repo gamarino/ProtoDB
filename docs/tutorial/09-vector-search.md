@@ -87,8 +87,8 @@ Results come nearest first, and opportunity 42 is its own first neighbour.
 ## Nearest *among* the ones that match
 
 "The three won deals most like this one" is not "the three nearest, then keep the won ones", which here
-returns none: none of the five nearest is won. The other conditions go to the index, which finds the k nearest among the
-elements that satisfy them:
+returns none: none of the five nearest is won. The other conditions go to the index, which finds the k nearest
+among the elements that satisfy them:
 
 ```python
 won_like_42 = from_collection(deals).where(F.vec.near(target, k=3) & (F.stage == "won"))

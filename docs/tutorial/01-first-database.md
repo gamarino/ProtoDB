@@ -7,8 +7,8 @@ users, groups, persons and opportunities. It is a model only, with no ERP featur
 ## Install
 
 `proto_db` needs Python 3.12 or later. The tutorial's scripts are in a clone of the repository
-(`examples/tutorial/`), not in the installed package. Until 2.0.0 is final the published versions are release candidates,
-so `pip` needs `--pre`:
+(`examples/tutorial/`), not in the installed package. Until 2.0.0 is final the published versions are release
+candidates, so `pip` needs `--pre`:
 
 ```text
 pip install --pre proto_db
@@ -190,8 +190,9 @@ ACME
 ```
 
 The block works in a temporary directory of its own and removes it at the end, after closing the space, so
-nothing is left behind; an application passes the path where its space lives. A commit that returned has reached the disk: by default `FileStorage` calls `fsync` before it publishes the
-new root. Chapter 7 shows the cheaper modes and what each one risks.
+nothing is left behind; an application passes the path where its space lives. A commit that returned has
+reached the disk: by default `FileStorage` calls `fsync` before it publishes the new root. Chapter 7 shows the
+cheaper modes and what each one risks.
 
 ## What you have
 
