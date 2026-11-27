@@ -23,8 +23,9 @@ How a chapter is read:
 * any other ``text`` block is prose (a diagram, a command, a file layout).
 
 The generated script is the chapter's python blocks, verbatim and in order, with a call after the blocks of each
-``Output`` that compares what they printed with it (and a call that drops what a ``Sample output`` shows): the script checks every figure the chapter shows, exits with
-status 1 on the first difference, and prints ``<script name>: OK`` last. ``tests/integration/test_examples.py``
+``Output`` that compares what they printed with it, and a call after each ``Sample output`` that drops what it
+shows: the script checks every figure the chapter shows, exits with status 1 on the first difference, and
+prints ``<script name>: OK`` last. ``tests/integration/test_examples.py``
 runs the scripts as a user would.
 
 Maintenance (run from the repository root)::

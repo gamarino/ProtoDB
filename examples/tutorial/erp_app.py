@@ -10,8 +10,8 @@ The model:
 * a **user** is an entity: a ``MutableObject`` cell ``user:<login>`` whose record (``login``, ``name``) may be
   corrected, and every record that holds the cell's handle sees the correction;
 * a **group** is a named set of logins: the root ``groups``, a ``Dictionary`` from group name to a ``Set``;
-* a **person** (a contact at a customer) is a plain record in the root ``persons``, a ``Dictionary`` keyed by
-  number, indexed by company;
+* a **person** (a contact at a customer) is a plain record (``number``, ``name``, ``company``) in the root
+  ``persons``, a ``Dictionary`` keyed by number, indexed by company;
 * an **opportunity** is a value: each change is a new version that points at the one it replaced
   (``previous``) and says who made it (``changed_by``). The root ``opportunities`` holds the current version of
   each, keyed by number, with indexes by stage, by amount and by owner.
@@ -52,7 +52,7 @@ def seed(db, *, opportunities: int = 1000, persons: int = 200, indexes: bool = T
                           .add_index(RangeIndex("by_amount", "amount"))
                           .add_index(EqualityIndex("by_owner", "owner")))
         for i in range(persons):
-            people = people.set_at(i, tr.new_object(name=f"person {i}", company=f"company {i % 20}"))
+            people = people.set_at(i, tr.new_object(number=i, name=f"person {i}", company=f"company {i % 20}"))
         for n in range(opportunities):
             deals = deals.set_at(n, opportunity_record(tr, n, users))
         tr.set_root_object("groups", groups)
@@ -76,3 +76,12 @@ def advance(db, number: int, stage: str, who: str, **changes) -> None:
         revised = current.with_(previous=current, stage=stage, changed_by=who, **changes)
         tr.set_root_object("opportunities", deals.set_at(number, revised))
     db.run(work)
+
+
+def plan_of(query) -> str:
+    """The node names of a query's plan, from the root down: ``"Filter <- CollectionScan"``."""
+    names, node = [], query.explain()
+    while node:
+        names.append(node["plan"])
+        node = node["children"][0] if node.get("children") else None
+    return " <- ".join(names)
