@@ -28,6 +28,7 @@ from proto_db.indexing.range import RangeIndex
 from proto_db.query.planner import plan_query
 from proto_db.query.terms import EQ, GT, Term
 from tests.support.modes import MODES, space_in_mode
+from tests.support.outcomes import new_database_once
 
 HERE = Path(__file__).resolve().parent
 SCENARIOS = json.loads((HERE / "concurrency_scenarios.json").read_text())
@@ -247,8 +248,13 @@ def test_every_table_row_has_a_scenario():
 @pytest.mark.parametrize("scenario", SCENARIOS["scenarios"], ids=[s["name"] for s in SCENARIOS["scenarios"]])
 def test_concurrency_scenarios(scenario, mode, tmp_path):
     with space_in_mode(mode, tmp_path) as space:
-        db = space.new_database("db")
+        # Setup, not under test: in cluster mode the first commit of an empty cluster runs a
+        # recovery round, which waits for a majority on the real clock (request_timeout); a round
+        # that loses that race applied nothing and is tried again (the house helper).
+        db = new_database_once(space)
         seed(db, scenario["base"])
+        coordinator = space.coordinator
+        recoveries = coordinator.stats()["recoveries"] if coordinator is not None else 0
         txs = {"a": db.new_transaction(), "b": db.new_transaction()}
         for name in ("a", "b"):
             for op in scenario[name]:
@@ -271,3 +277,8 @@ def test_concurrency_scenarios(scenario, mode, tmp_path):
         if "state" in expect:
             # Compared as exact JSON text: a published 10 where the serial order leaves 10.0 fails.
             assert _text(state(db)) == _text(expect["state"])
+        if coordinator is not None:
+            # The commits under test ran on certain leases (the cluster mode's clock is frozen, so
+            # no grant ends and no term becomes suspect): no recovery round, whose real-time wait
+            # could turn into a conflict the scenario does not describe.
+            assert coordinator.stats()["recoveries"] == recoveries, "a scenario step ran a recovery round"

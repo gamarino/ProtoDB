@@ -39,9 +39,16 @@ DIRECTIVE = re.compile(r"^\.\. code-block:: (\S+)\s*$")
 INDENT = 3
 
 
+#: Pages of the tutorials toctree that point to a tutorial kept elsewhere (the Markdown tutorials under
+#: docs/tutorial, run by tests/docs/test_markdown_tutorials.py): listed in the index, but with no code to run.
+POINTER_PAGES = ("complete.rst",)
+
+
 def tutorial_files():
-    """The tutorial pages, in name order (``index.rst`` is the table of contents, not a tutorial)."""
-    return sorted(name for name in os.listdir(TUTORIAL_DIR) if name.endswith(".rst") and name != "index.rst")
+    """The tutorial pages, in name order (``index.rst`` is the table of contents, and the pointer pages hold no
+    code)."""
+    return sorted(name for name in os.listdir(TUTORIAL_DIR)
+                  if name.endswith(".rst") and name != "index.rst" and name not in POINTER_PAGES)
 
 
 def parse_blocks(text: str) -> list:
@@ -148,8 +155,15 @@ def test_every_tutorial_is_listed_in_the_index():
     """A tutorial that is not in tutorials/index.rst is never built into the site."""
     with open(os.path.join(TUTORIAL_DIR, "index.rst"), encoding="utf-8") as f:
         index = f.read()
-    for name in tutorial_files():
+    for name in tutorial_files() + list(POINTER_PAGES):
         assert re.search(rf"^\s+{re.escape(name[:-4])}\s*$", index, re.M), f"{name} is not in tutorials/index.rst"
+
+
+@pytest.mark.parametrize("name", POINTER_PAGES)
+def test_a_pointer_page_shows_no_code(name):
+    """A pointer page is not executed, so it may show no code block at all: nothing shown without being run."""
+    with open(os.path.join(TUTORIAL_DIR, name), encoding="utf-8") as f:
+        assert not parse_blocks(f.read()), f"{name} is a pointer page and must not hold code blocks"
 
 
 def test_the_parser_reads_options_captions_and_bodies():

@@ -160,6 +160,14 @@ code that uses no semantic layer keeps today's API, bytes and behaviour.
   experiment's harness and questions (`benchmarks/semantic/agent_experiment.py`; results pending,
   `docs/kit/semantic/agent-experiment.md`).
 
+**Tutorials** (`docs/tutorial/`, Markdown, on one modelled ERP): the complete tutorial (eleven chapters, from a
+first database to a cluster, with concurrency under the precondition model as its headline chapter), the queries
+tutorial (`docs/tutorial/queries/`, seven chapters, from building queries to measured pitfalls) and the semantic
+model tutorial (`docs/tutorial/semantic-model/`, seven chapters, from declaring a model to as-of reads). Every
+code block runs in `tests/docs/test_markdown_tutorials.py`, and each chapter is also a self-checking script
+under `examples/tutorial/`, run by `tests/integration/test_examples.py`; `docs/source/tutorials/complete.rst`
+points to them from the documentation site.
+
 ### Fixed (defects of 2.0.0rc4; candidates for a backport)
 
 - **Concurrent installs in one space**: an older registry rebind landing after a newer one left the database

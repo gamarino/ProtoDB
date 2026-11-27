@@ -51,6 +51,7 @@ from proto_db.preconditions import UnitKind
 from proto_db.storage.memory import MemoryStorage
 from proto_db.transactions import ObjectSpace
 from tests.concurrency.harness import report, run_threads
+from tests.support.forced_overlap import overlap_commits
 from tests.support.stale_prepass import stale_prepass
 from tests.support.serial_model import (COLLECTIONS, COUNTED_SET_OPS, DICTIONARY_AND_CELL_OPS, LIST_OPS,
                                         LOOKUP_OPS, MULTIMAP_OPS, OBJECT, PERSIST_OPS, RANGE_OPS, RECORDS, SET_OPS, Op,
@@ -393,10 +394,10 @@ def test_serializability_with_delta_verification(db, monkeypatch, r0):
     root.  ``stale``: every pre-pass reads its own snapshot as R0 (:func:`stale_prepass`), so every
     concurrent change is decided by delta validation under the lock, none by the pre-pass."""
     monkeypatch.setattr(transactions, "_VERIFY_DELTA", True)
-    stats = stale_prepass(monkeypatch) if r0 == "stale" else None
-    _check_serializable(db, f"serializability with delta verification ({r0} R0)")
+    stats, overlap = _stale(monkeypatch, r0)
+    _check_serializable(db, f"serializability with delta verification ({r0} R0)", overlap=overlap)
     if stats is not None:
-        assert stats.forced > 0 and stats.delta_checks > 0, (stats.forced, stats.delta_checks)
+        assert stats.forced > 0 and stats.delta_checks > 0, (stats.forced, stats.delta_checks, overlap)
 
 
 @pytest.mark.parametrize("r0", ["published", "stale"])
@@ -406,13 +407,25 @@ def test_serializability_of_collections_persisted_elsewhere(db, monkeypatch, r0)
     depend on the whole source root.  Run with ``transactions._VERIFY_DELTA`` on, with the
     published R0 and with a stale one (every concurrent change decided by delta validation)."""
     monkeypatch.setattr(transactions, "_VERIFY_DELTA", True)
-    stats = stale_prepass(monkeypatch) if r0 == "stale" else None
-    _check_serializable(db, f"serializability, collections persisted elsewhere ({r0} R0)", PERSIST_MIX)
+    stats, overlap = _stale(monkeypatch, r0)
+    _check_serializable(db, f"serializability, collections persisted elsewhere ({r0} R0)", PERSIST_MIX,
+                        overlap=overlap)
     if stats is not None:
-        assert stats.forced > 0 and stats.delta_checks > 0, (stats.forced, stats.delta_checks)
+        assert stats.forced > 0 and stats.delta_checks > 0, (stats.forced, stats.delta_checks, overlap)
 
 
-def _check_serializable(db, label, mix=MIX):
+def _stale(monkeypatch, r0):
+    """For ``r0 == "stale"``: every pre-pass forced onto its snapshot (:func:`stale_prepass`) and
+    every worker commit forced to overlap another one (:func:`overlap_commits`), so that a
+    concurrent change reaches delta validation under the space root on every run, whatever the
+    scheduler does (on a GIL build a run could otherwise end with none: the 2.0.0rc5 CI failure
+    ``(1188, 0)``).  ``(None, None)`` for the published R0."""
+    if r0 != "stale":
+        return None, None
+    return stale_prepass(monkeypatch), overlap_commits(monkeypatch, THREADS)
+
+
+def _check_serializable(db, label, mix=MIX, overlap=None):
     rng = random.Random(SEED)
     _seed_state(db, rng)
     initial = _capture(db)
@@ -436,7 +449,10 @@ def _check_serializable(db, label, mix=MIX):
     reset_range_reads()
 
     calls_before = extractor_calls_under_root()
-    elapsed = run_threads([_worker(db, t, programs[t], per_thread[t], stats) for t in range(THREADS)])
+    workers = [_worker(db, t, programs[t], per_thread[t], stats) for t in range(THREADS)]
+    if overlap is not None:
+        workers = [overlap.member(work) for work in workers]
+    elapsed = run_threads(workers)
 
     records = [r for rs in per_thread for r in rs]
     assert len(records) == THREADS * PER_THREAD
@@ -457,7 +473,8 @@ def _check_serializable(db, label, mix=MIX):
            f"index definition conflicts {by_unit.get('INDEX_DEFS', 0)}, extractor calls {calls}",
            f"range exposure {ranges}, range reads (ranged, not) {range_reads()}, "
            f"range conflicts {by_unit.get('RANGE', 0)}",
-           class_change_counts(records, initial, stats))
+           class_change_counts(records, initial, stats),
+           *([f"forced overlap {overlap}"] if overlap is not None else []))
 
 
 def test_checker_rejects_a_lost_update(db):
